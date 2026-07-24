@@ -370,6 +370,7 @@ window._i18n.hu = {
   'agents.wizard.gen_hint':      'Ez néhány másodpercig tarthat',
   'agents.model.inherit':        'Öröklött (alapértelmezett)',
   'agents.model.fable5':         'Fable 5 (legújabb)',
+  'agents.model.opus5':          'Opus 5 (legújabb Opus)',
   'agents.model.opus48':         'Opus 4.8 (1M kontextus, alapértelmezett)',
   'agents.model.sonnet5':        'Sonnet 5 (legújabb Sonnet, Opus-közeli)',
   'agents.model.sonnet46':       'Sonnet 4.6 (gyors és okos)',
