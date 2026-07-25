@@ -71,7 +71,7 @@ Minden ágens saját, réteges memóriával rendelkezik (hot / warm / cold / sha
 ### macOS / Linux
 
 ```bash
-git clone https://github.com/Szotasz/marveen.git
+git clone --branch main https://github.com/Szotasz/marveen.git
 cd marveen
 ./install.sh
 ```
@@ -90,7 +90,7 @@ irm https://raw.githubusercontent.com/Szotasz/marveen/main/install-windows.ps1 |
 
 Vagy manuálisan:
 ```powershell
-git clone https://github.com/Szotasz/marveen.git
+git clone --branch main https://github.com/Szotasz/marveen.git
 cd marveen
 .\install-windows.ps1
 ```
@@ -272,7 +272,7 @@ claude setup-token
 
 # 2. A VPS-en:
 export CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-...
-git clone https://github.com/Szotasz/marveen.git
+git clone --branch main https://github.com/Szotasz/marveen.git
 cd marveen
 ./install.sh    # automatikusan install-linux.sh-t futtat
 ```
