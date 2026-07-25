@@ -295,7 +295,9 @@ const ISOLATED_CONFIG_SKIP = new Set(['settings.json', 'plugins', '.credentials.
 
 export function ensureIsolatedChannelConfigDir(
   name: string,
-  providerType: ChannelProviderType,
+  // null = channel-less agent: provision the isolated dir with EVERY channel
+  // plugin disabled (scopeChannelPlugins(null)) instead of enabling one.
+  providerType: ChannelProviderType | null,
 ): string | null {
   return provisionIsolatedConfigDir(join(agentDir(name), '.claude-config'), agentDir(name), providerType, name)
 }
@@ -382,7 +384,7 @@ export function resolveMainAgentConfigDir(): string | null {
 function provisionIsolatedConfigDir(
   cfg: string,
   cwd: string,
-  providerType: ChannelProviderType,
+  providerType: ChannelProviderType | null,
   name: string,
 ): string | null {
   try {
@@ -1086,12 +1088,26 @@ export function startAgentProcess(name: string, opts: { fresh?: boolean } = {}):
     if (!claudeConfigDir && hasFleetOauthToken()) {
       oauthTokenEnv = `export CLAUDE_CODE_OAUTH_TOKEN="$(cat '${FLEET_OAUTH_TOKEN_PATH}')" && `
     }
-    if (!claudeConfigDir && hasChannel && name !== MAIN_AGENT_ID) {
+    // Isolation must also cover CHANNEL-LESS Claude-OAuth agents, not just
+    // channel ones. A shared-root agent authenticates from the ROTATING shared
+    // credential (macOS Keychain entry / .credentials.json), which Claude Code
+    // prefers over an otherwise-valid CLAUDE_CODE_OAUTH_TOKEN env var (see the
+    // ensureMainAgentIsolatedConfigDir header) -- so when that credential
+    // rotates or expires, the agent parks on a 401 even though the fleet token
+    // exported right next to it is fine (dani/geri recurring outage,
+    // 2026-07-25). Only agents that never touch Anthropic OAuth stay on the
+    // shared root: local/BYO-endpoint models (Ollama/DeepSeek/OpenRouter) and
+    // per-agent API-key (authMode 'api') agents.
+    const needsFleetOauth = isClaude && authMode !== 'api'
+    if (!claudeConfigDir && (hasChannel || needsFleetOauth) && name !== MAIN_AGENT_ID) {
       if (hasFleetOauthToken()) {
         // Token present -> isolation works; any earlier degradation is resolved,
         // so re-arm the one-shot alert for a future token loss.
         resetSharedConfigCollisionAlert()
-        const isolated = ensureIsolatedChannelConfigDir(name, agentProvider)
+        // A channel-less agent provisions with a null provider so its isolated
+        // settings.json disables EVERY channel plugin -- it has no bot token,
+        // so a loaded plugin could only fight the fleet over poller slots.
+        const isolated = ensureIsolatedChannelConfigDir(name, hasChannel ? agentProvider : null)
         if (isolated) {
           claudeConfigDir = isolated
           // Read the token at launch via $(cat) so the literal secret never
@@ -1102,8 +1118,10 @@ export function startAgentProcess(name: string, opts: { fresh?: boolean } = {}):
       } else {
         logger.warn({ name }, 'isolated-config: no fleet OAuth token (store/.claude-oauth-token); keeping shared ~/.claude. Run `claude setup-token` and store it to enable per-agent isolation.')
         // H1: the WARN above is silent. With >1 channel sub-agent sharing
-        // ~/.claude this is an active plugin-slot collision -> raise a loud alert.
-        maybeAlertSharedConfigCollision(name)
+        // ~/.claude this is an active plugin-slot collision -> raise a loud
+        // alert. Channel-less agents cannot contend for a plugin slot, so they
+        // only get the WARN.
+        if (hasChannel) maybeAlertSharedConfigCollision(name)
       }
     }
     // Per-project trust pre-seed in the config root this session will ACTUALLY
