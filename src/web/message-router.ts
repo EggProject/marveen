@@ -12,7 +12,6 @@ import {
   createAgentMessage,
   stampMessageTrace,
   upsertOtelSpan,
-  closeOtelSpan,
   type AgentMessage,
 } from '../db.js'
 import { isQualifiedId } from './federation/address.js'
@@ -540,6 +539,9 @@ export async function runMessageRouterTick(): Promise<void> {
       // Session is ready — clear stuck tracking.
       agentStuckSince.delete(msg.to_agent)
 
+      // Classify (channel-inbound / trusted-peer / untrusted) + reject an empty
+      // from_agent -- SINGLE SOURCE in agent-message-wrap so the router and the
+      // main-agent pull endpoint frame messages identically (no security drift).
       // Trace context (card def5a189): stamp if not yet set. channel-inbound
       // messages (user → agent) are excluded -- only inter-agent spans.
       const cls = classifyAgentMessage(msg.from_agent, msg.to_agent)
