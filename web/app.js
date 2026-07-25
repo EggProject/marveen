@@ -11026,11 +11026,75 @@ function renderUpdatesBadge(status) {
   }
 }
 
+// === Branch-drift warning ===
+// Installs that landed on a non-main branch (e.g. a branchless clone before
+// the --branch main pin) keep receiving unreleased code from update.sh, which
+// pulls the tracked branch. Two surfaces, both non-blocking: a dismissible
+// top banner (dismissal persists per browser AND per branch, so a later switch
+// to yet another branch re-warns) and a permanent notice on the Updates page.
+// Dev machines follow develop on purpose; one dismissal silences the banner
+// for them while the Updates-page notice stays as the quiet ground truth.
+const BRANCH_DRIFT_DISMISS_PREFIX = 'marveen.branch-drift-dismissed.'
+const BRANCH_HEAL_COMMAND = 'git checkout main && bash update.sh'
+
+function branchDriftDismissed(branch) {
+  try { return localStorage.getItem(BRANCH_DRIFT_DISMISS_PREFIX + branch) === '1' } catch { return false }
+}
+
+function updateBranchDriftUI(status) {
+  const banner = document.getElementById('branchDriftBanner')
+  if (!banner) return
+  const branch = status && status.branch
+  const drifted = !!branch && branch !== 'main'
+  if (!drifted || branchDriftDismissed(branch)) {
+    banner.hidden = true
+    return
+  }
+  const textEl = document.getElementById('branchDriftBannerText')
+  if (textEl) {
+    textEl.innerHTML =
+      `${t('branch_drift.banner.text', { branch: `<strong>${escapeHtmlUpdates(branch)}</strong>` })} ` +
+      `<code>${BRANCH_HEAL_COMMAND}</code>`
+  }
+  banner.hidden = false
+}
+
+function wireBranchDriftBanner() {
+  const dismiss = document.getElementById('branchDriftDismiss')
+  if (!dismiss) return
+  dismiss.addEventListener('click', () => {
+    const banner = document.getElementById('branchDriftBanner')
+    const branch = (window._updatesStatus && window._updatesStatus.branch) || ''
+    try { if (branch) localStorage.setItem(BRANCH_DRIFT_DISMISS_PREFIX + branch, '1') } catch { /* storage blocked */ }
+    if (banner) banner.hidden = true
+  })
+}
+
+function renderBranchNotice(status) {
+  const el = document.getElementById('updatesBranchNotice')
+  if (!el) return
+  const branch = status && status.branch
+  if (!branch) { el.hidden = true; return }
+  if (branch === 'main') {
+    el.className = 'updates-branch-notice ok'
+    el.innerHTML = `${t('branch_drift.notice.on_main')} (<code>main</code>)`
+  } else {
+    el.className = 'updates-branch-notice warn'
+    el.innerHTML =
+      `${t('branch_drift.notice.off_main', { branch: `<code>${escapeHtmlUpdates(branch)}</code>` })}<br>` +
+      `${t('branch_drift.notice.heal')} <code>${BRANCH_HEAL_COMMAND}</code>`
+  }
+  el.hidden = false
+}
+
 async function pollUpdatesBadge() {
   try {
     const res = await fetch('/api/updates')
     if (!res.ok) return
-    renderUpdatesBadge(await res.json())
+    const data = await res.json()
+    window._updatesStatus = data
+    renderUpdatesBadge(data)
+    updateBranchDriftUI(data)
   } catch {}
 }
 
@@ -11045,7 +11109,10 @@ async function loadUpdates() {
     const res = await fetch('/api/updates')
     if (!res.ok) throw new Error('HTTP ' + res.status)
     const data = await res.json()
+    window._updatesStatus = data
     renderUpdatesBadge(data)
+    updateBranchDriftUI(data)
+    renderBranchNotice(data)
     const cur = (data.current || '').slice(0, 7) || '–'
     const lat = (data.latest || '').slice(0, 7) || '–'
     if (data.error) {
@@ -12409,6 +12476,7 @@ function wireAuthBanner() {
 document.addEventListener('DOMContentLoaded', () => {
   wireAuthBanner()
   initAuthBanner()
+  wireBranchDriftBanner()
 })
 
 async function loadSettings() {

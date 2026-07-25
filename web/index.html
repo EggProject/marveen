@@ -192,6 +192,18 @@
          the token but has not yet created a browser (username+password) login.
          Motivated by the existing remote-access surfaces (Tailscale Serve,
          DASHBOARD_PUBLIC_URL / LAN, mobile QR). Populated by initAuthBanner(). -->
+    <!-- Non-blocking, dismissible warning shown when the checkout follows a
+         branch other than main (the release/product branch): the install keeps
+         receiving unreleased code until switched back. Dev machines are on
+         develop on purpose, so the dismissal persists per browser+branch.
+         Populated by updateBranchDriftUI() from /api/updates. -->
+    <div id="branchDriftBanner" class="auth-setup-banner branch-drift-banner" hidden>
+      <span id="branchDriftBannerText"></span>
+      <span class="auth-setup-banner-actions">
+        <button class="auth-setup-banner-close" id="branchDriftDismiss" aria-label="Dismiss">&times;</button>
+      </span>
+    </div>
+
     <div id="authSetupBanner" class="auth-setup-banner" hidden>
       <span data-i18n="auth.banner.text">Add a username+password login for browser access.</span>
       <span class="auth-setup-banner-actions">
@@ -1816,6 +1828,8 @@
           </div>
         </div>
       </div>
+
+      <div id="updatesBranchNotice" class="updates-branch-notice" hidden></div>
 
       <div id="updatesSummary" class="updates-summary"></div>
 

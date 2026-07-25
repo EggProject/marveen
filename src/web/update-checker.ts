@@ -31,6 +31,10 @@ export interface UpdateStatus {
   releases?: UpdateRelease[]
   remote: string
   lastChecked: number
+  /** Branch this checkout follows (what update.sh pulls). The frontend warns
+   * when it is not `main`: customer installs that landed on develop via a
+   * branchless clone keep receiving unreleased code until switched back. */
+  branch?: string
   error?: string
   /** True when the local HEAD is not on the GitHub remote (a customised fork);
    * `behind`/`commits` are then computed from the upstream merge-base. */
@@ -47,7 +51,9 @@ let updateStatusCache: UpdateStatus = {
 }
 
 export function getUpdateStatus(): UpdateStatus {
-  return updateStatusCache
+  // branch is resolved live (cheap local rev-parse): the cache may predate the
+  // first refresh cycle, and a checkout switch should be visible immediately.
+  return { ...updateStatusCache, branch: trackedBranch() }
 }
 
 export function currentGitHead(): string {

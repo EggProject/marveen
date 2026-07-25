@@ -7119,6 +7119,31 @@ body {
   padding: 0 4px;
 }
 
+/* Branch-drift warning (top banner + Updates-page notice). The [hidden] rule
+   is explicit because the shared .auth-setup-banner display:flex would
+   otherwise override the UA's [hidden] { display: none }. */
+.branch-drift-banner { border-left-color: var(--warning, #d97706); }
+.branch-drift-banner[hidden] { display: none; }
+.branch-drift-banner code,
+.updates-branch-notice code {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1px 6px;
+  font-size: 12px;
+  user-select: all;
+}
+.updates-branch-notice {
+  margin: 0 0 12px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.updates-branch-notice.ok { color: var(--text-muted); }
+.updates-branch-notice.warn { border-left: 3px solid var(--warning, #d97706); }
+
 /* Settings login card */
 .auth-card h3 { margin: 0 0 12px; font-size: 15px; }
 .auth-muted { color: var(--text-muted); font-size: 13px; margin: 0 0 12px; }
