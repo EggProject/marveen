@@ -649,6 +649,11 @@ export function initDatabase(dbPathOverride?: string): void {
   `)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_tool_log_session ON tool_call_log(session_id, created_at)`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_tool_log_ts ON tool_call_log(created_at)`)
+  // Idempotent column additions -- guard with PRAGMA so second run does not error.
+  const toolLogCols = (db.prepare('PRAGMA table_info(tool_call_log)').all() as { name: string }[]).map(r => r.name)
+  if (!toolLogCols.includes('agent_id'))    db.exec('ALTER TABLE tool_call_log ADD COLUMN agent_id TEXT')
+  if (!toolLogCols.includes('trace_id'))    db.exec('ALTER TABLE tool_call_log ADD COLUMN trace_id TEXT')
+  if (!toolLogCols.includes('duration_ms')) db.exec('ALTER TABLE tool_call_log ADD COLUMN duration_ms INTEGER')
 
   // --- Skill Usage Log (persistent, no prune -- feeds dream-engine skill health) ---
   db.exec(`
@@ -2528,9 +2533,19 @@ export function revertIdeaFromKanban(kanbanId: string): string | null {
 
 // --- Tool Call Log ---
 
-export function logToolCall(sessionId: string, toolName: string, inputSummary: string | null, success = true): void {
+export function logToolCall(
+  sessionId: string,
+  toolName: string,
+  inputSummary: string | null,
+  success = true,
+  agentId: string | null = null,
+  traceId: string | null = null,
+  durationMs: number | null = null,
+): void {
   const now = Math.floor(Date.now() / 1000)
-  db.prepare('INSERT INTO tool_call_log (session_id, tool_name, input_summary, success, created_at) VALUES (?, ?, ?, ?, ?)').run(sessionId, toolName, inputSummary, success ? 1 : 0, now)
+  db.prepare(
+    'INSERT INTO tool_call_log (session_id, tool_name, input_summary, success, created_at, agent_id, trace_id, duration_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+  ).run(sessionId, toolName, inputSummary, success ? 1 : 0, now, agentId, traceId, durationMs)
 }
 
 export interface ToolCallLogRow {
@@ -2540,6 +2555,9 @@ export interface ToolCallLogRow {
   input_summary: string | null
   success: number
   created_at: number
+  agent_id: string | null
+  trace_id: string | null
+  duration_ms: number | null
 }
 
 export interface WorkflowCandidate {
