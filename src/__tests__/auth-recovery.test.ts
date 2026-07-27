@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, beforeEach } from 'vitest'
+import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest'
 import type http from 'node:http'
 import { Readable } from 'node:stream'
 import { initDatabase, getDb, createDashboardUser } from '../db.js'
@@ -194,6 +194,19 @@ function sha256hexOf(v: string): string {
 // without sleeping, via the modules' exported cache seams.
 import { _cacheForTest as deviceKeyCache } from '../web/auth-device-keys.js'
 import { _cacheForTest as sessionCache } from '../web/auth-sessions.js'
+
+// Break-glass password resets in this suite hit the REAL notifier: auth.ts
+// fires notifySecurityEvent on a token-auth reset, and notify.ts reads the
+// live channel token/chat-id from config at module load -- in a production
+// checkout that delivered actual Telegram alerts to the owner (2026-07-27
+// incident). Neutralize the transport here; the alert-emitting behavior
+// itself is covered by test-run-marker.test.ts with a stubbed fetch.
+vi.mock('../notify.js', () => ({
+  notifyChannel: vi.fn(async () => {}),
+  notifyTelegram: vi.fn(async () => {}),
+  notifySecurityEvent: vi.fn(async () => {}),
+}))
+
 
 function ageDeviceKeyCacheStamp(rawKey: string, seconds: number): void {
   const e = deviceKeyCache.get(sha256hexOf(rawKey))
