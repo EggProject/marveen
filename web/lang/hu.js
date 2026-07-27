@@ -1735,13 +1735,4 @@ window._i18n.hu = {
   'auth.bridge.bundle_hint':       'Másold ki most, és illeszd be a Bridge-be -- a csomag többé nem jeleníthető meg. Cél-cím: {host}.',
   'auth.bridge.err_empty':         'A kulcs-sor és az eszköznév is kötelező.',
 
-  'trace.loading':                'Betöltés...',
-  'trace.no_traces':              'Nincs trace ehhez az ágenshez',
-  'trace.no_spans':               'Nincs span ebben a trace-ben',
-  'trace.load_error':             'Trace betöltési hiba',
-  'trace.status.ok':              'OK',
-  'trace.status.error':           'Hiba',
-  'trace.status.running':         'Fut',
-  'trace.status.timeout':         'Timeout',
-
 }

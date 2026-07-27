@@ -1739,13 +1739,4 @@ window._i18n.en = {
   'auth.bridge.bundle_hint':       'Copy it now and paste it into the Bridge -- the bundle cannot be displayed again. Target host: {host}.',
   'auth.bridge.err_empty':         'Both the key line and the device name are required.',
 
-  'trace.loading':                'Loading...',
-  'trace.no_traces':              'No traces for this agent',
-  'trace.no_spans':               'No spans in this trace',
-  'trace.load_error':             'Failed to load trace',
-  'trace.status.ok':              'OK',
-  'trace.status.error':           'Error',
-  'trace.status.running':         'Running',
-  'trace.status.timeout':         'Timeout',
-
 }
