@@ -290,6 +290,27 @@ if [ -n "$_node_bin" ] && [ -f "$INSTALL_DIR/dist/web/agent-process.js" ]; then
     fi
     echo "$(date '+%Y-%m-%d %H:%M:%S') channels.sh: main-agent $_cfg_mode CLAUDE_CONFIG_DIR=$_cfg_dir" >> "$INSTALL_DIR/store/channels-failures.log"
   fi
+  # LOUD REGRESSION GUARD: an isolated main-agent config dir on disk (provisioned
+  # by an earlier isolated boot) combined with THIS boot resolving to the shared
+  # ~/.claude means the isolation setting was lost -- e.g. store/config-overrides.json
+  # deleted with no .env key backing it. The silent fallback rides the rotating
+  # shared credential session, which is exactly how the 2026-07-27 evening 401
+  # outage started and was only noticed hours later when the owner got no replies.
+  # Surface it at START time instead: a failures-log line plus a best-effort
+  # inter-agent message to the main agent. Installs that never ran isolated have
+  # no .channels-config dir and stay quiet, so default setups see no new noise.
+  if [ -z "$CFG_ENV" ] && [ -d "$INSTALL_DIR/.channels-config" ]; then
+    echo "$(date '+%Y-%m-%d %H:%M:%S') channels.sh: WARN main-agent starting on SHARED ~/.claude although isolated dir $INSTALL_DIR/.channels-config exists -- MAIN_AGENT_ISOLATED_CONFIG resolution came back empty (overrides/.env key lost?). Auth rides the rotating shared session and can 401." >> "$INSTALL_DIR/store/channels-failures.log"
+    if [ -f "$INSTALL_DIR/store/.dashboard-token" ]; then
+      _guard_port="$(grep -E '^WEB_PORT=' "$INSTALL_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2-)"
+      curl -s --max-time 5 -X POST "http://localhost:${_guard_port:-3420}/api/messages" \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer $(cat "$INSTALL_DIR/store/.dashboard-token")" \
+        -d "{\"from\":\"channels-sh-guard\",\"to\":\"${MAIN_AGENT_ID:-marveen}\",\"content\":\"[GUARD] A channels session most a KOZOS ~/.claude alol indult, pedig letezik izolalt config dir (.channels-config). A MAIN_AGENT_ISOLATED_CONFIG beallitas valoszinuleg elveszett (store/config-overrides.json torlodott es nincs .env kulcs). Az auth a rotalodo shared sessionbol megy, 401-veszely. Teendo: MAIN_AGENT_ISOLATED_CONFIG=1 visszaallitasa, majd channels session restart.\"}" \
+        >/dev/null 2>&1 || true
+      unset _guard_port
+    fi
+  fi
   unset _cfg_line _cfg_mode _cfg_dir
 fi
 unset _node_bin
