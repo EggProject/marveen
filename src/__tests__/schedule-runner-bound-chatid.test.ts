@@ -48,6 +48,13 @@ describe('schedule-runner source contract (sentinel removed)', () => {
     expect(src).toMatch(/prefix = `\[Utemezett feladat: \$\{task\.name\}\] `/)
   })
 
+  it('multi-entry allowlists produce an ambiguity warn (heuristic made visible)', () => {
+    // Behaviour stays first-entry; the warn exists so a reordered allowlist
+    // (2+ entries: zara/iris) cannot silently redirect task results.
+    expect(src).toContain('bound-chat resolution is ambiguous')
+    expect(src).toMatch(/candidates > 1/)
+  })
+
   it('resolution reads the same access.json the plugin enforces', () => {
     expect(src).toContain("channelStateDir('telegram'")
     expect(src).toContain('chatIdFromAccessConfig')

@@ -244,7 +244,19 @@ export function resolveBoundChatId(agentName: string): string | null {
     ? channelStateDir('telegram')
     : channelStateDir('telegram', agentDir(agentName))
   try {
-    return chatIdFromAccessConfig(JSON.parse(readFileSync(join(dir, 'access.json'), 'utf-8')))
+    const raw = JSON.parse(readFileSync(join(dir, 'access.json'), 'utf-8')) as Record<string, unknown>
+    const chosen = chatIdFromAccessConfig(raw)
+    // "First allowlist entry" is a HEURISTIC, not a stated fact: access.json
+    // has no owner field, so with 2+ entries (zara/iris today) a reordering
+    // would silently redirect scheduled-task results to another person -- the
+    // exact failure class the old sentinel guarded against, now throw-free and
+    // thus invisible. The warn turns a silent misdirection into a searchable
+    // log line; behaviour is unchanged (Marveen, msg 7002).
+    const candidates = Array.isArray(raw?.allowFrom) ? raw.allowFrom.length : 0
+    if (chosen && candidates > 1) {
+      logger.warn({ agent: agentName, candidates, chosen }, 'bound-chat resolution is ambiguous: multiple DM allowlist entries, using the first')
+    }
+    return chosen
   } catch { return null }
 }
 
