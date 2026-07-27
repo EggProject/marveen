@@ -32,6 +32,7 @@ import {
   stuckInputSignature, decideStuckInputRecovery, parkedChannelInput,
   parkedInputText, shouldClearTruncatedPreamble,
   parkedInputRowCount, submitLanded, decideStuckInputAction,
+  parkedScheduledTaskInput, parkedMachineOriginInput, parkedMainInputHasRemedy,
   type StuckInputState, type StuckInputThresholds, type StuckInputAction,
   type StuckInputActionFacts,
 } from '../pane-state.js'
@@ -251,14 +252,29 @@ export function decideStuckInputRestart(
 // actively recovering ('typing') -- give soft recovery time to submit instead
 // of nuking the session. A session that is genuinely DEAD (not even soft-
 // recovering) is still caught by the keepalive-staleness watchdog (~18min), the
-// pre-#452 backstop. This narrows the hard restart to unreadable/error panes and
-// leaves the routine parked-input case to the non-destructive soft path.
-// Reuses shouldDeferKeepaliveRespawn (single source of truth for busy/typing).
+// pre-#452 backstop.
+//
+// DEADLOCK CARVE-OUT (2026-07-25 hermes incident): the blanket 'typing' defer
+// muted the channel PERMANENTLY when the parked text had NO soft remedy (a
+// multi-row non-<channel> block on the main session -> decideStuckInputAction
+// 'hold' forever) -- the keepalive backstop defers on the same 'typing' signal,
+// so nothing ever recovered. A 'typing' pane therefore no longer defers when
+// BOTH hold: (1) the parked text is identifiably machine-injected (a known
+// delivery wrapper prefix -- never a human draft mid-composition), and (2) the
+// soft recovery has no move for it ('hold'). Everything else keeps deferring:
+// genuine 'busy', a human-looking draft, and any parked text soft recovery can
+// still submit/clear on its own.
 export function applyStuckRestartBusyGuard(
   paneState: PaneState | null,
   decision: 'restart' | 'alert' | 'skip',
+  opts?: { machineOrigin: boolean; softRemedy: boolean },
 ): 'restart' | 'alert' | 'skip' {
-  return shouldDeferKeepaliveRespawn(paneState) ? 'skip' : decision
+  if (paneState === 'busy') return 'skip'
+  if (paneState === 'typing') {
+    const unrecoverable = opts != null && opts.machineOrigin && !opts.softRemedy
+    return unrecoverable ? decision : 'skip'
+  }
+  return decision
 }
 
 // Session-agnostic stuck-input recovery: capture the pane, and if a channel
@@ -305,6 +321,7 @@ export async function recoverStuckInputForSession(
       truncatedPreamble: shouldClearTruncatedPreamble(pane),
       allowPlainReinject,
       hasPlainText: allowPlainReinject && parkedInputText(pane) != null,
+      scheduledTaskBlock: parkedScheduledTaskInput(pane),
     }
     const action = decideStuckInputAction(facts)
     await performStuckInputAction(session, action, pane, block, sig, attempt)
@@ -349,6 +366,10 @@ async function performStuckInputAction(
       }
       case 'clear-preamble':
         logger.warn({ session, attempt }, 'Stuck input -- truncated safety preamble, clearing buffer (no re-inject)')
+        await clearInputBuffer(session)
+        break
+      case 'clear-scheduled':
+        logger.warn({ session, attempt }, 'Stuck input -- parked scheduled-task tick, clearing buffer (no re-inject; next schedule fire re-delivers)')
         await clearInputBuffer(session)
         break
       case 'enter':
@@ -483,6 +504,31 @@ function readConfiguredMainModel(): string {
   }
 }
 
+// Secondary channel plugins the main session co-listens on, read from .env
+// CHANNEL_PLUGINS_EXTRA (space-separated plugin ids) exactly as scripts/channels.sh
+// derives its EXTRA_CHANNELS. Kept OUT of buildMainSessionRespawnCmd so that stays
+// pure for the contract test; every respawn call site must pass the result through.
+//
+// Why this exists: a respawn that omits the extras comes up on the PRIMARY provider
+// only, which is a HALF-mute -- outbound still works (the plugin's MCP reply tool is
+// loaded) while inbound on every secondary provider is silently dropped ("server not
+// in --channels list"). Liveness probes watch the primary, so nothing looks wrong.
+// Observed in practice: a context-saturation hard restart dropped the secondary
+// inbound for ~20 minutes while the primary channel kept working normally.
+export function readExtraChannelPluginIds(projectRoot: string = PROJECT_ROOT): string[] {
+  try {
+    const envPath = join(projectRoot, '.env')
+    if (!existsSync(envPath)) return []
+    const line = readFileSync(envPath, 'utf-8')
+      .split('\n')
+      .find((l) => l.startsWith('CHANNEL_PLUGINS_EXTRA='))
+    if (!line) return []
+    return line.slice('CHANNEL_PLUGINS_EXTRA='.length).trim().split(/\s+/).filter(Boolean)
+  } catch {
+    return []
+  }
+}
+
 // Build the claude command used to (re)spawn the main channels session via
 // `tmux respawn-pane`. Pure + exported so the contract test can LOCK the
 // presence of the `$HOME/.bun/bin` PATH export (without it the respawned bun
@@ -516,6 +562,12 @@ export function buildMainSessionRespawnCmd(opts: {
    * bug 2 latent path). Keeps main + sub-agents on the SAME auth source.
    */
   fleetToken?: boolean
+  /**
+   * Secondary plugin ids to co-listen on alongside `pluginId`, from
+   * readExtraChannelPluginIds(). Omitting them is what silently half-mutes every
+   * non-primary channel after a recovery respawn -- see that helper's comment.
+   */
+  extraPluginIds?: string[]
 }): string {
   return [
     'export PATH="/opt/homebrew/bin:$HOME/.bun/bin:/home/linuxbrew/.linuxbrew/bin:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH"',
@@ -541,8 +593,67 @@ export function buildMainSessionRespawnCmd(opts: {
     // Single-quote the model id so a value like `claude-opus-4-8[1m]` is not
     // glob-expanded by the shell that tmux respawn-pane spawns the command in.
     ...(opts.model ? ['--model', `'${opts.model}'`] : []),
-    `--channels plugin:${opts.pluginId}`,
+    [`--channels plugin:${opts.pluginId}`, ...(opts.extraPluginIds ?? []).map((p) => `plugin:${p}`)].join(' '),
   ].join(' ')
+}
+
+// FRESH respawn of the main channels session, for hosts with no launchd.
+//
+// Exported for the scheduled auto-restart (auto-restart-runner.ts), whose macOS
+// leg is `launchctl kickstart`. On Linux that binary does not exist, so before
+// this the main agent's nightly restart threw ENOENT on every due tick and had
+// NEVER run -- silently, because the only symptom was a log line.
+//
+// Deliberately NOT resumeMarveenSession() with a flag: that path is built around
+// --continue (resume-summary modal dismissal, post-resume plugin guard) and none
+// of it applies to a fresh start. What IS shared -- the two reaps, the onboarding
+// re-seed, the respawn command builder, the identity + plugin-unlock follow-ups --
+// is called here too, so the two paths cannot drift on the parts that matter.
+export function respawnMainSessionFresh(): void {
+  const provider = getProvider(getMainAgentProvider())
+  // Same rationale as the resume path: respawn-pane -k kills the parent claude
+  // but leaves grandchild pollers alive, and two pollers on one bot token race
+  // for getUpdates (409). Reap BEFORE respawning, never after.
+  try {
+    reapChannelOrphans(provider.type, PROJECT_ROOT)
+  } catch (err) {
+    logger.warn({ err }, 'respawnMainSessionFresh: pre-respawn reap failed (continuing)')
+  }
+  try {
+    reapDetachedChannelClaudes({ tmuxPath: TMUX })
+  } catch (err) {
+    logger.warn({ err }, 'respawnMainSessionFresh: detached-claude reap failed (continuing)')
+  }
+  ensureSharedClaudeOnboarded()
+
+  const claudeCmd = buildMainSessionRespawnCmd({
+    claudePath: CLAUDE,
+    pluginId: provider.pluginId,
+    extraPluginIds: readExtraChannelPluginIds(),
+    model: readConfiguredMainModel(),
+    // The main session always starts a new conversation -- this is the whole
+    // point of the nightly restart (drop the accumulated context).
+    continueSession: false,
+    isolatedConfigDir: ensureMainAgentIsolatedConfigDir(),
+    fleetToken: hasFleetOauthToken(),
+  })
+  execFileSync(TMUX, ['respawn-pane', '-k', '-t', MAIN_CHANNELS_SESSION, claudeCmd], { timeout: 15000 })
+  // Stamp IMMEDIATELY after the respawn, before the scheduling follow-ups.
+  // The stamp is a coordination contract, not bookkeeping: five watchers read
+  // lastMainRespawnAt() / store/.channel-last-respawn and suppress themselves
+  // during the grace window -- including the systemd-timer channel-watchdog,
+  // a separate process that can ONLY see the file. Without it, the ~35-90s
+  // cold-boot window while plugins unlock looks to them like a dead session,
+  // and they can respawn on top of one that is still coming up.
+  writeRespawnStamp()
+
+  logger.warn({ provider: provider.type }, 'Main session respawned FRESH (scheduled auto-restart)')
+  // The respawned claude is a brand-new process: it has neither the /name
+  // identity nor a guaranteed-loaded channel plugin. Both follow-ups mirror the
+  // resume path; skipping them is how a restarted session comes back nameless
+  // or with the plugin stuck in `◯ disabled`.
+  void scheduleIdentitySetup(MAIN_CHANNELS_SESSION, BOT_NAME)
+  schedulePluginUnlockAfterRespawn(MAIN_CHANNELS_SESSION, provider.type)
 }
 
 // Exported so the stuck-tool-call-watcher recovers a wedged main session via
@@ -588,6 +699,7 @@ export async function resumeMarveenSession(): Promise<boolean> {
     const claudeCmd = buildMainSessionRespawnCmd({
       claudePath: CLAUDE,
       pluginId: provider.pluginId,
+      extraPluginIds: readExtraChannelPluginIds(),
       model: readConfiguredMainModel(),
       continueSession: true,
       // Parity with channels.sh: a recovery respawn must also land on the
@@ -793,6 +905,7 @@ function respawnMarveenSessionFresh(): boolean {
     const claudeCmd = buildMainSessionRespawnCmd({
       claudePath: CLAUDE,
       pluginId: provider.pluginId,
+      extraPluginIds: readExtraChannelPluginIds(),
       model: readConfiguredMainModel(),
       continueSession: false,
       // Same channels.sh-bypass concern as resumeMarveenSession: this fresh
@@ -919,13 +1032,23 @@ function maybeRestartWedgedMainChannel(state: StuckInputState): void {
   // blocks a genuine recovery.
   const paneContent = capturePane(MAIN_CHANNELS_SESSION)
   const paneState = paneContent != null ? detectPaneState(paneContent) : null
+  // Deadlock carve-out facts: read from the ghost-stripped parked view (same
+  // view the soft recovery uses) so a dim autocomplete hint never counts.
+  const parkedView = paneState === 'typing' ? captureParkedInputView(MAIN_CHANNELS_SESSION) : null
+  const machineOrigin = parkedView != null && parkedMachineOriginInput(parkedView)
+  const softRemedy = parkedView != null && parkedMainInputHasRemedy(parkedView)
   const action = applyStuckRestartBusyGuard(paneState, decideStuckInputRestart(
     parked, state.attempts, MAIN_STUCK_THRESHOLDS.maxAttempts,
     Date.now(), lastStuckRestartAt, stuckRestartCount,
     STUCK_RESTART_MIN_INTERVAL_MS, STUCK_RESTART_MAX_CONSECUTIVE,
-  ))
+  ), { machineOrigin, softRemedy })
   if (action === 'skip' && shouldDeferKeepaliveRespawn(paneState)) {
-    logger.info({ paneState, attempts: state.attempts }, 'Stuck-input restart deferred -- main pane is busy (working, not wedged)')
+    logger.info(
+      { paneState, attempts: state.attempts, machineOrigin, softRemedy },
+      paneState === 'busy'
+        ? 'Stuck-input restart deferred -- main pane is busy (working, not wedged)'
+        : 'Stuck-input restart deferred -- parked input still recoverable or possibly a human draft',
+    )
   }
   if (action === 'skip') return
   if (action === 'alert') {
