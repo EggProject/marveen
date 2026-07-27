@@ -44,7 +44,9 @@ import {
   createDeviceKey,
   listDeviceKeys,
   revokeDeviceKey,
+  getDeviceKey,
 } from '../auth-device-keys.js'
+import { removeBridgeSshAccess, sshDirOverride } from '../bridge-enroll.js'
 import {
   createDashboardUser,
   getDashboardUser,
@@ -382,12 +384,27 @@ export async function tryHandleAuth(ctx: RouteContext): Promise<boolean> {
       return true
     }
     const id = Number(deviceKeyMatch[1])
-    if (!revokeDeviceKey(id)) {
+    const key = getDeviceKey(id)
+    if (!key || !revokeDeviceKey(id)) {
       json(res, { error: 'Device key not found' }, 404)
       return true
     }
-    logger.info({ id }, 'device key revoked')
-    json(res, { ok: true })
+    // Bridge-paired key: revoke means BOTH halves at once -- the dashboard
+    // key (above) and the SSH authorized_keys line. Idempotent on the SSH
+    // side; a failure there must not resurrect the already-revoked key, so it
+    // is reported, not rolled back.
+    let sshRemoved: boolean | undefined
+    if (key.installId) {
+      try {
+        sshRemoved = await removeBridgeSshAccess(key.installId)
+      } catch (err) {
+        logger.error({ err, id, installId: key.installId }, 'device key revoked but authorized_keys removal failed')
+        sshRemoved = false
+      }
+      logConfigChange('security.bridge_revoke', null, `${key.name} (${key.installId}) ssh_removed=${sshRemoved}${sshDirOverride() ? ' sshdir_override=1' : ''}`, auth!.kind)
+    }
+    logger.info({ id, name: key.name, installId: key.installId ?? undefined, sshRemoved }, 'device key revoked')
+    json(res, { ok: true, ...(key.installId ? { ssh_removed: sshRemoved } : {}) })
     return true
   }
 

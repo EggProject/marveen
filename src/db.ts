@@ -872,9 +872,14 @@ export function initDatabase(dbPathOverride?: string): void {
       name TEXT NOT NULL,
       created_at INTEGER NOT NULL,
       last_used_at INTEGER,
-      expires_at INTEGER
+      expires_at INTEGER,
+      install_id TEXT
     )
   `)
+  // Bridge pairing (AUTHPLAN1 #2): links a device key to the SSH enrollment's
+  // marveen-remote:<uuid> so revoking the key can drop the authorized_keys
+  // line in the same step. Null for keys minted outside the pairing flow.
+  try { db.exec(`ALTER TABLE device_keys ADD COLUMN install_id TEXT`) } catch { /* column already exists */ }
 
   // --- OTel Distributed Tracing (card def5a189) ---
   // SQLite-native span store. No external OTel SDK: spans are written via

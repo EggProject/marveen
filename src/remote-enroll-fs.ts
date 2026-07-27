@@ -18,7 +18,7 @@ import {
   chmodSync,
 } from 'node:fs'
 import { join } from 'node:path'
-import { mergeAuthorizedKeys, type MergeAction } from './remote-enroll-core.js'
+import { mergeAuthorizedKeys, removeAuthorizedKey, type MergeAction } from './remote-enroll-core.js'
 
 const SSH_DIR_MODE = 0o700
 const AUTH_KEYS_MODE = 0o600
@@ -174,31 +174,80 @@ export async function enrollAuthorizedKey(opts: EnrollOptions): Promise<EnrollRe
     }
 
     const { content, action } = mergeAuthorizedKeys(existing, restrictedLine, installId)
-
-    // Atomic write: temp file in the same directory (same filesystem), 0600,
-    // fsync, then rename over the target.
-    const tmpPath = join(sshDir, `.${AUTH_KEYS_NAME}.${process.pid}.${Date.now()}.tmp`)
-    const tfd = openSync(tmpPath, 'wx', AUTH_KEYS_MODE)
-    try {
-      writeSync(tfd, content)
-      fsyncSync(tfd)
-    } finally {
-      closeSync(tfd)
-    }
-    // Enforce mode explicitly in case umask trimmed the create mode.
-    chmodSync(tmpPath, AUTH_KEYS_MODE)
-    try {
-      renameSync(tmpPath, authPath)
-    } catch (err) {
-      try {
-        unlinkSync(tmpPath)
-      } catch {
-        /* ignore */
-      }
-      throw err
-    }
+    writeAtomic(sshDir, authPath, content)
 
     return { action, authorizedKeysPath: authPath, warnings }
+  } finally {
+    releaseLock(fd, lockPath)
+  }
+}
+
+/** Atomic write: temp file in the same directory (same filesystem), 0600,
+ * fsync, then rename over the target. */
+function writeAtomic(sshDir: string, authPath: string, content: string): void {
+  const tmpPath = join(sshDir, `.${AUTH_KEYS_NAME}.${process.pid}.${Date.now()}.tmp`)
+  const tfd = openSync(tmpPath, 'wx', AUTH_KEYS_MODE)
+  try {
+    writeSync(tfd, content)
+    fsyncSync(tfd)
+  } finally {
+    closeSync(tfd)
+  }
+  // Enforce mode explicitly in case umask trimmed the create mode.
+  chmodSync(tmpPath, AUTH_KEYS_MODE)
+  try {
+    renameSync(tmpPath, authPath)
+  } catch (err) {
+    try {
+      unlinkSync(tmpPath)
+    } catch {
+      /* ignore */
+    }
+    throw err
+  }
+}
+
+export interface RemoveEnrolledOptions {
+  sshDir: string
+  installId: string
+  lockRetries?: number
+  lockRetryDelayMs?: number
+  staleLockMs?: number
+  sleep?: (ms: number) => Promise<void>
+}
+
+export interface RemoveEnrolledResult {
+  removed: boolean
+  authorizedKeysPath: string
+}
+
+/**
+ * Remove the marveen-remote:<installId> line from <sshDir>/authorized_keys --
+ * the revoke counterpart of enrollAuthorizedKey, under the same lock and
+ * atomic-replace discipline. A missing file or missing line reports
+ * removed:false (idempotent: revoking twice must not fail).
+ */
+export async function removeEnrolledKey(opts: RemoveEnrolledOptions): Promise<RemoveEnrolledResult> {
+  const {
+    sshDir,
+    installId,
+    lockRetries = 20,
+    lockRetryDelayMs = 100,
+    staleLockMs = 15000,
+    sleep = defaultSleep,
+  } = opts
+  const authPath = join(sshDir, AUTH_KEYS_NAME)
+  const lockPath = join(sshDir, LOCK_NAME)
+
+  if (!existsSync(authPath)) return { removed: false, authorizedKeysPath: authPath }
+
+  const fd = await acquireLock(lockPath, lockRetries, lockRetryDelayMs, staleLockMs, sleep)
+  try {
+    if (!existsSync(authPath)) return { removed: false, authorizedKeysPath: authPath }
+    const existing = readFileSync(authPath, 'utf8')
+    const { content, removed } = removeAuthorizedKey(existing, installId)
+    if (removed) writeAtomic(sshDir, authPath, content)
+    return { removed, authorizedKeysPath: authPath }
   } finally {
     releaseLock(fd, lockPath)
   }

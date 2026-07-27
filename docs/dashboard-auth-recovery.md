@@ -41,6 +41,17 @@ A futó szerver legfeljebb 60 másodpercen belül érvényesíti a resetet (a
 hitelesítő-cache a következő használatnál észleli a törölt sort); restart nem
 szükséges.
 
+## Bridge-párosítás visszavonása
+
+A Biztonság fülön párosított Bridge-eszköz kulcsának visszavonása
+(`Visszavonás` gomb, vagy `DELETE /api/auth/device-keys/<id>`) EGYBEN vonja
+vissza a két hozzáférés-felet: az eszközkulcsot ÉS az `authorized_keys`-ből az
+eszköz SSH-sorát. Az eszköz ettől nem "kizárt felhasználó": újra-párosítással
+(új kulcs-sor beillesztése) bármikor visszahozható. A `security:reset` a
+párosított kulcsokat is visszavonja, de az SSH-sorokat nem bántja -- azok a
+kulcs nélkül csak egy zárt alagutat adnak, és a következő párosítás
+install-id alapján felülírja őket.
+
 ## HTTP break-glass (token birtokában)
 
 A dashboard-token birtokosa a `POST /api/auth/password` végponton
