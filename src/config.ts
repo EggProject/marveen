@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readEnvFile } from './env.js'
+import { DISTRIBUTION_DEFAULT_AGENT_MODEL } from './config-registry.js'
 import { getProviderType, getChannelToken, getChannelChatId, type ChannelProviderType } from './channel-provider.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -102,6 +103,15 @@ export const APP_TZ = appTz.tz
 // path. config.ts is imported too early to own a logger (logger imports config
 // -> circular), so the loud reporting lives in startScheduleRunner.
 export const APP_TZ_INVALID = appTz.invalid
+
+// The model new agents are scaffolded with, and the model the background worker
+// sessions run. One key so an install that standardises on a newer model does
+// not have to patch three separate literals in src/ (which an update would then
+// clobber). Deliberately NOT applied to existing agents: agent-config.json keeps
+// whatever model it was created with, so raising this never silently
+// reconfigures a running fleet.
+export const DEFAULT_AGENT_MODEL =
+  cfg('DEFAULT_AGENT_MODEL') || DISTRIBUTION_DEFAULT_AGENT_MODEL
 
 export const TELEGRAM_BOT_TOKEN = env['TELEGRAM_BOT_TOKEN'] ?? ''
 export const ALLOWED_CHAT_ID = env['ALLOWED_CHAT_ID'] ?? ''
