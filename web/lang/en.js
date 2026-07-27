@@ -262,6 +262,7 @@ window._i18n.en = {
   'kanban.status.waiting_short': 'Wait',
 
   // --- Archived cards ---
+  'archived.backToKanban':       'Back to Kanban',
   'archived.page_title':         'Archived cards',
   'archived.search_placeholder': 'Search (title, project, assignee)...',
   'archived.filter.all_projects': 'All projects',

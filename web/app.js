@@ -16051,6 +16051,10 @@ async function openResearchDoc(agent, name) {
       document.getElementById('archivedSearchBtn').addEventListener('click', doArchivedSearch)
       document.getElementById('archivedRefreshBtn').addEventListener('click', doArchivedSearch)
       document.getElementById('archivedQ').addEventListener('keydown', e => { if (e.key === 'Enter') doArchivedSearch() })
+      // Back button mirrors the kanban row's Archivaltak entry point; explicit
+      // switchPage (not history.back) so it works on direct-link arrivals too.
+      const backBtn = document.getElementById('archivedBackToKanban')
+      if (backBtn) backBtn.addEventListener('click', () => switchPage('kanban'))
       const adOverlay = document.getElementById('archivedDetailOverlay')
       document.getElementById('archivedDetailClose').addEventListener('click', () => closeModal(adOverlay))
       adOverlay.addEventListener('click', e => { if (e.target === adOverlay) closeModal(adOverlay) })

@@ -262,6 +262,7 @@ window._i18n.hu = {
   'kanban.status.waiting_short': 'Vár',
 
   // --- Archived cards ---
+  'archived.backToKanban':       'Vissza a Kanbanra',
   'archived.page_title':         'Archivált kártyák',
   'archived.search_placeholder': 'Keresés (cím, projekt, felelős)...',
   'archived.filter.all_projects': 'Minden projekt',
