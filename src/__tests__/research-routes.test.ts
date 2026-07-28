@@ -2,13 +2,43 @@
 // Exercises the real handler against temporary fixture dirs, with emphasis on
 // the path-traversal arm: encoded ../ sequences, non-.md names, and unknown
 // agents must all be rejected before any filesystem read happens.
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { mkdirSync, rmSync, writeFileSync, mkdtempSync, existsSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { tryHandleResearch } from '../web/routes/research.js'
-import { PROJECT_ROOT, MAIN_AGENT_ID } from '../config.js'
-import { agentDir } from '../web/agent-config.js'
+import { tmpdir } from 'node:os'
 import type { RouteContext } from '../web/routes/types.js'
+
+// ENFORCED sandbox: the earlier version used the REAL PROJECT_ROOT/agents
+// tree, creating <repoRoot>/research/ and agents/zz-.../ in a live checkout
+// (2026-07-27 test-suite-mutates-live-state incident class). PROJECT_ROOT and
+// the whole agent-dir resolution are redirected into an mkdtemp root; the
+// handler under test is imported AFTER the mocks so its module graph sees the
+// sandbox.
+const tmpRoot = mkdtempSync(join(tmpdir(), 'research-routes-'))
+const AGENTS_TMP = join(tmpRoot, 'agents')
+
+vi.mock('../config.js', async (orig) => {
+  const actual = await orig<typeof import('../config.js')>()
+  return { ...actual, PROJECT_ROOT: tmpRoot }
+})
+vi.mock('../web/agent-config.js', async (orig) => {
+  const actual = await orig<typeof import('../web/agent-config.js')>()
+  const { MAIN_AGENT_ID } = await import('../config.js')
+  return {
+    ...actual,
+    AGENTS_BASE_DIR: AGENTS_TMP,
+    agentDir: (name: string) => join(AGENTS_TMP, name),
+    agentConfigRoot: (name: string) => (name === MAIN_AGENT_ID ? tmpRoot : join(AGENTS_TMP, name)),
+    listAgentNames: () =>
+      existsSync(AGENTS_TMP)
+        ? readdirSync(AGENTS_TMP).filter((f) => statSync(join(AGENTS_TMP, f)).isDirectory())
+        : [],
+  }
+})
+
+const { tryHandleResearch } = await import('../web/routes/research.js')
+const { PROJECT_ROOT, MAIN_AGENT_ID } = await import('../config.js')
+const { agentDir } = await import('../web/agent-config.js')
 
 function fakeCtx(path: string, method = 'GET'): { ctx: RouteContext; out: { status: number; body: any } } {
   const out: { status: number; body: any } = { status: 0, body: null }

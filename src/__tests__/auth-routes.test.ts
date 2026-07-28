@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, beforeEach } from 'vitest'
+import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest'
 import type http from 'node:http'
 import { Readable } from 'node:stream'
 import { initDatabase, getDb, getDashboardUser } from '../db.js'
@@ -7,6 +7,19 @@ import { requiresAuth, parseCookies, SESSION_COOKIE_NAME } from '../web/auth-gat
 import { resolveSession, _clearSessionCacheForTest } from '../web/auth-sessions.js'
 import { _resetThrottleForTest } from '../web/login-throttle.js'
 import type { RouteContext } from '../web/routes/types.js'
+
+// Break-glass password resets in this suite hit the REAL notifier: auth.ts
+// fires notifySecurityEvent on a token-auth reset, and notify.ts reads the
+// live channel token/chat-id from config at module load -- in a production
+// checkout that delivered actual Telegram alerts to the owner (2026-07-27
+// incident). Neutralize the transport here; the alert-emitting behavior
+// itself is covered by test-run-marker.test.ts with a stubbed fetch.
+vi.mock('../notify.js', () => ({
+  notifyChannel: vi.fn(async () => {}),
+  notifyTelegram: vi.fn(async () => {}),
+  notifySecurityEvent: vi.fn(async () => {}),
+}))
+
 
 interface MockRes {
   statusCode: number
