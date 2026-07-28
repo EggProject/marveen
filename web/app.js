@@ -11844,6 +11844,11 @@ function renderOnboarding(s) {
     el.classList.toggle('active', n === step)
     el.classList.toggle('done', n < step)
   })
+  // The steps build on each other and the system only comes alive at the end
+  // of step 4 -- say so, or a fresh installer reads step 2's "saved" as "done"
+  // and every later "bot token not found" as a failure (BK bootcamp, 07-28).
+  const flowNote = document.getElementById('onbFlowNote')
+  if (flowNote) flowNote.textContent = step === 4 ? t('onboarding.flow_note_last') : t('onboarding.flow_note')
   const body = document.getElementById('onboardingBody')
   if (step === 1) body.innerHTML = onbIdentityHtml(s)
   else if (step === 2) body.innerHTML = onbStep1Html(s)
@@ -11921,6 +11926,12 @@ function wireOnboarding(step) {
         const res = await fetch('/api/onboarding/claude-auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) })
         const d = await res.json().catch(() => ({}))
         if (!res.ok) { authBtn.disabled = false; onbMsg(d.error || t('onboarding.error'), true); return }
+        // Fresh-install path: the server restarts the (previously
+        // unauthenticated) channels session right after the first auth save --
+        // surface that, and on failure show the manual restart step instead of
+        // silently advancing.
+        if (d.restartError) { authBtn.disabled = false; onbMsg(t('onboarding.step1.saved_restart_failed'), true); setTimeout(refreshOnboarding, 6000); return }
+        if (d.restarted) { onbMsg(t('onboarding.step1.saved_restarted')); setTimeout(refreshOnboarding, 2500); return }
         onbMsg(d.verified ? t('onboarding.step1.saved_verified') : t('onboarding.step1.saved_unverified'))
         await refreshOnboarding()
       } catch (e) { authBtn.disabled = false; onbMsg((e && e.message) || t('onboarding.error'), true) }
