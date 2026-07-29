@@ -154,6 +154,32 @@ export function decideScheduledResubmitAction(
   return attempt < RESUBMIT_BARE_ENTER_ATTEMPTS ? 'enter' : 'reinject'
 }
 
+// SCHEDDUP1: is OUR scheduled prompt actually parked in the input box? The
+// previous inline check (`/❯\s+\S/.test(pane) && pane.includes(marker)`) was
+// busy-blind and matched the marker ANYWHERE in the pane -- so a session that
+// had already submitted the prompt and was ACTIVELY WORKING on it (marker
+// visible in the transcript echo, anything on the input line) was judged
+// stuck, and the recovery ladder pressed keystrokes into a working session
+// (measured 2026-07-28 12:00: 20 s after injection, mid-WebSearch, task
+// completed fine). Two narrowings, both invariants pinned by unit tests:
+//   1. BUSY EXCLUSION: a busy pane is never stuck -- the prompt is running,
+//      not parked. Same identify-before-act rule as the FABLEFALL1 guards.
+//   2. MARKER IN THE INPUT REGION ONLY: the marker must sit at/after the LAST
+//      prompt box (❯), i.e. be the parked text itself -- a marker in the
+//      scrollback above is the running/finished case. This also makes the
+//      ladder's bare Enter safe by construction: it can only ever submit OUR
+//      OWN scheduled prompt, never an unrelated message that happened to park
+//      (an unrelated parked message has no marker in the input region, so no
+//      keystroke fires at all).
+export function isScheduledPromptStuck(pane: string | null, marker: string): boolean {
+  if (!pane || !pane.trim()) return false
+  if (detectPaneState(pane) === 'busy') return false
+  const idx = pane.lastIndexOf('❯')
+  if (idx < 0) return false
+  const inputRegion = pane.slice(idx)
+  return /❯\s+\S/.test(inputRegion) && inputRegion.includes(marker)
+}
+
 // --- Schedule Runner ---
 // Checks every minute if any scheduled task is due and injects the prompt
 // into the agent's tmux session.
@@ -550,7 +576,7 @@ async function attemptFireTask(
         // Host-aware so a remote agent's post-send stuck-check + recovery Enter
         // hit the laptop session, not a (nonexistent) local one.
         const pane = capturePane(session, host)
-        const stuck = pane != null && /❯\s+\S/.test(pane) && pane.includes(marker)
+        const stuck = isScheduledPromptStuck(pane, marker)
         const action = decideScheduledResubmitAction(attempt, stuck)
         if (action === 'none') return
         if (action === 'giveup') {
