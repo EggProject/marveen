@@ -913,6 +913,7 @@ window._i18n.en = {
 
   // --- Additional parity keys ---
   'activity.badge.main':			'main',
+  'activity.tooltip.mode':		'Permission mode: {mode}. In this mode the agent stops and waits for approval before calling a tool -- with nobody watching it can sit there for hours while still looking idle.',
   'activity.empty':			'No agents.',
   'activity.error_load':			'Failed to load activity',
   'activity.updated':			'Updated: {time}',
@@ -1742,6 +1743,7 @@ window._i18n.en = {
   'auth.bridge.desc':              'Paste the key line shown by the Bridge app (ssh-ed25519 ... marveen-remote:...), name the device, then copy the returned bundle back into the Bridge. The device gets its own, individually revocable key.',
   'auth.bridge.key_placeholder':   'ssh-ed25519 ... marveen-remote:...',
   'auth.bridge.name_placeholder':  'Device name (e.g. work laptop)',
+  'auth.bridge.host_placeholder':  'Host address (optional -- default: Tailscale address if present, else LAN)',
   'auth.bridge.enroll':            'Pair device',
   'auth.bridge.confirm':           'Pair "{name}"? It will get SSH-tunnel + its own device-key access to the dashboard.',
   'auth.bridge.working':           'Pairing...',

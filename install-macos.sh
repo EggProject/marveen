@@ -37,6 +37,12 @@ INSTALL_STEP="init"
 # shellcheck source=install-lang.sh
 source "$(dirname "$0")/install-lang.sh"
 
+# Error-translation layer (NPMPERM1 kor): minden stderr egy log-fajlba is
+# megy, hogy hibanal a trap ne csak sorszamot mondjon, hanem le tudja
+# forditani az upstream hibat (explain_install_error, install-lang.sh).
+INSTALL_ERRLOG=$(mktemp "${TMPDIR:-/tmp}/marveen-install-stderr.XXXXXX")
+exec 2> >(tee -a "$INSTALL_ERRLOG" >&2)
+
 ok() { echo -e "  ${GREEN}✓${NC} $*"; }
 warn() { echo -e "  ${ORANGE}!${NC} $*"; }
 
@@ -62,6 +68,7 @@ offer_claude_fallback() {
 
 fail() {
   echo -e "  ${RED}✗${NC} $*"
+  explain_install_error "${INSTALL_ERRLOG:-}"
   offer_claude_fallback "$INSTALL_STEP" "$*" "${BASH_LINENO[0]}"
   exit 1
 }
@@ -69,6 +76,7 @@ fail() {
 on_error() {
   echo ""
   echo -e "${RED}Varatlan hiba a(z) '${INSTALL_STEP}' lepesben (sor: $1).${NC}"
+  explain_install_error "${INSTALL_ERRLOG:-}"
   offer_claude_fallback "$INSTALL_STEP" "Unexpected error at line $1" "$1"
   exit 1
 }
@@ -94,6 +102,58 @@ echo ""
 # Step 1: Check prerequisites
 INSTALL_STEP="prerequisites"
 echo -e "${BOLD}$(_t section_1)${NC}"
+
+# ── macOS verzio pre-flight (MACOSOLD1) ──────────────────────────────
+# A fuggosegeket a Homebrew-ra bizzuk, a brew-nak viszont sajat macOS-
+# minimumai vannak. Regi gepen a brew portable-ruby-ja dyld-hibaval hal
+# (____chkstk_darwin, "your system version is too old"), es a felhasznalo
+# egy Ruby-linker hibat lat egy sorszammal (2026-07-30, eles workshop).
+# Itt, a legelso lepesben derul ki, ERTHETO mondattal es KIUTTAL.
+#
+# A kuszobok a Homebrew SAJAT deklaralt minimumai (brew.sh, Homebrew
+# 6.0.13, kiolvasva 2026-07-30):
+#   HOMEBREW_MACOS_OLDEST_ALLOWED="10.15"  -- ez alatt a brew el sem indul
+#   HOMEBREW_MACOS_OLDEST_SUPPORTED="14"   -- ez alatt "unsupported/best effort"
+# Uj brew-kiadasnal ezek valtozhatnak; a forras a brew repo brew.sh fajlja.
+BREW_OLDEST_ALLOWED="10.15"
+BREW_OLDEST_SUPPORTED="14"
+
+# major[.minor] numerikus osszehasonlitas: 0 ha $1 < $2 (sort -V nelkul,
+# a BSD sort -V viselkedesere nem epitunk).
+macos_version_lt() {
+  local a1 b1 a2 b2
+  a1=${1%%.*}; b1=${2%%.*}
+  a2=${1#*.}; [ "$a2" = "$1" ] && a2=0; a2=${a2%%.*}
+  b2=${2#*.}; [ "$b2" = "$2" ] && b2=0; b2=${b2%%.*}
+  [ "$a1" -lt "$b1" ] || { [ "$a1" -eq "$b1" ] && [ "$a2" -lt "$b2" ]; }
+}
+
+MACOS_VER=$(sw_vers -productVersion 2>/dev/null || echo "")
+if [ -z "$MACOS_VER" ]; then
+  # Ismeretlen allapot: kimondjuk, nem talalgatunk -- a telepites megy
+  # tovabb, es ha a brew bukik, a hibauzenete legalabb valodi lesz.
+  echo -e "  ${DIM}$(_t macos.ver_unknown)${NC}"
+elif macos_version_lt "$MACOS_VER" "$BREW_OLDEST_ALLOWED"; then
+  # VEGLEGES akadaly ezen a gepen: a Homebrew el sem indul ilyen regi
+  # macOS-en -- azonnal, ertheto mondattal allunk meg, kiuttal.
+  echo -e "${RED}$(_t macos.ver_too_old_head) ${MACOS_VER}${NC}"
+  echo -e "  $(_t macos.ver_too_old_body1)"
+  echo -e "  $(_t macos.ver_too_old_body2)"
+  fail "$(_t macos.ver_too_old_fail)"
+elif macos_version_lt "$MACOS_VER" "$BREW_OLDEST_SUPPORTED"; then
+  # Szurke sav: a brew "unsupported / best effort" -- tipikusan mukodik,
+  # de torhet. Nem hazudunk sem sikert, sem bukast: figyelmeztetunk, es a
+  # felhasznalo dont.
+  warn "$(_t macos.ver_unsupported_head) ${MACOS_VER}"
+  echo -e "  $(_t macos.ver_unsupported_body)"
+  read -rp "$(_t macos.ver_unsupported_prompt)" CONT_OLD_MACOS
+  CONT_OLD_MACOS=${CONT_OLD_MACOS:-i}
+  # hu prompt: i/n, en prompt: y/n -- mindket igen-alak elfogadva.
+  case "$CONT_OLD_MACOS" in
+    i|I|y|Y) : ;;
+    *) fail "$(_t macos.ver_unsupported_abort)" ;;
+  esac
+fi
 
 check_cmd() {
   if command -v "$1" &>/dev/null; then
@@ -165,9 +225,22 @@ if ! command -v claude &>/dev/null; then
   echo -e "${ORANGE}$(_t macos.install_claude_hint)${NC}"
   read -rp "$(_t prompt_install_claude)" INSTALL_CLAUDE
   if [[ "$INSTALL_CLAUDE" == "i" || "$INSTALL_CLAUDE" == "y" ]]; then
-    npm install -g @anthropic-ai/claude-code
+    # NPMPERM1: hivatalos nodejs.org .pkg-s (vagy Intel) gepen a globalis
+    # node_modules root-tulajdonu -- EACCES-szel halna. Pre-flight + kiut.
+    if ! ensure_global_npm_writable; then
+      fail "$(_t npm.aborted)"
+    fi
+    if [ "${NPM_NEEDS_SUDO:-}" = "1" ]; then
+      sudo npm install -g @anthropic-ai/claude-code
+    else
+      npm install -g @anthropic-ai/claude-code
+    fi
   else
-    fail "Claude Code CLI szukseges a futtatashoz. Telepitsd: npm install -g @anthropic-ai/claude-code"
+    # A javasolt parancs KULON, masolhato sorban -- egy workshop-resztvevo
+    # kezzel gepelte at es egyetlen karakteren (@ = AltGr) elbukott.
+    echo -e "  ${DIM}Telepitsd (masold ki az alabbi sort):${NC}"
+    echo "    npm install -g @anthropic-ai/claude-code"
+    fail "Claude Code CLI szukseges a futtatashoz."
   fi
 fi
 echo -e "  ${GREEN}✓${NC} Claude Code CLI"
@@ -834,7 +907,27 @@ echo -e "${BOLD}$(_t section_7)${NC}"
 PLIST_DIR="$HOME/Library/LaunchAgents"
 mkdir -p "$PLIST_DIR"
 
-NODE_PATH="$(which node)"
+# Pin launchd services to a stable Node 22 (brew node@22). Homebrew's generic
+# `node` symlink auto-upgrades to new majors (e.g. 26) whose ABI breaks the
+# prebuilt better-sqlite3 binary, preventing the dashboard from starting and the
+# dashboard token from ever being created. node@22 is keg-only, so a generic
+# `node` of any major can coexist -- we ensure node@22 is present and pin the
+# services directly to its keg path.
+NODE22_PREFIX="$(brew --prefix node@22 2>/dev/null || true)"
+if { [ -z "$NODE22_PREFIX" ] || [ ! -x "$NODE22_PREFIX/bin/node" ]; } && command -v brew &>/dev/null; then
+  echo -e "  ${ORANGE}node@22 telepitese a launchd szolgaltatasokhoz (ABI-stabil better-sqlite3)...${NC}"
+  brew install node@22 || true
+  NODE22_PREFIX="$(brew --prefix node@22 2>/dev/null || true)"
+fi
+if [ -n "$NODE22_PREFIX" ] && [ -x "$NODE22_PREFIX/bin/node" ]; then
+  NODE_PATH="$NODE22_PREFIX/bin/node"
+else
+  # Last-resort fallback: node@22 could not be installed (e.g. no brew). The
+  # services may still break on an ABI-incompatible node -- warn loudly.
+  NODE_PATH="$(which node)"
+  echo -e "  ${RED}Figyelem:${NC} node@22 nem elerheto, a szolgaltatasok ${NODE_PATH}-ra allnak. ABI-hiba eseten telepitsd: brew install node@22"
+fi
+NODE_BIN_DIR="$(dirname "$NODE_PATH")"
 # Launchd labels key off SERVICE_ID. SERVICE_ID == MAIN_AGENT_ID for a
 # brand-unaware (default) install, so these labels are unchanged unless the
 # operator picked a distinct brand above.
@@ -867,7 +960,7 @@ cat > "$PLIST_DIR/${DASHBOARD_PLIST}.plist" << PLISTEOF
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
-    <string>${HOME}/.local/bin:/opt/homebrew/bin:${HOME}/.bun/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <string>${NODE_BIN_DIR}:${HOME}/.local/bin:/opt/homebrew/bin:${HOME}/.bun/bin:/usr/local/bin:/usr/bin:/bin</string>
     <key>HOME</key>
     <string>${HOME}</string>
   </dict>
@@ -912,7 +1005,7 @@ cat > "$PLIST_DIR/${CHANNELS_PLIST}.plist" << PLISTEOF
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
-    <string>${HOME}/.local/bin:/opt/homebrew/bin:${HOME}/.bun/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <string>${NODE_BIN_DIR}:${HOME}/.local/bin:/opt/homebrew/bin:${HOME}/.bun/bin:/usr/local/bin:/usr/bin:/bin</string>
     <key>HOME</key>
     <string>${HOME}</string>
     <key>USER</key>

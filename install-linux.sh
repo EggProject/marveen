@@ -50,6 +50,7 @@ offer_claude_fallback() {
 
 fail() {
   echo -e "  ${RED}✗${NC} $*"
+  explain_install_error "${INSTALL_ERRLOG:-}"
   offer_claude_fallback "$INSTALL_STEP" "$*" "${BASH_LINENO[0]}"
   exit 1
 }
@@ -57,6 +58,7 @@ fail() {
 on_error() {
   echo ""
   echo -e "${RED}Varatlan hiba a(z) '${INSTALL_STEP}' lepesben (sor: $1).${NC}"
+  explain_install_error "${INSTALL_ERRLOG:-}"
   offer_claude_fallback "$INSTALL_STEP" "Unexpected error at line $1" "$1"
   exit 1
 }
@@ -120,6 +122,25 @@ echo ""
 echo -e "${DIM}  Telepito wizard - Linux (Ubuntu/Debian)${NC}"
 echo ""
 
+# ── WSLMNT1 vedohalo: /mnt/ ala klonozott repo ──────────────────────
+# WSL-ben a terminal gyakran a Windows-mappaban (/mnt/c/...) nyilik, es az
+# oda klonozott repon a git/npm chmod-muveletei "Operation not permitted"
+# hibakkal halnak (drvfs nem POSIX). A leggyakoribb elakadas MEG a klonnal
+# tortenik (a script el sem indul -- azt a README `cd ~`-ja fedi); ez a
+# check a MASODIK esetet fogja: a klon valahogy letrejott /mnt/ alatt, es
+# a telepito onnan indult. Ertheto mondat + masolhato kiut, sorszam helyett.
+case "$INSTALL_DIR" in
+  /mnt/*)
+    echo -e "${RED}A telepito a Windows-fajlrendszerrol fut (${INSTALL_DIR}).${NC}"
+    echo -e "  A /mnt/ alatti mappakon a git es az npm jogosultsag-muveletei nem mukodnek (WSL/drvfs) -- a telepites itt elhalna."
+    echo -e "  ${DIM}Kiut: klonozd a Linux home-ba, es onnan futtasd (masold az alabbi sorokat):${NC}"
+    echo "    cd ~"
+    echo "    git clone --branch main https://github.com/Szotasz/marveen.git"
+    echo "    cd marveen && ./install.sh"
+    exit 1
+    ;;
+esac
+
 INSTALL_STEP="prerequisites"
 # ─────────────────────────────────────────────
 # [1/7] Elofeltetelek
@@ -139,6 +160,69 @@ fi
 if [ -z "$PKG_MANAGER" ]; then
   fail "Nem tamogatott csomagkezelo. Ez a telepito apt-get (Debian/Ubuntu) vagy dnf/yum (Fedora/Nobara/RHEL) rendszert var."
 fi
+
+# ── apt lock kezeles (APTLOCK1) ──────────────────────────────────────
+# Friss Ubuntun/WSL-en az apt-daily / unattended-upgrades az elso percekben
+# MAGATOL elindul es fogja a dpkg zarolast, majd perceken belul elengedi. Ez
+# ATMENETI allapot: a helyes viselkedes a lathato varakozas, nem a hibauzenet
+# (2026-07-30, workshop: "Could not get lock /var/lib/dpkg/lock-frontend...
+# It is held by process 6250" -> "Varatlan hiba... (sor: 240)"). A harom
+# allapotot szethuzzuk: atmeneti (var), vegleges (lejart cap, nevesitett
+# holderrel), ismeretlen (nincs fuser -- kimondjuk, es a DPkg::Lock::Timeout
+# vedohalora hagyatkozunk).
+APT_LOCK_FILES="/var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock"
+APT_LOCK_WAIT_CAP=300   # 5 perc -- az apt-daily ennyi alatt tipikusan vegez
+# Vedohalo minden apt-get hivasra: az apt sajat, fcntl-szintu varakozasa arra
+# az esetre, ha a pre-flight utan, de a parancs elott ugrik be egy uj holder.
+APT_OPTS="-o DPkg::Lock::Timeout=180"
+
+# stdout: "<pid> <procnev>" ha valaki fogja barmelyik lockot; ures + exit 1 ha
+# szabad. fuser nelkul exit 2 = NEM TUDJUK megallapitani (ismeretlen allapot).
+apt_lock_holder() {
+  command -v fuser &>/dev/null || return 2
+  local l pid name
+  for l in $APT_LOCK_FILES; do
+    [ -e "$l" ] || continue
+    pid=$(sudo fuser "$l" 2>/dev/null | tr -s ' ' '\n' | grep -m1 '[0-9]' || true)
+    if [ -n "$pid" ]; then
+      name=$(ps -o comm= -p "$pid" 2>/dev/null || true)
+      echo "$pid ${name:-?}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+wait_for_apt_lock() {
+  local holder rc waited=0 interval=5
+  holder=$(apt_lock_holder); rc=$?
+  if [ "$rc" -eq 2 ]; then
+    # fuser nincs (minimal image) -- nem tudjuk MEGNEZNI, ki fogja a lockot.
+    # Ezt kimondjuk, es az APT_OPTS timeout-ja kezeli, ha tenyleg fogott.
+    echo -e "  ${DIM}$(_t linux.apt_lock_unknown)${NC}"
+    return 0
+  fi
+  [ "$rc" -ne 0 ] && return 0   # szabad
+  warn "$(_t linux.apt_lock_waiting_prefix) ${holder}"
+  echo -e "  ${DIM}$(_t linux.apt_lock_transient_hint)${NC}"
+  while [ "$waited" -lt "$APT_LOCK_WAIT_CAP" ]; do
+    sleep "$interval"; waited=$((waited + interval))
+    holder=$(apt_lock_holder); rc=$?
+    if [ "$rc" -ne 0 ]; then
+      ok "$(_t linux.apt_lock_freed_prefix) ${waited}s"
+      return 0
+    fi
+    if [ $((waited % 30)) -eq 0 ]; then
+      echo -e "  ${DIM}$(_t linux.apt_lock_still_prefix) ${holder} -- ${waited}s / ${APT_LOCK_WAIT_CAP}s${NC}"
+    fi
+  done
+  # Lejart a cap: ez mar nem "varjunk meg egy kicsit" -- nevesitett holderrel
+  # es kiuttal allunk meg, nem sorszammal.
+  echo -e "${RED}$(_t linux.apt_lock_timeout_head) ${holder}${NC}"
+  echo -e "  $(_t linux.apt_lock_timeout_body1)"
+  echo -e "  $(_t linux.apt_lock_timeout_body2)"
+  fail "$(_t linux.apt_lock_timeout_fail)"
+}
 
 # RAM check: npm build can fail on low-memory instances (e.g. t3.micro)
 if command -v free &>/dev/null; then
@@ -205,14 +289,15 @@ if [ -n "$MISSING_PKGS" ]; then
   warn "Hianyzo csomagok:$MISSING_PKGS"
   echo -e "  Telepites sudo-val ($PKG_MANAGER)..."
   if [ "$PKG_MANAGER" = "apt" ]; then
+    wait_for_apt_lock
     if echo "$MISSING_PKGS" | grep -q nodejs; then
       # A nodesource setup-script curl-t igenyel, de csupasz VPS-en (Debian
       # netinst) a curl maga is hianyozhat -- ilyenkor eloszor azt telepitjuk,
       # kulonben a repo-lepes neman kimarad, a disztro sajat (regebbi) nodejs-e
       # telepul, es Debianon az npm (kulon csomag) le se jon -> [1/7] fail.
       if ! command -v curl &>/dev/null; then
-        sudo apt-get update -qq || true
-        sudo apt-get install -y curl -qq || true
+        sudo apt-get $APT_OPTS update -qq || true
+        sudo apt-get $APT_OPTS install -y curl -qq || true
         hash -r
       fi
       echo -e "  Node.js v22 repo hozzaadasa (nodesource)..."
@@ -230,14 +315,14 @@ if [ -n "$MISSING_PKGS" ]; then
         # Fallback: disztro sajat nodejs-e. Debianon az npm kulon csomag,
         # a nodesource-bundle-lel ellentetben nem jon a nodejs-sel magatol.
         warn "nodesource repo hozzaadasa sikertelen -- a disztro sajat nodejs + npm csomagjat telepitem."
-        sudo apt-get update -qq
+        sudo apt-get $APT_OPTS update -qq
         MISSING_PKGS="$MISSING_PKGS npm"
       fi
     else
-      sudo apt-get update -qq
+      sudo apt-get $APT_OPTS update -qq
     fi
     # shellcheck disable=SC2086
-    sudo apt-get install -y $MISSING_PKGS -qq
+    sudo apt-get $APT_OPTS install -y $MISSING_PKGS -qq
   else
     # dnf/yum (Fedora/Nobara/RHEL). A disztro nodejs csomagja v20+ az aktualis
     # kiadasokon, es az npm-et is tartalmazza -- nincs szukseg kulso repora.
@@ -341,7 +426,14 @@ else
     ensure_in_rc 'DISABLE_AUTOUPDATER' 'export DISABLE_AUTOUPDATER=1'
     export DISABLE_AUTOUPDATER=1
     if command -v npm >/dev/null 2>&1; then
-      npm install -g "@anthropic-ai/claude-code@${CLAUDE_PIN}" || warn "npm install sikertelen (@${CLAUDE_PIN})."
+      # NPMPERM1: nodesource-os gepen a globalis node_modules root-tulajdonu
+      # lehet. Auto-mod: nem kerdez, sudo-ra valt lathato megjegyzessel.
+      ensure_global_npm_writable auto || true
+      if [ "${NPM_NEEDS_SUDO:-}" = "1" ]; then
+        sudo npm install -g "@anthropic-ai/claude-code@${CLAUDE_PIN}" || warn "npm install sikertelen (@${CLAUDE_PIN})."
+      else
+        npm install -g "@anthropic-ai/claude-code@${CLAUDE_PIN}" || warn "npm install sikertelen (@${CLAUDE_PIN})."
+      fi
     else
       warn "npm nem elerheto; a pinnelt hivatalos installert probalom (@${CLAUDE_PIN})."
       curl -fsSL https://claude.ai/install.sh | bash -s "${CLAUDE_PIN}" || warn "pinnelt install.sh sikertelen."
@@ -358,9 +450,11 @@ else
   else
     echo -e "  ${RED}HIBA:${NC} claude telepitve, de nem indul (valoszinuleg AVX-hianyos CPU + Bun-binary)."
     if command -v npm >/dev/null 2>&1; then
-      echo -e "  ${DIM}Probald manualisan: npm install -g @anthropic-ai/claude-code@${CLAUDE_PIN}${NC}"
+      echo -e "  ${DIM}Probald manualisan (masold ki az alabbi sort):${NC}"
+      echo "    npm install -g @anthropic-ai/claude-code@${CLAUDE_PIN}"
     else
-      echo -e "  ${DIM}Telepits nvm+node-ot, majd: npm install -g @anthropic-ai/claude-code@${CLAUDE_PIN}${NC}"
+      echo -e "  ${DIM}Telepits nvm+node-ot, majd (masold ki az alabbi sort):${NC}"
+      echo "    npm install -g @anthropic-ai/claude-code@${CLAUDE_PIN}"
     fi
   fi
 fi
