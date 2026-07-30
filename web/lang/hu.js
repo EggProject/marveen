@@ -1519,6 +1519,7 @@ window._i18n.hu = {
   'onboarding.step1.saved_restart_failed': 'A token elmentve, de az ügynök újraindítása nem sikerült. Indítsd újra kézzel (Linux: systemctl --user restart marveen-channels), aztán térj vissza ide.',
   'onboarding.step1.launching':  'Indítás...',
   'onboarding.step1.launched':   'Ügynökök indítása folyamatban...',
+  'onboarding.step1.launch_slow':'Az ügynökök még nem álltak fel a várt időn belül. Lassabb gépen a hidegindítás pár percig is eltarthat: várj egy kicsit, majd frissítsd az oldalt. Ha 10 perc után sincs változás, nézd meg a store/channels-failures.log fájlt.',
   'onboarding.step2.tab':        'Telegram bot',
   'onboarding.step2.desc':       'Add meg a Telegram bot tokenjét (a BotFather-től).',
   'onboarding.step2.token_label':'Telegram bot token',
