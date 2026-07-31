@@ -566,6 +566,9 @@ export async function tryHandleAgents(ctx: RouteContext, webDir: string): Promis
         { id: 'claude-opus-4-8[1m]', label: 'Opus 4.8 (1M kontextus)' },
         { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5 (leggyorsabb)' },
       ],
+      minimax: [
+        {id:'MiniMax-M3[1m]',label:'MiniMax-M3[1m]'},
+      ],
       deepseek: hasDeepseek
         ? [
             { id: 'deepseek-v4-pro', label: 'DeepSeek-V4-Pro (1M kontextus, erősebb)' },

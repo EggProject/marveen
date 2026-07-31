@@ -13,7 +13,7 @@
 // (a zero-import module) so the registry default and the boot-time constant in
 // config.ts cannot drift apart -- bumping the distribution default is a
 // one-line change in exactly one place.
-export const DISTRIBUTION_DEFAULT_AGENT_MODEL = 'claude-opus-4-8[1m]'
+export const DISTRIBUTION_DEFAULT_AGENT_MODEL = 'MiniMax-M3[1m]'
 
 export type SettingType = 'int' | 'string' | 'color' | 'boolean'
 
@@ -425,6 +425,7 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
       'claude-fable-5',
       'claude-opus-4-8[1m]',
       'claude-haiku-4-5-20251001',
+      'MiniMax-M3[1m]'
     ],
   },
 ]

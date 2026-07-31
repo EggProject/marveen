@@ -21,13 +21,13 @@ export const DEFAULT_MODEL = DEFAULT_AGENT_MODEL
 
 // Map short model names to full Claude model IDs (backwards compat with old configs)
 export const MODEL_ALIASES: Record<string, string> = {
-  'opus': 'claude-opus-4-8[1m]',
-  'sonnet': 'claude-sonnet-5',
-  'sonnet-5': 'claude-sonnet-5',
-  'sonnet5': 'claude-sonnet-5',
-  'opus-5': 'claude-opus-5',
-  'opus5': 'claude-opus-5',
-  'haiku': 'claude-haiku-4-5-20251001',
+  'opus': 'MiniMax-M3[1m]',
+  'sonnet': 'MiniMax-M3[1m]',
+  'sonnet-5': 'MiniMax-M3[1m]',
+  'sonnet5': 'MiniMax-M3[1m]',
+  'opus-5': 'MiniMax-M3[1m]',
+  'opus5': 'MiniMax-M3[1m]',
+  'haiku': 'MiniMax-M3[1m]',
   'inherit': DEFAULT_MODEL,
 }
 
