@@ -638,8 +638,10 @@ echo -e "  ${DIM}Headless Claude Code teszt...${NC}"
 # assignment, not the pipeline inside the substitution (measured). Dropping the
 # pipe entirely is the only form that reports claude's own status; the output is
 # truncated afterwards in the shell.
-CLAUDE_PROBE_OUT=$(claude --print "ping" 2>&1)
-CLAUDE_PROBE_EXIT=$?
+# The `&& ... || ...` guard is what keeps a failing probe out of the ERR trap:
+# the trap fires regardless of the errexit setting and on_error() exits 1, so an
+# unguarded capture aborted the installer instead of reaching the branch below.
+CLAUDE_PROBE_OUT=$(claude --print "ping" 2>&1) && CLAUDE_PROBE_EXIT=0 || CLAUDE_PROBE_EXIT=$?
 CLAUDE_PROBE_OUT=${CLAUDE_PROBE_OUT:0:200}
 if [ "$CLAUDE_PROBE_EXIT" -eq 0 ] && [ -n "$CLAUDE_PROBE_OUT" ]; then
   ok "Az OPERATOR shelljebol futtathato a Claude Code (\`claude --print\` valaszolt)"
@@ -990,16 +992,16 @@ else
   _probe_out=""
   _probe_rc=1
   if command -v claude >/dev/null 2>&1; then
+    # A 401 here is the VERDICT this gate exists to report, not an installer
+    # error -- see the guard rationale above the operator-shell probe.
     if [ -n "$_svc_token" ]; then
       _probe_out="$(env -i PATH="$PATH" HOME="$HOME" CLAUDE_CONFIG_DIR="$_probe_cfg" \
         CLAUDE_CODE_OAUTH_TOKEN="$_svc_token" \
-        claude --print "ping" 2>&1)"
-      _probe_rc=$?
+        claude --print "ping" 2>&1)" && _probe_rc=0 || _probe_rc=$?
     else
       _probe_out="$(env -i PATH="$PATH" HOME="$HOME" CLAUDE_CONFIG_DIR="$_probe_cfg" \
         ANTHROPIC_API_KEY="$_svc_apikey" \
-        claude --print "ping" 2>&1)"
-      _probe_rc=$?
+        claude --print "ping" 2>&1)" && _probe_rc=0 || _probe_rc=$?
     fi
     _probe_out=${_probe_out:0:200}
     if [ "$_probe_rc" -eq 0 ] && [ -n "$_probe_out" ]; then
@@ -1680,8 +1682,31 @@ fi
 SVCFAIL=0
 if pidof systemd >/dev/null 2>&1 && systemctl --user status >/dev/null 2>&1; then
   systemctl --user daemon-reload
-  systemctl --user enable "${DASH_UNIT}" "${CHAN_UNIT}" "${MORN_UNIT}.timer" "${SERVICE_ID}-host-watchdog.service" 2>/dev/null || true
-  ok "systemd unitok generalva es engedelyezve"
+  # The green tick used to print unconditionally after a `|| true`, so a failed
+  # enable was reported as success -- the visible version of the same defect the
+  # macOS branch had. `if` rather than `&&`: a failing enable inside an if
+  # CONDITION is exempt from errexit and from the ERR trap, so the installer
+  # reports it instead of dying on it.
+  if systemctl --user enable "${DASH_UNIT}" "${CHAN_UNIT}" "${MORN_UNIT}.timer" "${SERVICE_ID}-host-watchdog.service" 2>/dev/null; then
+    ok "systemd unitok generalva es engedelyezve"
+  else
+    warn "A unit-fajlok elkeszultek, de az engedelyezesuk nem sikerult -- ujrainditas utan a szolgaltatasok nem indulnak el maguktol."
+    # ALL FOUR units the enable above covers, not just the two services. A
+    # command that silently drops the timer and the watchdog would leave them
+    # disabled while the operator sees no error and believes the fix worked --
+    # an incomplete instruction ends the same way as a false claim.
+    # The label gets its own line. With "Javitas most:" in front of the command,
+    # the backslashes join all three printed lines into ONE command whose first
+    # token is `Javitas`, so a pasted block fails with "Javitas: command not
+    # found" and enables nothing. Measured by rendering the block and running it.
+    # `bash -n` does NOT catch this: the pasted text is valid shell, just a
+    # different command than the one we meant to offer. Same shape as
+    # install-macos.sh, where the label is already on its own line.
+    echo -e "  ${DIM}Javitas most:${NC}"
+    echo -e "  ${DIM}systemctl --user enable \\${NC}"
+    echo -e "  ${DIM}    ${DASH_UNIT} ${CHAN_UNIT} \\${NC}"
+    echo -e "  ${DIM}    ${MORN_UNIT}.timer ${SERVICE_ID}-host-watchdog.service${NC}"
+  fi
   systemctl --user start "${DASH_UNIT}" "${CHAN_UNIT}" 2>/dev/null || true
   sleep 2
   for svc in "${DASH_UNIT}" "${CHAN_UNIT}"; do
