@@ -56,8 +56,8 @@ MAX_ESCAPES=4                                  # ensure_modal_closed bound
 # Respawn target plugin: config-overridable so a non-default install (renamed or
 # locally-built plugin) is never respawned with a WRONG plugin id -- a mismatch
 # makes claude exit immediately while the alert would falsely say "respawned".
-# %q-quoted at interpolation (like the model id), so a hostile value can't break
-# out of the respawn shell-string.
+# The plugin id flows into the JSON spec via jq --arg (which handles shell
+# quoting), so a hostile value cannot break out of the respawn command string.
 RESPAWN_PLUGIN="${STUCK_MODAL_PLUGIN:-plugin:telegram@claude-plugins-official}"
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') [$LOG_TAG] $*" || true; }
@@ -237,28 +237,34 @@ run_guard() {
     return 0
   fi
 
-  local MAIN_MODEL="" MODEL_FLAG="" CLAUDE_Q
+  # Model id is sanitized before interpolation into the JSON spec consumed by
+  # scripts/claude-launch.sh. The shim re-quotes the value with shellSingleQuote
+  # (byte-equal to the TS shQuote helper), so the %q-quoting dance that the old
+  # in-script respawn-string build needed is no longer required here.
+  local MAIN_MODEL=""
   if [ -f "$INSTALL_DIR/.claude/settings.json" ] && command -v jq >/dev/null 2>&1; then
     MAIN_MODEL="$(jq -r '.model // empty' "$INSTALL_DIR/.claude/settings.json" 2>/dev/null)"
   fi
-  # W1: sanitize the model id before interpolating it into the respawn shell
-  # string (defense in depth -- settings.json is local config). Preserves the
-  # "[1m]" context suffix while stripping shell metacharacters.
+  # W1: sanitize the model id (defense in depth -- settings.json is local config).
+  # Preserves the "[1m]" context suffix while stripping shell metacharacters.
   MAIN_MODEL="$(sanitize_model "$MAIN_MODEL")"
-  # W1/I: %q-quote the (already-sanitized) model id too, so MODEL_FLAG stays safe
-  # even if the sanitizer charset ever widens. Same treatment as CLAUDE_Q.
-  [ -n "$MAIN_MODEL" ] && MODEL_FLAG="--model $(printf '%q' "$MAIN_MODEL") "
-  # W4: %q-quote the claude path so a path with spaces/specials can't break out
-  # of the respawn command string.
-  CLAUDE_Q="$(printf '%q' "$CLAUDE")"
-  # W2: %q-quote the (config-overridable) plugin id, same treatment as the model.
-  local PLUGIN_Q; PLUGIN_Q="$(printf '%q' "$RESPAWN_PLUGIN")"
-  local RESPAWN_CMD="export PATH=\"/opt/homebrew/bin:\$HOME/.bun/bin:/home/linuxbrew/.linuxbrew/bin:\$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin\" && $CLAUDE_Q --dangerously-skip-permissions ${MODEL_FLAG}--channels $PLUGIN_Q"
 
   log "stuck modal not cleared by Escape -- respawn-pane $SESSION (respawn #$((count+1)))"
   # G: alert ONLY after the respawn-pane actually succeeds, so a failed respawn
   # never sends the owner a false "respawned" message.
-  if [ -n "$CLAUDE" ] && "$TMUX_BIN" respawn-pane -k -t "$SESSION" "$RESPAWN_CMD" 2>/dev/null; then
+  CLAUDE_LAUNCH_SPEC="$(mktemp)"
+  trap 'rm -f "$CLAUDE_LAUNCH_SPEC"' EXIT
+  jq -n \
+    --arg session "$SESSION" \
+    --arg claudePath "$CLAUDE" \
+    --arg cwd "$INSTALL_DIR" \
+    --arg model "${MAIN_MODEL:-}" \
+    --arg pluginId "$RESPAWN_PLUGIN" \
+    '{site: "stuck_modal", session: $session, claudePath: $claudePath, cwd: $cwd, host: {kind: "local"}, tmuxSubcommand: "respawnPane", model: (if $model == "" then null else $model end), pluginId: $pluginId, mcpBatch: "none", promptSuggestionGuard: false, scrubChannelTokens: false, detectSandbox: false, detectAvxLess: false, pathPreset: "linux", pathTrailingInherit: false, followups: {}}' \
+    > "$CLAUDE_LAUNCH_SPEC"
+  if [ -n "$CLAUDE" ] && bash "$INSTALL_DIR/scripts/claude-launch.sh" "$CLAUDE_LAUNCH_SPEC" 2>/dev/null; then
+    rm -f "$CLAUDE_LAUNCH_SPEC"
+    trap - EXIT
     date +%s > "$RESPAWN_STAMP" 2>/dev/null || true
     echo $(( count + 1 )) > "$RESPAWN_COUNT_FILE" 2>/dev/null || true
     rm -f "$FIRSTSEEN_STAMP" 2>/dev/null || true

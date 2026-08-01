@@ -1,0 +1,6 @@
+{
+  "site": "site-11-channel-watchdog",
+  "description": "Main recovery respawn-pane (scripts/channel-watchdog.sh:211) — STALE/AUTHDEAD detector recovery, isolated main config dir, no trailing PATH.",
+  "currentCmd": "export PATH=\"/opt/homebrew/bin:$HOME/.bun/bin:/home/linuxbrew/.linuxbrew/bin:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin\" && export CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false && export CLAUDE_CONFIG_DIR='/Users/eggp/marveen/.channels-config' && export CLAUDE_CODE_OAUTH_TOKEN=\"$(cat '/Users/eggp/marveen/store/.claude-oauth-token')\" && cd '/Users/eggp/marveen' && /opt/homebrew/bin/claude --dangerously-skip-permissions --model 'MiniMax-M3[1m]' --channels plugin:'telegram@claude-plugins-official'",
+  "expectedTmuxArgs": ["respawn-pane", "-k", "-t", "marveen-channels", "export PATH=\"/opt/homebrew/bin:$HOME/.bun/bin:/home/linuxbrew/.linuxbrew/bin:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin\" && export CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false && export CLAUDE_CONFIG_DIR='/Users/eggp/marveen/.channels-config' && export CLAUDE_CODE_OAUTH_TOKEN=\"$(cat '/Users/eggp/marveen/store/.claude-oauth-token')\" && cd '/Users/eggp/marveen' && /opt/homebrew/bin/claude --dangerously-skip-permissions --model 'MiniMax-M3[1m]' --channels plugin:'telegram@claude-plugins-official'"]
+}

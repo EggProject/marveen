@@ -49,6 +49,7 @@ import { decideDownAgentAction, AGENT_MAX_RESTART_ATTEMPTS, parseEtimeToSeconds 
 // module so the standalone channel-coordinator reuses the exact same probe.
 import { getClaudePidForSession, hasChannelPluginAlive, probeChannelPluginLiveness } from '../channel-coordinator/liveness.js'
 import { getDesiredAgents } from './agent-desired-state.js'
+import { buildClaudeLaunchSpec, respawnClaudePane, runTmuxInvocation, buildClaudeLaunchCmd } from './claude-launch.js'
 
 const TMUX = resolveFromPath('tmux')
 const CLAUDE = resolveFromPath('claude')
@@ -518,10 +519,52 @@ function readConfiguredMainModel(): string {
   }
 }
 
+// Backwards-compat shim for the legacy buildMainSessionRespawnCmd helper that
+// the foundation-era contract test still imports. The launch logic now lives in
+// claude-launch.ts (buildClaudeLaunchSpec + respawnClaudePane); this shim
+// expresses the SAME legacy options in a ClaudeLaunchSpec and returns the cmd
+// string the legacy helper produced. Kept ONLY so the existing test suite
+// continues to compile (the migration task forbids modifying tests); every
+// production call site has been migrated to the new spec.
+export function buildMainSessionRespawnCmd(opts: {
+  claudePath: string
+  pluginId: string
+  model: string
+  continueSession: boolean
+  isolatedConfigDir?: string | null
+  fleetToken?: boolean
+  extraPluginIds?: string[]
+}): string {
+  const spec = buildClaudeLaunchSpec({
+    site: 'site-2-stage1',
+    session: 'compat-shim',
+    claudePath: opts.claudePath,
+    cwd: PROJECT_ROOT,
+    host: { kind: 'local' },
+    tmuxSubcommand: 'respawnPane',
+    model: opts.model,
+    continueSession: opts.continueSession,
+    pluginId: opts.pluginId,
+    extraPluginIds: opts.extraPluginIds ?? [],
+    isolatedConfigDir: opts.isolatedConfigDir ?? undefined,
+    fleetOauthToken: (opts.fleetToken || opts.isolatedConfigDir) ? { path: FLEET_OAUTH_TOKEN_PATH, read: 'cat' } : undefined,
+    cwdAsCd: false,
+    mcpBatch: 'always',
+    promptSuggestionGuard: true,
+    scrubChannelTokens: false,
+    detectSandbox: false,
+    detectAvxLess: false,
+    pathPreset: 'linux',
+    pathTrailingInherit: true,
+    followups: {},
+  })
+  return buildClaudeLaunchCmd(spec).cmd
+}
+
 // Secondary channel plugins the main session co-listens on, read from .env
 // CHANNEL_PLUGINS_EXTRA (space-separated plugin ids) exactly as scripts/channels.sh
-// derives its EXTRA_CHANNELS. Kept OUT of buildMainSessionRespawnCmd so that stays
-// pure for the contract test; every respawn call site must pass the result through.
+// derives its EXTRA_CHANNELS. Every respawn call site must pass the result through
+// spec.extraPluginIds so the respawned session co-listens on every provider.
 //
 // Why this exists: a respawn that omits the extras comes up on the PRIMARY provider
 // only, which is a HALF-mute -- outbound still works (the plugin's MCP reply tool is
@@ -543,74 +586,6 @@ export function readExtraChannelPluginIds(projectRoot: string = PROJECT_ROOT): s
   }
 }
 
-// Build the claude command used to (re)spawn the main channels session via
-// `tmux respawn-pane`. Pure + exported so the contract test can LOCK the
-// presence of the `$HOME/.bun/bin` PATH export (without it the respawned bun
-// telegram bridge can't be found and the session comes up channel-less). The
-// PATH and flags mirror scripts/channels.sh. `continueSession` resumes the
-// prior conversation (stage-3 recovery) vs a clean start (hard restart).
-//
-// NOTE: inbound from `--channels` also goes through the allowlist at
-// /etc/claude-code/managed-settings.json (allowedChannelPlugins); a plugin not
-// listed there has its MCP notifications silently dropped. See channels.sh.
-export function buildMainSessionRespawnCmd(opts: {
-  claudePath: string
-  pluginId: string
-  model: string
-  continueSession: boolean
-  /**
-   * When set (macOS main-agent isolation on), the respawn exports this isolated
-   * CLAUDE_CONFIG_DIR plus the fleet setup-token -- parity with channels.sh CFG_ENV.
-   * Without it the RECOVERY respawn brings the main agent up on the shared
-   * ~/.claude, which on macOS authenticates from the rotating Keychain OAuth
-   * session and periodically 401s ("Please run /login"). null/undefined => keep
-   * the shared root (unchanged behaviour for installs with isolation off).
-   */
-  isolatedConfigDir?: string | null
-  /**
-   * When true (fleet setup-token file present) and there is NO isolated config
-   * dir, the respawn still exports CLAUDE_CODE_OAUTH_TOKEN from the fleet token
-   * file. On Linux the isolatedConfigDir is always null (macOS-only), so before
-   * this leg a wizard-entered token never reached a respawned main session at
-   * all -- it fell back to ~/.claude/.credentials.json (2026-07-15 bootcamp,
-   * bug 2 latent path). Keeps main + sub-agents on the SAME auth source.
-   */
-  fleetToken?: boolean
-  /**
-   * Secondary plugin ids to co-listen on alongside `pluginId`, from
-   * readExtraChannelPluginIds(). Omitting them is what silently half-mutes every
-   * non-primary channel after a recovery respawn -- see that helper's comment.
-   */
-  extraPluginIds?: string[]
-}): string {
-  return [
-    'export PATH="/opt/homebrew/bin:$HOME/.bun/bin:/home/linuxbrew/.linuxbrew/bin:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH"',
-    // MCP startup-batch tuning (parity with channels.sh + startAgentProcess):
-    // the --channels plugin is a stdio MCP server; the main session runs the
-    // most MCP servers (filesystem/playwright/chrome + claude.ai connectors +
-    // the plugin), so without these the channel plugin can be starved out of
-    // the default 3-wide blocking startup batch and never register a poller.
-    // This respawn-pane path is the RECOVERY launcher -- it must tune the same
-    // env as the channels.sh boot path, else a recovery respawn comes up
-    // un-tuned and can re-starve under load.
-    '&& export MCP_SERVER_CONNECTION_BATCH_SIZE=10 MCP_CONNECTION_NONBLOCKING=1 MCP_TIMEOUT=60000',
-    // macOS main-agent config isolation -- parity with channels.sh CFG_ENV. The
-    // token is read at launch via $(cat) so the secret never lands in argv/`ps`.
-    ...(opts.isolatedConfigDir
-      ? [`&& export CLAUDE_CONFIG_DIR='${opts.isolatedConfigDir}' && export CLAUDE_CODE_OAUTH_TOKEN="$(cat '${FLEET_OAUTH_TOKEN_PATH}')"`]
-      : opts.fleetToken
-        ? [`&& export CLAUDE_CODE_OAUTH_TOKEN="$(cat '${FLEET_OAUTH_TOKEN_PATH}')"`]
-        : []),
-    '&&', opts.claudePath,
-    ...(opts.continueSession ? ['--continue'] : []),
-    '--dangerously-skip-permissions',
-    // Single-quote the model id so a value like `claude-opus-4-8[1m]` is not
-    // glob-expanded by the shell that tmux respawn-pane spawns the command in.
-    ...(opts.model ? ['--model', `'${opts.model}'`] : []),
-    [`--channels plugin:${opts.pluginId}`, ...(opts.extraPluginIds ?? []).map((p) => `plugin:${p}`)].join(' '),
-  ].join(' ')
-}
-
 // FRESH respawn of the main channels session, for hosts with no launchd.
 //
 // Exported for the scheduled auto-restart (auto-restart-runner.ts), whose macOS
@@ -627,47 +602,51 @@ export function respawnMainSessionFresh(): void {
   const provider = getProvider(getMainAgentProvider())
   // Same rationale as the resume path: respawn-pane -k kills the parent claude
   // but leaves grandchild pollers alive, and two pollers on one bot token race
-  // for getUpdates (409). Reap BEFORE respawning, never after.
-  try {
-    reapChannelOrphans(provider.type, PROJECT_ROOT)
-  } catch (err) {
-    logger.warn({ err }, 'respawnMainSessionFresh: pre-respawn reap failed (continuing)')
-  }
-  try {
-    reapDetachedChannelClaudes({ tmuxPath: TMUX })
-  } catch (err) {
-    logger.warn({ err }, 'respawnMainSessionFresh: detached-claude reap failed (continuing)')
-  }
-  ensureSharedClaudeOnboarded()
-
-  const claudeCmd = buildMainSessionRespawnCmd({
+  // for getUpdates (409). Reap BEFORE respawning, never after. The reap+onboard
+  // side effects are now driven by spec.followups.reapOrphans and
+  // spec.followups.reSeedOnboarding inside respawnClaudePane, so this function
+  // is a single call away from the respawn cmd.
+  const spec = buildClaudeLaunchSpec({
+    site: 'site-2-stage1',
+    session: MAIN_CHANNELS_SESSION,
     claudePath: CLAUDE,
+    cwd: PROJECT_ROOT,
+    host: { kind: 'local' },
+    tmuxSubcommand: 'respawnPane',
+    model: readConfiguredMainModel(),
+    continueSession: false,
     pluginId: provider.pluginId,
     extraPluginIds: readExtraChannelPluginIds(),
-    model: readConfiguredMainModel(),
-    // The main session always starts a new conversation -- this is the whole
-    // point of the nightly restart (drop the accumulated context).
-    continueSession: false,
-    isolatedConfigDir: ensureMainAgentIsolatedConfigDir(),
-    fleetToken: hasFleetOauthToken(),
+    isolatedConfigDir: ensureMainAgentIsolatedConfigDir() ?? undefined,
+    fleetOauthToken: (hasFleetOauthToken() || ensureMainAgentIsolatedConfigDir()) ? { path: FLEET_OAUTH_TOKEN_PATH, read: 'cat' } : undefined,
+    cwdAsCd: false,
+    mcpBatch: 'always',
+    promptSuggestionGuard: true,
+    scrubChannelTokens: false,
+    detectSandbox: false,
+    detectAvxLess: false,
+    pathPreset: 'linux',
+    pathTrailingInherit: true,
+    followups: {
+      writeRespawnStamp: true,
+      identitySetup: { displayName: BOT_NAME },
+      pluginUnlock: true,
+      postResumePluginGuard: false,
+      dismissResumeSummaryModal: false,
+      reapOrphans: 'channel-both',
+      reSeedOnboarding: true,
+      startChannelsStartupGuard: false,
+      keepaliveTouch: false,
+      telegramBotMenu: false,
+      channelsFailureLog: false,
+      logClaudeVersion: false,
+      onFailureLog: 'hard restart failed: tmux respawn-pane failed',
+    },
   })
-  execFileSync(TMUX, ['respawn-pane', '-k', '-t', MAIN_CHANNELS_SESSION, claudeCmd], { timeout: 15000 })
-  // Stamp IMMEDIATELY after the respawn, before the scheduling follow-ups.
-  // The stamp is a coordination contract, not bookkeeping: five watchers read
-  // lastMainRespawnAt() / store/.channel-last-respawn and suppress themselves
-  // during the grace window -- including the systemd-timer channel-watchdog,
-  // a separate process that can ONLY see the file. Without it, the ~35-90s
-  // cold-boot window while plugins unlock looks to them like a dead session,
-  // and they can respawn on top of one that is still coming up.
-  writeRespawnStamp()
-
+  void respawnClaudePane(spec, { provider: provider.type, agentDir: PROJECT_ROOT }).then((r) => {
+    if (!r.ok) logger.error({ error: r.error }, 'channel-monitor respawnMainSessionFresh failed')
+  })
   logger.warn({ provider: provider.type }, 'Main session respawned FRESH (scheduled auto-restart)')
-  // The respawned claude is a brand-new process: it has neither the /name
-  // identity nor a guaranteed-loaded channel plugin. Both follow-ups mirror the
-  // resume path; skipping them is how a restarted session comes back nameless
-  // or with the plugin stuck in `◯ disabled`.
-  void scheduleIdentitySetup(MAIN_CHANNELS_SESSION, BOT_NAME)
-  schedulePluginUnlockAfterRespawn(MAIN_CHANNELS_SESSION, provider.type)
 }
 
 // Exported so the stuck-tool-call-watcher recovers a wedged main session via
@@ -680,104 +659,53 @@ export function respawnMainSessionFresh(): void {
 export async function resumeMarveenSession(): Promise<boolean> {
   const provider = getProvider(getMainAgentProvider())
   try {
-    // Reap any orphan bun/node poller BEFORE we respawn. tmux respawn-pane -k
-    // kills the parent claude process but leaves grandchild pollers running -
-    // see channel-poller-reap.ts. Without this, the freshly-respawned
-    // --continue session would race a still-alive poller for the same bot
-    // token (409 Conflict on getUpdates).
-    try {
-      reapChannelOrphans(provider.type, PROJECT_ROOT)
-    } catch (err) {
-      logger.warn({ err }, 'resumeMarveenSession: pre-respawn reap failed (continuing)')
-    }
-
-    // Also reap DETACHED main-session claudes. reapChannelOrphans (env-scan)
-    // cannot see the main session: channels.sh launches it without a
-    // *_STATE_DIR export, so neither the claude nor its bun poller match the
-    // env needle, and bot.pid is never written. A --continue respawn that did
-    // not tear down the prior claude leaves it detached (reparented to the tmux
-    // server) with a live poller hammering the shared token. Pane attribution
-    // spares the live session (this pane) and kills only the leftovers.
-    // See project_channels_continue_respawn_leak.
-    try {
-      reapDetachedChannelClaudes({ tmuxPath: TMUX })
-    } catch (err) {
-      logger.warn({ err }, 'resumeMarveenSession: detached-claude reap failed (continuing)')
-    }
-
-    // A respawn onto the shared ~/.claude parks on the first-run "Select login
-    // method" picker when ~/.claude.json lost hasCompletedOnboarding (2026-07-15
-    // bootcamp mass-"/login"); idempotent re-seed before every respawn.
-    ensureSharedClaudeOnboarded()
-
-    const claudeCmd = buildMainSessionRespawnCmd({
+    // Reap + onboarding re-seed are now driven by spec.followups.reapOrphans +
+    // spec.followups.reSeedOnboarding inside respawnClaudePane (single source
+    // of truth shared with respawnMainSessionFresh). The duplicate modal-dismiss
+    // blocks below collapsed into spec.followups.dismissResumeSummaryModal.
+    const spec = buildClaudeLaunchSpec({
+      site: 'site-3-stage3',
+      session: MAIN_CHANNELS_SESSION,
       claudePath: CLAUDE,
-      pluginId: provider.pluginId,
-      extraPluginIds: readExtraChannelPluginIds(),
+      cwd: PROJECT_ROOT,
+      host: { kind: 'local' },
+      tmuxSubcommand: 'respawnPane',
       model: readConfiguredMainModel(),
       continueSession: true,
-      // Parity with channels.sh: a recovery respawn must also land on the
-      // isolated CLAUDE_CONFIG_DIR (macOS), else it re-authenticates from the
-      // rotating Keychain and 401s. Returns null when isolation is off/no token,
-      // preserving the prior shared-root behaviour.
-      isolatedConfigDir: ensureMainAgentIsolatedConfigDir(),
-      fleetToken: hasFleetOauthToken(),
+      pluginId: provider.pluginId,
+      extraPluginIds: readExtraChannelPluginIds(),
+      isolatedConfigDir: ensureMainAgentIsolatedConfigDir() ?? undefined,
+      fleetOauthToken: (hasFleetOauthToken() || ensureMainAgentIsolatedConfigDir()) ? { path: FLEET_OAUTH_TOKEN_PATH, read: 'cat' } : undefined,
+      cwdAsCd: false,
+      mcpBatch: 'always',
+      promptSuggestionGuard: true,
+      scrubChannelTokens: false,
+      detectSandbox: false,
+      detectAvxLess: false,
+      pathPreset: 'linux',
+      pathTrailingInherit: true,
+      followups: {
+        writeRespawnStamp: true,
+        identitySetup: { displayName: BOT_NAME },
+        pluginUnlock: true,
+        postResumePluginGuard: true,
+        dismissResumeSummaryModal: true,
+        reapOrphans: 'channel-both',
+        reSeedOnboarding: true,
+        startChannelsStartupGuard: false,
+        keepaliveTouch: false,
+        telegramBotMenu: false,
+        channelsFailureLog: false,
+        logClaudeVersion: false,
+        onFailureLog: 'hard restart failed: tmux respawn-pane failed',
+      },
     })
-    execFileSync(TMUX, ['respawn-pane', '-k', '-t', MAIN_CHANNELS_SESSION, claudeCmd], { timeout: 15000 })
-
-    // --continue replays the last conversation. When the prior session is large
-    // (>200k tokens) Claude Code opens with a "Resume from summary" modal that
-    // parks the prompt - the plugin never reaches inbound-ready and stage 3
-    // silently times out into stage 4. The agent-process startup path already
-    // dismisses this modal; we mirror it here for the resume path.
-    try {
-      await delay(2000)
-      await dismissResumeSummaryModalIfPresent(MAIN_CHANNELS_SESSION)
-    } catch (err) {
-      logger.warn({ err }, 'resumeMarveenSession: post-respawn modal dismiss failed (continuing)')
+    const r = await respawnClaudePane(spec, { provider: provider.type, agentDir: PROJECT_ROOT })
+    if (!r.ok) {
+      logger.error({ error: r.error }, 'Marveen session respawn failed')
+      return false
     }
-
-    // --continue replays the last conversation. When the prior session is
-    // large (>200k tokens) Claude Code opens with a "Resume from summary"
-    // modal that parks the prompt - the plugin never reaches the inbound-
-    // ready state, detectPaneState stays 'unknown', and stage 3 silently
-    // times out into stage 4. The agent-process startup path already dismisses
-    // this modal; we do the same here so the resume path matches.
-    try {
-      await delay(2000)
-      await dismissResumeSummaryModalIfPresent(MAIN_CHANNELS_SESSION)
-    } catch (err) {
-      logger.warn({ err }, 'resumeMarveenSession: post-respawn modal dismiss failed (continuing)')
-    }
-
     logger.warn({ provider: provider.type }, 'Marveen session respawned with --continue')
-    // Re-establish /name on the brand-new claude process (the prior session's
-    // identity is gone after respawn-pane; channels.sh sets it on a normal
-    // start). /remote-control was dropped (the operator no longer uses it).
-    // scheduleIdentitySetup only SCHEDULES delayed timers and returns immediately;
-    // fire-and-forget (void) is correct here -- there is nothing to await.
-    void scheduleIdentitySetup(MAIN_CHANNELS_SESSION, BOT_NAME)
-    // channels.sh runs an /mcp+Up+Enter+Enter unlock probe after launching
-    // the main session to revive a Failed/disabled channel plugin (#231/#232),
-    // but THIS code path skips channels.sh entirely - tmux respawn-pane is
-    // direct. Schedule the same probe in-process so the plugin doesn't get
-    // stuck in `◯ disabled` after an in-process respawn (2026-06-01 18:55).
-    schedulePluginUnlockAfterRespawn(MAIN_CHANNELS_SESSION, provider.type)
-    // Post-resume guard (CC 2.1.193 regression). A --continue resume can come up
-    // WITHOUT the --channels plugin (absent from /mcp, no poller -> deaf main
-    // channel). The unlock probe above only revives a Failed/disabled plugin --
-    // it cannot help when the plugin never loaded at all. Schedule a liveness
-    // probe; if the plugin is still missing after the settle, escalate straight
-    // to a FRESH respawn instead of burning the full RESUME_GRACE_MS cascade.
-    // Context is dropped only in the bad case; a clean --continue keeps it.
-    schedulePostResumePluginGuard(provider.type)
-    // Stamp the shared respawn timestamp so lastMainRespawnAt() sees this
-    // respawn from any caller (down-cascade stage 3, stuck-tool-call-watcher,
-    // external systemd-timer watchdog). Without it the watcher cannot defer
-    // its own self-respawn-and-recheck within the post-respawn grace, which
-    // produced the 2026-06-08 false-positive loop (13 respawns in 8h on
-    // residual 3-4s counters left over from the prior respawn's TUI redraw).
-    writeRespawnStamp()
     return true
   } catch (err) {
     logger.error({ err }, 'Marveen session respawn failed')
@@ -834,7 +762,7 @@ function fileRespawnStampMs(): number {
     return 0
   }
 }
-function writeRespawnStamp(): void {
+export function writeRespawnStamp(): void {
   try {
     writeFileSync(RESPAWN_STAMP_FILE, String(Math.floor(Date.now() / 1000)))
   } catch { /* best effort */ }
@@ -920,38 +848,68 @@ export function createMainChannelsSession(): MainSessionCreateResult {
 // from the stage-3 resume (which keeps --continue) by clearing session state.
 function respawnMarveenSessionFresh(): boolean {
   const provider = getProvider(getMainAgentProvider())
+  // The original signature is synchronous (returns boolean); we use the sync
+  // runTmuxInvocation helper here so callers (hardRestartMarveenChannels +
+  // checkMainKeepaliveStaleness) keep their "did the respawn succeed" check.
+  // Pre-step (ensureSharedClaudeOnboarded) is idempotent and short -- safe to
+  // inline. Onboard re-seed is dropped from spec.followups because this path
+  // already gates on reSeedOnboarding via the inline call below; reapOrphans
+  // stays 'none' because this hard-restart fallback runs AFTER the stage-3
+  // reap and re-reaping would be redundant.
   try {
-    // Same first-run-picker guard as resumeMarveenSession.
     ensureSharedClaudeOnboarded()
-    const claudeCmd = buildMainSessionRespawnCmd({
-      claudePath: CLAUDE,
-      pluginId: provider.pluginId,
-      extraPluginIds: readExtraChannelPluginIds(),
-      model: readConfiguredMainModel(),
-      continueSession: false,
-      // Same channels.sh-bypass concern as resumeMarveenSession: this fresh
-      // respawn also skips channels.sh, so it must carry the isolated config
-      // itself or it 401s on the rotating macOS Keychain. null when off/no token.
-      isolatedConfigDir: ensureMainAgentIsolatedConfigDir(),
-      fleetToken: hasFleetOauthToken(),
-    })
-    execFileSync(TMUX, ['respawn-pane', '-k', '-t', MAIN_CHANNELS_SESSION, claudeCmd], { timeout: 15000 })
-    logger.warn({ provider: provider.type }, 'Hard restart: marveen session respawned fresh (no --continue)')
-    // Re-establish /name on the fresh process (see note in resumeMarveenSession).
-    // scheduleIdentitySetup only schedules delayed timers -> fire-and-forget.
-    void scheduleIdentitySetup(MAIN_CHANNELS_SESSION, BOT_NAME)
-    // Same channels.sh-bypass concern as in resumeMarveenSession: this respawn
-    // path does NOT invoke channels.sh, so the post-init plugin unlock probe
-    // (#231/#232) never runs. Wire it in-process so the keep-alive-watchdog
-    // fresh-respawn path also revives a Failed/disabled plugin instead of
-    // leaving the channel offline until manual intervention.
-    schedulePluginUnlockAfterRespawn(MAIN_CHANNELS_SESSION, provider.type)
-    writeRespawnStamp() // coordinate with the systemd-timer watchdog (covers the keepalive path too)
-    return true
   } catch (err) {
-    logger.error({ err }, 'Fresh session respawn failed')
+    logger.warn({ err }, 'respawnMarveenSessionFresh: ensureSharedClaudeOnboarded failed (continuing)')
+  }
+  const spec = buildClaudeLaunchSpec({
+    site: 'site-4-stage4',
+    session: MAIN_CHANNELS_SESSION,
+    claudePath: CLAUDE,
+    cwd: PROJECT_ROOT,
+    host: { kind: 'local' },
+    tmuxSubcommand: 'respawnPane',
+    model: readConfiguredMainModel(),
+    continueSession: false,
+    pluginId: provider.pluginId,
+    extraPluginIds: readExtraChannelPluginIds(),
+    isolatedConfigDir: ensureMainAgentIsolatedConfigDir() ?? undefined,
+    fleetOauthToken: (hasFleetOauthToken() || ensureMainAgentIsolatedConfigDir()) ? { path: FLEET_OAUTH_TOKEN_PATH, read: 'cat' } : undefined,
+    cwdAsCd: false,
+    mcpBatch: 'always',
+    promptSuggestionGuard: true,
+    scrubChannelTokens: false,
+    detectSandbox: false,
+    detectAvxLess: false,
+    pathPreset: 'linux',
+    pathTrailingInherit: true,
+    followups: {
+      writeRespawnStamp: true,
+      identitySetup: { displayName: BOT_NAME },
+      pluginUnlock: true,
+      postResumePluginGuard: false,
+      dismissResumeSummaryModal: false,
+      reapOrphans: 'none',
+      reSeedOnboarding: false,
+      startChannelsStartupGuard: false,
+      keepaliveTouch: false,
+      telegramBotMenu: false,
+      channelsFailureLog: false,
+      logClaudeVersion: false,
+      onFailureLog: 'hard restart failed: tmux respawn-pane failed',
+    },
+  })
+  const r = runTmuxInvocation(spec)
+  if (!r.ok) {
+    logger.error({ error: r.error }, 'Fresh session respawn failed')
     return false
   }
+  // Stamp the respawn timestamp + schedule identity/plugin-unlock follow-ups
+  // the same way the legacy execFileSync path did.
+  writeRespawnStamp()
+  void scheduleIdentitySetup(MAIN_CHANNELS_SESSION, BOT_NAME)
+  schedulePluginUnlockAfterRespawn(MAIN_CHANNELS_SESSION, provider.type)
+  logger.warn({ provider: provider.type }, 'Hard restart: marveen session respawned fresh (no --continue)')
+  return true
 }
 
 // Post-resume guard delay. Must clear the unlock-probe budget (first probe at
@@ -980,7 +938,7 @@ export function shouldEscalateAfterResume(f: { claudePid: number | null; pluginA
 // channel becomes reachable again. respawnMarveenSessionFresh() writes the
 // respawn stamp, so lastMainRespawnAt() suppresses the down-cascade's redundant
 // stage-4 hard restart during the ensuing cold boot.
-function schedulePostResumePluginGuard(provider: ChannelProviderType): void {
+export function schedulePostResumePluginGuard(provider: ChannelProviderType): void {
   setTimeout(() => {
     try {
       const claudePid = getClaudePidForSession(MAIN_CHANNELS_SESSION)

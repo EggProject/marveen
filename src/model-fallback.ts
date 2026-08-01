@@ -18,6 +18,7 @@
 // next downgrade target. Kept as literals here to preserve the zero-import,
 // trivially-testable property of this module.
 export const DEFAULT_MODEL_CHAIN: readonly string[] = [
+  'MiniMax-M3[1m]',
   'claude-opus-4-8[1m]',
   'claude-sonnet-5',
   'claude-haiku-4-5-20251001',

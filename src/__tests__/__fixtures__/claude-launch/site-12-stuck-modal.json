@@ -1,0 +1,6 @@
+{
+  "site": "site-12-stuck-modal",
+  "description": "Last-resort respawn-pane (scripts/stuck-modal-guard.sh:261) — Escape-loop exhausted, plain PATH + plugin, no extra env.",
+  "currentCmd": "export PATH=\"/opt/homebrew/bin:$HOME/.bun/bin:/home/linuxbrew/.linuxbrew/bin:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin\" && cd '/Users/eggp/marveen' && /opt/homebrew/bin/claude --dangerously-skip-permissions --model 'MiniMax-M3[1m]' --channels plugin:'telegram@claude-plugins-official'",
+  "expectedTmuxArgs": ["respawn-pane", "-k", "-t", "marveen-channels", "export PATH=\"/opt/homebrew/bin:$HOME/.bun/bin:/home/linuxbrew/.linuxbrew/bin:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin\" && cd '/Users/eggp/marveen' && /opt/homebrew/bin/claude --dangerously-skip-permissions --model 'MiniMax-M3[1m]' --channels plugin:'telegram@claude-plugins-official'"]
+}

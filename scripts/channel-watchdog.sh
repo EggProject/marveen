@@ -72,19 +72,16 @@ SESSION="${MAIN_AGENT_ID}-channels"
 CHANNEL_PROVIDER="$(grep -E '^CHANNEL_PROVIDER=' "$INSTALL_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2-)"
 CHANNEL_PROVIDER="${CHANNEL_PROVIDER:-telegram}"
 # Extra co-listen plugins, derived EXACTLY as channels.sh does (see the
-# EXTRA_CHANNELS block there). Without this a watchdog respawn silently drops
-# every secondary provider: the session comes back on the primary channel only,
-# so outbound still works (the MCP tool is loaded) but inbound on the extras is
-# dropped with "server not in --channels list" -- a HALF-mute that looks healthy
-# to any liveness probe watching the primary. Observed in practice: a watchdog
-# respawn dropped the secondary inbound for ~20 minutes while the primary kept
-# working, so neither the probes nor the agent itself noticed.
+# CHANNEL_PLUGINS_EXTRA block there). Without this a watchdog respawn silently
+# drops every secondary provider: the session comes back on the primary channel
+# only, so outbound still works (the MCP tool is loaded) but inbound on the
+# extras is dropped with "server not in --channels list" -- a HALF-mute that
+# looks healthy to any liveness probe watching the primary. Observed in
+# practice: a watchdog respawn dropped the secondary inbound for ~20 minutes
+# while the primary kept working, so neither the probes nor the agent itself
+# noticed. The value is passed straight through to claude-launch.sh, which
+# splits on whitespace and shells-out per plugin via its own shellSingleQuote.
 CHANNEL_PLUGINS_EXTRA="$(grep -E '^CHANNEL_PLUGINS_EXTRA=' "$INSTALL_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2-)"
-EXTRA_CHANNELS=""
-for _p in $CHANNEL_PLUGINS_EXTRA; do
-  [ -n "$_p" ] && EXTRA_CHANNELS="$EXTRA_CHANNELS plugin:$_p"
-done
-unset _p
 
 # NB: use TMUX_BIN, not TMUX -- the latter is tmux's own env var (socket,pid,
 # session); assigning the binary path to it corrupts server-socket detection.
@@ -170,36 +167,30 @@ MAIN_MODEL=""
 if [ -f "$INSTALL_DIR/.claude/settings.json" ] && command -v jq >/dev/null 2>&1; then
   MAIN_MODEL="$(jq -r '.model // empty' "$INSTALL_DIR/.claude/settings.json" 2>/dev/null)"
 fi
-MODEL_FLAG=""
-[ -n "$MAIN_MODEL" ] && MODEL_FLAG="--model '$MAIN_MODEL' "
 
 # Main-agent isolated-config parity (PLAN.md GAP 1 completeness fix): without
 # this, a watchdog-triggered respawn would silently drop the main agent OUT of
 # isolated-config mode and back onto the shared ~/.claude -- reintroducing GAP 1
-# on exactly the recovery path meant to matter most (dashboard down). Mirrors
-# channels.sh's own CFG_ENV construction (channels.sh:254-275) exactly,
-# including reading the fleet token via $(cat ...) at spawn time so the secret
-# never lands in the RESPAWN_CMD string passed to tmux respawn-pane (visible
-# via ps/pane history otherwise).
-CFG_ENV=""
+# on exactly the recovery path meant to matter most (dashboard down). The
+# resolved dir + fleet token flow into the JSON spec as isolatedConfigDir /
+# fleetOauthPath (consumed by claude-launch.sh); the fleet token is read via
+# $(cat ...) at shell-runtime inside the launched claude so the secret never
+# lands in argv/`ps`/pane history.
+LAUNCH_CONFIG_DIR=""
+LAUNCH_OAUTH_PATH=""
 if [ -n "$NODE_BIN" ] && [ -f "$INSTALL_DIR/dist/web/agent-process.js" ]; then
   _cfg_line="$("$NODE_BIN" "$INSTALL_DIR/scripts/main-agent-isolated-config.mjs" "$CHANNEL_PROVIDER" 2>>"$STORE/channels-failures.log" || true)"
   _cfg_mode="${_cfg_line%%	*}"
   _cfg_dir="${_cfg_line#*	}"
   if [ -n "$_cfg_line" ] && [ -d "$_cfg_dir" ]; then
-    if [ "$_cfg_mode" = "explicit" ]; then
-      CFG_ENV="export CLAUDE_CONFIG_DIR='$_cfg_dir' && "
-    else
-      CFG_ENV="export CLAUDE_CONFIG_DIR='$_cfg_dir' && export CLAUDE_CODE_OAUTH_TOKEN=\"\$(cat '$INSTALL_DIR/store/.claude-oauth-token')\" && "
+    LAUNCH_CONFIG_DIR="$_cfg_dir"
+    if [ "$_cfg_mode" != "explicit" ]; then
+      LAUNCH_OAUTH_PATH="$INSTALL_DIR/store/.claude-oauth-token"
     fi
     log "main-agent $_cfg_mode CLAUDE_CONFIG_DIR=$_cfg_dir"
   fi
   unset _cfg_line _cfg_mode _cfg_dir
 fi
-
-# Full PATH with .bun/bin -- without it the respawned bun telegram bridge does
-# not come up and the session is channel-less.
-RESPAWN_CMD="export PATH=\"/opt/homebrew/bin:\$HOME/.bun/bin:/home/linuxbrew/.linuxbrew/bin:\$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin\" && export CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false && ${CFG_ENV}$CLAUDE --dangerously-skip-permissions ${MODEL_FLAG}--channels plugin:${CHANNEL_PROVIDER}@claude-plugins-official${EXTRA_CHANNELS}"
 
 reason="keepalive stale ${age}s"
 [ "$STALE" != true ] && reason=""
@@ -208,7 +199,22 @@ if [ "$AUTHDEAD" = true ]; then
 fi
 
 log "$reason and session up -- respawn-pane $SESSION (respawn #$((count+1)))"
-if "$TMUX_BIN" respawn-pane -k -t "$SESSION" "$RESPAWN_CMD" 2>/dev/null; then
+CLAUDE_LAUNCH_SPEC="$(mktemp)"
+trap 'rm -f "$CLAUDE_LAUNCH_SPEC"' EXIT
+jq -n \
+  --arg session "$SESSION" \
+  --arg claudePath "$CLAUDE" \
+  --arg cwd "$INSTALL_DIR" \
+  --arg model "${MAIN_MODEL:-}" \
+  --arg pluginId "${CHANNEL_PROVIDER}@claude-plugins-official" \
+  --arg extras "${CHANNEL_PLUGINS_EXTRA:-}" \
+  --arg isolatedConfigDir "$LAUNCH_CONFIG_DIR" \
+  --arg fleetOauthPath "$LAUNCH_OAUTH_PATH" \
+  '{site: "channel_watchdog", session: $session, claudePath: $claudePath, cwd: $cwd, host: {kind: "local"}, tmuxSubcommand: "respawnPane", model: (if $model == "" then null else $model end), pluginId: $pluginId, extraPluginIds: ($extras | split(" ") | map(select(length > 0))), isolatedConfigDir: (if $isolatedConfigDir == "" then null else $isolatedConfigDir end), fleetOauthToken: (if $fleetOauthPath == "" then null else {path: $fleetOauthPath, read: "cat"} end), channelEnv: null, mcpBatch: "none", promptSuggestionGuard: true, scrubChannelTokens: false, detectSandbox: false, detectAvxLess: false, pathPreset: "linux", pathTrailingInherit: false, followups: {writeRespawnStamp: true}}' \
+  > "$CLAUDE_LAUNCH_SPEC"
+if bash "$INSTALL_DIR/scripts/claude-launch.sh" "$CLAUDE_LAUNCH_SPEC" 2>/dev/null; then
+  rm -f "$CLAUDE_LAUNCH_SPEC"
+  trap - EXIT
   date +%s > "$RESPAWN_STAMP"
   echo $(( count + 1 )) > "$RESPAWN_COUNT_FILE"
   rm -f "$AUTH_DEAD_COUNT_FILE" 2>/dev/null || true

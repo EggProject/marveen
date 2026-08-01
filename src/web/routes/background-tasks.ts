@@ -10,6 +10,7 @@ import { APP_TZ } from '../../config.js'
 import { logger } from '../../logger.js'
 import { readBody, json } from '../http-helpers.js'
 import type { RouteContext } from './types.js'
+import { buildClaudeLaunchSpec, buildClaudeLaunchCmd } from '../claude-launch.js'
 
 const TMUX = resolveFromPath('tmux')
 const CLAUDE = resolveFromPath('claude')
@@ -54,16 +55,30 @@ export function spawnBackgroundTask(agentId: string, prompt: string): Background
     return { error: `Maximum ${MAX_CONCURRENT} egyidejű háttérfeladat ágensenként.` }
   }
 
-  const shellCmd = [
-    `export PATH="/opt/homebrew/bin:$HOME/.bun/bin:/usr/local/bin:/usr/bin:/bin:$PATH"`,
-    `${CLAUDE} -p "$BG_PROMPT" --output-format text 2>&1`,
-  ].join(' && ')
+  const spec = buildClaudeLaunchSpec({
+    site: 'site-1-background',
+    session,
+    claudePath: CLAUDE,
+    cwd: process.cwd(),
+    host: { kind: 'local' },
+    tmuxSubcommand: 'newSession',
+    paneGeometry: { cols: 200, rows: 50 },
+    pathPreset: 'macos',
+    cwdAsCd: false,
+    mcpBatch: 'none',
+    promptSuggestionGuard: false,
+    scrubChannelTokens: false,
+    detectSandbox: false,
+    detectAvxLess: false,
+    pathTrailingInherit: false,
+    followups: {
+      extraFlags: '-p "$BG_PROMPT" --output-format text 2>&1',
+      appendCmdSuffix: "; echo '___BG_DONE___'; sleep 5",
+    },
+  })
 
   try {
-    execFileSync(TMUX, [
-      'new-session', '-d', '-s', session, '-x', '200', '-y', '50',
-      `${shellCmd}; echo '___BG_DONE___'; sleep 5`,
-    ], {
+    execFileSync(TMUX, buildClaudeLaunchCmd(spec).args, {
       timeout: 5000,
       env: { ...process.env, BG_PROMPT: prompt },
     })

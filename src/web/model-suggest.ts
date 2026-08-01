@@ -7,6 +7,7 @@ export type ModelId =
   | 'claude-opus-4-8[1m]'
   | 'claude-opus-5'
   | 'claude-fable-5'
+  | 'MiniMax-M3[1m]'
   | string
 
 export interface ModelSuggestion {

@@ -207,19 +207,6 @@ PYEOF
 _ensure_plugin_enabled "$INSTALL_DIR/.claude/settings.json"
 unset -f _ensure_plugin_enabled
 
-# Build the extra --channels args from CHANNEL_PLUGINS_EXTRA (space-separated
-# plugin IDs). Each becomes an additional `plugin:<id>` token appended to the
-# --channels list. `claude --channels` accepts a space-separated plugin list,
-# so one session can co-listen on several providers (e.g. Telegram + Discord).
-# NOTE: co-listen also requires each extra plugin to be enabled in
-# .claude/settings.json enabledPlugins (true) -- CHANNEL_PLUGINS_EXTRA alone is
-# not enough; Claude Code only starts plugins marked true there.
-EXTRA_CHANNELS=""
-for _p in $CHANNEL_PLUGINS_EXTRA; do
-  [ -n "$_p" ] && EXTRA_CHANNELS="$EXTRA_CHANNELS plugin:$_p"
-done
-unset _p
-
 # ROOT-CAUSE NOTE (kali-linux WSL, claude-code 2.1.152, 2026-05-27):
 # Inbound MCP notifications from the `--channels` plugin go through a SECOND
 # gate beyond --dangerously-skip-permissions / --dangerously-load-development-
@@ -318,10 +305,6 @@ MCP_BATCH_ENV="export CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false MCP_SERVER_CONN
 # route an install that wants a different model has to edit a tracked file,
 # which then blocks the update preflight and gets reverted by the next update.
 MAIN_MODEL="$(resolve_main_model)"
-MODEL_FLAG=""
-# Single-quote the model id so values like `claude-opus-4-8[1m]` survive the
-# tmux command-string round-trip without the inner shell glob-expanding `[1m]`.
-[ -n "$MAIN_MODEL" ] && MODEL_FLAG="--model '$MAIN_MODEL' "
 
 # Main-agent config isolation (OPT-IN, default OFF).
 #
@@ -352,9 +335,12 @@ MODEL_FLAG=""
 # Both settings resolve through the settings-store (dashboard toggle in
 # store/config-overrides.json OR a hand-set .env key -- resolution override>.env>
 # default), and explicit wins over isolated. When neither applies the helper
-# prints nothing, CFG_ENV stays EMPTY and the agent keeps the shared ~/.claude --
-# strict no-op for existing installs (no setting, no fleet token, no dist build).
-CFG_ENV=""
+# prints nothing, LAUNCH_CONFIG_DIR stays EMPTY and the agent keeps the shared
+# ~/.claude -- strict no-op for existing installs (no setting, no fleet token,
+# no dist build). The values flow into the JSON spec via --arg below; the
+# central builder emits them as `$(cat ...)` at runtime, never argv-injected.
+LAUNCH_CONFIG_DIR=""
+LAUNCH_OAUTH_PATH=""
 mkdir -p "$INSTALL_DIR/store" 2>/dev/null || true
 _node_bin="$(command -v node || true)"
 if [ -n "$_node_bin" ] && [ -f "$INSTALL_DIR/dist/web/agent-process.js" ]; then
@@ -363,13 +349,15 @@ if [ -n "$_node_bin" ] && [ -f "$INSTALL_DIR/dist/web/agent-process.js" ]; then
   _cfg_dir="${_cfg_line#*	}"
   if [ -n "$_cfg_line" ] && [ -d "$_cfg_dir" ]; then
     if [ "$_cfg_mode" = "explicit" ]; then
-      CFG_ENV="export CLAUDE_CONFIG_DIR='$_cfg_dir' && "
+      LAUNCH_CONFIG_DIR="$_cfg_dir"
     else
       # Seed the token from the SAME 0600 file the isolated dir is gated on, so
       # the config dir and the active token always match (the isolated dir carries
-      # no .credentials.json). $(cat) is evaluated in the launched shell so the
-      # secret never lands in the argv/`ps` command string.
-      CFG_ENV="export CLAUDE_CONFIG_DIR='$_cfg_dir' && export CLAUDE_CODE_OAUTH_TOKEN=\"\$(cat '$INSTALL_DIR/store/.claude-oauth-token')\" && "
+      # no .credentials.json). The path flows into the JSON spec via --arg; the
+      # central builder emits `$(cat <path>)` at runtime, so the secret never
+      # lands in argv / `ps` / the tmux command string.
+      LAUNCH_CONFIG_DIR="$_cfg_dir"
+      LAUNCH_OAUTH_PATH="$INSTALL_DIR/store/.claude-oauth-token"
     fi
     echo "$(date '+%Y-%m-%d %H:%M:%S') channels.sh: main-agent $_cfg_mode CLAUDE_CONFIG_DIR=$_cfg_dir" >> "$INSTALL_DIR/store/channels-failures.log"
   fi
@@ -382,7 +370,7 @@ if [ -n "$_node_bin" ] && [ -f "$INSTALL_DIR/dist/web/agent-process.js" ]; then
   # Surface it at START time instead: a failures-log line plus a best-effort
   # inter-agent message to the main agent. Installs that never ran isolated have
   # no .channels-config dir and stay quiet, so default setups see no new noise.
-  if [ -z "$CFG_ENV" ] && [ -d "$INSTALL_DIR/.channels-config" ]; then
+  if [ -z "$LAUNCH_CONFIG_DIR" ] && [ -d "$INSTALL_DIR/.channels-config" ]; then
     echo "$(date '+%Y-%m-%d %H:%M:%S') channels.sh: WARN main-agent starting on SHARED ~/.claude although isolated dir $INSTALL_DIR/.channels-config exists -- MAIN_AGENT_ISOLATED_CONFIG resolution came back empty (overrides/.env key lost?). Auth rides the rotating shared session and can 401." >> "$INSTALL_DIR/store/channels-failures.log"
     if [ -f "$INSTALL_DIR/store/.dashboard-token" ]; then
       _guard_port="$(grep -E '^WEB_PORT=' "$INSTALL_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2-)"
@@ -526,8 +514,22 @@ $TMUX set-environment -g CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION false 2>/dev/null 
 # just THIS session first -- never the server, never another agent's session --
 # otherwise new-session below fails with "duplicate session".
 $TMUX kill-session -t "$SESSION" 2>/dev/null || true
-$TMUX new-session -d -s "$SESSION" -c "$INSTALL_DIR" \
-  "${MCP_BATCH_ENV}${CFG_ENV}$CLAUDE --dangerously-skip-permissions ${MODEL_FLAG}--channels plugin:${PLUGIN_ID}${EXTRA_CHANNELS}"
+CLAUDE_LAUNCH_SPEC_PRIMARY="$(mktemp)"
+trap 'rm -f "$CLAUDE_LAUNCH_SPEC_PRIMARY"' EXIT
+jq -n \
+  --arg session "$SESSION" \
+  --arg claudePath "$CLAUDE" \
+  --arg cwd "$INSTALL_DIR" \
+  --arg model "${MAIN_MODEL:-}" \
+  --arg pluginId "$PLUGIN_ID" \
+  --arg extras "${CHANNEL_PLUGINS_EXTRA:-}" \
+  --arg isolatedConfigDir "$LAUNCH_CONFIG_DIR" \
+  --arg fleetOauthPath "$LAUNCH_OAUTH_PATH" \
+  '{site: "main", session: $session, claudePath: $claudePath, cwd: $cwd, host: {kind: "local"}, tmuxSubcommand: "newSession", model: (if $model == "" then null else $model end), pluginId: $pluginId, extraPluginIds: ($extras | split(" ") | map(select(length > 0))), isolatedConfigDir: (if $isolatedConfigDir == "" then null else $isolatedConfigDir end), fleetOauthToken: (if $fleetOauthPath == "" then null else {path: $fleetOauthPath, read: "cat"} end), mcpBatch: "always", promptSuggestionGuard: true, scrubChannelTokens: false, detectSandbox: false, detectAvxLess: false, pathPreset: "macos", pathTrailingInherit: true, followups: {}}' \
+  > "$CLAUDE_LAUNCH_SPEC_PRIMARY"
+bash "$INSTALL_DIR/scripts/claude-launch.sh" "$CLAUDE_LAUNCH_SPEC_PRIMARY"
+rm -f "$CLAUDE_LAUNCH_SPEC_PRIMARY"
+trap - EXIT
 
 # Session startup guard: a Claude Code first-run dialogusait auto-accept-eljuk
 # kulonben a headless session orokre parkolna a prompton es a Telegram plugin
@@ -567,8 +569,22 @@ for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
         # invasive change (a stable fallback dir + a seeded ~/.claude.json project
         # entry); see the PR description / card 7EB18437.
         [ -e "$INSTALL_DIR/CLAUDE.md" ] && ln -sf "$INSTALL_DIR/CLAUDE.md" "$_CHANNELS_STARTDIR/CLAUDE.md" 2>/dev/null || true
-        $TMUX new-session -d -s "$SESSION" -c "$_CHANNELS_STARTDIR" \
-          "${MCP_BATCH_ENV}${CFG_ENV}$CLAUDE --dangerously-skip-permissions ${MODEL_FLAG}--channels plugin:${PLUGIN_ID}${EXTRA_CHANNELS}"
+        CLAUDE_LAUNCH_SPEC_EPERM="$(mktemp)"
+        trap 'rm -f "$CLAUDE_LAUNCH_SPEC_EPERM"' EXIT
+        jq -n \
+          --arg session "$SESSION" \
+          --arg claudePath "$CLAUDE" \
+          --arg cwd "$_CHANNELS_STARTDIR" \
+          --arg model "${MAIN_MODEL:-}" \
+          --arg pluginId "$PLUGIN_ID" \
+          --arg extras "${CHANNEL_PLUGINS_EXTRA:-}" \
+          --arg isolatedConfigDir "$LAUNCH_CONFIG_DIR" \
+          --arg fleetOauthPath "$LAUNCH_OAUTH_PATH" \
+          '{site: "main_eperm", session: $session, claudePath: $claudePath, cwd: $cwd, host: {kind: "local"}, tmuxSubcommand: "newSession", model: (if $model == "" then null else $model end), pluginId: $pluginId, extraPluginIds: ($extras | split(" ") | map(select(length > 0))), isolatedConfigDir: (if $isolatedConfigDir == "" then null else $isolatedConfigDir end), fleetOauthToken: (if $fleetOauthPath == "" then null else {path: $fleetOauthPath, read: "cat"} end), cwdAsTmuxC: true, mcpBatch: "always", promptSuggestionGuard: true, scrubChannelTokens: false, detectSandbox: false, detectAvxLess: false, pathPreset: "macos", pathTrailingInherit: true, followups: {}}' \
+          > "$CLAUDE_LAUNCH_SPEC_EPERM"
+        bash "$INSTALL_DIR/scripts/claude-launch.sh" "$CLAUDE_LAUNCH_SPEC_EPERM"
+        rm -f "$CLAUDE_LAUNCH_SPEC_EPERM"
+        trap - EXIT
         unset _CHANNELS_STARTDIR
       fi
       continue

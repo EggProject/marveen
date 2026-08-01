@@ -1,0 +1,6 @@
+{
+  "site": "site-7-subagent-ssh",
+  "description": "Remote-ssh sub-agent launch (agent-process.ts:824) — bare 'claude' binary (remote PATH), --continue after prior-session probe.",
+  "currentCmd": "export PATH=\"/opt/homebrew/bin:$HOME/.bun/bin:/home/linuxbrew/.linuxbrew/bin:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH\" && cd '/home/user/work' && claude --continue --dangerously-skip-permissions --model 'MiniMax-M3[1m]'",
+  "expectedTmuxArgs": ["new-session", "-d", "-s", "agent-geri", "export PATH=\"/opt/homebrew/bin:$HOME/.bun/bin:/home/linuxbrew/.linuxbrew/bin:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH\" && cd '/home/user/work' && claude --continue --dangerously-skip-permissions --model 'MiniMax-M3[1m]'"]
+}

@@ -17,6 +17,7 @@ import {
 import { readClaudeCodeOauthJson } from './claude-credentials.js'
 import { detectPaneState } from '../pane-state.js'
 import { notifyChannel } from '../notify.js'
+import { buildClaudeLaunchSpec, launchClaudeNewSession } from './claude-launch.js'
 
 // =============================================================================
 // Interactive-tmux agent worker (jun.15 subscription migration).
@@ -480,12 +481,33 @@ function startWorkerSessionFor(ctx: WorkerCtx): void {
   // gone before the first 5s poll). tryResolveFromPath probes the known install
   // dirs; fall back to the bare name so an exotic layout keeps the old behavior.
   const claudeLaunchBin = tryResolveFromPath('claude') ?? 'claude'
-  const launch =
-    (hasFleetOauthToken() ? `export CLAUDE_CODE_OAUTH_TOKEN="$(cat ${shArg(FLEET_OAUTH_TOKEN_PATH)})"; ` : '') +
-    `export CLAUDE_CONFIG_DIR=${shArg(ctx.configDir)}; ` +
-    `cd ${shArg(ctx.home)} && ` +
-    `${shArg(claudeLaunchBin)} --dangerously-skip-permissions --model ${shArg(WORKER_MODEL)}`
-  execFileSync(TMUX, ['new-session', '-d', '-s', ctx.session, '-c', ctx.home, 'bash', '-lc', launch], { timeout: 8000 })
+  const spec = buildClaudeLaunchSpec({
+    site: 'site-5-worker',
+    session: ctx.session,
+    claudePath: claudeLaunchBin,
+    cwd: ctx.home,
+    host: { kind: 'local' },
+    tmuxSubcommand: 'newSession',
+    model: WORKER_MODEL,
+    cwdAsCd: false,  // login-shell pathPreset wraps with bash -lc; cd is implicit
+    cwdAsTmuxC: true,  // the -c ctx.home flag is preserved
+    isolatedConfigDir: ctx.configDir,
+    fleetOauthToken: hasFleetOauthToken() ? { path: FLEET_OAUTH_TOKEN_PATH, read: 'cat' } : undefined,
+    mcpBatch: 'none',
+    promptSuggestionGuard: false,
+    scrubChannelTokens: false,
+    detectSandbox: false,
+    detectAvxLess: false,
+    pathPreset: 'login-shell',
+    pathTrailingInherit: false,
+    followups: {
+      logClaudeVersion: true,
+      identitySetup: { displayName: ctx.session.replace(/^ctx-/, '') },
+    },
+  })
+  void launchClaudeNewSession(spec, { agentDir: ctx.home }).then((r) => {
+    if (!r.ok) logger.warn({ error: r.error, session: ctx.session }, 'agent-worker: launch failed')
+  })
   logger.info({ session: ctx.session, cwd: ctx.home }, 'agent-worker: launched interactive worker session')
   logWorkerClaudeVersion(ctx)
 }
@@ -519,7 +541,7 @@ export function startWorkerSession(): void {
  * upsell) is visible in the log timeline instead of being reverse-engineered
  * from a stuck pane. Best effort: a probe failure never blocks the boot.
  */
-function logWorkerClaudeVersion(ctx: WorkerCtx): void {
+export function logWorkerClaudeVersion(ctx: WorkerCtx): void {
   try {
     const claudeBin = resolveFromPath('claude')
     const v = execFileSync(claudeBin, ['--version'], { encoding: 'utf-8', timeout: 10_000 }).trim()
@@ -534,10 +556,6 @@ function logWorkerClaudeVersion(ctx: WorkerCtx): void {
   } catch (err) {
     logger.warn({ err }, 'agent-worker: claude version probe failed (continuing)')
   }
-}
-
-function shArg(s: string): string {
-  return `'${s.replace(/'/g, `'\\''`)}'`
 }
 
 // Give a booting worker this long to reach an idle prompt on its own before

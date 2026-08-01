@@ -1,0 +1,6 @@
+{
+  "site": "site-10-watchdog",
+  "description": "Per-agent watchdog new-session (scripts/watchdog.sh:176) — sub-agent restart, telegram plugin, scrub tokens, channel state dir.",
+  "currentCmd": "export PATH=\"/opt/homebrew/bin:$HOME/.bun/bin:/home/linuxbrew/.linuxbrew/bin:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH\" && unset TELEGRAM_BOT_TOKEN SLACK_BOT_TOKEN SLACK_APP_TOKEN DISCORD_BOT_TOKEN && export TELEGRAM_STATE_DIR='/Users/eggp/marveen/agents/boni/.claude/channels/telegram' && cd '/Users/eggp/marveen/agents/boni' && /opt/homebrew/bin/claude --dangerously-skip-permissions --model 'MiniMax-M3[1m]' --channels plugin:'telegram@claude-plugins-official'",
+  "expectedTmuxArgs": ["new-session", "-d", "-s", "agent-boni", "export PATH=\"/opt/homebrew/bin:$HOME/.bun/bin:/home/linuxbrew/.linuxbrew/bin:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH\" && unset TELEGRAM_BOT_TOKEN SLACK_BOT_TOKEN SLACK_APP_TOKEN DISCORD_BOT_TOKEN && export TELEGRAM_STATE_DIR='/Users/eggp/marveen/agents/boni/.claude/channels/telegram' && cd '/Users/eggp/marveen/agents/boni' && /opt/homebrew/bin/claude --dangerously-skip-permissions --model 'MiniMax-M3[1m]' --channels plugin:'telegram@claude-plugins-official'"]
+}

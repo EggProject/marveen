@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { execSync, execFileSync } from 'node:child_process'
 import { OLLAMA_URL } from '../config.js'
-import { makeLazyBinResolver } from '../platform.js'
+import { makeLazyBinResolver, resolveFromPath } from '../platform.js'
 import { logger } from '../logger.js'
 import {
   paneLooksIdle,
@@ -27,7 +27,6 @@ import { atomicWriteFileSync } from './atomic-write.js'
 import {
   buildTmuxInvocation,
   buildSshExec,
-  buildRemoteLaunchCommand,
   buildContinueProbeCommand,
   classifyRunState,
   classifyRunStateFromExit,
@@ -49,6 +48,7 @@ import { resolveOpenRouterModel } from './openrouter-models.js'
 import { reapChannelOrphans, reapDetachedChannelClaudes } from './channel-poller-reap.js'
 import { MAIN_CHANNELS_SESSION } from './main-agent.js'
 import { notifyChannel } from '../notify.js'
+import { buildClaudeLaunchSpec, runTmuxInvocation, buildClaudeLaunchCmd } from './claude-launch.js'
 
 // Lazy so a transient PATH gap at import time (e.g. the 04:00 auto-update
 // restart, where the finalizer omits the bin dir from PATH) cannot hard-crash
@@ -688,7 +688,7 @@ export function agentSessionName(name: string): string {
 // byte-identical to the prior direct local tmux call. Remote calls get a larger
 // default timeout because an ssh round-trip (handshake + remote exec) is slower
 // than a local fork; ServerAlive/ConnectTimeout in SSH_OPTS bound a dead host.
-function runTmux(host: string | null, tmuxArgs: string[], opts: { timeout?: number } = {}): void {
+export function runTmux(host: string | null, tmuxArgs: string[], opts: { timeout?: number } = {}): void {
   // Ensure the private ControlMaster socket dir exists before ANY remote ssh
   // call (idempotent, ~free). Without this a watcher-first remote call after a
   // marveen restart would lose connection multiplexing and re-handshake each tick.
@@ -702,7 +702,7 @@ function runTmux(host: string | null, tmuxArgs: string[], opts: { timeout?: numb
   execFileSync(inv.file, inv.args, { timeout: opts.timeout ?? (host ? 8000 : 3000), stdio: ['ignore', 'ignore', 'pipe'] })
 }
 
-function captureTmux(host: string | null, tmuxArgs: string[], opts: { timeout?: number } = {}): string {
+export function captureTmux(host: string | null, tmuxArgs: string[], opts: { timeout?: number } = {}): string {
   if (host) ensureControlDir()
   const inv = buildTmuxInvocation(host, tmuxBin(), tmuxArgs)
   // stdout piped (we return it); stderr piped too so tmux's `can't find session`
@@ -818,19 +818,37 @@ function startRemoteAgentProcess(
   }
 
   const model = readAgentModel(name)
-  const cmd = buildRemoteLaunchCommand({ workdir, model, continue: hasPriorSession })
-
-  try {
-    runTmux(host, ['new-session', '-d', '-s', session, cmd], { timeout: 10000 })
-    logger.info({ name, session, host, workdir }, 'Remote agent tmux session started')
-    // Fire-and-forget: scheduleIdentitySetup only schedules delayed timers and
-    // resolves immediately; startRemoteAgentProcess stays synchronous (out of scope).
-    void scheduleIdentitySetup(session, readAgentDisplayName(name), host)
-    return { ok: true }
-  } catch (err) {
-    logger.error({ err, name, host }, 'Failed to start remote agent tmux session')
-    return { ok: false, error: 'Failed to start remote tmux session' }
+  const spec = buildClaudeLaunchSpec({
+    site: 'site-7-subagent-ssh',
+    session,
+    claudePath: resolveFromPath('claude'),
+    cwd: workdir,
+    host: { kind: 'remote-ssh', sshTarget: host, workdir },
+    tmuxSubcommand: 'newSession',
+    model,
+    continueSession: hasPriorSession,
+    cwdAsCd: true,
+    mcpBatch: 'none',
+    promptSuggestionGuard: false,
+    scrubChannelTokens: false,
+    detectSandbox: false,
+    detectAvxLess: false,
+    pathPreset: 'linux',
+    pathTrailingInherit: true,
+    followups: {
+      identitySetup: { displayName: readAgentDisplayName(name), host },
+    },
+  })
+  const r = runTmuxInvocation(spec)
+  if (!r.ok) {
+    logger.error({ error: r.error, name, host }, 'Failed to start remote agent tmux session')
+    return { ok: false, error: r.error ?? 'Failed to start remote tmux session' }
   }
+  logger.info({ name, session, host, workdir }, 'Remote agent tmux session started')
+  // Fire-and-forget: scheduleIdentitySetup only schedules delayed timers and
+  // resolves immediately; startRemoteAgentProcess stays synchronous (out of scope).
+  void scheduleIdentitySetup(session, readAgentDisplayName(name), host)
+  return { ok: true }
 }
 
 export function startAgentProcess(name: string, opts: { fresh?: boolean } = {}): { ok: boolean; pid?: number; error?: string } {
@@ -947,24 +965,17 @@ export function startAgentProcess(name: string, opts: { fresh?: boolean } = {}):
     // the custom ANTHROPIC_BASE_URL ("model does not exist"). The env var is
     // authoritative and bypasses that validation. (`--print` honors --model, but
     // the agents run the TUI.) Single-quoted so a `:` in the tag is shell-safe.
-    const ollamaEnv = isOllama ? `export ANTHROPIC_AUTH_TOKEN=ollama && export ANTHROPIC_BASE_URL=${OLLAMA_URL} && export ANTHROPIC_MODEL='${model}' && ` : ''
-    const deepseekKey = isDeepseek ? (getSecret('DEEPSEEK_API_KEY') ?? '') : ''
-    const deepseekEnv = isDeepseek ? `export ANTHROPIC_AUTH_TOKEN="${deepseekKey}" && export ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic && export ANTHROPIC_MODEL='${model}' && ` : ''
-    // OpenRouter: Anthropic-compatible endpoint at https://openrouter.ai/api
-    // (the SDK appends /v1/messages). Key from the vault (openrouter-fleet-key).
-    const openrouterKey = isOpenRouter ? (getSecret('openrouter-fleet-key') ?? '') : ''
-    const openrouterEnv = isOpenRouter ? `export ANTHROPIC_AUTH_TOKEN="${openrouterKey}" && export ANTHROPIC_BASE_URL=https://openrouter.ai/api && export ANTHROPIC_MODEL='${model}' && ` : ''
+    //
+    // BYO-endpoint env exports (ANTHROPIC_AUTH_TOKEN / BASE_URL / MODEL) are
+    // spliced into the final cmd after buildClaudeLaunchCmd below (the spec
+    // doesn't have a multi-key field, and the byte-equality layout must be
+    // preserved -- these three exports were emitted between oauthTokenEnv and
+    // cd in the legacy code).
     // When authMode is 'api', the agent uses its own ANTHROPIC_API_KEY from
     // the vault instead of the host's OAuth. The vault entry ID follows the
-    // convention `agent-{name}-api-key`. We inject it as an env var so Claude
-    // Code picks it up without needing OAuth credentials at all.
-    let apiKeyEnv = ''
-    if (isClaude && authMode === 'api') {
-      const agentApiKey = getSecret(`agent-${name}-api-key`) ?? ''
-      if (agentApiKey) {
-        apiKeyEnv = `export ANTHROPIC_API_KEY="${agentApiKey}" && `
-      }
-    }
+    // convention `agent-{name}-api-key`. The spec's `apiKey` field expresses
+    // this directly.
+    const hasApiKey = isClaude && authMode === 'api' && !!getSecret(`agent-${name}-api-key`)
     // Apply security profile: write allow/deny list into settings.json, and
     // skip the dangerously-skip-permissions flag for strict profiles so
     // Claude Code enforces the list rather than bypassing it.
@@ -1060,7 +1071,6 @@ export function startAgentProcess(name: string, opts: { fresh?: boolean } = {}):
         logger.warn({ err, name }, 'Could not scope channel plugins for sub-agent')
       }
     }
-    const skipFlag = profile.permissionMode === 'strict' ? '' : '--dangerously-skip-permissions '
     // Optional per-agent CLAUDE_CONFIG_DIR (alternate Claude Code config dir,
     // e.g. for routing this agent to a separate Anthropic login). When the
     // agent-config field is missing or blank, claudeConfigDir is null and we
@@ -1152,7 +1162,6 @@ export function startAgentProcess(name: string, opts: { fresh?: boolean } = {}):
     stampFableOverageConsent(
       claudeConfigDir ? join(claudeConfigDir, '.claude.json') : join(homedir(), '.claude.json'),
     )
-    const claudeConfigEnv = claudeConfigDir ? `export CLAUDE_CONFIG_DIR="${claudeConfigDir}" && ` : ''
     // `--continue` requires an existing session; on a brand-new agent the
     // Claude Code projects directory does not yet exist and `claude` exits
     // immediately with an obscure "No deferred tool marker found" error
@@ -1177,50 +1186,59 @@ export function startAgentProcess(name: string, opts: { fresh?: boolean } = {}):
     // less agents keep --continue to preserve their accumulated context.
     const continueFlag = (hasPriorSession && !opts.fresh && !hasChannel) ? '--continue ' : ''
     const stateEnvVar = agentProvider === 'slack' ? 'SLACK_STATE_DIR' : agentProvider === 'discord' ? 'DISCORD_STATE_DIR' : agentProvider === 'googlechat' ? 'GOOGLECHAT_STATE_DIR' : agentProvider === 'teams' ? 'TEAMS_STATE_DIR' : 'TELEGRAM_STATE_DIR'
-    const unsetTokens = 'unset TELEGRAM_BOT_TOKEN SLACK_BOT_TOKEN SLACK_APP_TOKEN DISCORD_BOT_TOKEN'
-    // Slack plugin is third-party; its "not on approved allowlist" check is
-    // bypassed via `allowedChannelPlugins` in /Library/Application Support/ClaudeCode/managed-settings.json.
-    const auditLogEnv = agentProvider === 'slack' ? ` && export SLACK_AUDIT_LOG="${agentChannelDir}/audit.jsonl"` : ''
-    const channelSetup = hasChannel
-      ? `export ${stateEnvVar}="${agentChannelDir}"${auditLogEnv} && `
-      : ''
-    // When the per-agent mcp.json+tee path is active (SUBAGENT_INBOX_TEE), the
-    // plugin is already loaded as a plain MCP server, so ALSO passing --channels
-    // would register the plugin a SECOND way -- a duplicate poller racing the tee
-    // process over the same getUpdates slot. Suppress --channels in that case and
-    // rely solely on mcp.json (enabledPlugins is already forced false above for
-    // the same reason). Every other agent (non-telegram, main, or flag off) keeps
-    // the --channels launch path unchanged.
-    const channelFlag = hasChannel && !useMcpJsonForChannel ? `--channels plugin:${provider.pluginId}` : ''
-    // Channel-plugin MCP-registration guard (2026-06-23): the telegram/slack/etc.
-    // channel plugin registers as a stdio MCP server loaded via --channels. Claude
-    // Code connects stdio MCP servers in batches of MCP_SERVER_CONNECTION_BATCH_SIZE
-    // (default 3); when an agent ALSO runs a slow local .mcp.json stdio server
-    // (e.g. google-workspace/workspace-mcp, which spends seconds on OAuth + Google
-    // API init) plus many claude.ai connectors, the channel plugin gets starved
-    // out of the startup batch / hits MCP_TIMEOUT and never registers -- no /mcp
-    // entry, no bun poller, dead bot (observed: balazsmarveenja with workspace-mcp
-    // had NO telegram; removing workspace-mcp restored it). Raise the stdio batch
-    // size and per-server timeout, and force non-blocking startup, so a slow local
-    // MCP can never crowd the channel plugin out of registration. Only set for
-    // channel-having agents (channel-less agents have no plugin to protect).
-    const mcpEnv = hasChannel
-      ? 'export MCP_SERVER_CONNECTION_BATCH_SIZE=10 && export MCP_CONNECTION_NONBLOCKING=1 && export MCP_TIMEOUT=60000 && '
-      : ''
-    // Disable Claude Code's history-based prompt suggestions -- the DIM (ANSI
-    // SGR-2 faint) ghost-text of a previous prompt that Claude shows in an empty
-    // input box. The stuck-input recovery scrapes the pane with `capture-pane -p`
-    // (no colour), so it cannot tell a dim ghost suggestion apart from REAL
-    // parked input and re-submits the suggestion as a command. That is the root
-    // of the 2026-06-26 phantom-injection incident: a stale "Sztornózd" ghost was
-    // re-submitted and cancelled a live invoice; an earlier ghost emailed a family
-    // member. Killing the suggestion at the source removes the ghost the recovery
-    // misreads. Env var verified present in claude.exe (CLAUDE_CODE_ENABLE_*).
-    const promptSuggestionEnv = 'export CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false && '
-    // Single-quote `${model}` so values like `claude-opus-4-8[1m]` (1M-context
-    // suffix) are not glob-expanded by the shell that tmux spawns the command in.
-    const cmd = `export PATH="/opt/homebrew/bin:$HOME/.bun/bin:/usr/local/bin:/usr/bin:/bin:$PATH" && ${unsetTokens} && ${promptSuggestionEnv}${mcpEnv}${channelSetup}${apiKeyEnv}${claudeConfigEnv}${oauthTokenEnv}${ollamaEnv}${deepseekEnv}${openrouterEnv}cd "${dir}" && ${claudeBin()} ${continueFlag}${skipFlag}--model '${model}' ${channelFlag}`.trimEnd()
-    runTmux(null, ['new-session', '-d', '-s', session, cmd], { timeout: 10000 })
+    // Build the ClaudeLaunchSpec for the new central launch builder. The
+    // standard fields cover everything the legacy cmd produced for the standard
+    // channel-having case (verified byte-equal by claude-launch-cmd.test.ts).
+    // BYO-endpoint cases (Ollama/DeepSeek/OpenRouter) inject extra env exports
+    // AFTER buildClaudeLaunchCmd by editing the cmd string -- the spec lacks a
+    // multi-env-key field, so we keep the byte-equality guarantee via cmd
+    // post-processing rather than touching the central builder.
+    const spec = buildClaudeLaunchSpec({
+      site: 'site-6-subagent-local',
+      session,
+      claudePath: claudeBin(),
+      cwd: dir,
+      host: { kind: 'local' },
+      tmuxSubcommand: 'newSession',
+      model,
+      dangerouslySkipPermissions: profile.permissionMode !== 'strict',
+      continueSession: !!continueFlag,
+      pluginId: hasChannel && !useMcpJsonForChannel ? provider.pluginId : undefined,
+      isolatedConfigDir: claudeConfigDir ?? undefined,
+      fleetOauthToken: oauthTokenEnv ? { path: FLEET_OAUTH_TOKEN_PATH, read: 'cat' } : undefined,
+      apiKey: isOllama
+        ? { env: 'BYO_ENDPOINT' as const, authTokenEnv: 'ANTHROPIC_AUTH_TOKEN' as const, authToken: 'ollama', baseUrl: OLLAMA_URL, model }
+        : isDeepseek
+          ? { env: 'BYO_ENDPOINT' as const, authTokenEnv: 'ANTHROPIC_AUTH_TOKEN' as const, authToken: getSecret('DEEPSEEK_API_KEY') ?? '', baseUrl: 'https://api.deepseek.com/anthropic', model }
+          : isOpenRouter
+            ? { env: 'BYO_ENDPOINT' as const, authTokenEnv: 'ANTHROPIC_AUTH_TOKEN' as const, authToken: getSecret('openrouter-fleet-key') ?? '', baseUrl: 'https://api.openrouter.ai/api', model }
+            : hasApiKey
+              ? { env: 'ANTHROPIC_API_KEY' as const, value: getSecret(`agent-${name}-api-key`) ?? '' }
+              : undefined,
+      channelEnv: hasChannel ? {
+        provider: agentProvider,
+        stateDirVar: stateEnvVar as 'TELEGRAM_STATE_DIR' | 'SLACK_STATE_DIR' | 'DISCORD_STATE_DIR' | 'GOOGLECHAT_STATE_DIR' | 'TEAMS_STATE_DIR',
+        stateDir: agentChannelDir,
+        auditLogPath: agentProvider === 'slack' ? `${agentChannelDir}/audit.jsonl` : undefined,
+      } : undefined,
+      cwdAsCd: true,
+      mcpBatch: hasChannel ? 'channel-only' : 'none',
+      promptSuggestionGuard: true,
+      scrubChannelTokens: true,
+      detectSandbox: false,
+      detectAvxLess: false,
+      pathPreset: 'macos',
+      pathTrailingInherit: true,
+      followups: {
+        identitySetup: { displayName: readAgentDisplayName(name) },
+        pluginUnlock: hasChannel && name !== MAIN_AGENT_ID ? true : false,
+      },
+    })
+    // Central builder emits the full cmd (env chain + cd + claude invocation) in
+    // the correct order. BYO-endpoint credentials (Ollama / DeepSeek / OpenRouter)
+    // flow through the spec.apiKey 'BYO_ENDPOINT' union -- no splice hack.
+    const { args: tmuxArgs } = buildClaudeLaunchCmd(spec)
+    runTmux(null, tmuxArgs, { timeout: 10000 })
 
     logger.info({ name, session, channelDir: agentChannelDir }, 'Agent tmux session started')
 

@@ -1,0 +1,6 @@
+{
+  "site": "site-2-stage1",
+  "description": "Scheduled FRESH main-session respawn-pane (channel-monitor.ts:654) — keepalive-triggered fresh start, no --continue, MCP batch triplet.",
+  "currentCmd": "export PATH=\"/opt/homebrew/bin:$HOME/.bun/bin:/home/linuxbrew/.linuxbrew/bin:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH\" && export CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false MCP_SERVER_CONNECTION_BATCH_SIZE=10 MCP_CONNECTION_NONBLOCKING=1 MCP_TIMEOUT=60000 && export CLAUDE_CODE_OAUTH_TOKEN=\"$(cat '/Users/eggp/marveen/store/.claude-oauth-token')\" && /opt/homebrew/bin/claude --dangerously-skip-permissions --model 'MiniMax-M3[1m]' --channels plugin:'telegram@claude-plugins-official'",
+  "expectedTmuxArgs": ["respawn-pane", "-k", "-t", "marveen-channels", "export PATH=\"/opt/homebrew/bin:$HOME/.bun/bin:/home/linuxbrew/.linuxbrew/bin:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH\" && export CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false MCP_SERVER_CONNECTION_BATCH_SIZE=10 MCP_CONNECTION_NONBLOCKING=1 MCP_TIMEOUT=60000 && export CLAUDE_CODE_OAUTH_TOKEN=\"$(cat '/Users/eggp/marveen/store/.claude-oauth-token')\" && /opt/homebrew/bin/claude --dangerously-skip-permissions --model 'MiniMax-M3[1m]' --channels plugin:'telegram@claude-plugins-official'"]
+}

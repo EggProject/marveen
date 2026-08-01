@@ -566,6 +566,9 @@ export async function tryHandleAgents(ctx: RouteContext, webDir: string): Promis
         { id: 'claude-opus-4-8[1m]', label: 'Opus 4.8 (1M kontextus)' },
         { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5 (leggyorsabb)' },
       ],
+      minimax: [
+        {id:'MiniMax-M3[1m]',label:'MiniMax-M3[1m]'},
+      ],
       deepseek: hasDeepseek
         ? [
             { id: 'deepseek-v4-pro', label: 'DeepSeek-V4-Pro (1M kontextus, erősebb)' },
@@ -776,7 +779,7 @@ export async function tryHandleAgents(ctx: RouteContext, webDir: string): Promis
 
     // MCP server count: read agents/<name>/.mcp.json
     function mcpServerCount(agentName: string): number {
-      const mcpPath = join(agentDir(agentName), '.mcp.json')
+      const mcpPath = join(agentConfigRoot(agentName), '.mcp.json')
       if (!existsSync(mcpPath)) return 0
       try {
         const cfg = JSON.parse(readFileSync(mcpPath, 'utf-8')) as { mcpServers?: Record<string, unknown> }
@@ -786,13 +789,18 @@ export async function tryHandleAgents(ctx: RouteContext, webDir: string): Promis
 
     const names = listAgentNames()
     const results = [MAIN_AGENT_ID, ...names].map(name => {
-      const dir = agentDir(name)
+      const dir = agentConfigRoot(name)
       const claudeMd = readFileOr(join(dir, 'CLAUDE.md'), '')
       const personaPath = join(PROJECT_ROOT, 'personas', `${name}.md`)
       const personaMd = existsSync(personaPath) ? readFileSync(personaPath, 'utf-8') : ''
       const personaText = [claudeMd, personaMd].filter(Boolean).join('\n')
       const currentModel = readAgentModel(name)
-      const contextTokens = readContextTokensFromProjectDir(dir) ?? 0
+      // Mirror the /api/agents list endpoint (line 430): pass the agent's
+      // resolved configDir so the transcript lookup hits the same projects
+      // dir the launcher actually wrote to. Without it, sub-agents with a
+      // non-default claudeConfigDir (named plan or per-agent override) read
+      // from the host's default ~/.claude and report 0 / stale tokens.
+      const contextTokens = readContextTokensFromProjectDir(dir, resolveAgentConfigDir(name).configDir ?? undefined) ?? 0
 
       const kanban = kanbanMap.get(name)
       const signals: AgentSignals = {

@@ -26,7 +26,7 @@ timestamp() { date '+%Y-%m-%d %H:%M:%S'; }
 # the pre-existing default so single-channel telegram installs are unaffected.
 resolve_agent_provider() {
   local agent_dir="$1"
-  AGENT_PROVIDER=$(python3 -c "import json; d=json.load(open('$agent_dir/agent-config.json')); print(d.get('channelProvider','telegram'))" 2>/dev/null || echo telegram)
+  AGENT_PROVIDER=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("channelProvider", "telegram"))' "$agent_dir/agent-config.json" 2>/dev/null || echo telegram)
   [ -n "$AGENT_PROVIDER" ] || AGENT_PROVIDER=telegram
   case "$AGENT_PROVIDER" in
     slack)      TOKEN_VAR="SLACK_BOT_TOKEN";      STATE_ENV_VAR="SLACK_STATE_DIR" ;;
@@ -164,16 +164,36 @@ for AGENT_DIR in "$INSTALL_DIR/agents"/*/; do
 
   CHAN_DIR="$AGENT_DIR/.claude/channels/$AGENT_PROVIDER"
   BOT_TOKEN=$(grep "$TOKEN_VAR" "$CHAN_DIR/.env" 2>/dev/null | cut -d= -f2- | head -1)
-  MODEL=$(python3 -c "import json; d=json.load(open('$AGENT_DIR/agent-config.json')); print(d.get('model','claude-haiku-4-5-20251001'))" 2>/dev/null || echo "claude-haiku-4-5-20251001")
+  # `.get("model", DEFAULT)` returns DEFAULT only when the key is absent. A
+  # literal `null` (legal JSON) would print as the string "None" and a literal
+  # `""` would print as empty -- both make the spec emit `"model": "None"` / a
+  # no-op, neither of which is the operator's intent. Coerce both to the
+  # fallback so missing / null / empty all resolve to the same default.
+  MODEL=$(python3 -c 'import json,sys
+v = json.load(open(sys.argv[1])).get("model")
+print(v if isinstance(v, str) and v else '"'"'MiniMax-M3[1m]'"'"')' "$AGENT_DIR/agent-config.json" 2>/dev/null || echo '"'"'MiniMax-M3[1m]'"'"')
 
   if [ -z "$BOT_TOKEN" ]; then
     echo "$(timestamp) [watchdog] $AGENT_ID: no $AGENT_PROVIDER bot token, skipping" >> "$LOG"
     continue
   fi
 
-  CMD="export PATH=\"/opt/homebrew/bin:\$HOME/.bun/bin:/home/linuxbrew/.linuxbrew/bin:\$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:\$PATH\" && unset TELEGRAM_BOT_TOKEN SLACK_BOT_TOKEN SLACK_APP_TOKEN DISCORD_BOT_TOKEN && export ${STATE_ENV_VAR}=\"$CHAN_DIR\" && cd \"$AGENT_DIR\" && ${CLAUDE_BIN} --dangerously-skip-permissions --model '$MODEL' --channels plugin:${AGENT_PROVIDER}@claude-plugins-official"
-
-  tmux new-session -d -s "$SESSION_NAME" "$CMD" 2>/dev/null
+  CLAUDE_LAUNCH_SPEC="$(mktemp)"
+  trap 'rm -f "$CLAUDE_LAUNCH_SPEC"' EXIT
+  jq -n \
+    --arg session "$SESSION_NAME" \
+    --arg claudePath "$CLAUDE_BIN" \
+    --arg cwd "$AGENT_DIR" \
+    --arg model "$MODEL" \
+    --arg pluginId "${AGENT_PROVIDER}@claude-plugins-official" \
+    --arg provider "$AGENT_PROVIDER" \
+    --arg stateDirVar "$STATE_ENV_VAR" \
+    --arg stateDir "$CHAN_DIR" \
+    '{site: "watchdog", session: $session, claudePath: $claudePath, cwd: $cwd, host: {kind: "local"}, tmuxSubcommand: "newSession", model: $model, pluginId: $pluginId, channelEnv: {provider: $provider, stateDirVar: $stateDirVar, stateDir: $stateDir}, mcpBatch: "none", promptSuggestionGuard: false, scrubChannelTokens: true, detectSandbox: false, detectAvxLess: false, pathPreset: "linux", pathTrailingInherit: true, followups: {}}' \
+    > "$CLAUDE_LAUNCH_SPEC"
+  bash "$INSTALL_DIR/scripts/claude-launch.sh" "$CLAUDE_LAUNCH_SPEC" 2>/dev/null
+  rm -f "$CLAUDE_LAUNCH_SPEC"
+  trap - EXIT
   sleep 2
 
   if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
