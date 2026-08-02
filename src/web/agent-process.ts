@@ -1189,10 +1189,8 @@ export function startAgentProcess(name: string, opts: { fresh?: boolean } = {}):
     // Build the ClaudeLaunchSpec for the new central launch builder. The
     // standard fields cover everything the legacy cmd produced for the standard
     // channel-having case (verified byte-equal by claude-launch-cmd.test.ts).
-    // BYO-endpoint cases (Ollama/DeepSeek/OpenRouter) inject extra env exports
-    // AFTER buildClaudeLaunchCmd by editing the cmd string -- the spec lacks a
-    // multi-env-key field, so we keep the byte-equality guarantee via cmd
-    // post-processing rather than touching the central builder.
+    // BYO-endpoint cases (Ollama/DeepSeek/OpenRouter) flow through the spec
+    // via the `apiKey: { env: 'BYO_ENDPOINT', ... }` union -- no cmd splice.
     const spec = buildClaudeLaunchSpec({
       site: 'site-6-subagent-local',
       session,

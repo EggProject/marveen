@@ -56,6 +56,13 @@ ISOLATED_CONFIG_DIR="$(jq -r '.isolatedConfigDir // empty' "$SPEC_FILE")"
 FLEET_OAUTH_PATH="$(jq -r '.fleetOauthToken.path // empty' "$SPEC_FILE")"
 API_KEY_ENV="$(jq -r '.apiKey.env // empty' "$SPEC_FILE")"
 API_KEY_VALUE="$(jq -r '.apiKey.value // empty' "$SPEC_FILE")"
+# BYO endpoint triplet (Ollama / DeepSeek / OpenRouter / etc.) — mirrors the
+# `apiKey: { env: 'BYO_ENDPOINT', ... }` union in src/web/claude-launch.ts so
+# the shell shim and the TS builder stay byte-equal.
+API_KEY_AUTH_TOKEN_ENV="$(jq -r '.apiKey.authTokenEnv // empty' "$SPEC_FILE")"
+API_KEY_AUTH_TOKEN="$(jq -r '.apiKey.authToken // empty' "$SPEC_FILE")"
+API_KEY_BASE_URL="$(jq -r '.apiKey.baseUrl // empty' "$SPEC_FILE")"
+API_KEY_MODEL="$(jq -r '.apiKey.model // empty' "$SPEC_FILE")"
 
 CHANNEL_STATE_DIR_VAR="$(jq -r '.channelEnv.stateDirVar // empty' "$SPEC_FILE")"
 CHANNEL_STATE_DIR="$(jq -r '.channelEnv.stateDir // empty' "$SPEC_FILE")"
@@ -183,8 +190,17 @@ if [ -n "$FLEET_OAUTH_PATH" ]; then
   LINES+=("export CLAUDE_CODE_OAUTH_TOKEN=\"\$(cat ${SQ_OAUTH})\"")
 fi
 
-# apiKey: only ANTHROPIC_API_KEY is permitted; quote the value as inert data.
-if [ -n "$API_KEY_ENV" ] || [ -n "$API_KEY_VALUE" ]; then
+# apiKey: only ANTHROPIC_API_KEY OR a BYO-endpoint triplet is permitted.
+# Quote every value as inert data — secrets must NEVER be interpolated as
+# literal tokens, only the path/file the runtime should read them from.
+if [ -n "$API_KEY_ENV" ] && [ "$API_KEY_ENV" = "BYO_ENDPOINT" ]; then
+  SQ_AUTH_TOKEN="$(shellSingleQuote "$API_KEY_AUTH_TOKEN")"
+  SQ_BASE_URL="$(shellSingleQuote "$API_KEY_BASE_URL")"
+  SQ_BYO_MODEL="$(shellSingleQuote "$API_KEY_MODEL")"
+  LINES+=("export ${API_KEY_AUTH_TOKEN_ENV}=${SQ_AUTH_TOKEN}")
+  LINES+=("export ANTHROPIC_BASE_URL=${SQ_BASE_URL}")
+  LINES+=("export ANTHROPIC_MODEL=${SQ_BYO_MODEL}")
+elif [ -n "$API_KEY_ENV" ] || [ -n "$API_KEY_VALUE" ]; then
   [ "$API_KEY_ENV" = "ANTHROPIC_API_KEY" ] || { echo "unsupported apiKey.env: $API_KEY_ENV" >&2; exit 3; }
   SQ_API_KEY="$(shellSingleQuote "$API_KEY_VALUE")"
   LINES+=("export ANTHROPIC_API_KEY=${SQ_API_KEY}")

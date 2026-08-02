@@ -58,7 +58,12 @@ MAX_ESCAPES=4                                  # ensure_modal_closed bound
 # makes claude exit immediately while the alert would falsely say "respawned".
 # The plugin id flows into the JSON spec via jq --arg (which handles shell
 # quoting), so a hostile value cannot break out of the respawn command string.
-RESPAWN_PLUGIN="${STUCK_MODAL_PLUGIN:-plugin:telegram@claude-plugins-official}"
+#
+# BARE id only (no `plugin:` prefix) -- claude-launch.sh unconditionally prepends
+# `plugin:` to every entry of the --channels flag. A prefixed value here would
+# emit `plugin:'plugin:telegram@…'`, which Claude Code rejects silently and
+# drops the channel on the only recovery path that has to work.
+RESPAWN_PLUGIN="${STUCK_MODAL_PLUGIN:-telegram@claude-plugins-official}"
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') [$LOG_TAG] $*" || true; }
 

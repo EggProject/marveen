@@ -470,6 +470,61 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# (20a) pluginId is the BARE id, not `plugin:<id>` -- the shim prepends
+# `plugin:` to every entry of the --channels flag. A prefixed value here
+# would emit `plugin:'plugin:telegram@…'`, which Claude Code rejects
+# silently and drops the channel on the only recovery path that has to work.
+# ---------------------------------------------------------------------------
+echo ""
+echo "(20a) pluginId bare id (no plugin: prefix) -> single 'plugin:' emitted"
+SPEC="$TMPDIR_/plugin-bare.json"
+write_spec "$SPEC" '{"tmuxSubcommand":"respawnPane","session":"s","claudePath":"/opt/homebrew/bin/claude","cwd":"/tmp","host":{"kind":"local"},"pluginId":"telegram@claude-plugins-official","mcpBatch":"none","pathPreset":"linux","pathTrailingInherit":false,"followups":{}}'
+OUT="$(run_shim "$SPEC")"
+LAST="$(last_invocation "$OUT")"
+GOT="$(printf '%s\n' "$LAST" | strip_tmux_prefix)"
+if printf '%s' "$GOT" | grep -qF "plugin:'telegram@claude-plugins-official'"; then
+  pass "pluginId bare: single 'plugin:' prefix emitted"
+else
+  fail "pluginId bare: expected single 'plugin:' prefix, got: $GOT"
+fi
+if printf '%s' "$GOT" | grep -qF "plugin:'plugin:"; then
+  fail "pluginId bare: DOUBLE 'plugin:' prefix detected (regression): $GOT"
+else
+  pass "pluginId bare: no double 'plugin:' prefix"
+fi
+
+# ---------------------------------------------------------------------------
+# (20b) apiKey: BYO_ENDPOINT triplet (Ollama / DeepSeek / OpenRouter) -> the
+# three env exports flow through the shim exactly like the TS builder emits
+# them, byte-equal. Without this branch the shell shim would refuse BYO
+# specs with 'unsupported apiKey.env: BYO_ENDPOINT' and the test
+# infrastructure couldn't dry-run the Ollama/DeepSeek/OpenRouter sub-agent
+# sites even when the spec is otherwise valid.
+# ---------------------------------------------------------------------------
+echo ""
+echo "(20b) apiKey BYO_ENDPOINT triplet"
+SPEC="$TMPDIR_/byo-endpoint.json"
+write_spec "$SPEC" '{"tmuxSubcommand":"respawnPane","session":"s","claudePath":"/opt/homebrew/bin/claude","cwd":"/tmp","host":{"kind":"local"},"apiKey":{"env":"BYO_ENDPOINT","authTokenEnv":"ANTHROPIC_AUTH_TOKEN","authToken":"ollama","baseUrl":"http://localhost:11434","model":"llama3"},"mcpBatch":"none","pathPreset":"linux","pathTrailingInherit":false,"followups":{}}'
+OUT="$(run_shim "$SPEC")"
+LAST="$(last_invocation "$OUT")"
+GOT="$(printf '%s\n' "$LAST" | strip_tmux_prefix)"
+if printf '%s' "$GOT" | grep -qF "export ANTHROPIC_AUTH_TOKEN='ollama'"; then
+  pass "BYO: ANTHROPIC_AUTH_TOKEN emitted single-quoted"
+else
+  fail "BYO: ANTHROPIC_AUTH_TOKEN missing/unquoted (got '$GOT')"
+fi
+if printf '%s' "$GOT" | grep -qF "export ANTHROPIC_BASE_URL='http://localhost:11434'"; then
+  pass "BYO: ANTHROPIC_BASE_URL emitted single-quoted"
+else
+  fail "BYO: ANTHROPIC_BASE_URL missing/unquoted (got '$GOT')"
+fi
+if printf '%s' "$GOT" | grep -qF "export ANTHROPIC_MODEL='llama3'"; then
+  pass "BYO: ANTHROPIC_MODEL emitted single-quoted"
+else
+  fail "BYO: ANTHROPIC_MODEL missing/unquoted (got '$GOT')"
+fi
+
+# ---------------------------------------------------------------------------
 # (20) pathPreset='login-shell' -> bash -lc wrapper in args
 # ---------------------------------------------------------------------------
 echo ""
