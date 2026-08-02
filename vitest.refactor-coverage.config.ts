@@ -10,6 +10,8 @@ export default defineConfig({
       include: [
         'src/config-resolution.ts',
         'src/runtime-env.ts',
+        'src/providers/registry.ts',
+        'src/providers/runtime.ts',
       ],
       reporter: ['text', 'json-summary'],
       thresholds: {

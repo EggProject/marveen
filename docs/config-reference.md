@@ -87,8 +87,9 @@ A dashboard Beállítások oldala egy háromrétegű konfigurációs rendszert k
 
 **Feloldási sorrend (priority order, az első találat nyer):**
 1. `store/config-overrides.json` -- a dashboard által mentett felülbírálatok
-2. `.env` -- project szintű értékek (induláskor és minden lekérésnél frissen olvassa)
-3. Registry alapértelmezett érték (`src/config-registry.ts`)
+2. Registry alapértelmezett érték (`src/config-registry.ts`)
+
+A `.env` fájl kizárólag a telepítés utáni egyszeri migráció forrása; az aktuális production runtime a `.env`-ből nem olvas beállításokat. A marveen-specifikus kulcsok a `store/config-overrides.json`-ba, a secret-ek a titkosított Vaultba kerülnek; a régi Marveen-kulcs használata konfigurációs hibát ad, nem csendes fallback-et.
 
 **`store/config-overrides.json` struktúra:**
 
@@ -280,7 +281,7 @@ Minden sub-ágens mappája gitignore-olt (`agents/` mappa), így a titkos kulcso
 
 ```json
 {
-  "model": "claude-sonnet-5",
+  "model": "anthropic:claude-sonnet-5",
   "profileId": "developer-senior",
   "memoryIsolation": false,
   "team": {
@@ -292,6 +293,8 @@ Minden sub-ágens mappája gitignore-olt (`agents/` mappa), így a titkos kulcso
   }
 }
 ```
+
+A `model` mező **canonical model ref-et** vár: `provider:model` formátum (pl. `anthropic:claude-opus-5`, `minimax:MiniMax-M3`, `deepseek:deepseek-v4-pro`, `ollama:qwen2.5:7b`). A nyers modell id-k és a rövid aliasok (`opus`, `sonnet`, `haiku`) többé nem fogadhatók el; az ismeretlen vagy hibás ref konfigurációs hibát ad, nem csendes fallback-et. A szállított provider/model katalógus a `src/providers/registry.ts` típusos registry-ből jön, és a futó agent csak olyan modellt indíthat, ami a registry-ben szerepel.
 
 A `memoryIsolation` mező (opcionális, alapértelmezés: kikapcsolva) az ágens fájl-alapú auto-memóriáját választja le a közös, telepítés-szintű memóriáról. Bekapcsolva az ágens indításkor saját git-gyökeret kap (stub .git az agents/<név> alatt), így a Claude Code auto-memory a saját projekt-kulcsa alá kerül, és az ágens nem látja a közös MEMORY.md-t. A megosztott SQLite-emlékek és a CLAUDE.md továbbra is elérnek hozzá.
 
@@ -402,6 +405,32 @@ A főbb konfigurációs változók a launchd plist-ben (`~/Library/LaunchAgents/
 | `ANTHROPIC_API_KEY` | Claude API kulcs |
 | `OWNER_NAME` | A tulajdonos neve (pl. "Jónás Gergő") |
 | `BOT_NAME` | A főágens neve (pl. "Jarvis") |
+
+A `.env` fájl kizárólag a telepítés utáni egyszeri migráció forrása; az aktuális production runtime a `.env`-ből nem olvas beállításokat (lásd a `Beállítások rendszer` fejezetet). A dashboard Beállítások oldalán keresztül a `store/config-overrides.json`-ba, a titkokat a Vaultba írd.
+
+---
+
+## Model- és provider-registry
+
+A szállított modellek és providerek katalógusa a `src/providers/registry.ts` típusos registry-ből jön. Minden futó agent kizárólag olyan modellt indíthat, ami a registry-ben szerepel, és a canonical `provider:model` ref formátumban hivatkozik rá.
+
+**Szállított providerek:**
+
+| Provider id | Base URL forrása | Vault secret id | Default modell(ek) |
+|-------------|------------------|-----------------|---------------------|
+| `anthropic` | `ANTHROPIC_BASE_URL` (felülbírálható) | `CLAUDE_CODE_OAUTH_TOKEN` (fallback: `ANTHROPIC_API_KEY`) | claude-opus-4-8[1m], claude-opus-5, claude-sonnet-5, claude-sonnet-4-6, claude-haiku-4-5-20251001, claude-fable-5 |
+| `minimax` | `MINIMAX_BASE_URL` (kötelező, különben a modell nem választható) | `MINIMAX_API_KEY` | MiniMax-M3 |
+| `deepseek` | `ANTHROPIC_BASE_URL` (default: `https://api.deepseek.com/anthropic`) | `DEEPSEEK_API_KEY` | deepseek-v4-pro, deepseek-v4-flash |
+| `openrouter` | `ANTHROPIC_BASE_URL` (default: `https://openrouter.ai/api`) | `openrouter-fleet-key` | openrouter `auto:*` modellek |
+| `ollama` | `OLLAMA_URL` (default: `http://localhost:11434`) | nincs (a literal `ollama` tokent használja) | bármely, a felhasználó által telepített modell |
+
+**Canonical model ref.** A flotta mindenhol (`agents/<név>/agent-config.json`, `store/model-profile-map.json`, `DEFAULT_AGENT_MODEL` registry-beállítás, dashboard agent picker) a `provider:model` formátumot használja. A nyers modell id (pl. `claude-opus-5`), a rövid alias (`opus`, `sonnet`, `haiku`), és a prefix-alapú inference többé nem fogadható el. Az ismeretlen vagy hibás ref konfigurációs hibát ad (`ProviderConfigError`), nem csendes fallback-et.
+
+**MiniMax konfiguráció (Phase 2 stop gate).** A MiniMax modell csak akkor jelenik meg választhatóként, ha:
+1. a `MINIMAX_BASE_URL` registry-beállítás nem üres (globális: `https://api.minimax.io/anthropic`, kínai régió: `https://api.minimaxi.com/anthropic`),
+2. a Vaultban `MINIMAX_API_KEY` azonosító alatt tárolt kulcs jelen van.
+
+Hiányos konfiguráció esetén az indító futás előtti, felhasználónak megjelenített hibát ad (`minimax_base_url_missing` vagy `minimax_auth_token_missing`); Ollamára, Claude-ra vagy más providerre nincs fallback. A MiniMax runtime konfigurációja (`ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_MODEL`) a `claude` indító child environment-jébe megy, ahol a secret kizárólag a `$(cat <0600-fájl>)` command substitution útján, a runtime-config shell bridge-en keresztül kerül be.
 
 ---
 

@@ -1,5 +1,16 @@
 # Lean Optimization Phase 1 — as built
 
+> **SUPERSEDED for model/provider references.** This document describes a state
+> where `MODEL_ALIASES` was retained, raw `model` ids were accepted, and the
+> provider cutover had not happened. The Phase 2 registry refactor
+> (`refactor(models): centralize provider and model registry`) replaced that
+> state with a typed `src/providers/registry.ts` plus canonical `provider:model`
+> refs and a hard error on unknown providers/models. For the current contract,
+> see [`docs/config-reference.md`](../config-reference.md) §"Model- és
+> provider-registry" and [`docs/en/config-reference.md`](../en/config-reference.md)
+> §"Model and Provider Registry". The historical content below is kept for
+> traceability; treat it as a record, not as guidance.
+
 Card: c755f4b2. Branch: `feat/lean-opt-phase1-gate` (worktree `/home/iszzu/marveen-wt/lean-opt-phase1`), based on `2ad7e91` (v1.25.1).
 Built by fullstackfejleszto, 2026-07-29. Gated by marveen.
 

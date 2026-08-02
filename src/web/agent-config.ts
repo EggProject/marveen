@@ -11,6 +11,7 @@ import {
   type ModelProfileMapState,
   type ModelResolution,
 } from '../model-profiles.js'
+import { ModelRegistryError } from '../providers/registry.js'
 
 export const AGENTS_BASE_DIR = join(PROJECT_ROOT, 'agents')
 
@@ -19,17 +20,7 @@ export const AGENTS_BASE_DIR = join(PROJECT_ROOT, 'agents')
 // call sites -- and the 'inherit' alias below -- keep working unchanged.
 export const DEFAULT_MODEL = DEFAULT_AGENT_MODEL
 
-// Map short model names to full Claude model IDs (backwards compat with old configs)
-export const MODEL_ALIASES: Record<string, string> = {
-  'opus': 'claude-opus-4-8[1m]',
-  'sonnet': 'claude-sonnet-5',
-  'sonnet-5': 'claude-sonnet-5',
-  'sonnet5': 'claude-sonnet-5',
-  'opus-5': 'claude-opus-5',
-  'opus5': 'claude-opus-5',
-  'haiku': 'claude-haiku-4-5-20251001',
-  'inherit': DEFAULT_MODEL,
-}
+export const MODEL_ALIASES: Record<string, string> = {} // legacy alias map removed in cutover
 
 export function agentDir(name: string): string {
   // safeJoin rejects path-traversal components. The first line of defense is
@@ -65,7 +56,15 @@ export function findAvatarForAgent(name: string): string | null {
 }
 
 export function resolveModelId(raw: string): string {
-  return MODEL_ALIASES[raw] || raw
+  if (!raw) throw new ModelRegistryError('empty_model_id')
+  // The cutover requires canonical refs ("provider:model"). Legacy short names
+  // and the bare "inherit" alias are rejected so a misconfigured agent fails
+  // loudly instead of silently switching providers.
+  if (!raw.includes(':')) {
+    throw new ModelRegistryError(`legacy_model_alias:${raw}`)
+  }
+  if (MODEL_ALIASES[raw]) return MODEL_ALIASES[raw]
+  return raw
 }
 
 // ---- model-profile map (deployment-local, card c755f4b2 Block B) -------------
@@ -111,6 +110,24 @@ export function resolveAgentModelDetailed(name: string): ModelResolution {
     return { model: DEFAULT_MODEL, source: 'default' }
   }
   return resolveAgentModelFromConfig(config, readModelProfileMap(), DEFAULT_MODEL, resolveModelId)
+}
+
+import {
+  parseCanonicalModelRef,
+  type CanonicalRef,
+  type ProviderId,
+} from '../providers/registry.js'
+
+export interface ResolvedModelRuntime extends ModelResolution {
+  readonly canonicalRef: string
+  readonly provider: ProviderId
+  readonly model: string
+}
+
+export function resolveCanonicalModelRef(name: string): ResolvedModelRuntime {
+  const resolved = resolveAgentModelDetailed(name)
+  const ref = parseCanonicalModelRef(resolved.model)
+  return { ...resolved, canonicalRef: `${ref.provider}:${ref.model}`, provider: ref.provider, model: ref.model }
 }
 
 // Unchanged contract: the concrete model id this agent runs on. For every

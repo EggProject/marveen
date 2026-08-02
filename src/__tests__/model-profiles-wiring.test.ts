@@ -24,18 +24,18 @@ const MAP_PATH = join(PROJECT_ROOT, 'store', 'model-profile-map.json');
 const MAP = {
   version: 'wiring-test-1',
   profiles: {
-    premium_reasoning: 'claude-opus-5',
-    build_strong: 'claude-sonnet-5',
-    analysis_efficient: 'deepseek-v4-pro',
-    routine_lowcost: 'deepseek-v4-pro',
+    premium_reasoning: 'anthropic:claude-opus-5',
+    build_strong: 'anthropic:claude-sonnet-5',
+    analysis_efficient: 'deepseek:deepseek-v4-pro',
+    routine_lowcost: 'deepseek:deepseek-v4-pro',
   },
 };
 
 // Fixtures mirror the two real canary agents' post-reassignment configs.
 const FIXTURES: Record<string, Record<string, unknown>> = {
-  'mp-legacy-explicit': { model: 'claude-sonnet-5' },
-  'mp-canary-build': { model: 'claude-sonnet-5', modelProfile: 'build_strong' },
-  'mp-canary-research': { model: 'deepseek-v4-pro', modelProfile: 'analysis_efficient' },
+  'mp-legacy-explicit': { model: 'anthropic:claude-sonnet-5' },
+  'mp-canary-build': { model: 'anthropic:claude-sonnet-5', modelProfile: 'build_strong' },
+  'mp-canary-research': { model: 'deepseek:deepseek-v4-pro', modelProfile: 'analysis_efficient' },
   'mp-profile-only': { modelProfile: 'analysis_efficient' },
   'mp-bad-profile': { modelProfile: 'turbo' },
 };
@@ -62,7 +62,7 @@ afterAll(() => {
 
 describe('additive over the existing selector', () => {
   it('an agent with only a legacy explicit model resolves exactly as before', () => {
-    expect(readAgentModel('mp-legacy-explicit')).toBe('claude-sonnet-5');
+    expect(readAgentModel('mp-legacy-explicit')).toBe('anthropic:claude-sonnet-5');
     expect(resolveAgentModelDetailed('mp-legacy-explicit').source).toBe('explicit_model');
   });
 
@@ -70,15 +70,15 @@ describe('additive over the existing selector', () => {
     // This is the Block B acceptance criterion in one assertion: the two live
     // canary agents keep their explicit model AND gain a profile, and the
     // resolved-model diff is empty.
-    expect(readAgentModel('mp-canary-build')).toBe('claude-sonnet-5');
-    expect(readAgentModel('mp-canary-research')).toBe('deepseek-v4-pro');
+    expect(readAgentModel('mp-canary-build')).toBe('anthropic:claude-sonnet-5');
+    expect(readAgentModel('mp-canary-research')).toBe('deepseek:deepseek-v4-pro');
     expect(resolveAgentModelDetailed('mp-canary-build').source).toBe('explicit_model');
     expect(resolveAgentModelDetailed('mp-canary-research').source).toBe('explicit_model');
   });
 
   it('an agent with ONLY a profile resolves through the map', () => {
     const r = resolveAgentModelDetailed('mp-profile-only');
-    expect(r.model).toBe('deepseek-v4-pro');
+    expect(r.model).toBe('deepseek:deepseek-v4-pro');
     expect(r.source).toBe('model_profile');
   });
 
@@ -110,12 +110,12 @@ describe('the existing model selector is untouched', () => {
     expect(suggest).not.toContain('modelProfile');
   });
 
-  it('the legacy alias table is still applied and still owns the short names', () => {
+  it('the canonical registry owns the short names (legacy aliases removed)', () => {
     const cfg = readFileSync(join(SRC, 'web', 'agent-config.ts'), 'utf-8');
-    expect(cfg).toContain('export const MODEL_ALIASES');
-    expect(cfg).toContain("'sonnet': 'claude-sonnet-5'");
-    // The resolver receives resolveModelId as its alias hook rather than
-    // reimplementing aliasing, so there is exactly one alias table.
+    // The cutover removed the legacy alias table; model ids must be canonical refs.
+    expect(cfg).toContain('export const MODEL_ALIASES: Record<string, string> = {}');
+    expect(cfg).not.toContain("'sonnet': 'claude-sonnet-5'");
+    // The resolver stays the alias hook: provider registry owns the canonical mapping.
     expect(cfg).toContain('resolveAgentModelFromConfig(config, readModelProfileMap(), DEFAULT_MODEL, resolveModelId)');
   });
 

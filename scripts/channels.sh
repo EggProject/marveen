@@ -289,10 +289,12 @@ MCP_BATCH_ENV="export CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false MCP_SERVER_CONN
 # across versions. Passing the flag makes the choice deterministic and visible
 # in `ps`.
 #
-# Precedence: MAIN_AGENT_MODEL from .env (per-install, gitignored) wins over
-# .claude/settings.json (tracked, shipped with the repo). Without the .env
-# route an install that wants a different model has to edit a tracked file,
-# which then blocks the update preflight and gets reverted by the next update.
+# Precedence: DEFAULT_AGENT_MODEL from the canonical settings store
+# (store/config-overrides.json -> registry default) is the single source for
+# the main channel-session model. The local MAIN_MODEL variable below is
+# resolved by resolve_main_model via the runtime-config bridge; the legacy
+# MAIN_AGENT_MODEL .env key and the tracked .claude/settings.json model
+# fallback have been removed.
 MAIN_MODEL="$(resolve_main_model)"
 MODEL_FLAG=""
 # Single-quote the model id so values like `claude-opus-4-8[1m]` survive the

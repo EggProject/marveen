@@ -7,13 +7,16 @@
     "Phase 1 intent is ABSTRACTION, not re-tiering: build the first map from the models the",
     "fleet ALREADY runs, so switching an agent to a profile changes nothing observable.",
     "Two profiles MAY point at the same concrete model - that is expected in a first map.",
-    "Precedence: an agent's explicit `model` always wins over its `modelProfile`."
+    "Precedence: an agent's explicit `model` always wins over its `modelProfile`.",
+    "Model references are CANONICAL: 'provider:model'. Bare model ids, short aliases",
+    "(opus/sonnet/haiku), and prefix inference are no longer accepted; an unknown",
+    "profile value or a malformed ref is a config error, not a silent fallback."
   ],
-  "version": "example-1",
+  "version": "example-2",
   "profiles": {
-    "premium_reasoning": "claude-opus-5",
-    "build_strong": "claude-sonnet-5",
-    "analysis_efficient": "deepseek-v4-pro",
-    "routine_lowcost": "deepseek-v4-pro"
+    "premium_reasoning": "anthropic:claude-opus-5",
+    "build_strong": "anthropic:claude-sonnet-5",
+    "analysis_efficient": "deepseek:deepseek-v4-pro",
+    "routine_lowcost": "deepseek:deepseek-v4-flash"
   }
 }

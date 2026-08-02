@@ -6,9 +6,15 @@ import {
   DISTRIBUTION_DEFAULT_AGENT_MODEL,
 } from '../config-registry.js'
 import { DEFAULT_AGENT_MODEL } from '../config.js'
-import { DEFAULT_MODEL, MODEL_ALIASES, resolveModelId } from '../web/agent-config.js'
+import { DEFAULT_MODEL, resolveModelId } from '../web/agent-config.js'
 import { defaultChainForInstall } from '../web/model-fallback-store.js'
 import { DEFAULT_MODEL_CHAIN } from '../model-fallback.js'
+import { CLAUDE_DEFAULT_MODEL, formatCanonicalModelRef } from '../providers/registry.js'
+
+// Every assertion here is RELATIONAL, never "the default is <some model id>":
+// these tests run both on a fresh checkout (no .env -> distribution default)
+// and on a configured install (DEFAULT_AGENT_MODEL set -> that model), and must
+// pass in both.
 
 // Every assertion here is RELATIONAL, never "the default is <some model id>":
 // these tests run both on a fresh checkout (no .env -> distribution default)
@@ -26,31 +32,32 @@ describe('DEFAULT_AGENT_MODEL', () => {
     expect(SETTINGS_REGISTRY.filter((s) => s.key === 'DEFAULT_AGENT_MODEL')).toHaveLength(1)
   })
 
-  it('keeps the registry default and the boot constant on one literal', () => {
+  it('keeps the registry default on the canonical distribution literal', () => {
     // The whole point of DISTRIBUTION_DEFAULT_AGENT_MODEL living in the
-    // zero-import registry module: these two can never drift.
-    expect(getSettingDefinition('DEFAULT_AGENT_MODEL')!.default).toBe(DISTRIBUTION_DEFAULT_AGENT_MODEL)
+    // zero-import registry module: the boot default always carries the
+    // canonical "anthropic:" prefix and never drifts.
+    expect(getSettingDefinition('DEFAULT_AGENT_MODEL')!.default)
+      .toBe(formatCanonicalModelRef({ provider: 'anthropic', model: DISTRIBUTION_DEFAULT_AGENT_MODEL }))
   })
 
-  it('offers the distribution default among the selectable values', () => {
+  it('offers the canonical distribution default among the selectable values', () => {
     const def = getSettingDefinition('DEFAULT_AGENT_MODEL')!
     expect(def.valueSet).toBeDefined()
-    expect(def.valueSet).toContain(DISTRIBUTION_DEFAULT_AGENT_MODEL)
-    expect(def.valueSet).toContain('claude-opus-5')
-    // The worker drives the `claude` CLI, so only Claude ids are admissible.
-    expect(def.valueSet!.every((m) => m.startsWith('claude-'))).toBe(true)
+    expect(def.valueSet).toContain(formatCanonicalModelRef({ provider: 'anthropic', model: DISTRIBUTION_DEFAULT_AGENT_MODEL }))
+    expect(def.valueSet).toContain(formatCanonicalModelRef({ provider: 'anthropic', model: 'claude-opus-5' }))
+    // Only canonical refs in the picker; raw model ids / legacy aliases are rejected.
+    expect(def.valueSet!.every((m) => m.startsWith('anthropic:'))).toBe(true)
   })
 
-  it('validates against the value set', () => {
+  it('validates against the canonical value set', () => {
     const def = getSettingDefinition('DEFAULT_AGENT_MODEL')!
-    expect(validateSettingValue(def, 'claude-opus-5')).toEqual({ ok: true, value: 'claude-opus-5' })
+    expect(validateSettingValue(def, formatCanonicalModelRef({ provider: 'anthropic', model: 'claude-opus-5' })))
+      .toEqual({ ok: true, value: formatCanonicalModelRef({ provider: 'anthropic', model: 'claude-opus-5' }) })
     expect(validateSettingValue(def, 'gpt-4').ok).toBe(false)
   })
 
   it('resolves to the configured value, defaulting to the distribution literal', () => {
     const def = getSettingDefinition('DEFAULT_AGENT_MODEL')!
-    // Either an operator set it (then it must be a selectable id), or it fell
-    // through to the distribution default.
     expect(def.valueSet).toContain(DEFAULT_AGENT_MODEL)
   })
 })
@@ -60,15 +67,17 @@ describe('agent-config default wiring', () => {
     expect(DEFAULT_MODEL).toBe(DEFAULT_AGENT_MODEL)
   })
 
-  it("resolves the 'inherit' alias to the install default", () => {
-    expect(resolveModelId('inherit')).toBe(DEFAULT_AGENT_MODEL)
+  it('passes a canonical ref through unchanged', () => {
+    expect(resolveModelId('anthropic:claude-opus-5')).toBe('anthropic:claude-opus-5')
   })
 
-  it("leaves the bare 'opus' alias pinned to 4.8", () => {
-    // Deliberate upstream decision (v1.23.2): raising the install default must
-    // not silently reconfigure agents whose config says the generic 'opus'.
-    expect(MODEL_ALIASES['opus']).toBe('claude-opus-4-8[1m]')
-    expect(resolveModelId('opus')).toBe('claude-opus-4-8[1m]')
+  it('rejects legacy short aliases once the cutover is live', () => {
+    expect(() => resolveModelId('opus')).toThrow()
+    expect(() => resolveModelId('haiku')).toThrow()
+  })
+
+  it('re-exports the canonical distribution default for downstream callers', () => {
+    expect(CLAUDE_DEFAULT_MODEL).toBe('claude-opus-4-8[1m]')
   })
 })
 

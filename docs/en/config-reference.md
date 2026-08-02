@@ -87,8 +87,9 @@ The dashboard Settings page manages a three-layer configuration system.
 
 **Resolution order (first match wins):**
 1. `store/config-overrides.json` -- overrides saved by the dashboard
-2. `.env` -- project-level values (read fresh on every request, not frozen at boot)
-3. Registry default (`src/config-registry.ts`)
+2. Registry default (`src/config-registry.ts`)
+
+The `.env` file is ONLY an input source for the one-time post-install migration; the active production runtime does not read Marveen configuration from `.env`. Marveen keys land in `store/config-overrides.json` and secrets in the encrypted Vault; using a legacy Marveen key returns a typed configuration error, not a silent fallback.
 
 **`store/config-overrides.json` structure:**
 
@@ -280,7 +281,7 @@ Every sub-agent's directory is gitignored (`agents/` folder), keeping secrets sa
 
 ```json
 {
-  "model": "claude-sonnet-5",
+  "model": "anthropic:claude-sonnet-5",
   "profileId": "developer-senior",
   "team": {
     "role": "member",
@@ -291,6 +292,8 @@ Every sub-agent's directory is gitignored (`agents/` folder), keeping secrets sa
   }
 }
 ```
+
+The `model` field expects a **canonical model ref** in `provider:model` format (e.g. `anthropic:claude-opus-5`, `minimax:MiniMax-M3`, `deepseek:deepseek-v4-pro`, `ollama:qwen2.5:7b`). Bare model ids and short aliases (`opus`, `sonnet`, `haiku`) are no longer accepted; an unknown or malformed ref raises a configuration error, not a silent fallback. The shipped provider/model catalogue comes from the typed registry in `src/providers/registry.ts`, and a running agent can only start a model that is registered there.
 
 ---
 
@@ -382,6 +385,32 @@ Key configuration variables live in the launchd plist (`~/Library/LaunchAgents/c
 | `ANTHROPIC_API_KEY` | Claude API key |
 | `OWNER_NAME` | Owner name (e.g. "Jónás Gergő") |
 | `BOT_NAME` | Main agent name (e.g. "Jarvis") |
+
+The `.env` file is ONLY an input source for the one-time post-install migration (see the "Settings System" section above). The active production runtime does NOT read Marveen configuration from `.env`; the dashboard Settings page writes to `store/config-overrides.json` and secrets go to the encrypted Vault.
+
+---
+
+## Model and Provider Registry
+
+The shipped model and provider catalogue comes from the typed registry in `src/providers/registry.ts`. Every running agent can only start a model that is registered there, and references it through the canonical `provider:model` ref format.
+
+**Shipped providers:**
+
+| Provider id | Base URL source | Vault secret id | Default model(s) |
+|-------------|-----------------|-----------------|---------------------|
+| `anthropic` | `ANTHROPIC_BASE_URL` (overridable) | `CLAUDE_CODE_OAUTH_TOKEN` (fallback: `ANTHROPIC_API_KEY`) | claude-opus-4-8[1m], claude-opus-5, claude-sonnet-5, claude-sonnet-4-6, claude-haiku-4-5-20251001, claude-fable-5 |
+| `minimax` | `MINIMAX_BASE_URL` (mandatory; otherwise the model is not selectable) | `MINIMAX_API_KEY` | MiniMax-M3 |
+| `deepseek` | `ANTHROPIC_BASE_URL` (default: `https://api.deepseek.com/anthropic`) | `DEEPSEEK_API_KEY` | deepseek-v4-pro, deepseek-v4-flash |
+| `openrouter` | `ANTHROPIC_BASE_URL` (default: `https://openrouter.ai/api`) | `openrouter-fleet-key` | openrouter `auto:*` models |
+| `ollama` | `OLLAMA_URL` (default: `http://localhost:11434`) | none (uses the literal `ollama` token) | any user-installed model |
+
+**Canonical model ref.** Every reference throughout the fleet (`agents/<name>/agent-config.json`, `store/model-profile-map.json`, the `DEFAULT_AGENT_MODEL` registry setting, the dashboard agent picker) uses the `provider:model` format. Bare model ids (e.g. `claude-opus-5`), short aliases (`opus`, `sonnet`, `haiku`), and prefix-based inference are no longer accepted. An unknown or malformed ref raises `ProviderConfigError`, not a silent fallback.
+
+**MiniMax configuration (Phase 2 stop gate).** The MiniMax model only appears as a selectable option when:
+1. the `MINIMAX_BASE_URL` registry setting is non-empty (global: `https://api.minimax.io/anthropic`, China region: `https://api.minimaxi.com/anthropic`),
+2. the Vault holds a key under the `MINIMAX_API_KEY` id.
+
+When the configuration is incomplete, the launcher raises a typed, user-visible error (`minimax_base_url_missing` or `minimax_auth_token_missing`) BEFORE the tmux process starts. There is no fallback to Ollama, Claude, or any other provider. The MiniMax runtime configuration (`ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_MODEL`) goes into the `claude` child environment through the runtime-config shell bridge; the secret reaches the child environment only via `$(cat <0600-file>)` command substitution -- it never appears in argv, log lines, or pane history.
 
 ---
 

@@ -13,14 +13,14 @@
 // lives in src/web/model-fallback-runner.ts; the config store lives in
 // src/web/model-fallback-store.ts.
 
-// Resolved full model IDs, mirroring MODEL_ALIASES in src/web/agent-config.ts.
-// chain[0] is the primary (what we revert UP to); each subsequent entry is the
-// next downgrade target. Kept as literals here to preserve the zero-import,
-// trivially-testable property of this module.
+// Canonical model refs, single source of truth. The runner (model-fallback-runner.ts)
+// looks up the provider runtime for each ref.
+import { CLAUDE_DEFAULT_MODEL } from './providers/registry.js'
+
 export const DEFAULT_MODEL_CHAIN: readonly string[] = [
-  'claude-opus-4-8[1m]',
-  'claude-sonnet-5',
-  'claude-haiku-4-5-20251001',
+  `anthropic:${CLAUDE_DEFAULT_MODEL}`,
+  'anthropic:claude-sonnet-5',
+  'anthropic:claude-haiku-4-5-20251001',
 ]
 
 // Revert only well after the typical 5-hour plan window so we do not climb back
