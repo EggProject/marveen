@@ -214,9 +214,18 @@ apt_lock_holder() {
   return 1
 }
 
+# A ket ertekadas alatt SZANDEKOSAN `&& rc=0 || rc=$?` all, nem `; rc=$?`.
+# A szkript `set -e` alatt fut (5. sor), es egy ertekadas kilepesi kodja a
+# parancs-behelyettesitese -- tehat `holder=$(apt_lock_holder); rc=$?` eseten a
+# shell MAR AZON A SORON kilep, ha a fuggveny nem nullat ad. Az pedig pontosan
+# akkor ad nem nullat, amikor NINCS zar (return 1) vagy nincs fuser (return 2),
+# vagyis a haromallapotu logika alatta SOSEM futott le: az egyetlen tulelo ag az
+# volt, amikor tenyleg fogta valaki a lockot. A zar-figyelo igy a NYUGODT gepen
+# olte meg a telepitest, es a lock-versenyes gepen engedte at -- ezert ment at a
+# 07-30-i workshopon es bukott egy friss VPS-en 08-02-an.
 wait_for_apt_lock() {
   local holder rc waited=0 interval=5
-  holder=$(apt_lock_holder); rc=$?
+  holder=$(apt_lock_holder) && rc=0 || rc=$?
   if [ "$rc" -eq 2 ]; then
     # fuser nincs (minimal image) -- nem tudjuk MEGNEZNI, ki fogja a lockot.
     # Ezt kimondjuk, es az APT_OPTS timeout-ja kezeli, ha tenyleg fogott.
@@ -228,7 +237,7 @@ wait_for_apt_lock() {
   echo -e "  ${DIM}$(_t linux.apt_lock_transient_hint)${NC}"
   while [ "$waited" -lt "$APT_LOCK_WAIT_CAP" ]; do
     sleep "$interval"; waited=$((waited + interval))
-    holder=$(apt_lock_holder); rc=$?
+    holder=$(apt_lock_holder) && rc=0 || rc=$?
     if [ "$rc" -ne 0 ]; then
       ok "$(_t linux.apt_lock_freed_prefix) ${waited}s"
       return 0
@@ -914,6 +923,14 @@ env_keep_or_set() {
   if [ -z "$2" ] && [ -n "$_eks_existing" ]; then return 0; fi
   env_merge_key "$1" "$2"
 }
+env_set_if_absent() {
+  # env_set_if_absent KEY VALUE -- write only when the KEY line does not exist
+  # at all. Used for a default the installer proposes rather than enforces: an
+  # operator who deliberately set KEY=0 keeps that decision across re-runs, and
+  # an explicitly set KEY=1 is not rewritten either.
+  if grep -q "^$1=" "$INSTALL_DIR/.env" 2>/dev/null; then return 0; fi
+  env_merge_key "$1" "$2"
+}
 (umask 077 && touch "$INSTALL_DIR/.env")
 chmod 600 "$INSTALL_DIR/.env"
 [ -s "$INSTALL_DIR/.env" ] || printf '# Main agent konfiguracio\n' >> "$INSTALL_DIR/.env"
@@ -959,6 +976,21 @@ if [ -n "${OAUTH_TOKEN_INPUT:-}" ] && printf '%s' "$OAUTH_TOKEN_INPUT" | grep -E
   mkdir -p "$INSTALL_DIR/store"
   (umask 077 && printf '%s' "$OAUTH_TOKEN_INPUT" > "$INSTALL_DIR/store/.claude-oauth-token")
   ok "Fleet setup-token eltarolva (store/.claude-oauth-token) -- per-agent izolacio aktiv"
+  # Point the MAIN agent at an isolated config dir too, not just the
+  # sub-agents. Without this the main bot keeps the shared ~/.claude and
+  # authenticates from whatever refreshes that root -- on Linux the shared
+  # ~/.claude/.credentials.json -- which periodically expires and 401s the bot
+  # into a parked TUI that the router reads as busy, so the channel goes silent
+  # with no error (the confirmed root cause of the 2026-07-23 marveen-channels
+  # outage). The setting existed but nothing ever turned it on, so every
+  # default install was wired to that failure mode.
+  #
+  # Only in THIS branch, i.e. only when the installer just captured the fleet
+  # token itself in this same run: the operator handed it over moments ago, so
+  # the identity the main bot will run under is not a surprise. An install that
+  # already carried auth keeps whatever it had. env_set_if_absent, so a
+  # deliberate MAIN_AGENT_ISOLATED_CONFIG=0 stands.
+  env_set_if_absent MAIN_AGENT_ISOLATED_CONFIG 1
 fi
 ok ".env letrehozva (chmod 600)"
 
