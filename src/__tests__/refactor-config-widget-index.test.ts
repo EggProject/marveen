@@ -34,7 +34,9 @@ describe('OWNER_NAME default value', () => {
     expect(defaultValue).toBe('Owner')
     // Explicitly reject the old hardcoded personal name so a revert is caught.
     expect(defaultValue).not.toBe('Szabolcs')
-    expect(src).toMatch(/OWNER_NAME\s*=\s*env\['OWNER_NAME'\]\s*\?\?\s*OWNER_NAME_PLACEHOLDER/)
+    // The new config reads OWNER_NAME through cfg() (no .env fallback); the
+    // placeholder is the distribution-safe default when no override is set.
+    expect(src).toMatch(/cfg\('OWNER_NAME'\)\s*\|\|\s*OWNER_NAME_PLACEHOLDER/)
   })
 })
 

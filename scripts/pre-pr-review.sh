@@ -10,6 +10,9 @@ set -euo pipefail
 
 BASE="${1:-upstream/main}"
 INSTALL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=scripts/lib/runtime-config.sh
+. "$INSTALL_DIR/scripts/lib/runtime-config.sh" || exit 0
+runtime_config_init "$INSTALL_DIR" || exit 0
 TOKEN_FILE="$INSTALL_DIR/store/.dashboard-token"
 
 if [ ! -f "$TOKEN_FILE" ]; then
@@ -19,7 +22,7 @@ fi
 
 DASHBOARD_TOKEN="$(cat "$TOKEN_FILE")"
 # Dashboard port: env WEB_PORT, else the install .env, else 3420.
-WEB_PORT="${WEB_PORT:-$(grep -E '^WEB_PORT=' "$(dirname "$0")/../.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d ' "')}"
+WEB_PORT="${WEB_PORT:-$(runtime_config_get WEB_PORT)}"
 WEB_PORT="${WEB_PORT:-3420}"
 API="http://localhost:${WEB_PORT}/api/vault"
 

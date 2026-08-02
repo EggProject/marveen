@@ -47,6 +47,9 @@
 set -u
 
 INSTALL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=scripts/lib/runtime-config.sh
+. "$INSTALL_DIR/scripts/lib/runtime-config.sh" || exit 1
+runtime_config_init "$INSTALL_DIR" || exit 1
 STORE="$INSTALL_DIR/store"
 KEEPALIVE_FILE="$STORE/.channel-keepalive"
 RESPAWN_STAMP="$STORE/.channel-last-respawn"
@@ -62,14 +65,14 @@ AUTH_DEAD_THRESHOLD_TICKS=3     # consecutive dead-token ticks (~15min @ 5min/ti
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') [$LOG_TAG] $*"; }
 
 # --- resolve the channels session + provider (launch-order / rename independent) ---
-MAIN_AGENT_ID="$(grep -E '^MAIN_AGENT_ID=' "$INSTALL_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2-)"
+MAIN_AGENT_ID="$(runtime_config_get MAIN_AGENT_ID)"
 MAIN_AGENT_ID="${MAIN_AGENT_ID:-marveen}"
 MAIN_AGENT_ID="${MAIN_AGENT_ID//[^a-zA-Z0-9_-]/}"
 SESSION="${MAIN_AGENT_ID}-channels"
 # Same helper channels.sh already uses to provision the main-agent isolated
 # config dir (PLAN.md GAP 1) -- needed below to give a watchdog-triggered
 # respawn the same CLAUDE_CONFIG_DIR the main agent is actually running under.
-CHANNEL_PROVIDER="$(grep -E '^CHANNEL_PROVIDER=' "$INSTALL_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2-)"
+CHANNEL_PROVIDER="$(runtime_config_get CHANNEL_PROVIDER)"
 CHANNEL_PROVIDER="${CHANNEL_PROVIDER:-telegram}"
 # Extra co-listen plugins, derived EXACTLY as channels.sh does (see the
 # EXTRA_CHANNELS block there). Without this a watchdog respawn silently drops
@@ -79,7 +82,7 @@ CHANNEL_PROVIDER="${CHANNEL_PROVIDER:-telegram}"
 # to any liveness probe watching the primary. Observed in practice: a watchdog
 # respawn dropped the secondary inbound for ~20 minutes while the primary kept
 # working, so neither the probes nor the agent itself noticed.
-CHANNEL_PLUGINS_EXTRA="$(grep -E '^CHANNEL_PLUGINS_EXTRA=' "$INSTALL_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2-)"
+CHANNEL_PLUGINS_EXTRA="$(runtime_config_get CHANNEL_PLUGINS_EXTRA)"
 EXTRA_CHANNELS=""
 for _p in $CHANNEL_PLUGINS_EXTRA; do
   [ -n "$_p" ] && EXTRA_CHANNELS="$EXTRA_CHANNELS plugin:$_p"
@@ -166,10 +169,7 @@ if [ "$count" -ge "$MAX_CONSECUTIVE" ]; then
 fi
 
 # --- recover: respawn-pane ONLY the channels session, fresh claude ---
-MAIN_MODEL=""
-if [ -f "$INSTALL_DIR/.claude/settings.json" ] && command -v jq >/dev/null 2>&1; then
-  MAIN_MODEL="$(jq -r '.model // empty' "$INSTALL_DIR/.claude/settings.json" 2>/dev/null)"
-fi
+MAIN_MODEL="$(runtime_config_get DEFAULT_AGENT_MODEL)"
 MODEL_FLAG=""
 [ -n "$MAIN_MODEL" ] && MODEL_FLAG="--model '$MAIN_MODEL' "
 
@@ -199,7 +199,7 @@ fi
 
 # Full PATH with .bun/bin -- without it the respawned bun telegram bridge does
 # not come up and the session is channel-less.
-RESPAWN_CMD="export PATH=\"/opt/homebrew/bin:\$HOME/.bun/bin:/home/linuxbrew/.linuxbrew/bin:\$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin\" && export CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false && ${CFG_ENV}$CLAUDE --dangerously-skip-permissions ${MODEL_FLAG}--channels plugin:${CHANNEL_PROVIDER}@claude-plugins-official${EXTRA_CHANNELS}"
+RESPAWN_CMD="export PATH=\"/opt/homebrew/bin:\$HOME/.bun/bin:/home/linuxbrew/.linuxbrew/bin:\$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin\" && export CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false MCP_SERVER_CONNECTION_BATCH_SIZE=10 MCP_CONNECTION_NONBLOCKING=1 MCP_TIMEOUT=60000 && ${CFG_ENV}$CLAUDE --dangerously-skip-permissions ${MODEL_FLAG}--channels plugin:${CHANNEL_PROVIDER}@claude-plugins-official${EXTRA_CHANNELS}"
 
 reason="keepalive stale ${age}s"
 [ "$STALE" != true ] && reason=""

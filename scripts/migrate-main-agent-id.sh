@@ -12,9 +12,12 @@
 #     writes MAIN_AGENT_ID into .env, and restarts.
 
 # Dashboard port: env WEB_PORT, else the install .env, else the 3420 default.
-WEB_PORT="${WEB_PORT:-$(grep -E '^WEB_PORT=' "$(dirname "$0")/../.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d ' "')}"
+WEB_PORT="${WEB_PORT:-$(runtime_config_get WEB_PORT)}"
 WEB_PORT="${WEB_PORT:-3420}"
 
+# shellcheck source=scripts/lib/runtime-config.sh
+. "$(dirname "$0")/../scripts/lib/runtime-config.sh" || exit 1
+runtime_config_init "$(dirname "$0")/.." || exit 1
 set -e
 
 INSTALL_DIR="$(cd "$(dirname "$0")/.." && pwd)"

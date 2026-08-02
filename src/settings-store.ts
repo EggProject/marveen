@@ -1,32 +1,24 @@
-import { existsSync, mkdirSync, readFileSync, watch, type FSWatcher } from 'node:fs'
-import { join } from 'node:path'
-import { STORE_DIR } from './config.js'
-import { readEnvFile } from './env.js'
+import { mkdirSync, watch, type FSWatcher } from 'node:fs'
+import { STORE_DIR } from './paths.js'
+import {
+  CONFIG_OVERRIDES_PATH,
+  readConfigOverrides,
+  resolveConfigValue,
+  type ConfigOverrides,
+} from './config-resolution.js'
 import { atomicWriteFileSync } from './web/atomic-write.js'
-import { getSettingDefinition, validateSettingValue, type SettingDefinition } from './config-registry.js'
+import { getSettingDefinition, validateSettingValue } from './config-registry.js'
 
-// Writable override layer for registry-backed settings. Resolution order for
-// any registered key is: config-overrides.json > .env > registry default.
-// Writes are atomic (tmp file + rename, via atomicWriteFileSync) so a crash
-// mid-write can never leave a half-written or zero-byte overrides file. A
-// directory watch keeps the in-memory cache in sync if the file is edited
-// outside this process (e.g. by hand over SSH); our own writes update the
-// cache directly without waiting for the watch event.
-export const OVERRIDES_PATH = join(STORE_DIR, 'config-overrides.json')
+// Writable canonical layer for registry-backed settings. Runtime resolution is:
+// config-overrides.json > registry default. `.env` is migration input only and
+// is never consulted by production reads.
+export const OVERRIDES_PATH = CONFIG_OVERRIDES_PATH
 
-let cache: Record<string, string | number> = {}
+let cache: ConfigOverrides = {}
 let watcher: FSWatcher | undefined
 
-function loadFromDisk(): Record<string, string | number> {
-  try {
-    if (!existsSync(OVERRIDES_PATH)) return {}
-    const raw = readFileSync(OVERRIDES_PATH, 'utf-8')
-    const parsed = JSON.parse(raw)
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed
-    return {}
-  } catch {
-    return {}
-  }
+function loadFromDisk(): ConfigOverrides {
+  return readConfigOverrides(OVERRIDES_PATH)
 }
 
 cache = loadFromDisk()
@@ -47,28 +39,16 @@ function ensureWatching(): void {
   }
 }
 
-export function getOverrides(): Record<string, string | number> {
+export function getOverrides(): ConfigOverrides {
   ensureWatching()
   return { ...cache }
 }
 
-function coerce(def: SettingDefinition, raw: string | number): string | number {
-  if (def.type === 'int') return typeof raw === 'number' ? raw : parseInt(raw, 10)
-  return String(raw)
-}
-
-// Resolves the effective value for a registered key: override > .env >
-// registry default. Reads .env fresh (cheap, scoped to one key) rather than
-// relying on the boot-time config.ts constants, so this resolution stays
-// correct independent of when the process last restarted.
+// Resolves the effective value for a registered key from the single production
+// source. `.env` is intentionally absent; the migration command owns that input.
 export function getEffectiveSettingValue(key: string): string | number {
   ensureWatching()
-  const def = getSettingDefinition(key)
-  if (!def) throw new Error(`Unknown setting key: ${key}`)
-  if (key in cache) return coerce(def, cache[key])
-  const envValue = readEnvFile([key])[key]
-  if (envValue !== undefined) return coerce(def, envValue)
-  return def.default
+  return resolveConfigValue(key, cache)
 }
 
 export interface SetOverrideResult {

@@ -15,44 +15,34 @@
 
 INSTALL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
-# Read MAIN_AGENT_ID and CHANNEL_PROVIDER from .env WITHOUT exporting
-# every variable into the shell environment. `set -a && source .env`
-# would also export TELEGRAM_BOT_TOKEN, which then leaks into the tmux
-# server's global environment and gets inherited by every sub-agent tmux
-# session the dashboard starts later -- they'd all use the main agent's
-# token and fight over the same getUpdates slot, 409 Conflict in a loop.
-if [ -f "$INSTALL_DIR/.env" ]; then
-  MAIN_AGENT_ID="$(grep -E '^MAIN_AGENT_ID=' "$INSTALL_DIR/.env" | head -1 | cut -d= -f2-)"
-  CHANNEL_PROVIDER="$(grep -E '^CHANNEL_PROVIDER=' "$INSTALL_DIR/.env" | head -1 | cut -d= -f2-)"
-  BOT_NAME="$(grep -E '^BOT_NAME=' "$INSTALL_DIR/.env" | head -1 | cut -d= -f2-)"
-  # Optional extra channel plugins to co-listen alongside the PRIMARY provider
-  # (space-separated plugin IDs, e.g. "discord@claude-plugins-official"). The
-  # primary provider still drives the orphan-reaper + liveness watchdog logic
-  # below unchanged; the extras are best-effort co-listeners on the same session.
-  CHANNEL_PLUGINS_EXTRA="$(grep -E '^CHANNEL_PLUGINS_EXTRA=' "$INSTALL_DIR/.env" | head -1 | cut -d= -f2-)"
-  # Optional per-install model override for the MAIN agent. Lives here rather
-  # than in .claude/settings.json because that file is TRACKED: an install that
-  # writes its model choice there carries a permanent local diff, which blocks
-  # the update preflight's clean-tree check and silently reverts to the
-  # repository's value on the next update. .env is per-install and gitignored.
-  MAIN_AGENT_MODEL="$(grep -E '^MAIN_AGENT_MODEL=' "$INSTALL_DIR/.env" | head -1 | cut -d= -f2-)"
-  # Claude Code auth: pass API key or OAuth token so the tmux-spawned
-  # claude process can authenticate. These are safe to export -- unlike
-  # TELEGRAM_BOT_TOKEN they don't cause cross-session conflicts.
-  _api_key="$(grep -E '^ANTHROPIC_API_KEY=' "$INSTALL_DIR/.env" | head -1 | cut -d= -f2-)"
-  [ -n "$_api_key" ] && export ANTHROPIC_API_KEY="$_api_key"
-  _oauth="$(grep -E '^CLAUDE_CODE_OAUTH_TOKEN=' "$INSTALL_DIR/.env" | head -1 | cut -d= -f2-)"
-  # Fallback: the fleet setup-token file (written by the wizard / auth.sh /
-  # the boot-time credentials sync). Keeps the MAIN agent on the same stable
-  # token the sub-agents launch with, instead of the rotating
-  # ~/.claude/.credentials.json, even when .env carries no auth key
-  # (2026-07-15 bootcamp: terminal-pasted setup-token never reached .env).
-  if [ -z "$_oauth" ] && [ -s "$INSTALL_DIR/store/.claude-oauth-token" ]; then
-    _oauth="$(cat "$INSTALL_DIR/store/.claude-oauth-token")"
-  fi
-  [ -n "$_oauth" ] && export CLAUDE_CODE_OAUTH_TOKEN="$_oauth"
-  unset _api_key _oauth
+# All Marveen-owned settings come from the canonical typed runtime config. The
+# channel plugin's own state files remain plugin-owned; this launcher never
+# sources the project .env or exports channel tokens into the shared tmux server.
+# shellcheck source=scripts/lib/runtime-config.sh
+. "$INSTALL_DIR/scripts/lib/runtime-config.sh" || exit 1
+runtime_config_init "$INSTALL_DIR" || exit 1
+MAIN_AGENT_ID="$(runtime_config_get MAIN_AGENT_ID)" || exit 1
+CHANNEL_PROVIDER="$(runtime_config_get CHANNEL_PROVIDER)" || exit 1
+BOT_NAME="$(runtime_config_get BOT_NAME)" || exit 1
+CHANNEL_PLUGINS_EXTRA="$(runtime_config_get CHANNEL_PLUGINS_EXTRA)" || exit 1
+MAIN_AGENT_MODEL="$(runtime_config_get DEFAULT_AGENT_MODEL)" || exit 1
+
+# Claude API-key auth is encrypted in the Vault. The setup-token remains in its
+# dedicated 0600 file because Claude Code refresh/isolation tooling already owns
+# that lifecycle.
+_node_bin="${RUNTIME_CONFIG_NODE:-$(command -v node || true)}"
+_api_line=""
+if [ -n "$_node_bin" ] && [ -f "$INSTALL_DIR/scripts/vault-resolve.mjs" ]; then
+  _api_line="$(printf 'ANTHROPIC_API_KEY=ANTHROPIC_API_KEY\n' | "$_node_bin" "$INSTALL_DIR/scripts/vault-resolve.mjs" 2>/dev/null || true)"
 fi
+_api_key="${_api_line#ANTHROPIC_API_KEY=}"
+[ "$_api_line" != "$_api_key" ] && [ -n "$_api_key" ] && export ANTHROPIC_API_KEY="$_api_key"
+if [ -s "$INSTALL_DIR/store/.claude-oauth-token" ]; then
+  CLAUDE_CODE_OAUTH_TOKEN="$(cat "$INSTALL_DIR/store/.claude-oauth-token")"
+  export CLAUDE_CODE_OAUTH_TOKEN
+fi
+unset _node_bin _api_line _api_key
+
 CHANNEL_PROVIDER="${CHANNEL_PROVIDER:-telegram}"
 SESSION="${MAIN_AGENT_ID:-marveen}-channels"
 
@@ -106,24 +96,10 @@ classify_mcp_plugin_row() {
   esac
 }
 
-# Test hook: classify a pane from stdin and exit before anything touches tmux,
-# the store or a live session.
-# Resolve the main agent's model. Precedence: MAIN_AGENT_MODEL from .env
-# (per-install, gitignored) over .claude/settings.json (tracked, shipped with
-# the repo). Without the .env route an install that wants a different model has
-# to edit a tracked file, which then blocks the update preflight's clean-tree
-# check and gets reverted by the next update.
-#
-# Kept as a function so `--resolve-main-model` can exercise exactly the code
-# the launch path uses, with no tmux, store or network involved.
+# Resolve the main model from the canonical runtime config. The bridge above has
+# already validated the registry key; there is no .env or tracked settings fallback.
 resolve_main_model() {
-  if [ -n "${MAIN_AGENT_MODEL:-}" ]; then
-    printf '%s' "$MAIN_AGENT_MODEL"
-    return 0
-  fi
-  if [ -f "$INSTALL_DIR/.claude/settings.json" ] && command -v jq >/dev/null 2>&1; then
-    jq -r '.model // empty' "$INSTALL_DIR/.claude/settings.json" 2>/dev/null
-  fi
+  printf '%s' "${MAIN_AGENT_MODEL:-}"
 }
 
 # Test seam: print the resolved model and exit before any side effect.
@@ -392,7 +368,7 @@ if [ -n "$_node_bin" ] && [ -f "$INSTALL_DIR/dist/web/agent-process.js" ]; then
   if [ -z "$CFG_ENV" ] && [ ! -d "$INSTALL_DIR/.channels-config" ] && [ -s "$INSTALL_DIR/store/.claude-oauth-token" ]; then
     echo "$(date '+%Y-%m-%d %H:%M:%S') channels.sh: WARN main-agent starting on SHARED ~/.claude although a fleet setup-token exists (store/.claude-oauth-token) -- MAIN_AGENT_ISOLATED_CONFIG is unset, so the main bot authenticates from the rotating shared credential and can 401 into a silent channel." >> "$INSTALL_DIR/store/channels-failures.log"
     if [ -f "$INSTALL_DIR/store/.dashboard-token" ]; then
-      _guard_port="$(grep -E '^WEB_PORT=' "$INSTALL_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2-)"
+      _guard_port="$(runtime_config_get WEB_PORT 2>/dev/null || true)"
       curl -s --max-time 5 -X POST "http://localhost:${_guard_port:-3420}/api/messages" \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer $(cat "$INSTALL_DIR/store/.dashboard-token")" \
@@ -409,7 +385,7 @@ if [ -n "$_node_bin" ] && [ -f "$INSTALL_DIR/dist/web/agent-process.js" ]; then
   if [ -z "$CFG_ENV" ] && [ -d "$INSTALL_DIR/.channels-config" ]; then
     echo "$(date '+%Y-%m-%d %H:%M:%S') channels.sh: WARN main-agent starting on SHARED ~/.claude although isolated dir $INSTALL_DIR/.channels-config exists -- MAIN_AGENT_ISOLATED_CONFIG resolution came back empty (overrides/.env key lost?). Auth rides the rotating shared session and can 401." >> "$INSTALL_DIR/store/channels-failures.log"
     if [ -f "$INSTALL_DIR/store/.dashboard-token" ]; then
-      _guard_port="$(grep -E '^WEB_PORT=' "$INSTALL_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2-)"
+      _guard_port="$(runtime_config_get WEB_PORT 2>/dev/null || true)"
       curl -s --max-time 5 -X POST "http://localhost:${_guard_port:-3420}/api/messages" \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer $(cat "$INSTALL_DIR/store/.dashboard-token")" \

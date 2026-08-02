@@ -21,7 +21,7 @@ import { homedir } from 'node:os'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { logger } from '../logger.js'
 import { PROJECT_ROOT } from '../config.js'
-import { readEnvFile } from '../env.js'
+import { getEffectiveSettingValue } from '../settings-store.js'
 
 // Mirrors KEEPALIVE_RESPAWN_GRACE_MS from channel-monitor.ts (15 min).
 // Not imported directly to avoid a circular module dependency: channel-monitor.ts
@@ -194,8 +194,7 @@ function readProbeLastSentMs(): number | null {
 // W1: enforce a minimum floor of 30 000 ms to prevent inadvertent DoS.
 function readProbeIntervalMs(): number {
   if (_cachedProbeIntervalMs !== null) return _cachedProbeIntervalMs
-  const env = readEnvFile(['PROBE_INTERVAL_MS'])
-  const raw = env['PROBE_INTERVAL_MS']
+  const raw = String(getEffectiveSettingValue('PROBE_INTERVAL_MS'))
   const DEFAULT_MS = 180_000 // 3 minutes
   let parsed = DEFAULT_MS
   if (raw) {
@@ -210,9 +209,8 @@ function readProbeIntervalMs(): number {
 // W4: read once at startup; subsequent calls return the cached value.
 function readAllowedChatId(): string | null {
   if (_cachedAllowedChatId !== undefined) return _cachedAllowedChatId
-  const env = readEnvFile(['ALLOWED_CHAT_ID'])
-  const v = env['ALLOWED_CHAT_ID']
-  _cachedAllowedChatId = v && v.trim() ? v.trim() : null
+  const v = String(getEffectiveSettingValue('ALLOWED_CHAT_ID'))
+  _cachedAllowedChatId = v.trim() ? v.trim() : null
   return _cachedAllowedChatId
 }
 
@@ -235,7 +233,7 @@ function spawnProber(): void {
     // CW addendum D3: if ALLOWED_CHAT_ID is absent/empty, log warning and skip.
     // W3: one-shot via logger.warn; subsequent ticks use logger.debug.
     if (!_warnedChatIdAbsent) {
-      logger.warn('inbound-prober: ALLOWED_CHAT_ID absent in .env -- prober skipped')
+      logger.warn('inbound-prober: ALLOWED_CHAT_ID absent from runtime config -- prober skipped')
       _warnedChatIdAbsent = true
     } else {
       logger.debug('inbound-prober: ALLOWED_CHAT_ID still absent -- skipping')

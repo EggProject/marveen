@@ -12,11 +12,14 @@ warn() { echo -e "  ${YELLOW}⚠${RESET} $1"; }
 fail() { echo -e "  ${RED}✗${RESET} $1"; FAIL=1; }
 
 FAIL=0
-MAIN_AGENT_ID="$(grep -E '^MAIN_AGENT_ID=' .env 2>/dev/null | head -1 | cut -d= -f2-)"
+# shellcheck source=scripts/lib/runtime-config.sh
+. "$INSTALL_DIR/scripts/lib/runtime-config.sh" || exit 1
+runtime_config_init "$INSTALL_DIR" || exit 1
+MAIN_AGENT_ID="$(runtime_config_get MAIN_AGENT_ID)"
 # Dashboard port: env WEB_PORT, else .env, else the 3420 default. A fixed 3420
 # made this diagnostic report a RUNNING dashboard as dead on any other port --
 # and it is run precisely when something is already wrong.
-WEB_PORT="${WEB_PORT:-$(grep -E '^WEB_PORT=' "$(dirname "$0")/../.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d ' "')}"
+WEB_PORT="${WEB_PORT:-$(runtime_config_get WEB_PORT)}"
 WEB_PORT="${WEB_PORT:-3420}"
 MAIN_AGENT_ID="${MAIN_AGENT_ID:-marveen}"
 
@@ -56,15 +59,8 @@ else
   warn "${MAIN_AGENT_ID}-channels: not running"
 fi
 
-# The heartbeat SUB-AGENT (session agent-heartbeat) is opt-in and OFF by default
-# -- see the HEARTBEAT_AGENT_ENABLED gate in src/index.ts. Warning about a
-# missing session on an install that never asked for it is pure noise, so only
-# complain when it is actually switched on. The flag can come from .env or from
-# the dashboard's store/config-overrides.json.
-HB_AGENT=$(grep -E "^HEARTBEAT_AGENT_ENABLED=" .env 2>/dev/null | head -1 | cut -d= -f2- | tr -d ' "')
-if [ -z "$HB_AGENT" ] && [ -f store/config-overrides.json ]; then
-  HB_AGENT=$(python3 -c "import json,sys;print(json.load(open('store/config-overrides.json')).get('HEARTBEAT_AGENT_ENABLED',''))" 2>/dev/null)
-fi
+# The heartbeat agent is opt-in and read through the canonical config bridge.
+HB_AGENT="$(runtime_config_get HEARTBEAT_AGENT_ENABLED)"
 if [ "$HB_AGENT" = "1" ]; then
   if tmux has-session -t "agent-heartbeat" 2>/dev/null; then
     ok "agent-heartbeat: alive"
@@ -140,22 +136,20 @@ else
   fail ".claude/settings.json missing"
 fi
 
-# --- .env keys ---
-echo -e "\n${BOLD}.env keys${RESET}"
-for key in MAIN_AGENT_ID BOT_NAME TELEGRAM_BOT_TOKEN ALLOWED_CHAT_ID; do
-  val=$(grep -E "^${key}=" .env 2>/dev/null | head -1 | cut -d= -f2-)
+# --- Canonical runtime config ---
+echo -e "\n${BOLD}Runtime configuration${RESET}"
+for key in MAIN_AGENT_ID BOT_NAME ALLOWED_CHAT_ID; do
+  val="$(runtime_config_get "$key" 2>/dev/null || true)"
   if [ -n "$val" ]; then ok "$key: present"; else fail "$key: MISSING"; fi
 done
-# Auth: mirrors claudeAuthPresent() in src/web/routes/onboarding.ts -- there are
-# five legs, and only the first two live in .env. Checking .env alone reported a
-# perfectly authenticated macOS install (Keychain leg) as broken.
-# The Keychain probe is presence-only (no `-w`), so the secret never leaves it.
-API_KEY=$(grep -E "^ANTHROPIC_API_KEY=" .env 2>/dev/null | head -1 | cut -d= -f2-)
-OAUTH=$(grep -E "^CLAUDE_CODE_OAUTH_TOKEN=" .env 2>/dev/null | head -1 | cut -d= -f2-)
-if [ -n "$API_KEY" ]; then
-  ok "Claude auth: present (.env API key)"
-elif [ -n "$OAUTH" ]; then
-  ok "Claude auth: present (.env OAuth token)"
+if [ "$(runtime_config_has_secret TELEGRAM_BOT_TOKEN 2>/dev/null || true)" = "true" ]; then
+  ok "TELEGRAM_BOT_TOKEN: present in Vault"
+else
+  warn "TELEGRAM_BOT_TOKEN: not present in Vault (plugin state may own it)"
+fi
+
+if [ "$(runtime_config_has_secret ANTHROPIC_API_KEY 2>/dev/null || true)" = "true" ]; then
+  ok "Claude auth: present (Vault API key)"
 elif [ -s "$HOME/.claude/.credentials.json" ]; then
   ok "Claude auth: present (~/.claude/.credentials.json)"
 elif [ -s "store/.claude-oauth-token" ]; then
@@ -164,20 +158,20 @@ elif [ "$(uname -s)" = "Darwin" ] && /usr/bin/security find-generic-password \
      -s "Claude Code-credentials" -a "$(id -un)" >/dev/null 2>&1; then
   ok "Claude auth: present (macOS Keychain)"
 else
-  fail "Claude auth: no credential found (env, credentials.json, fleet token, Keychain)"
+  fail "Claude auth: no credential found (Vault, credentials.json, fleet token, Keychain)"
 fi
 
 # --- Claude headless auth (official: long-lived setup-token) ---
 echo -e "\n${BOLD}Claude headless auth${RESET}"
-if grep -qE '^CLAUDE_CODE_OAUTH_TOKEN="?sk-ant-oat01-' .env 2>/dev/null; then
-  ok "Headless token: long-lived setup-token configured (CLAUDE_CODE_OAUTH_TOKEN, ~1 year)"
-elif grep -qE '^CLAUDE_CODE_OAUTH_TOKEN=' .env 2>/dev/null; then
-  warn "CLAUDE_CODE_OAUTH_TOKEN set, but not sk-ant-oat01- format (may be the wrong type)"
+if grep -qE '^sk-ant-oat01-' store/.claude-oauth-token 2>/dev/null; then
+  ok "Headless token: long-lived setup-token configured in store/.claude-oauth-token"
+elif [ -s store/.claude-oauth-token ]; then
+  warn "Fleet token exists, but not in the expected sk-ant-oat01- format"
 elif [ "$(uname -s)" = "Darwin" ] && /usr/bin/security find-generic-password \
      -s "Claude Code-credentials" -a "$(id -un)" >/dev/null 2>&1; then
   ok "Headless token: not set, but the macOS Keychain holds a Claude login (interactive sessions are fine; only add a setup-token if you run agents headless)"
 else
-  warn "CLAUDE_CODE_OAUTH_TOKEN missing -- run: claude setup-token, then put it in .env"
+  warn "Fleet setup-token missing -- create store/.claude-oauth-token with mode 0600"
 fi
 # .credentials.json is now only a legacy fallback (setup-token takes precedence), not critical if expired.
 CREDS="$HOME/.claude/.credentials.json"

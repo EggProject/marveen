@@ -1,19 +1,14 @@
 #!/bin/bash
 # Start main agent services
 
-# Dashboard port: env WEB_PORT, else the install .env, else the 3420 default.
-WEB_PORT="${WEB_PORT:-$(grep -E '^WEB_PORT=' "$(dirname "$0")/../.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d ' "')}"
-WEB_PORT="${WEB_PORT:-3420}"
-
 INSTALL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=scripts/lib/runtime-config.sh
+. "$INSTALL_DIR/scripts/lib/runtime-config.sh" || exit 1
+runtime_config_init "$INSTALL_DIR" || exit 1
 
-# Read only what this script actually needs; avoid `set -a && source .env`,
-# which would leak TELEGRAM_BOT_TOKEN into the environment and then into
-# every tmux session the dashboard launches (see channels.sh for details).
-if [ -f "$INSTALL_DIR/.env" ]; then
-  SLUG="$(grep -E '^MAIN_AGENT_ID=' "$INSTALL_DIR/.env" | head -1 | cut -d= -f2-)"
-  BOT_NAME="$(grep -E '^BOT_NAME=' "$INSTALL_DIR/.env" | head -1 | cut -d= -f2-)"
-fi
+WEB_PORT="${WEB_PORT:-$(runtime_config_get WEB_PORT)}"
+SLUG="$(runtime_config_get MAIN_AGENT_ID)"
+BOT_NAME="$(runtime_config_get BOT_NAME)"
 SLUG="${SLUG:-marveen}"
 
 MARVEEN_LANG="$(cat "${INSTALL_DIR}/.lang" 2>/dev/null || echo hu)"

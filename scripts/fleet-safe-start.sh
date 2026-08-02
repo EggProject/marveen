@@ -31,8 +31,10 @@ GATE="$HERE/fleet-memory-gate.sh"
 # Resolve this install's main agent id from its .env (no hardcoded agent names --
 # distribution rule); mirrors fleet-memory-gate.sh so the same agent is "core".
 INSTALL_DIR="$(cd "$HERE/.." && pwd)"
-_env_val() { [[ -f "$INSTALL_DIR/.env" ]] && grep -E "^$1=" "$INSTALL_DIR/.env" | head -1 | cut -d= -f2- | tr -d '"'"'"'\r'; }
-MAIN_AGENT_ID="$(_env_val MAIN_AGENT_ID)"; MAIN_AGENT_ID="${MAIN_AGENT_ID:-marveen}"
+# shellcheck source=scripts/lib/runtime-config.sh
+. "$INSTALL_DIR/scripts/lib/runtime-config.sh" || exit 1
+runtime_config_init "$INSTALL_DIR" || exit 1
+MAIN_AGENT_ID="$(runtime_config_get MAIN_AGENT_ID)"; MAIN_AGENT_ID="${MAIN_AGENT_ID:-marveen}"
 STORE="${MARVEEN_STORE:-$HOME/marveen/store}"
 TOKEN_FILE="$STORE/.dashboard-token"
 DASH="${MARVEEN_DASHBOARD_URL:-http://localhost:3420}"

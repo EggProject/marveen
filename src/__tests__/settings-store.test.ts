@@ -13,16 +13,9 @@ import { tmpdir } from 'node:os'
 const SANDBOX = mkdtempSync(join(tmpdir(), 'settings-store-'))
 const STORE = join(SANDBOX, 'store')
 
-vi.mock('../config.js', async (orig) => {
-  const actual = await orig<typeof import('../config.js')>()
+vi.mock('../paths.js', async (orig) => {
+  const actual = await orig<typeof import('../paths.js')>()
   return { ...actual, PROJECT_ROOT: SANDBOX, STORE_DIR: STORE }
-})
-// The .env resolution layer reads the REAL repo-root .env (env.ts carries its
-// own PROJECT_ROOT), which would leak host state into the "falls back to the
-// registry default" assertion -- blank it.
-vi.mock('../env.js', async (orig) => {
-  const actual = await orig<typeof import('../env.js')>()
-  return { ...actual, readEnvFile: () => ({}) }
 })
 
 const {
@@ -48,7 +41,7 @@ describe('settings-store', () => {
     rmSync(SANDBOX, { recursive: true, force: true })
   })
 
-  it('falls back to the registry default when no override and no .env value exist', () => {
+  it('falls back to the registry default when no override exists', () => {
     expect(getEffectiveSettingValue('KANBAN_WIP_WARN_PCT')).toBe(80)
     expect(getEffectiveSettingValue('KANBAN_WIP_OK_COLOR')).toBe('#6b7280')
   })

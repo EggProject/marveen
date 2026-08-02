@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { writeFileSync, mkdtempSync, rmSync } from 'node:fs'
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
+import { writeFileSync, mkdtempSync, rmSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -12,19 +12,27 @@ import { tmpdir } from 'node:os'
 // These tests pin the fix: the always-write + restart decision core, and the
 // fresh-read helpers the display routes now use.
 //
-// Sandboxed .env via the CLAUDECLAW_ENV_DIR hook (see env.test.ts): set
-// BEFORE the dynamic import so neither config.js nor env.js ever touches the
-// checkout's real .env.
+// Sandboxed canonical config store. The runtime no longer reads identity from
+// `.env`; the one-time migration command owns that input.
 const SANDBOX = mkdtempSync(join(tmpdir(), 'wizname-test-'))
-const testEnvPath = join(SANDBOX, '.env')
+const STORE = join(SANDBOX, 'store')
+const OVERRIDES = join(STORE, 'config-overrides.json')
+
+vi.mock('../paths.js', async (orig) => {
+  const actual = await orig<typeof import('../paths.js')>()
+  return { ...actual, PROJECT_ROOT: SANDBOX, STORE_DIR: STORE }
+})
+
+function writeIdentity(values: Record<string, string>): void {
+  writeFileSync(OVERRIDES, JSON.stringify(values))
+}
 
 beforeAll(() => {
-  process.env.CLAUDECLAW_ENV_DIR = SANDBOX
-  writeFileSync(testEnvPath, 'BOT_NAME=BootName\n')
+  mkdirSync(STORE, { recursive: true })
+  writeIdentity({ BOT_NAME: 'BootName' })
 })
 
 afterAll(() => {
-  delete process.env.CLAUDECLAW_ENV_DIR
   rmSync(SANDBOX, { recursive: true, force: true })
 })
 
@@ -34,29 +42,29 @@ describe('currentBotName / currentBrandName (fresh per-call reads)', () => {
     expect(cfg.BOT_NAME).toBe('BootName')
     expect(cfg.currentBotName()).toBe('BootName')
 
-    writeFileSync(testEnvPath, 'BOT_NAME=Robi\n')
+    writeIdentity({ BOT_NAME: 'Robi' })
     expect(cfg.BOT_NAME).toBe('BootName') // module-load snapshot: unchanged
     expect(cfg.currentBotName()).toBe('Robi') // fresh read: the rename is live
   })
 
   it('falls brandName back to the current bot name when BRAND_NAME is unset', async () => {
     const cfg = await import('../config.js')
-    writeFileSync(testEnvPath, 'BOT_NAME=Robi\n')
+    writeIdentity({ BOT_NAME: 'Robi' })
     expect(cfg.currentBrandName()).toBe('Robi')
   })
 
   it('uses an explicit BRAND_NAME over the bot name, and ignores a blank one', async () => {
     const cfg = await import('../config.js')
-    writeFileSync(testEnvPath, 'BOT_NAME=Robi\nBRAND_NAME=Acme Ops\n')
+    writeIdentity({ BOT_NAME: 'Robi', BRAND_NAME: 'Acme Ops' })
     expect(cfg.currentBrandName()).toBe('Acme Ops')
-    writeFileSync(testEnvPath, 'BOT_NAME=Robi\nBRAND_NAME=\n')
+    writeIdentity({ BOT_NAME: 'Robi', BRAND_NAME: '' })
     expect(cfg.currentBrandName()).toBe('Robi')
   })
 
-  it('falls back to the boot-time name when the .env line is missing', async () => {
+  it('returns the registry default when the canonical override is removed', async () => {
     const cfg = await import('../config.js')
-    writeFileSync(testEnvPath, 'OTHER=1\n')
-    expect(cfg.currentBotName()).toBe('BootName')
+    writeIdentity({})
+    expect(cfg.currentBotName()).toBe('Marveen')
   })
 })
 

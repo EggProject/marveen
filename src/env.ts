@@ -1,24 +1,9 @@
 import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { atomicWriteFileSync } from './web/atomic-write.js'
+import { PROJECT_ROOT } from './paths.js'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
-// CLAUDECLAW_ENV_DIR: test-only escape hatch so the suite can point .env
-// reads/writes at a sandbox instead of the real repo root (env.test.ts used
-// to unlink+rewrite the LIVE .env -- 2026-07-27 incident). Read at import
-// time; production never sets it.
-const PROJECT_ROOT = process.env.CLAUDECLAW_ENV_DIR ?? join(__dirname, '..')
-
-export function readEnvFile(keys?: string[]): Record<string, string> {
-  const envPath = join(PROJECT_ROOT, '.env')
-  let content: string
-  try {
-    content = readFileSync(envPath, 'utf-8')
-  } catch {
-    return {}
-  }
-
+export function parseEnvText(content: string, keys?: readonly string[]): Record<string, string> {
   const result: Record<string, string> = {}
   for (const line of content.split('\n')) {
     const trimmed = line.trim()
@@ -37,6 +22,20 @@ export function readEnvFile(keys?: string[]): Record<string, string> {
     result[key] = value
   }
   return result
+}
+
+export function readEnvFileAt(root: string, keys?: readonly string[]): Record<string, string> {
+  try {
+    return parseEnvText(readFileSync(join(root, '.env'), 'utf-8'), keys)
+  } catch {
+    return {}
+  }
+}
+
+// Migration-only compatibility surface. Production configuration reads do not
+// call this function; it remains for the explicit cutover tool and fixtures.
+export function readEnvFile(keys?: string[]): Record<string, string> {
+  return readEnvFileAt(PROJECT_ROOT, keys)
 }
 
 // Update (or append) the given keys in .env, preserving every other line,

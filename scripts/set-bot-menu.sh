@@ -4,12 +4,14 @@
 # Called by channels.sh after plugin startup (with 15s delay).
 
 # Dashboard port: env WEB_PORT, else the install .env, else the 3420 default.
-WEB_PORT="${WEB_PORT:-$(grep -E '^WEB_PORT=' "$(dirname "$0")/../.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d ' "')}"
+WEB_PORT="${WEB_PORT:-$(runtime_config_get WEB_PORT)}"
 WEB_PORT="${WEB_PORT:-3420}"
 
 INSTALL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-
-# Read provider from .env; skip if not telegram
+# shellcheck source=scripts/lib/runtime-config.sh
+. "$INSTALL_DIR/scripts/lib/runtime-config.sh" || exit 0
+runtime_config_init "$INSTALL_DIR" || exit 0
+# Read provider from the canonical store; skip if not telegram
 if [ -f "$INSTALL_DIR/.env" ]; then
   CHANNEL_PROVIDER="$(grep -E '^CHANNEL_PROVIDER=' "$INSTALL_DIR/.env" | head -1 | cut -d= -f2-)"
 fi

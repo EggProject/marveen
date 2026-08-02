@@ -123,7 +123,7 @@ alert_owner() {
   # Token + owner chat id both from config, never hardcoded.
   # `tr -d '\r '` strips a trailing CR (CRLF-edited .env) / stray spaces.
   token="$(grep -E '^TELEGRAM_BOT_TOKEN=' "$TG_ENV" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\r ')"
-  chat="$(grep -E '^ALLOWED_CHAT_ID=' "$INSTALL_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\r ')"
+  chat="$(runtime_config_get ALLOWED_CHAT_ID 2>/dev/null || true)"
   [ -z "$chat" ] && chat="$(grep -E '^TELEGRAM_CHAT_ID=' "$TG_ENV" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\r ')"
   if [ -z "$token" ] || [ -z "$chat" ]; then
     log "ALERT (no bot token or owner chat id configured): $msg"; return 1
@@ -136,6 +136,9 @@ alert_owner() {
 # --- live guard ----------------------------------------------------------------
 run_guard() {
   local TMUX_BIN CLAUDE MAIN_AGENT_ID SESSION pane state firstseen now action
+  # shellcheck source=scripts/lib/runtime-config.sh
+  . "$INSTALL_DIR/scripts/lib/runtime-config.sh" || return 1
+  runtime_config_init "$INSTALL_DIR" || return 1
 
   # NB: use TMUX_BIN, not TMUX -- the latter is tmux's own env var (socket,pid,
   # session); assigning the binary path to it corrupts server-socket detection.
@@ -157,7 +160,7 @@ run_guard() {
   # and is out of scope for this guard.)
   SESSION="${CHANNELS_SESSION:-}"
   if [ -z "$SESSION" ]; then
-    MAIN_AGENT_ID="$(grep -E '^MAIN_AGENT_ID=' "$INSTALL_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2-)"
+    MAIN_AGENT_ID="$(runtime_config_get MAIN_AGENT_ID 2>/dev/null || true)"
     MAIN_AGENT_ID="${MAIN_AGENT_ID//[^a-zA-Z0-9_-]/}"
     [ -n "$MAIN_AGENT_ID" ] && SESSION="${MAIN_AGENT_ID}-channels"
   fi
@@ -238,9 +241,7 @@ run_guard() {
   fi
 
   local MAIN_MODEL="" MODEL_FLAG="" CLAUDE_Q
-  if [ -f "$INSTALL_DIR/.claude/settings.json" ] && command -v jq >/dev/null 2>&1; then
-    MAIN_MODEL="$(jq -r '.model // empty' "$INSTALL_DIR/.claude/settings.json" 2>/dev/null)"
-  fi
+  MAIN_MODEL="$(runtime_config_get DEFAULT_AGENT_MODEL 2>/dev/null || true)"
   # W1: sanitize the model id before interpolating it into the respawn shell
   # string (defense in depth -- settings.json is local config). Preserves the
   # "[1m]" context suffix while stripping shell metacharacters.
@@ -253,7 +254,7 @@ run_guard() {
   CLAUDE_Q="$(printf '%q' "$CLAUDE")"
   # W2: %q-quote the (config-overridable) plugin id, same treatment as the model.
   local PLUGIN_Q; PLUGIN_Q="$(printf '%q' "$RESPAWN_PLUGIN")"
-  local RESPAWN_CMD="export PATH=\"/opt/homebrew/bin:\$HOME/.bun/bin:/home/linuxbrew/.linuxbrew/bin:\$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin\" && $CLAUDE_Q --dangerously-skip-permissions ${MODEL_FLAG}--channels $PLUGIN_Q"
+  local RESPAWN_CMD="export PATH=\"/opt/homebrew/bin:\$HOME/.bun/bin:/home/linuxbrew/.linuxbrew/bin:\$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin\" && export CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false MCP_SERVER_CONNECTION_BATCH_SIZE=10 MCP_CONNECTION_NONBLOCKING=1 MCP_TIMEOUT=60000 && $CLAUDE_Q --dangerously-skip-permissions ${MODEL_FLAG}--channels $PLUGIN_Q"
 
   log "stuck modal not cleared by Escape -- respawn-pane $SESSION (respawn #$((count+1)))"
   # G: alert ONLY after the respawn-pane actually succeeds, so a failed respawn
