@@ -308,152 +308,16 @@ PYEOF
 echo -e "  ${GREEN}✓${NC} Claude Code first-run flags pre-set"
 
 INSTALL_STEP="claude-auth"
-# Step 2b: provider + credential selection. The order matters: we MUST ask
-# the operator which provider to use BEFORE running `claude auth login`,
-# because the login is only relevant for the Anthropic branch -- on every
-# other provider the operator's Keychain auth is not used by the runtime
-# at all. The Phase 1 commit stopped reading Marveen keys from .env; the
-# runtime reads secrets from the encrypted Vault (POST /api/vault at
-# runtime), so the installer pushes the captured credential into the Vault
-# AFTER the launchd unit starts and the dashboard mints a DASHBOARD_TOKEN.
 . "$INSTALL_DIR/scripts/lib/installer-push-config.sh"
-PROVIDER_VAULT_ID=""
-PROVIDER_VAULT_LABEL=""
-PROVIDER_VAULT_VALUE=""
-PROVIDER_BASE_URL_KEY=""
-PROVIDER_BASE_URL_VALUE=""
-PROVIDER_MODE=""
+. "$INSTALL_DIR/scripts/lib/installer-provider-prompt.sh"
 
-if service_auth_present; then
-  ok "A telepites mar hordoz auth kulcsot (.env / store/.claude-oauth-token)"
-  PROVIDER_MODE="1"
-  PROVIDER_VAULT_ID="CLAUDE_CODE_OAUTH_TOKEN"
-  PROVIDER_VAULT_LABEL="Anthropic Claude setup-token (existing)"
-  PROVIDER_VAULT_VALUE=$(cat "$INSTALL_DIR/store/.claude-oauth-token" 2>/dev/null || true)
-else
-  echo ""
-  echo -e "${BOLD}$(_t section_2_macos)${NC}"
-  echo ""
-  echo -e "  ${BOLD}Eloszor valaszd ki a modell-szolgaltatot:${NC}"
-  echo -e "  ${BOLD}1.${NC} Anthropic Claude ${DIM}(Pro/Max OAuth setup-token vagy API key)${NC}"
-  echo -e "  ${BOLD}2.${NC} MiniMax ${DIM}(Anthropic-kompatibilis, sajat API key)${NC}"
-  echo -e "  ${BOLD}3.${NC} DeepSeek ${DIM}(Anthropic-kompatibilis, sajat API key)${NC}"
-  echo -e "  ${BOLD}4.${NC} OpenRouter ${DIM}(Anthropic-kompatibilis, sajat API key)${NC}"
-  echo -e "  ${BOLD}5.${NC} Ollama ${DIM}(lokalis, nincs hitelesites)${NC}"
-  echo -e "  ${BOLD}6.${NC} Kihagyas ${DIM}(kesobb a dashboard Beallitasok oldalon)${NC}"
-  echo ""
-  read -rp "$(_t prompt_provider_mode)" PROVIDER_MODE
-  PROVIDER_MODE=${PROVIDER_MODE:-1}
-fi
+# Override library hooks with installer-specific helpers.
+_installer_service_auth_present() {
+  service_auth_present
+}
 
-# Step 2c: provider-specific credential capture. The Anthropic-1 branch is
-# the only one that calls `claude auth login` -- that's the operator's
-# Keychain session for interactive `claude` use; the launchd services
-# always read from the Vault, not the Keychain.
-MACOS_OAUTH_TOKEN_INPUT=""
-case "$PROVIDER_MODE" in
-  1)
-    echo ""
-    echo -e "${DIM}$(_t macos.auth_hint_1)${NC}"
-    echo -e "${DIM}$(_t macos.auth_hint_2)${NC}"
-    echo -e "${DIM}$(_t macos.auth_hint_3)${NC}"
-    read -rp "$(_t prompt_login)" DO_AUTH
-    if [[ "$DO_AUTH" == "i" || "$DO_AUTH" == "y" ]]; then
-      claude auth login && AUTH_RC=0 || AUTH_RC=$?
-      if [ "$AUTH_RC" -ne 0 ]; then
-        echo -e "  ${ORANGE}⚠${NC} Auth login nem fejezodott be sikeresen (exit $AUTH_RC)."
-        echo -e "  ${DIM}$(_t macos.auth_later)${NC}"
-      fi
-    fi
-    echo -e "  ${GREEN}✓${NC} $(_t macos.firstrun_done)"
-    echo ""
-    echo -e "  ${BOLD}Az ugynokok kulon hitelesitot igenyelnek.${NC}"
-    echo -e "  ${DIM}A Keychain a Te termnalodhoz kot; a launchd unitok a Vault-bol kapnak.${NC}"
-    echo -e "  ${BOLD}1.${NC} Futtasd egy terminalban: ${BLUE}claude setup-token${NC}"
-    echo -e "  ${BOLD}2.${NC} Masold ide a kiirt tokent (Enter = kihagyas):"
-    read -rp "  OAuth token: " MACOS_OAUTH_TOKEN_INPUT
-    if [ -n "$MACOS_OAUTH_TOKEN_INPUT" ]; then
-      if printf '%s' "$MACOS_OAUTH_TOKEN_INPUT" | grep -Eq '^sk-ant-oat01-[A-Za-z0-9_-]{40,}$'; then
-        ok "Token formailag rendben, elmentjuk a szolgaltatasoknak"
-      else
-        warn "A beirt ertek nem setup-token alaku (sk-ant-oat01-...). Elmentjuk, de ellenorizd."
-      fi
-      PROVIDER_VAULT_ID="CLAUDE_CODE_OAUTH_TOKEN"
-      PROVIDER_VAULT_LABEL="Anthropic Claude setup-token"
-      PROVIDER_VAULT_VALUE="$MACOS_OAUTH_TOKEN_INPUT"
-    else
-      warn "Token nem lett megadva -- az ugynokok igy nem fognak elindulni."
-    fi
-    ;;
-
-  2)
-    echo ""
-    echo -e "  MiniMax -- valassz endpointot:"
-    echo -e "  ${BOLD}1.${NC} Globalis ${DIM}(https://api.minimax.io/anthropic)${NC}"
-    echo -e "  ${BOLD}2.${NC} Kinai regio ${DIM}(https://api.minimaxi.com/anthropic)${NC}"
-    echo ""
-    read -rp "  MiniMax endpoint [1/2, default: 1]: " MINIMAX_REGION
-    MINIMAX_REGION=${MINIMAX_REGION:-1}
-    if [ "$MINIMAX_REGION" = "2" ]; then
-      PROVIDER_BASE_URL_VALUE="https://api.minimaxi.com/anthropic"
-    else
-      PROVIDER_BASE_URL_VALUE="https://api.minimax.io/anthropic"
-    fi
-    PROVIDER_BASE_URL_KEY="MINIMAX_BASE_URL"
-    echo ""
-    echo -e "  ${DIM}API kulcs: platform.minimax.io -> API Keys${NC}"
-    read -p "  MINIMAX_API_KEY: " MINIMAX_INPUT
-    if [ -n "$MINIMAX_INPUT" ]; then
-      PROVIDER_VAULT_ID="MINIMAX_API_KEY"
-      PROVIDER_VAULT_LABEL="MiniMax API key"
-      PROVIDER_VAULT_VALUE="$MINIMAX_INPUT"
-      ok "MiniMax konfiguracio elokeszitve (a telepito a service indulasa utan tolti a Vaultba)"
-    else
-      warn "MiniMax API key nem lett megadva."
-    fi
-    ;;
-
-  3)
-    echo ""
-    echo -e "  ${DIM}API kulcs: platform.deepseek.com -> API Keys${NC}"
-    read -p "  DEEPSEEK_API_KEY: " DEEPSEEK_INPUT
-    if [ -n "$DEEPSEEK_INPUT" ]; then
-      PROVIDER_VAULT_ID="DEEPSEEK_API_KEY"
-      PROVIDER_VAULT_LABEL="DeepSeek API key"
-      PROVIDER_VAULT_VALUE="$DEEPSEEK_INPUT"
-      ok "DeepSeek konfiguracio elokeszitve"
-    else
-      warn "DeepSeek API key nem lett megadva."
-    fi
-    ;;
-
-  4)
-    echo ""
-    echo -e "  ${DIM}API kulcs: openrouter.ai -> Keys${NC}"
-    read -p "  openrouter-fleet-key: " OPENROUTER_INPUT
-    if [ -n "$OPENROUTER_INPUT" ]; then
-      PROVIDER_VAULT_ID="openrouter-fleet-key"
-      PROVIDER_VAULT_LABEL="OpenRouter API key"
-      PROVIDER_VAULT_VALUE="$OPENROUTER_INPUT"
-      ok "OpenRouter konfiguracio elokeszitve"
-    else
-      warn "OpenRouter API key nem lett megadva."
-    fi
-    ;;
-
-  5)
-    echo ""
-    read -rp "  OLLAMA_URL [default: http://localhost:11434]: " OLLAMA_INPUT
-    PROVIDER_BASE_URL_KEY="OLLAMA_URL"
-    PROVIDER_BASE_URL_VALUE=${OLLAMA_INPUT:-http://localhost:11434}
-    ok "Ollama konfiguracio elokeszitve (URL: $PROVIDER_BASE_URL_VALUE)"
-    ;;
-
-  *)
-    echo ""
-    echo -e "  ${DIM}Kihagyva. Kesobb a dashboard Beallitasok oldalon allithato be.${NC}"
-    ;;
-esac
+installer_prompt_init
+installer_prompt_provider
 
 export PROVIDER_VAULT_ID PROVIDER_VAULT_LABEL PROVIDER_VAULT_VALUE
 export PROVIDER_BASE_URL_KEY PROVIDER_BASE_URL_VALUE
@@ -473,15 +337,22 @@ echo -e "  ${DIM}$(_t macos.headless_test)${NC}"
 # The `&& ... || ...` guard replaces the `set +e` window that used to wrap this:
 # the ERR trap fires regardless of errexit and on_error() exits, so the window
 # was decorative -- a failing probe still killed the installer here.
-CLAUDE_PROBE_OUT=$(claude --print "ping" 2>&1) && CLAUDE_PROBE_EXIT=0 || CLAUDE_PROBE_EXIT=$?
-CLAUDE_PROBE_OUT=${CLAUDE_PROBE_OUT:0:200}
-if [ "$CLAUDE_PROBE_EXIT" -eq 0 ] && [ -n "$CLAUDE_PROBE_OUT" ]; then
-  echo -e "  ${GREEN}✓${NC} $(_t macos.headless_ok)"
+# Phase 1-2 follow-up: live `claude --print` is Anthropic-specific; skip on
+# every other provider branch to avoid unintended third-party API calls.
+if [ "${PROVIDER_MODE:-1}" = "1" ]; then
+  CLAUDE_PROBE_OUT=$(claude --print "ping" 2>&1) && CLAUDE_PROBE_EXIT=0 || CLAUDE_PROBE_EXIT=$?
+  CLAUDE_PROBE_OUT=${CLAUDE_PROBE_OUT:0:200}
+  if [ "$CLAUDE_PROBE_EXIT" -eq 0 ] && [ -n "$CLAUDE_PROBE_OUT" ]; then
+    echo -e "  ${GREEN}✓${NC} $(_t macos.headless_ok)"
+  else
+    warn "$(_t macos.headless_fail)"
+    echo -e "    ${DIM}Kimenet: ${CLAUDE_PROBE_OUT:-<ures>}${NC}"
+    echo -e "    ${DIM}Tipikus okok: nincs ervenyes auth, halozati problema, regi claude CLI.${NC}"
+    echo -e "    ${DIM}Javitas: \`claude --version\` -> \`claude /login\` (vagy ANTHROPIC_API_KEY/CLAUDE_CODE_OAUTH_TOKEN beallitas) -> \`claude --print \"ping\"\` ujra.${NC}"
+  fi
 else
-  warn "$(_t macos.headless_fail)"
-  echo -e "    ${DIM}Kimenet: ${CLAUDE_PROBE_OUT:-<ures>}${NC}"
-  echo -e "    ${DIM}Tipikus okok: nincs ervenyes auth, halozati problema, regi claude CLI.${NC}"
-  echo -e "    ${DIM}Javitas: \`claude --version\` -> \`claude /login\` (vagy ANTHROPIC_API_KEY/CLAUDE_CODE_OAUTH_TOKEN beallitas) -> \`claude --print \"ping\"\` ujra.${NC}"
+  echo ""
+  echo -e "  ${DIM}Live \`claude --print\` probe skipped -- '$PROVIDER_MODE' provider, a telepito nem hiv API-t.${NC}"
 fi
 
 INSTALL_STEP="personal-info"
@@ -726,6 +597,9 @@ mkdir -p "$INSTALL_DIR/agents"
 # Persist the service-side credential captured in the auth step. Both sinks are
 # needed: .env is what channels.sh exports for the MAIN agent, and the fleet
 # token file is what per-agent config-dir isolation reads for SUB-agents.
+# Phase 2 follow-up: only the Anthropic-1 OAuth branch populates MACOS_OAUTH_TOKEN_INPUT
+# (the other providers go through the Vault, not .env). So this .env / fleet-token
+# write is naturally a no-op for MiniMax / DeepSeek / OpenRouter / Ollama / Skip.
 if [ -n "${MACOS_OAUTH_TOKEN_INPUT:-}" ]; then
   env_merge_key CLAUDE_CODE_OAUTH_TOKEN "$MACOS_OAUTH_TOKEN_INPUT"
   chmod 600 "$INSTALL_DIR/.env"
