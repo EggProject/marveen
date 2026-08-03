@@ -92,6 +92,16 @@ describe('model-runtime', () => {
       `export ANTHROPIC_AUTH_TOKEN="$(cat '/store/.minimax-fleet-key')"`,
       `export ANTHROPIC_BASE_URL='https://api.minimax.io/anthropic'`,
       `export ANTHROPIC_MODEL='MiniMax-M3'`,
+      // MiniMax provider-specific tunings (1M context, telemetry off, fast mode off).
+      `export API_TIMEOUT_MS='3000000'`,
+      `export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC='1'`,
+      `export ANTHROPIC_DEFAULT_SONNET_MODEL='MiniMax-M3[1m]'`,
+      `export ANTHROPIC_DEFAULT_OPUS_MODEL='MiniMax-M3[1m]'`,
+      `export ANTHROPIC_DEFAULT_HAIKU_MODEL='MiniMax-M3'`,
+      `export CLAUDE_CODE_AUTO_COMPACT_WINDOW='1000000'`,
+      `export CLAUDE_CODE_ALWAYS_ENABLE_EFFORT='1'`,
+      `export CLAUDE_AUTOCOMPACT_PCT_OVERRIDE='50'`,
+      `export CLAUDE_CODE_DISABLE_FAST_MODE='1'`,
     ])
   })
 
@@ -102,6 +112,43 @@ describe('model-runtime', () => {
       () => 'http://localhost:11434',
     )
     expect(fragments.fragments[0]).toBe('export ANTHROPIC_AUTH_TOKEN=ollama')
+  })
+
+  it('emits only the 3 core fragments for providers without extra tunings', () => {
+    // Anthropic / DeepSeek / OpenRouter / Ollama carry an empty extraEnvVars;
+    // their shell fragment must NOT contain any provider-specific tunings.
+    const anthropicFragments = buildProviderEnvFragments(
+      parseCanonicalModelRefStrict('anthropic:claude-opus-5'),
+      () => '/store/.claude-fleet-key',
+      () => 'https://api.anthropic.com',
+    )
+    expect(anthropicFragments.fragments).toEqual([
+      `export ANTHROPIC_AUTH_TOKEN="$(cat '/store/.claude-fleet-key')"`,
+      `export ANTHROPIC_BASE_URL='https://api.anthropic.com'`,
+      `export ANTHROPIC_MODEL='claude-opus-5'`,
+    ])
+
+    const deepseekFragments = buildProviderEnvFragments(
+      parseCanonicalModelRefStrict('deepseek:deepseek-v4-pro'),
+      () => '/store/.deepseek-fleet-key',
+      () => null,
+    )
+    expect(deepseekFragments.fragments).toEqual([
+      `export ANTHROPIC_AUTH_TOKEN="$(cat '/store/.deepseek-fleet-key')"`,
+      `export ANTHROPIC_BASE_URL='https://api.deepseek.com/anthropic'`,
+      `export ANTHROPIC_MODEL='deepseek-v4-pro'`,
+    ])
+
+    const openrouterFragments = buildProviderEnvFragments(
+      parseCanonicalModelRefStrict('openrouter:auto:premium_reasoning'),
+      () => '/store/.openrouter-fleet-key',
+      () => null,
+    )
+    expect(openrouterFragments.fragments).toEqual([
+      `export ANTHROPIC_AUTH_TOKEN="$(cat '/store/.openrouter-fleet-key')"`,
+      `export ANTHROPIC_BASE_URL='https://openrouter.ai/api'`,
+      `export ANTHROPIC_MODEL='auto:premium_reasoning'`,
+    ])
   })
 
   it('throws when the MiniMax Vault path is missing', () => {

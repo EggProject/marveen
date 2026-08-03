@@ -65,4 +65,32 @@ describe('model-registry', () => {
   it('lists MiniMax models and no extras', () => {
     expect(getProviderModels('minimax').map((m) => m.id)).toEqual(['MiniMax-M3'])
   })
+
+  it('ships an empty extraEnvVars for providers that need no provider-specific tunings', () => {
+    // Anthropic / DeepSeek / OpenRouter / Ollama carry no Claude Code
+    // tunings beyond the 3 core env vars; the runtime shell fragment
+    // builder must skip the extraEnvVars loop on those entries.
+    expect(getProvider('anthropic').extraEnvVars).toEqual({})
+    expect(getProvider('deepseek').extraEnvVars).toEqual({})
+    expect(getProvider('openrouter').extraEnvVars).toEqual({})
+    expect(getProvider('ollama').extraEnvVars).toEqual({})
+  })
+
+  it('ships the MiniMax provider-specific tunings for the 1M-context M3 model', () => {
+    // The MiniMax M3 + 1M-context variant needs a fixed set of Claude Code
+    // env vars on every invocation; any omission leaves the model unusable.
+    // The list is the contract, not the rationale -- see provider-runtime
+    // tests for the shell-fragment emission contract.
+    expect(getProvider('minimax').extraEnvVars).toEqual({
+      API_TIMEOUT_MS: '3000000',
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+      ANTHROPIC_DEFAULT_SONNET_MODEL: 'MiniMax-M3[1m]',
+      ANTHROPIC_DEFAULT_OPUS_MODEL: 'MiniMax-M3[1m]',
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: 'MiniMax-M3',
+      CLAUDE_CODE_AUTO_COMPACT_WINDOW: '1000000',
+      CLAUDE_CODE_ALWAYS_ENABLE_EFFORT: '1',
+      CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: '50',
+      CLAUDE_CODE_DISABLE_FAST_MODE: '1',
+    })
+  })
 })

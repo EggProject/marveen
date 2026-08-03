@@ -560,12 +560,30 @@ fi
 # Gating on `claude auth status` here is what silently skipped token capture
 # for operators who had followed step 2 below and run `claude setup-token`
 # first -- the correct user behaviour triggered the bug.
+#
+# Phase 2 follow-up: the runtime reads from the encrypted Vault + the
+# canonical settings store, NOT from .env. The Claude-1 branch keeps writing
+# the token to .env / shell RC for the operator's interactive `claude` use;
+# every selected provider's credential is buffered in PROVIDER_* env vars
+# and pushed to the running dashboard (POST /api/vault + POST /api/settings)
+# AFTER the systemd unit start, once the dashboard mints a DASHBOARD_TOKEN.
+# Shared helper: scripts/lib/installer-push-config.sh.
+. "$INSTALL_DIR/scripts/lib/installer-push-config.sh"
+PROVIDER_VAULT_ID=""
+PROVIDER_VAULT_LABEL=""
+PROVIDER_VAULT_VALUE=""
+PROVIDER_BASE_URL_KEY=""
+PROVIDER_BASE_URL_VALUE=""
+
 if service_auth_present; then
   ok "A telepites mar hordoz auth kulcsot (.env / store/.claude-oauth-token)"
+  PROVIDER_VAULT_ID="CLAUDE_CODE_OAUTH_TOKEN"
+  PROVIDER_VAULT_LABEL="Anthropic Claude setup-token (existing)"
+  PROVIDER_VAULT_VALUE=$(cat "$INSTALL_DIR/store/.claude-oauth-token" 2>/dev/null || true)
 else
   if claude auth status &>/dev/null; then
     echo -e "  ${ORANGE}A terminalod be van jelentkezve, de a SZOLGALTATASOK ehhez nem ferenek hozza.${NC}"
-    echo -e "  ${DIM}A systemd unitok csak a .env-et es a store/.claude-oauth-token-t olvassak.${NC}"
+    echo -e "  ${DIM}A systemd unitok a titkositott Vaultot olvassak (a telepito a service indulasa utan tolti fel).${NC}"
   else
     echo -e "  ${ORANGE}Nincs aktiv Claude bejelentkezes.${NC}"
   fi
@@ -573,65 +591,155 @@ else
     echo ""
     echo -e "  ${BLUE}Headless szerver detektalva (nincs DISPLAY).${NC}"
     echo -e "  ${BLUE}Bongeszo-alapu bejelentkezes nem lehetseges.${NC}"
-    echo -e "  ${BOLD}Ajanlott: OAuth token (2) vagy API key (1).${NC}"
+    echo -e "  ${BOLD}Ajanlott: OAuth token (Anthropic 2) vagy API key (1).${NC}"
     echo ""
   fi
   echo ""
-  echo -e "  Valassz bejelentkezesi modot:"
-  echo -e "  ${BOLD}1.${NC} API key ${DIM}(Anthropic Console -> fizeteses/pay-as-you-go)${NC}"
-  echo -e "  ${BOLD}2.${NC} OAuth token ${DIM}(Pro/Max elofizetes - tokennel egy masik geprol)${NC}"
-  echo -e "  ${BOLD}3.${NC} Kihagyas ${DIM}(kesobb allitod be)${NC}"
+  echo -e "  Valassz modell-szolgaltatot:"
+  echo -e "  ${BOLD}1.${NC} Anthropic Claude ${DIM}(Claude Pro/Max vagy fizetos API key)${NC}"
+  echo -e "  ${BOLD}2.${NC} MiniMax ${DIM}(Anthropic-kompatibilis, sajat API key)${NC}"
+  echo -e "  ${BOLD}3.${NC} DeepSeek ${DIM}(Anthropic-kompatibilis, sajat API key)${NC}"
+  echo -e "  ${BOLD}4.${NC} OpenRouter ${DIM}(Anthropic-kompatibilis, sajat API key)${NC}"
+  echo -e "  ${BOLD}5.${NC} Ollama ${DIM}(lokalis, nincs hitelesites)${NC}"
+  echo -e "  ${BOLD}6.${NC} Kihagyas ${DIM}(kesobb a dashboard Beallitasok oldalon)${NC}"
   echo ""
   if [ "$IS_HEADLESS" = "true" ]; then
-    read -rp "$(_t prompt_auth_mode)" AUTH_MODE
-    AUTH_MODE=${AUTH_MODE:-2}
+    read -rp "$(_t prompt_provider_mode)" PROVIDER_MODE
+    PROVIDER_MODE=${PROVIDER_MODE:-1}
   else
-    read -rp "$(_t prompt_auth_mode)" AUTH_MODE
-    AUTH_MODE=${AUTH_MODE:-3}
+    read -rp "$(_t prompt_provider_mode)" PROVIDER_MODE
+    PROVIDER_MODE=${PROVIDER_MODE:-6}
   fi
 
-  if [ "$AUTH_MODE" = "1" ]; then
+  if [ "$PROVIDER_MODE" = "1" ]; then
     echo ""
-    echo -e "  ${DIM}API kulcsot itt talalod: https://console.anthropic.com/settings/keys${NC}"
-    read -p "  ANTHROPIC_API_KEY (sk-ant-...): " ANTHROPIC_API_KEY_INPUT
-    if [ -n "$ANTHROPIC_API_KEY_INPUT" ]; then
-      export ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY_INPUT"
-      ensure_in_rc 'ANTHROPIC_API_KEY' "export ANTHROPIC_API_KEY=\"$ANTHROPIC_API_KEY_INPUT\""
-      CLAUDE_AUTH_ENV_LINE="ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY_INPUT}"
-      ok "ANTHROPIC_API_KEY beallitva"
+    echo -e "  Anthropic Claude -- valassz hitelesitesi modot:"
+    echo -e "  ${BOLD}1.${NC} API key ${DIM}(Anthropic Console -> fizeteses/pay-as-you-go)${NC}"
+    echo -e "  ${BOLD}2.${NC} OAuth token ${DIM}(Pro/Max elofizetes - tokennel egy masik geprol)${NC}"
+    echo -e "  ${BOLD}3.${NC} Kihagyas ${DIM}(kesobb allitod be)${NC}"
+    echo ""
+    if [ "$IS_HEADLESS" = "true" ]; then
+      read -rp "$(_t prompt_auth_mode)" AUTH_MODE
+      AUTH_MODE=${AUTH_MODE:-2}
     else
-      warn "API key nem lett megadva, kihagyas."
+      read -rp "$(_t prompt_auth_mode)" AUTH_MODE
+      AUTH_MODE=${AUTH_MODE:-3}
     fi
 
-  elif [ "$AUTH_MODE" = "2" ]; then
-    echo ""
-    echo -e "  ${ORANGE}Lepesek egy boengeszos gepen:${NC}"
-    echo -e "  ${BOLD}1.${NC} Nyiss egy terminalt egy olyan gepen ahol van bongeszo"
-    echo -e "  ${BOLD}2.${NC} Futtasd: ${BLUE}claude setup-token${NC}"
-    echo -e "  ${BOLD}3.${NC} A bongeszo megnyilik, jelentkezz be a Claude fiokoddal"
-    echo -e "  ${BOLD}4.${NC} Masold vissza ide a kiirt tokent:"
-    echo ""
-    read -p "  OAuth token: " OAUTH_TOKEN_INPUT
-    if [ -n "$OAUTH_TOKEN_INPUT" ]; then
-      export CLAUDE_CODE_OAUTH_TOKEN="$OAUTH_TOKEN_INPUT"
-      ensure_in_rc 'CLAUDE_CODE_OAUTH_TOKEN' "export CLAUDE_CODE_OAUTH_TOKEN=\"$OAUTH_TOKEN_INPUT\""
-      CLAUDE_AUTH_ENV_LINE="CLAUDE_CODE_OAUTH_TOKEN=${OAUTH_TOKEN_INPUT}"
-      # Ellenorzes
-      if claude auth status &>/dev/null; then
-        ok "OAuth token elfogadva, bejelentkezes sikeres"
+    if [ "$AUTH_MODE" = "1" ]; then
+      echo ""
+      echo -e "  ${DIM}API kulcsot itt talalod: https://console.anthropic.com/settings/keys${NC}"
+      read -p "  ANTHROPIC_API_KEY (sk-ant-...): " ANTHROPIC_API_KEY_INPUT
+      if [ -n "$ANTHROPIC_API_KEY_INPUT" ]; then
+        export ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY_INPUT"
+        ensure_in_rc 'ANTHROPIC_API_KEY' "export ANTHROPIC_API_KEY=\"$ANTHROPIC_API_KEY_INPUT\""
+        CLAUDE_AUTH_ENV_LINE="ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY_INPUT}"
+        PROVIDER_VAULT_ID="ANTHROPIC_API_KEY"
+        PROVIDER_VAULT_LABEL="Anthropic API key"
+        PROVIDER_VAULT_VALUE="$ANTHROPIC_API_KEY_INPUT"
+        ok "ANTHROPIC_API_KEY beallitva"
       else
-        warn "Token beallitva, de az ellenorzes sikertelen -- ellenorizd a tokent."
+        warn "API key nem lett megadva, kihagyas."
       fi
+
+    elif [ "$AUTH_MODE" = "2" ]; then
+      echo ""
+      echo -e "  ${ORANGE}Lepesek egy boengeszos gepen:${NC}"
+      echo -e "  ${BOLD}1.${NC} Nyiss egy terminalt egy olyan gepen ahol van bongeszo"
+      echo -e "  ${BOLD}2.${NC} Futtasd: ${BLUE}claude setup-token${NC}"
+      echo -e "  ${BOLD}3.${NC} A bongeszo megnyilik, jelentkezz be a Claude fiokoddal"
+      echo -e "  ${BOLD}4.${NC} Masold vissza ide a kiirt tokent:"
+      echo ""
+      read -p "  OAuth token: " OAUTH_TOKEN_INPUT
+      if [ -n "$OAUTH_TOKEN_INPUT" ]; then
+        export CLAUDE_CODE_OAUTH_TOKEN="$OAUTH_TOKEN_INPUT"
+        ensure_in_rc 'CLAUDE_CODE_OAUTH_TOKEN' "export CLAUDE_CODE_OAUTH_TOKEN=\"$OAUTH_TOKEN_INPUT\""
+        CLAUDE_AUTH_ENV_LINE="CLAUDE_CODE_OAUTH_TOKEN=${OAUTH_TOKEN_INPUT}"
+        PROVIDER_VAULT_ID="CLAUDE_CODE_OAUTH_TOKEN"
+        PROVIDER_VAULT_LABEL="Anthropic Claude setup-token"
+        PROVIDER_VAULT_VALUE="$OAUTH_TOKEN_INPUT"
+        # Ellenorzes
+        if claude auth status &>/dev/null; then
+          ok "OAuth token elfogadva, bejelentkezes sikeres"
+        else
+          warn "Token beallitva, de az ellenorzes sikertelen -- ellenorizd a tokent."
+        fi
+      else
+        warn "Token nem lett megadva, kihagyas."
+      fi
+
     else
-      warn "Token nem lett megadva, kihagyas."
+      echo -e "  ${DIM}Kihagyva. Kesobb allitsd be:${NC}"
+      echo -e "  ${DIM}  export ANTHROPIC_API_KEY=sk-ant-...${NC}"
+      echo -e "  ${DIM}  vagy: claude setup-token (boengeszos gepen), majd export CLAUDE_CODE_OAUTH_TOKEN=...${NC}"
     fi
+
+  elif [ "$PROVIDER_MODE" = "2" ]; then
+    echo ""
+    echo -e "  MiniMax -- valassz endpointot:"
+    echo -e "  ${BOLD}1.${NC} Globalis ${DIM}(https://api.minimax.io/anthropic)${NC}"
+    echo -e "  ${BOLD}2.${NC} Kinai regio ${DIM}(https://api.minimaxi.com/anthropic)${NC}"
+    echo ""
+    read -rp "  MiniMax endpoint [1/2, default: 1]: " MINIMAX_REGION
+    MINIMAX_REGION=${MINIMAX_REGION:-1}
+    if [ "$MINIMAX_REGION" = "2" ]; then
+      PROVIDER_BASE_URL_VALUE="https://api.minimaxi.com/anthropic"
+    else
+      PROVIDER_BASE_URL_VALUE="https://api.minimax.io/anthropic"
+    fi
+    PROVIDER_BASE_URL_KEY="MINIMAX_BASE_URL"
+    echo ""
+    echo -e "  ${DIM}API kulcs: platform.minimax.io -> API Keys${NC}"
+    read -p "  MINIMAX_API_KEY: " MINIMAX_INPUT
+    if [ -n "$MINIMAX_INPUT" ]; then
+      PROVIDER_VAULT_ID="MINIMAX_API_KEY"
+      PROVIDER_VAULT_LABEL="MiniMax API key"
+      PROVIDER_VAULT_VALUE="$MINIMAX_INPUT"
+      ok "MiniMax konfiguracio elokeszitve (a telepito a service indulasa utan tolti a Vaultba)"
+    else
+      warn "MiniMax API key nem lett megadva."
+    fi
+
+  elif [ "$PROVIDER_MODE" = "3" ]; then
+    echo ""
+    echo -e "  ${DIM}API kulcs: platform.deepseek.com -> API Keys${NC}"
+    read -p "  DEEPSEEK_API_KEY: " DEEPSEEK_INPUT
+    if [ -n "$DEEPSEEK_INPUT" ]; then
+      PROVIDER_VAULT_ID="DEEPSEEK_API_KEY"
+      PROVIDER_VAULT_LABEL="DeepSeek API key"
+      PROVIDER_VAULT_VALUE="$DEEPSEEK_INPUT"
+      ok "DeepSeek konfiguracio elokeszitve"
+    else
+      warn "DeepSeek API key nem lett megadva."
+    fi
+
+  elif [ "$PROVIDER_MODE" = "4" ]; then
+    echo ""
+    echo -e "  ${DIM}API kulcs: openrouter.ai -> Keys${NC}"
+    read -p "  openrouter-fleet-key: " OPENROUTER_INPUT
+    if [ -n "$OPENROUTER_INPUT" ]; then
+      PROVIDER_VAULT_ID="openrouter-fleet-key"
+      PROVIDER_VAULT_LABEL="OpenRouter API key"
+      PROVIDER_VAULT_VALUE="$OPENROUTER_INPUT"
+      ok "OpenRouter konfiguracio elokeszitve"
+    else
+      warn "OpenRouter API key nem lett megadva."
+    fi
+
+  elif [ "$PROVIDER_MODE" = "5" ]; then
+    echo ""
+    read -rp "  OLLAMA_URL [default: http://localhost:11434]: " OLLAMA_INPUT
+    PROVIDER_BASE_URL_KEY="OLLAMA_URL"
+    PROVIDER_BASE_URL_VALUE=${OLLAMA_INPUT:-http://localhost:11434}
+    ok "Ollama konfiguracio elokeszitve (URL: $PROVIDER_BASE_URL_VALUE)"
 
   else
-    echo -e "  ${DIM}Kihagyva. Kesobb allitsd be:${NC}"
-    echo -e "  ${DIM}  export ANTHROPIC_API_KEY=sk-ant-...${NC}"
-    echo -e "  ${DIM}  vagy: claude setup-token (boengeszos gepen), majd export CLAUDE_CODE_OAUTH_TOKEN=...${NC}"
+    echo -e "  ${DIM}Kihagyva. Kesobb a dashboard Beallitasok oldalon allithato be.${NC}"
   fi
 fi
+
+export PROVIDER_VAULT_ID PROVIDER_VAULT_LABEL PROVIDER_VAULT_VALUE
+export PROVIDER_BASE_URL_KEY PROVIDER_BASE_URL_VALUE
 
 # Pre-flight headless probe — Issue #179.
 # `claude auth status` only checks the token file; it does NOT verify the SDK
@@ -1932,6 +2040,24 @@ if [ -n "$DASH_TOKEN" ]; then
 else
   echo -e "  ${BOLD}Dashboard:${NC} http://localhost:${WEB_PORT:-3420}"
   echo -e "  ${DIM}(A tokenes URL-t a szerver logban talalod)${NC}"
+fi
+echo ""
+
+# Phase 2 follow-up: push the provider credential the operator typed at the
+# claude-auth prompt into the running dashboard's Vault + canonical settings
+# store. The runtime reads from those, not from .env. Skips silently when
+# the operator picked "kihagyas" (PROVIDER_VAULT_VALUE and PROVIDER_BASE_URL_KEY
+# are both empty in that case).
+if [ -n "${PROVIDER_VAULT_VALUE:-}" ] || [ -n "${PROVIDER_BASE_URL_KEY:-}" ]; then
+  if installer_wait_for_dashboard; then
+    if installer_push_provider_config; then
+      ok "Provider konfiguracio a Vaultba / beallitasokba push-olva"
+    else
+      warn "Provider push sikertelen -- a dashboard Beallitasok oldalon javithato"
+    fi
+  else
+    warn "Dashboard 30s alatt nem erheto el -- provider konfiguracio a dashboardon allithato be"
+  fi
 fi
 echo ""
 echo -e "  ${DIM}VPS/szerver eleres tavolrol:${NC}"

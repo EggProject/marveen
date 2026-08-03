@@ -148,27 +148,32 @@ export function buildProviderEnvFragments(
   const provider = PROVIDERS[ref.provider]
   const model = resolveModel(ref, provider)
   const resolvedBaseUrl = resolveBaseUrl(provider, baseUrl)
-  if (provider.id === 'ollama') {
-    return {
-      fragments: [
+  const coreFragments = provider.id === 'ollama'
+    ? [
         `export ANTHROPIC_AUTH_TOKEN=ollama`,
         `export ANTHROPIC_BASE_URL='${resolvedBaseUrl}'`,
         `export ANTHROPIC_MODEL='${model}'`,
-      ],
-      provider: provider.id,
-      canonicalRef: formatCanonicalModelRef(ref),
-    }
-  }
-  const tokenPath = vaultFilePath(provider.vaultSecretId)
-  if (!tokenPath) {
-    throw new ProviderConfigError(`${provider.id}_vault_secret_missing`)
-  }
+      ]
+    : (() => {
+        const tokenPath = vaultFilePath(provider.vaultSecretId)
+        if (!tokenPath) {
+          throw new ProviderConfigError(`${provider.id}_vault_secret_missing`)
+        }
+        return [
+          `export ANTHROPIC_AUTH_TOKEN="$(cat '${tokenPath}')"`,
+          `export ANTHROPIC_BASE_URL='${resolvedBaseUrl}'`,
+          `export ANTHROPIC_MODEL='${model}'`,
+        ]
+      })()
+  // Provider-specific Claude Code env tunings (timeout, model defaults,
+  // auto-compact window, telemetry, fast mode). These are emitted after the
+  // 3 core fragments so the core auth+base+model pair is always set, even on
+  // an empty extraEnvVars. Single-quote the value so values like the
+  // MiniMax-M3[1m] default survive the shell round-trip without globbing.
+  const extraFragments = Object.entries(provider.extraEnvVars)
+    .map(([key, value]) => `export ${key}='${value}'`)
   return {
-    fragments: [
-      `export ANTHROPIC_AUTH_TOKEN="$(cat '${tokenPath}')"`,
-      `export ANTHROPIC_BASE_URL='${resolvedBaseUrl}'`,
-      `export ANTHROPIC_MODEL='${model}'`,
-    ],
+    fragments: [...coreFragments, ...extraFragments],
     provider: provider.id,
     canonicalRef: formatCanonicalModelRef(ref),
   }

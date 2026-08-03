@@ -427,6 +427,8 @@ A szállított modellek és providerek katalógusa a `src/providers/registry.ts`
 **Canonical model ref.** A flotta mindenhol (`agents/<név>/agent-config.json`, `store/model-profile-map.json`, `DEFAULT_AGENT_MODEL` registry-beállítás, dashboard agent picker) a `provider:model` formátumot használja. A nyers modell id (pl. `claude-opus-5`), a rövid alias (`opus`, `sonnet`, `haiku`), és a prefix-alapú inference többé nem fogadható el. Az ismeretlen vagy hibás ref konfigurációs hibát ad (`ProviderConfigError`), nem csendes fallback-et.
 
 **MiniMax konfiguráció (Phase 2 stop gate).** A MiniMax modell csak akkor jelenik meg választhatóként, ha:
+
+**Telepítő flow.** A `install-linux.sh` és `install-macos.sh` a telepítés elején bekéri a választott modell-szolgáltatót (Anthropic Claude / MiniMax / DeepSeek / OpenRouter / Ollama / Kihagyás), és a szolgáltatás indítása UTÁN, a `DASHBOARD_TOKEN` birtokában a `scripts/lib/installer-push-config.sh` segítségével pusholja a Vaultba a provider credentialt (`POST /api/vault`) és a provider-specifikus base URL-t a canonical settings store-ba (`POST /api/settings`). A `.env` írás csak az operátor saját termináljában futtatott `claude` parancsokhoz maradt meg; a rendszer-szintű credential kizárólag a Vaultból jön.
 1. a `MINIMAX_BASE_URL` registry-beállítás nem üres (globális: `https://api.minimax.io/anthropic`, kínai régió: `https://api.minimaxi.com/anthropic`),
 2. a Vaultban `MINIMAX_API_KEY` azonosító alatt tárolt kulcs jelen van.
 

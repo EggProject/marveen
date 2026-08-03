@@ -330,30 +330,124 @@ fi
 echo -e "  ${GREEN}✓${NC} $(_t macos.firstrun_done)"
 
 # Service-side credential. `claude auth login` above authenticates the OPERATOR
-# (Keychain); the launchd units cannot use that. They read .env and
-# store/.claude-oauth-token, so ask for a setup-token unless this install
-# already carries one (re-run, or the dashboard wizard got there first).
+# (Keychain); the launchd units cannot use that. They read the encrypted Vault
+# (POST /api/vault at runtime), so the installer pushes the captured credential
+# into the Vault AFTER the launchd unit starts and the dashboard mints a
+# DASHBOARD_TOKEN. The setup-token / .env path below remains for the
+# operator's interactive `claude` use and for backward compatibility.
+. "$INSTALL_DIR/scripts/lib/installer-push-config.sh"
+PROVIDER_VAULT_ID=""
+PROVIDER_VAULT_LABEL=""
+PROVIDER_VAULT_VALUE=""
+PROVIDER_BASE_URL_KEY=""
+PROVIDER_BASE_URL_VALUE=""
+
 MACOS_OAUTH_TOKEN_INPUT=""
 if service_auth_present; then
   ok "A telepites mar hordoz auth kulcsot (.env / store/.claude-oauth-token)"
+  PROVIDER_VAULT_ID="CLAUDE_CODE_OAUTH_TOKEN"
+  PROVIDER_VAULT_LABEL="Anthropic Claude setup-token (existing)"
+  PROVIDER_VAULT_VALUE=$(cat "$INSTALL_DIR/store/.claude-oauth-token" 2>/dev/null || true)
 else
   echo ""
-  echo -e "  ${BOLD}Az ugynokok kulon hitelesitot igenyelnek.${NC}"
-  echo -e "  ${DIM}A fenti bejelentkezes a Te termnaljadnak szol (Keychain);${NC}"
-  echo -e "  ${DIM}a hatterszolgaltatasok ahhoz nem ferenek hozza.${NC}"
-  echo -e "  ${BOLD}1.${NC} Futtasd egy terminalban: ${BLUE}claude setup-token${NC}"
-  echo -e "  ${BOLD}2.${NC} Masold ide a kiirt tokent (Enter = kihagyas):"
-  read -rp "  OAuth token: " MACOS_OAUTH_TOKEN_INPUT
-  if [ -n "$MACOS_OAUTH_TOKEN_INPUT" ]; then
-    if printf '%s' "$MACOS_OAUTH_TOKEN_INPUT" | grep -Eq '^sk-ant-oat01-[A-Za-z0-9_-]{40,}$'; then
-      ok "Token formailag rendben, elmentjuk a szolgaltatasoknak"
+  echo -e "  ${BOLD}Valassz modell-szolgaltatot:${NC}"
+  echo -e "  ${BOLD}1.${NC} Anthropic Claude ${DIM}(Pro/Max OAuth setup-token)${NC}"
+  echo -e "  ${BOLD}2.${NC} MiniMax ${DIM}(Anthropic-kompatibilis, sajat API key)${NC}"
+  echo -e "  ${BOLD}3.${NC} DeepSeek ${DIM}(Anthropic-kompatibilis, sajat API key)${NC}"
+  echo -e "  ${BOLD}4.${NC} OpenRouter ${DIM}(Anthropic-kompatibilis, sajat API key)${NC}"
+  echo -e "  ${BOLD}5.${NC} Ollama ${DIM}(lokalis, nincs hitelesites)${NC}"
+  echo -e "  ${BOLD}6.${NC} Kihagyas ${DIM}(kesobb a dashboard Beallitasok oldalon)${NC}"
+  echo ""
+  read -rp "$(_t prompt_provider_mode)" PROVIDER_MODE
+  PROVIDER_MODE=${PROVIDER_MODE:-1}
+
+  if [ "$PROVIDER_MODE" = "1" ]; then
+    echo ""
+    echo -e "  ${BOLD}Az ugynokok kulon hitelesitot igenyelnek.${NC}"
+    echo -e "  ${DIM}A fenti bejelentkezes a Te termnaljadnak szol (Keychain);${NC}"
+    echo -e "  ${DIM}a hatterszolgaltatasok a Vault-bol kapjak.${NC}"
+    echo -e "  ${BOLD}1.${NC} Futtasd egy terminalban: ${BLUE}claude setup-token${NC}"
+    echo -e "  ${BOLD}2.${NC} Masold ide a kiirt tokent (Enter = kihagyas):"
+    read -rp "  OAuth token: " MACOS_OAUTH_TOKEN_INPUT
+    if [ -n "$MACOS_OAUTH_TOKEN_INPUT" ]; then
+      if printf '%s' "$MACOS_OAUTH_TOKEN_INPUT" | grep -Eq '^sk-ant-oat01-[A-Za-z0-9_-]{40,}$'; then
+        ok "Token formailag rendben, elmentjuk a szolgaltatasoknak"
+      else
+        warn "A beirt ertek nem setup-token alaku (sk-ant-oat01-...). Elmentjuk, de ellenorizd."
+      fi
+      PROVIDER_VAULT_ID="CLAUDE_CODE_OAUTH_TOKEN"
+      PROVIDER_VAULT_LABEL="Anthropic Claude setup-token"
+      PROVIDER_VAULT_VALUE="$MACOS_OAUTH_TOKEN_INPUT"
     else
-      warn "A beirt ertek nem setup-token alaku (sk-ant-oat01-...). Elmentjuk, de ellenorizd."
+      warn "Token nem lett megadva -- az ugynokok igy nem fognak elindulni."
     fi
+
+  elif [ "$PROVIDER_MODE" = "2" ]; then
+    echo ""
+    echo -e "  MiniMax -- valassz endpointot:"
+    echo -e "  ${BOLD}1.${NC} Globalis ${DIM}(https://api.minimax.io/anthropic)${NC}"
+    echo -e "  ${BOLD}2.${NC} Kinai regio ${DIM}(https://api.minimaxi.com/anthropic)${NC}"
+    echo ""
+    read -rp "  MiniMax endpoint [1/2, default: 1]: " MINIMAX_REGION
+    MINIMAX_REGION=${MINIMAX_REGION:-1}
+    if [ "$MINIMAX_REGION" = "2" ]; then
+      PROVIDER_BASE_URL_VALUE="https://api.minimaxi.com/anthropic"
+    else
+      PROVIDER_BASE_URL_VALUE="https://api.minimax.io/anthropic"
+    fi
+    PROVIDER_BASE_URL_KEY="MINIMAX_BASE_URL"
+    echo ""
+    echo -e "  ${DIM}API kulcs: platform.minimax.io -> API Keys${NC}"
+    read -p "  MINIMAX_API_KEY: " MINIMAX_INPUT
+    if [ -n "$MINIMAX_INPUT" ]; then
+      PROVIDER_VAULT_ID="MINIMAX_API_KEY"
+      PROVIDER_VAULT_LABEL="MiniMax API key"
+      PROVIDER_VAULT_VALUE="$MINIMAX_INPUT"
+      ok "MiniMax konfiguracio elokeszitve (a telepito a service indulasa utan tolti a Vaultba)"
+    else
+      warn "MiniMax API key nem lett megadva."
+    fi
+
+  elif [ "$PROVIDER_MODE" = "3" ]; then
+    echo ""
+    echo -e "  ${DIM}API kulcs: platform.deepseek.com -> API Keys${NC}"
+    read -p "  DEEPSEEK_API_KEY: " DEEPSEEK_INPUT
+    if [ -n "$DEEPSEEK_INPUT" ]; then
+      PROVIDER_VAULT_ID="DEEPSEEK_API_KEY"
+      PROVIDER_VAULT_LABEL="DeepSeek API key"
+      PROVIDER_VAULT_VALUE="$DEEPSEEK_INPUT"
+      ok "DeepSeek konfiguracio elokeszitve"
+    else
+      warn "DeepSeek API key nem lett megadva."
+    fi
+
+  elif [ "$PROVIDER_MODE" = "4" ]; then
+    echo ""
+    echo -e "  ${DIM}API kulcs: openrouter.ai -> Keys${NC}"
+    read -p "  openrouter-fleet-key: " OPENROUTER_INPUT
+    if [ -n "$OPENROUTER_INPUT" ]; then
+      PROVIDER_VAULT_ID="openrouter-fleet-key"
+      PROVIDER_VAULT_LABEL="OpenRouter API key"
+      PROVIDER_VAULT_VALUE="$OPENROUTER_INPUT"
+      ok "OpenRouter konfiguracio elokeszitve"
+    else
+      warn "OpenRouter API key nem lett megadva."
+    fi
+
+  elif [ "$PROVIDER_MODE" = "5" ]; then
+    echo ""
+    read -rp "  OLLAMA_URL [default: http://localhost:11434]: " OLLAMA_INPUT
+    PROVIDER_BASE_URL_KEY="OLLAMA_URL"
+    PROVIDER_BASE_URL_VALUE=${OLLAMA_INPUT:-http://localhost:11434}
+    ok "Ollama konfiguracio elokeszitve (URL: $PROVIDER_BASE_URL_VALUE)"
+
   else
-    warn "Token nem lett megadva -- az ugynokok igy nem fognak elindulni."
+    echo -e "  ${DIM}Kihagyva. Kesobb a dashboard Beallitasok oldalon allithato be.${NC}"
   fi
 fi
+
+export PROVIDER_VAULT_ID PROVIDER_VAULT_LABEL PROVIDER_VAULT_VALUE
+export PROVIDER_BASE_URL_KEY PROVIDER_BASE_URL_VALUE
 
 # Pre-flight headless probe — Issue #179.
 # `claude auth login` may exit 0 even when the resulting token is unusable for
@@ -1326,6 +1420,23 @@ if [ -n "$DASH_TOKEN" ]; then
 else
   echo -e "  ${BOLD}Dashboard:${NC} http://localhost:${WEB_PORT:-3420}"
   echo -e "  ${DIM}$(_t dash.no_token_hint)${NC}"
+fi
+
+# Phase 2 follow-up: push the provider credential the operator typed at the
+# claude-auth prompt into the running dashboard's Vault + canonical settings
+# store. The runtime reads from those, not from .env. Skips silently when the
+# operator picked "kihagyas" (PROVIDER_VAULT_VALUE and PROVIDER_BASE_URL_KEY
+# are both empty in that case).
+if [ -n "${PROVIDER_VAULT_VALUE:-}" ] || [ -n "${PROVIDER_BASE_URL_KEY:-}" ]; then
+  if installer_wait_for_dashboard; then
+    if installer_push_provider_config; then
+      ok "Provider konfiguracio a Vaultba / beallitasokba push-olva"
+    else
+      warn "Provider push sikertelen -- a dashboard Beallitasok oldalon javithato"
+    fi
+  else
+    warn "Dashboard 30s alatt nem erheto el -- provider konfiguracio a dashboardon allithato be"
+  fi
 fi
 echo -e "  ${BOLD}Telegram:${NC} $(_t telegram.write_hint)"
 echo ""

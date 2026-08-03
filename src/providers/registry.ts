@@ -19,6 +19,13 @@ export interface ProviderEntry {
   readonly canonicalEnvBase: string
   readonly usesAnthropicModel: boolean
   readonly models: readonly ModelSpec[]
+  // Provider-specific Claude Code env fragments. The 3 core env vars
+  // (ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN, ANTHROPIC_MODEL) are emitted
+  // unconditionally by buildProviderEnvFragments; extraEnvVars covers the
+  // provider-specific tunings (timeout, model defaults, auto-compact window,
+  // telemetry, fast mode) that every `claude` invocation under this provider
+  // needs to start successfully.
+  readonly extraEnvVars: Readonly<Record<string, string>>
 }
 
 export interface ModelSpec {
@@ -37,6 +44,7 @@ export const PROVIDERS: Readonly<Record<ProviderId, ProviderEntry>> = {
     vaultSecretId: 'CLAUDE_CODE_OAUTH_TOKEN',
     canonicalEnvBase: 'anthropic',
     usesAnthropicModel: false,
+    extraEnvVars: {},
     models: [
       { id: 'claude-opus-4-8[1m]', displayName: 'Claude Opus 4.8 (1M context)' },
       { id: 'claude-opus-5', displayName: 'Claude Opus 5' },
@@ -56,6 +64,20 @@ export const PROVIDERS: Readonly<Record<ProviderId, ProviderEntry>> = {
     vaultSecretId: 'MINIMAX_API_KEY',
     canonicalEnvBase: 'minimax',
     usesAnthropicModel: true,
+    // MiniMax M3 + 1M context requires these tunings on every claude call;
+    // omitting them leaves the model unusable under Anthropic-compatible
+    // routing. See provider-runtime tests for the verbatim contract.
+    extraEnvVars: {
+      API_TIMEOUT_MS: '3000000',
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+      ANTHROPIC_DEFAULT_SONNET_MODEL: 'MiniMax-M3[1m]',
+      ANTHROPIC_DEFAULT_OPUS_MODEL: 'MiniMax-M3[1m]',
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: 'MiniMax-M3',
+      CLAUDE_CODE_AUTO_COMPACT_WINDOW: '1000000',
+      CLAUDE_CODE_ALWAYS_ENABLE_EFFORT: '1',
+      CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: '50',
+      CLAUDE_CODE_DISABLE_FAST_MODE: '1',
+    },
     models: [
       { id: 'MiniMax-M3', displayName: 'MiniMax M3' },
     ],
@@ -70,6 +92,7 @@ export const PROVIDERS: Readonly<Record<ProviderId, ProviderEntry>> = {
     vaultSecretId: 'DEEPSEEK_API_KEY',
     canonicalEnvBase: 'deepseek',
     usesAnthropicModel: true,
+    extraEnvVars: {},
     models: [
       { id: 'deepseek-v4-pro', displayName: 'DeepSeek V4 Pro' },
       { id: 'deepseek-v4-flash', displayName: 'DeepSeek V4 Flash' },
@@ -85,6 +108,7 @@ export const PROVIDERS: Readonly<Record<ProviderId, ProviderEntry>> = {
     vaultSecretId: 'openrouter-fleet-key',
     canonicalEnvBase: 'openrouter',
     usesAnthropicModel: true,
+    extraEnvVars: {},
     models: [
       { id: 'auto:premium_reasoning', displayName: 'OpenRouter Auto (premium reasoning)' },
       { id: 'auto:build_strong', displayName: 'OpenRouter Auto (build strong)' },
@@ -102,6 +126,7 @@ export const PROVIDERS: Readonly<Record<ProviderId, ProviderEntry>> = {
     vaultSecretId: '',
     canonicalEnvBase: 'ollama',
     usesAnthropicModel: true,
+    extraEnvVars: {},
     models: [],
   },
 }
