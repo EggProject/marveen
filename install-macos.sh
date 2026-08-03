@@ -913,27 +913,44 @@ if [ -d "$SEED_CONFIG_DIR" ]; then
 fi
 
 # Ollama + nomic-embed-text (szemantikus kereséshez)
+# Phase 2 follow-up: the installer no longer auto-installs Ollama. It
+# first probes the URL the operator picked during the provider step
+# (default localhost). If nothing is reachable, the operator is asked:
+#   1. Point at a different host URL
+#   2. Install now (only on explicit "yes"; uses brew OR the
+#      curl|bash script, gated by operator choice)
+#   3. Skip Ollama entirely (no semantic memory)
 echo ""
-echo -e "$(_t macos.ollama_check)"
-if command -v ollama &>/dev/null; then
-  echo -e "  ${GREEN}✓${NC} $(_t macos.ollama_installed)"
-else
-  echo -e "  ${ORANGE}$(_t macos.ollama_installing)${NC}"
-  brew install ollama 2>/dev/null || curl -fsSL https://ollama.com/install.sh | sh
-fi
+. "$INSTALL_DIR/scripts/lib/installer-ollama-discovery.sh"
 
-# Start Ollama if not running
-if ! curl -s http://localhost:11434/api/version &>/dev/null; then
-  echo -e "$(_t macos.ollama_starting)"
+# Install hook: macOS tries brew first, falls back to the official
+# curl|bash installer. Both gated by an explicit operator choice
+# (option 2 in the menu above). The library NEVER calls this without
+# the operator confirming.
+_installer_install_ollama() {
+  brew install ollama 2>/dev/null || curl -fsSL https://ollama.com/install.sh | sh
+}
+# Start hook: macOS Ollama ships as a launchd service via brew; if not
+# running, start it in the background and wait briefly.
+_installer_start_ollama() {
   ollama serve &>/dev/null &
   sleep 3
+}
+
+installer_ollama_init
+installer_ollama_discover
+
+if [ -z "$INSTALLER_OLLAMA_SKIP" ] || [ "$INSTALLER_OLLAMA_SKIP" = "0" ]; then
+  installer_ollama_wait_ready 15 || true
+
+  if ! curl -s "${OLLAMA_URL:-http://localhost:11434}/api/tags" 2>/dev/null | grep -q "nomic-embed-text"; then
+    echo -e "$(_t macos.nomic_downloading)"
+    curl -s --max-time 600       -X POST "${OLLAMA_URL:-http://localhost:11434}/api/pull"       -H 'Content-Type: application/json'       -d '{"model": "nomic-embed-text", "stream": false}' >/dev/null       || warn "nomic-embed-text letoltese sikertelen -- kezzel: ollama pull nomic-embed-text"
+  else
+    echo -e "  ${GREEN}✓${NC} nomic-embed-text mar letoltve"
+  fi
 fi
 
-# Pull nomic-embed-text model
-if ! ollama list 2>/dev/null | grep -q "nomic-embed-text"; then
-  echo -e "$(_t macos.nomic_downloading)"
-  ollama pull nomic-embed-text
-fi
 echo -e "$(_t macos.ollama_done)"
 
 # Whisper (speech-to-text for video transcription)

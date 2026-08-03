@@ -13,7 +13,7 @@
     "dashboard-user": "tsx scripts/dashboard-user.ts",
     "test": "vitest run",
     "test:refactor-coverage": "vitest run --config vitest.refactor-coverage.config.ts --coverage",
-    "test:install": "/opt/homebrew/bin/bats scripts/__tests__/installer-provider-prompt.bats && bash scripts/__tests__/installer-push-config.test.sh",
+    "test:install": "/opt/homebrew/bin/bats scripts/__tests__/installer-provider-prompt.bats scripts/__tests__/installer-ollama-discovery.bats && bash scripts/__tests__/installer-push-config.test.sh",
     "test:install:coverage": "/opt/homebrew/bin/bash scripts/__tests__/installer-provider-prompt-coverage.test.sh",
     "typecheck": "tsc --noEmit",
     "syntax-check": "node --check web/app.js web/sw.js",

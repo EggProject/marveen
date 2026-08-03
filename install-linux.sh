@@ -1259,64 +1259,60 @@ INSTALL_STEP="ollama-whisper"
 echo ""
 echo -e "${BOLD}$(_t section_6_linux)${NC}"
 
-# --- Ollama telepites ---
-echo -e "  Ollama ellenorzese (szemantikus memoria kereseshez)..."
-if command -v ollama &>/dev/null; then
-  ok "ollama mar telepitve"
-else
-  echo -e "  Ollama telepitese..."
-  # Az ollama telepitoje sudo-val ir a /usr/local/bin-be es allit be systemd service-t.
-  # Elore gyorsitotarazzuk a sudo hitelesitest, hogy a gyermek-script sudo prompt-ja ne bukjon el.
+# --- Ollama discovery ---
+# Phase 2 follow-up: the installer no longer auto-installs Ollama. It
+# first probes the URL the operator picked during the provider step
+# (default localhost). If nothing is reachable, the operator is asked:
+#   1. Point at a different host URL
+#   2. Install now (only on explicit "yes"; uses the official
+#      curl|bash installer, gated by operator choice)
+#   3. Skip Ollama entirely (no semantic memory)
+. "$INSTALL_DIR/scripts/lib/installer-ollama-discovery.sh"
+
+# Install hook: this installer uses the official curl|bash script, gated
+# by an explicit operator choice (option 2 in the menu above). The
+# library NEVER calls this without the operator confirming.
+_installer_install_ollama() {
   sudo -v 2>/dev/null || true
-  # NEM fatalis: ha az ollama telepitoje hibara fut (pl. sudo, halozat, WSL),
-  # csak figyelmeztetunk es kihagyjuk a szemantikus memoria lepest -- a telepito megy tovabb.
-  if curl -fsSL https://ollama.com/install.sh | sh; then
-    ok "ollama telepitve"
-  else
-    warn "ollama telepitese sikertelen -- a szemantikus memoria kereses kimarad."
-    echo -e "  ${DIM}Kesobb kezzel: sudo -v && curl -fsSL https://ollama.com/install.sh | sh${NC}"
-  fi
-fi
-
-# A service-inditas es modell-letoltes csak akkor fut, ha az ollama tenyleg telepult.
-if command -v ollama &>/dev/null; then
-# A telepito letrehoz egy ollama.service systemd egységet és elindítja.
-# Ha megis nem futna, systemctl-lel indítjuk -- NEM ollama serve &
-if ! curl -s http://localhost:11434/api/version &>/dev/null; then
-  echo -e "$(_t linux.ollama_starting)"
+  curl -fsSL https://ollama.com/install.sh | sh
+}
+# Start hook: after install (or if Ollama is already installed), make
+# sure the local systemd service is up before we try to talk to the API.
+_installer_start_ollama() {
   sudo systemctl enable --now ollama 2>/dev/null || true
-  # Megvarjuk amig az API valaszol (max 15 mp)
-  for i in $(seq 1 15); do
-    curl -s http://localhost:11434/api/version &>/dev/null && break
-    sleep 1
-  done
-fi
-
-# Modell letoltese az Ollama HTTP API-n keresztul (CLI script-ben ismert TTY-bug miatt)
-# stream:false --> szinkron, egyetlen valaszt ad vissza a letoltes utan
-ollama_pull() {
-  local model="$1" size="$2"
-  if curl -s http://localhost:11434/api/tags | grep -q "\"$model\""; then
-    ok "$model mar letoltve"
-    return 0
-  fi
-  echo -e "  $model letoltese ($size)..."
-  local status
-  status=$(curl -s --max-time 600 \
-    -X POST http://localhost:11434/api/pull \
-    -H 'Content-Type: application/json' \
-    -d "{\"model\": \"$model\", \"stream\": false}" |
-    python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status','?'))" 2>/dev/null)
-  if [ "$status" = "success" ]; then
-    ok "$model kesz"
-  else
-    warn "$model letoltese sikertelen (status: $status) -- kezzel: ollama pull $model"
-  fi
 }
 
-# nomic-embed-text (szemantikus memoria, kotelozo)
-ollama_pull "nomic-embed-text" "~274 MB"
-fi  # command -v ollama
+installer_ollama_init
+installer_ollama_discover
+
+# Modell letoltese csak akkor, ha van elerheto Ollama.
+if [ -z "$INSTALLER_OLLAMA_SKIP" ] || [ "$INSTALLER_OLLAMA_SKIP" = "0" ]; then
+  # Várjuk meg az API-t (max 15 mp) hátha az indítás lassú.
+  installer_ollama_wait_ready 15 || true
+
+  ollama_pull() {
+    local model="$1" size="$2"
+    local url="${OLLAMA_URL:-http://localhost:11434}"
+    if curl -s "$url/api/tags" | grep -q ""$model""; then
+      ok "$model mar letoltve"
+      return 0
+    fi
+    echo -e "  $model letoltese ($size)..."
+    local status
+    status=$(curl -s --max-time 600 \
+      -X POST "$url/api/pull" \
+      -H 'Content-Type: application/json' \
+      -d "{\"model\": \"$model\", \"stream\": false}" |
+      python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status','?'))" 2>/dev/null)
+    if [ "$status" = "success" ]; then
+      ok "$model kesz"
+    else
+      warn "$model letoltese sikertelen (status: $status) -- kezzel: ollama pull $model"
+    fi
+  }
+
+  ollama_pull "nomic-embed-text" "~274 MB"
+fi
 
 # --- Whisper (opcionalis) ---
 echo ""
