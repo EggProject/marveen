@@ -545,28 +545,15 @@ ensure_in_rc '.bun/bin' 'export PATH="$BUN_INSTALL/bin:$PATH"'
 
 INSTALL_STEP="claude-auth"
 # ─────────────────────────────────────────────
-# [3/7] Claude bejelentkezes
+# [3/7] Modell-szolgaltato es hitelesites
 # ─────────────────────────────────────────────
-echo ""
-echo -e "${BOLD}$(_t section_3_linux)${NC}"
-
-IS_HEADLESS=false
-if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
-  IS_HEADLESS=true
-fi
-
-# Skip the prompt only when THIS INSTALL already carries a credential the
-# services can read (a re-run, or the dashboard wizard got there first).
-# Gating on `claude auth status` here is what silently skipped token capture
-# for operators who had followed step 2 below and run `claude setup-token`
-# first -- the correct user behaviour triggered the bug.
-#
-# Phase 2 follow-up: the runtime reads from the encrypted Vault + the
-# canonical settings store, NOT from .env. The Claude-1 branch keeps writing
-# the token to .env / shell RC for the operator's interactive `claude` use;
-# every selected provider's credential is buffered in PROVIDER_* env vars
-# and pushed to the running dashboard (POST /api/vault + POST /api/settings)
-# AFTER the systemd unit start, once the dashboard mints a DASHBOARD_TOKEN.
+# Provider choice comes FIRST: the operator's `claude auth login`
+# (operator-shell use) and the service-side credential (Vault-pushed
+# runtime) are provider-specific, and on every non-Anthropic branch the
+# interactive login is a no-op. The Phase 1 commit stopped reading
+# Marveen keys from .env; the runtime reads secrets from the encrypted
+# Vault, and the installer pushes the captured credential into the Vault
+# AFTER the systemd unit starts and the dashboard mints a DASHBOARD_TOKEN.
 # Shared helper: scripts/lib/installer-push-config.sh.
 . "$INSTALL_DIR/scripts/lib/installer-push-config.sh"
 PROVIDER_VAULT_ID=""
@@ -574,9 +561,20 @@ PROVIDER_VAULT_LABEL=""
 PROVIDER_VAULT_VALUE=""
 PROVIDER_BASE_URL_KEY=""
 PROVIDER_BASE_URL_VALUE=""
+PROVIDER_MODE=""
 
+IS_HEADLESS=false
+if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
+  IS_HEADLESS=true
+fi
+
+# Provider choice. Skipped only when THIS INSTALL already carries a
+# Claude credential (a re-run); we assume the operator wants Claude-1
+# in that case because the .env / store/.claude-oauth-token path is
+# Anthropic-specific. On a fresh install we always prompt.
 if service_auth_present; then
   ok "A telepites mar hordoz auth kulcsot (.env / store/.claude-oauth-token)"
+  PROVIDER_MODE="1"
   PROVIDER_VAULT_ID="CLAUDE_CODE_OAUTH_TOKEN"
   PROVIDER_VAULT_LABEL="Anthropic Claude setup-token (existing)"
   PROVIDER_VAULT_VALUE=$(cat "$INSTALL_DIR/store/.claude-oauth-token" 2>/dev/null || true)
@@ -585,18 +583,18 @@ else
     echo -e "  ${ORANGE}A terminalod be van jelentkezve, de a SZOLGALTATASOK ehhez nem ferenek hozza.${NC}"
     echo -e "  ${DIM}A systemd unitok a titkositott Vaultot olvassak (a telepito a service indulasa utan tolti fel).${NC}"
   else
-    echo -e "  ${ORANGE}Nincs aktiv Claude bejelentkezes.${NC}"
+    echo -e "  ${ORANGE}Modell-szolgaltatot kell valasztani a telepites folytatasahoz.${NC}"
   fi
   if [ "$IS_HEADLESS" = "true" ]; then
     echo ""
     echo -e "  ${BLUE}Headless szerver detektalva (nincs DISPLAY).${NC}"
     echo -e "  ${BLUE}Bongeszo-alapu bejelentkezes nem lehetseges.${NC}"
-    echo -e "  ${BOLD}Ajanlott: OAuth token (Anthropic 2) vagy API key (1).${NC}"
+    echo -e "  ${BOLD}Ajanlott: Anthropic OAuth token (1.2) vagy barmely API key (1.1 / 2 / 3 / 4).${NC}"
     echo ""
   fi
   echo ""
-  echo -e "  Valassz modell-szolgaltatot:"
-  echo -e "  ${BOLD}1.${NC} Anthropic Claude ${DIM}(Claude Pro/Max vagy fizetos API key)${NC}"
+  echo -e "  ${BOLD}Valassz modell-szolgaltatot:${NC}"
+  echo -e "  ${BOLD}1.${NC} Anthropic Claude ${DIM}(Pro/Max OAuth token vagy fizetos API key)${NC}"
   echo -e "  ${BOLD}2.${NC} MiniMax ${DIM}(Anthropic-kompatibilis, sajat API key)${NC}"
   echo -e "  ${BOLD}3.${NC} DeepSeek ${DIM}(Anthropic-kompatibilis, sajat API key)${NC}"
   echo -e "  ${BOLD}4.${NC} OpenRouter ${DIM}(Anthropic-kompatibilis, sajat API key)${NC}"
@@ -610,8 +608,12 @@ else
     read -rp "$(_t prompt_provider_mode)" PROVIDER_MODE
     PROVIDER_MODE=${PROVIDER_MODE:-6}
   fi
+fi
 
-  if [ "$PROVIDER_MODE" = "1" ]; then
+# Provider-specific credential capture. Anthropic-1 carries both the
+# operator-shell OAuth-token path AND the service Vault-write path.
+case "$PROVIDER_MODE" in
+  1)
     echo ""
     echo -e "  Anthropic Claude -- valassz hitelesitesi modot:"
     echo -e "  ${BOLD}1.${NC} API key ${DIM}(Anthropic Console -> fizeteses/pay-as-you-go)${NC}"
@@ -673,8 +675,9 @@ else
       echo -e "  ${DIM}  export ANTHROPIC_API_KEY=sk-ant-...${NC}"
       echo -e "  ${DIM}  vagy: claude setup-token (boengeszos gepen), majd export CLAUDE_CODE_OAUTH_TOKEN=...${NC}"
     fi
+    ;;
 
-  elif [ "$PROVIDER_MODE" = "2" ]; then
+  2)
     echo ""
     echo -e "  MiniMax -- valassz endpointot:"
     echo -e "  ${BOLD}1.${NC} Globalis ${DIM}(https://api.minimax.io/anthropic)${NC}"
@@ -699,8 +702,9 @@ else
     else
       warn "MiniMax API key nem lett megadva."
     fi
+    ;;
 
-  elif [ "$PROVIDER_MODE" = "3" ]; then
+  3)
     echo ""
     echo -e "  ${DIM}API kulcs: platform.deepseek.com -> API Keys${NC}"
     read -p "  DEEPSEEK_API_KEY: " DEEPSEEK_INPUT
@@ -712,8 +716,9 @@ else
     else
       warn "DeepSeek API key nem lett megadva."
     fi
+    ;;
 
-  elif [ "$PROVIDER_MODE" = "4" ]; then
+  4)
     echo ""
     echo -e "  ${DIM}API kulcs: openrouter.ai -> Keys${NC}"
     read -p "  openrouter-fleet-key: " OPENROUTER_INPUT
@@ -725,18 +730,20 @@ else
     else
       warn "OpenRouter API key nem lett megadva."
     fi
+    ;;
 
-  elif [ "$PROVIDER_MODE" = "5" ]; then
+  5)
     echo ""
     read -rp "  OLLAMA_URL [default: http://localhost:11434]: " OLLAMA_INPUT
     PROVIDER_BASE_URL_KEY="OLLAMA_URL"
     PROVIDER_BASE_URL_VALUE=${OLLAMA_INPUT:-http://localhost:11434}
     ok "Ollama konfiguracio elokeszitve (URL: $PROVIDER_BASE_URL_VALUE)"
+    ;;
 
-  else
+  *)
     echo -e "  ${DIM}Kihagyva. Kesobb a dashboard Beallitasok oldalon allithato be.${NC}"
-  fi
-fi
+    ;;
+esac
 
 export PROVIDER_VAULT_ID PROVIDER_VAULT_LABEL PROVIDER_VAULT_VALUE
 export PROVIDER_BASE_URL_KEY PROVIDER_BASE_URL_VALUE
@@ -758,15 +765,24 @@ echo -e "  ${DIM}Headless Claude Code teszt...${NC}"
 # The `&& ... || ...` guard is what keeps a failing probe out of the ERR trap:
 # the trap fires regardless of the errexit setting and on_error() exits 1, so an
 # unguarded capture aborted the installer instead of reaching the branch below.
-CLAUDE_PROBE_OUT=$(claude --print "ping" 2>&1) && CLAUDE_PROBE_EXIT=0 || CLAUDE_PROBE_EXIT=$?
-CLAUDE_PROBE_OUT=${CLAUDE_PROBE_OUT:0:200}
-if [ "$CLAUDE_PROBE_EXIT" -eq 0 ] && [ -n "$CLAUDE_PROBE_OUT" ]; then
-  ok "Az OPERATOR shelljebol futtathato a Claude Code (\`claude --print\` valaszolt)"
+# Phase 1-2 follow-up: the live `claude --print` probe is Anthropic-specific.
+# On every other provider we have no Claude credentials yet and would either
+# hit a key error or, worse, send an unintended request to a third-party
+# endpoint during installer. Skip the probe for non-Anthropic branches.
+if [ "${PROVIDER_MODE:-1}" = "1" ]; then
+  CLAUDE_PROBE_OUT=$(claude --print "ping" 2>&1) && CLAUDE_PROBE_EXIT=0 || CLAUDE_PROBE_EXIT=$?
+  CLAUDE_PROBE_OUT=${CLAUDE_PROBE_OUT:0:200}
+  if [ "$CLAUDE_PROBE_EXIT" -eq 0 ] && [ -n "$CLAUDE_PROBE_OUT" ]; then
+    ok "Az OPERATOR shelljebol futtathato a Claude Code (\`claude --print\` valaszolt)"
+  else
+    warn "Headless Claude Code probe SIKERTELEN. Az agent-letrehozas KESOBB EL fog hasalni."
+    echo -e "    ${DIM}Kimenet: ${CLAUDE_PROBE_OUT:-<ures>}${NC}"
+    echo -e "    ${DIM}Tipikus okok: nincs ervenyes auth, halozati problema, regi claude CLI.${NC}"
+    echo -e "    ${DIM}Javitas: \`claude --version\` -> \`claude /login\` (vagy ANTHROPIC_API_KEY/CLAUDE_CODE_OAUTH_TOKEN beallitas) -> \`claude --print \"ping\"\` ujra.${NC}"
+  fi
 else
-  warn "Headless Claude Code probe SIKERTELEN. Az agent-letrehozas KESOBB EL fog hasalni."
-  echo -e "    ${DIM}Kimenet: ${CLAUDE_PROBE_OUT:-<ures>}${NC}"
-  echo -e "    ${DIM}Tipikus okok: nincs ervenyes auth, halozati problema, regi claude CLI.${NC}"
-  echo -e "    ${DIM}Javitas: \`claude --version\` -> \`claude /login\` (vagy ANTHROPIC_API_KEY/CLAUDE_CODE_OAUTH_TOKEN beallitas) -> \`claude --print \"ping\"\` ujra.${NC}"
+  echo ""
+  echo -e "  ${DIM}Live \`claude --print\` probe skipped -- a '$PROVIDER_MODE' provider nem az Anthropic, ezert a telepito nem hiv API-t.${NC}"
 fi
 
 # Ensure ~/.claude directory tree has correct ownership and permissions.

@@ -308,50 +308,34 @@ PYEOF
 echo -e "  ${GREEN}✓${NC} Claude Code first-run flags pre-set"
 
 INSTALL_STEP="claude-auth"
-# Step 2b: Claude authentication (kept tolerant -- ha megakad, folytatjuk)
-echo ""
-echo -e "${BOLD}$(_t section_2_macos)${NC}"
-echo -e "${DIM}$(_t macos.auth_hint_1)${NC}"
-echo -e "${DIM}$(_t macos.auth_hint_2)${NC}"
-echo -e "${DIM}$(_t macos.auth_hint_3)${NC}"
-read -rp "$(_t prompt_login)" DO_AUTH
-if [[ "$DO_AUTH" == "i" || "$DO_AUTH" == "y" ]]; then
-  # `&& ... || ...` rather than a `set +e` window: a `trap ... ERR` fires
-  # regardless of the errexit setting, and on_error() above EXITS, so a window
-  # never protected the branch below -- only keeping the command out of the
-  # trap's reach does. Only the FINAL command of an && / || list is subject to
-  # errexit and the ERR trap, so this captures the status instead of aborting.
-  claude auth login && AUTH_RC=0 || AUTH_RC=$?
-  if [ "$AUTH_RC" -ne 0 ]; then
-    echo -e "  ${ORANGE}⚠${NC} Auth login nem fejezodott be sikeresen (exit $AUTH_RC)."
-    echo -e "  ${DIM}$(_t macos.auth_later)${NC}"
-  fi
-fi
-echo -e "  ${GREEN}✓${NC} $(_t macos.firstrun_done)"
-
-# Service-side credential. `claude auth login` above authenticates the OPERATOR
-# (Keychain); the launchd units cannot use that. They read the encrypted Vault
-# (POST /api/vault at runtime), so the installer pushes the captured credential
-# into the Vault AFTER the launchd unit starts and the dashboard mints a
-# DASHBOARD_TOKEN. The setup-token / .env path below remains for the
-# operator's interactive `claude` use and for backward compatibility.
+# Step 2b: provider + credential selection. The order matters: we MUST ask
+# the operator which provider to use BEFORE running `claude auth login`,
+# because the login is only relevant for the Anthropic branch -- on every
+# other provider the operator's Keychain auth is not used by the runtime
+# at all. The Phase 1 commit stopped reading Marveen keys from .env; the
+# runtime reads secrets from the encrypted Vault (POST /api/vault at
+# runtime), so the installer pushes the captured credential into the Vault
+# AFTER the launchd unit starts and the dashboard mints a DASHBOARD_TOKEN.
 . "$INSTALL_DIR/scripts/lib/installer-push-config.sh"
 PROVIDER_VAULT_ID=""
 PROVIDER_VAULT_LABEL=""
 PROVIDER_VAULT_VALUE=""
 PROVIDER_BASE_URL_KEY=""
 PROVIDER_BASE_URL_VALUE=""
+PROVIDER_MODE=""
 
-MACOS_OAUTH_TOKEN_INPUT=""
 if service_auth_present; then
   ok "A telepites mar hordoz auth kulcsot (.env / store/.claude-oauth-token)"
+  PROVIDER_MODE="1"
   PROVIDER_VAULT_ID="CLAUDE_CODE_OAUTH_TOKEN"
   PROVIDER_VAULT_LABEL="Anthropic Claude setup-token (existing)"
   PROVIDER_VAULT_VALUE=$(cat "$INSTALL_DIR/store/.claude-oauth-token" 2>/dev/null || true)
 else
   echo ""
-  echo -e "  ${BOLD}Valassz modell-szolgaltatot:${NC}"
-  echo -e "  ${BOLD}1.${NC} Anthropic Claude ${DIM}(Pro/Max OAuth setup-token)${NC}"
+  echo -e "${BOLD}$(_t section_2_macos)${NC}"
+  echo ""
+  echo -e "  ${BOLD}Eloszor valaszd ki a modell-szolgaltatot:${NC}"
+  echo -e "  ${BOLD}1.${NC} Anthropic Claude ${DIM}(Pro/Max OAuth setup-token vagy API key)${NC}"
   echo -e "  ${BOLD}2.${NC} MiniMax ${DIM}(Anthropic-kompatibilis, sajat API key)${NC}"
   echo -e "  ${BOLD}3.${NC} DeepSeek ${DIM}(Anthropic-kompatibilis, sajat API key)${NC}"
   echo -e "  ${BOLD}4.${NC} OpenRouter ${DIM}(Anthropic-kompatibilis, sajat API key)${NC}"
@@ -360,12 +344,31 @@ else
   echo ""
   read -rp "$(_t prompt_provider_mode)" PROVIDER_MODE
   PROVIDER_MODE=${PROVIDER_MODE:-1}
+fi
 
-  if [ "$PROVIDER_MODE" = "1" ]; then
+# Step 2c: provider-specific credential capture. The Anthropic-1 branch is
+# the only one that calls `claude auth login` -- that's the operator's
+# Keychain session for interactive `claude` use; the launchd services
+# always read from the Vault, not the Keychain.
+MACOS_OAUTH_TOKEN_INPUT=""
+case "$PROVIDER_MODE" in
+  1)
+    echo ""
+    echo -e "${DIM}$(_t macos.auth_hint_1)${NC}"
+    echo -e "${DIM}$(_t macos.auth_hint_2)${NC}"
+    echo -e "${DIM}$(_t macos.auth_hint_3)${NC}"
+    read -rp "$(_t prompt_login)" DO_AUTH
+    if [[ "$DO_AUTH" == "i" || "$DO_AUTH" == "y" ]]; then
+      claude auth login && AUTH_RC=0 || AUTH_RC=$?
+      if [ "$AUTH_RC" -ne 0 ]; then
+        echo -e "  ${ORANGE}⚠${NC} Auth login nem fejezodott be sikeresen (exit $AUTH_RC)."
+        echo -e "  ${DIM}$(_t macos.auth_later)${NC}"
+      fi
+    fi
+    echo -e "  ${GREEN}✓${NC} $(_t macos.firstrun_done)"
     echo ""
     echo -e "  ${BOLD}Az ugynokok kulon hitelesitot igenyelnek.${NC}"
-    echo -e "  ${DIM}A fenti bejelentkezes a Te termnaljadnak szol (Keychain);${NC}"
-    echo -e "  ${DIM}a hatterszolgaltatasok a Vault-bol kapjak.${NC}"
+    echo -e "  ${DIM}A Keychain a Te termnalodhoz kot; a launchd unitok a Vault-bol kapnak.${NC}"
     echo -e "  ${BOLD}1.${NC} Futtasd egy terminalban: ${BLUE}claude setup-token${NC}"
     echo -e "  ${BOLD}2.${NC} Masold ide a kiirt tokent (Enter = kihagyas):"
     read -rp "  OAuth token: " MACOS_OAUTH_TOKEN_INPUT
@@ -381,8 +384,9 @@ else
     else
       warn "Token nem lett megadva -- az ugynokok igy nem fognak elindulni."
     fi
+    ;;
 
-  elif [ "$PROVIDER_MODE" = "2" ]; then
+  2)
     echo ""
     echo -e "  MiniMax -- valassz endpointot:"
     echo -e "  ${BOLD}1.${NC} Globalis ${DIM}(https://api.minimax.io/anthropic)${NC}"
@@ -407,8 +411,9 @@ else
     else
       warn "MiniMax API key nem lett megadva."
     fi
+    ;;
 
-  elif [ "$PROVIDER_MODE" = "3" ]; then
+  3)
     echo ""
     echo -e "  ${DIM}API kulcs: platform.deepseek.com -> API Keys${NC}"
     read -p "  DEEPSEEK_API_KEY: " DEEPSEEK_INPUT
@@ -420,8 +425,9 @@ else
     else
       warn "DeepSeek API key nem lett megadva."
     fi
+    ;;
 
-  elif [ "$PROVIDER_MODE" = "4" ]; then
+  4)
     echo ""
     echo -e "  ${DIM}API kulcs: openrouter.ai -> Keys${NC}"
     read -p "  openrouter-fleet-key: " OPENROUTER_INPUT
@@ -433,18 +439,21 @@ else
     else
       warn "OpenRouter API key nem lett megadva."
     fi
+    ;;
 
-  elif [ "$PROVIDER_MODE" = "5" ]; then
+  5)
     echo ""
     read -rp "  OLLAMA_URL [default: http://localhost:11434]: " OLLAMA_INPUT
     PROVIDER_BASE_URL_KEY="OLLAMA_URL"
     PROVIDER_BASE_URL_VALUE=${OLLAMA_INPUT:-http://localhost:11434}
     ok "Ollama konfiguracio elokeszitve (URL: $PROVIDER_BASE_URL_VALUE)"
+    ;;
 
-  else
+  *)
+    echo ""
     echo -e "  ${DIM}Kihagyva. Kesobb a dashboard Beallitasok oldalon allithato be.${NC}"
-  fi
-fi
+    ;;
+esac
 
 export PROVIDER_VAULT_ID PROVIDER_VAULT_LABEL PROVIDER_VAULT_VALUE
 export PROVIDER_BASE_URL_KEY PROVIDER_BASE_URL_VALUE
