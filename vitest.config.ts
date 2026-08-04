@@ -11,5 +11,28 @@ export default defineConfig({
     // for the 2026-07-27 incident this prevents). Runs in every worker before
     // any test module is imported.
     setupFiles: ['./src/__tests__/setup/assert-not-live-install.ts'],
+    // Coverage thresholds pinned at 100% for every src/*.ts file. The hard
+    // gate above already prevents the suite from running against a live
+    // install, so this is the second defensive line: any source file that
+    // gets modified without a corresponding test now fails the build.
+    coverage: {
+      provider: 'v8',
+      include: ['src/**/*.ts'],
+      exclude: [
+        'src/__tests__/**',
+        'src/**/*.d.ts',
+        // The 6 worker-side install scripts are exercised by the shell-level
+        // smoke tests (not unit tests); excluding them from the v8 threshold
+        // gate is intentional and documented in scripts/.
+        'src/web/routes/installer-*.ts',
+      ],
+      thresholds: {
+        lines: 100,
+        functions: 100,
+        branches: 100,
+        statements: 100,
+      },
+      reporter: ['text', 'html', 'json-summary'],
+    },
   },
 })
