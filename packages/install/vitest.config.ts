@@ -12,8 +12,11 @@ export default defineConfig({
       // Excluded from coverage:
       //  - src/types.ts: pure type declarations, no executable code
       //  - src/__tests__/: test files themselves
-      //  - src/shell/backup.ts archiver lines (80-105): integration with
-      //    the `archiver` npm dep, which is opt-in (separate consent).
+      //  - src/shell/backup.ts: the archiver-v8 integration is opt-in
+      //    (the bun-workspace install command requires user consent); the
+      //    helper has its own unit test via the writer seam, so the
+      //    factory functions are 100% covered -- only the live
+      //    archiver-stream invocation needs real I/O to exercise.
       exclude: [
         ...(configDefaults.coverage.exclude ?? []),
         'src/__tests__/**',

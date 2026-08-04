@@ -16,7 +16,8 @@
     "boxen": "^8",
     "execa": "^10",
     "conf": "^15",
-    "zod": "^3.23"
+    "zod": "^3.23",
+    "archiver": "^8.0.0"
   },
   "devDependencies": {
     "typescript": "^5.7",

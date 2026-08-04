@@ -78,14 +78,16 @@ export interface BackupWriter {
 
 /** Default writer: streams through `archiver` into a real .zip. */
 export async function archiverBackupWriter(input: BackupInput, entries: BackupInput['files']): Promise<BackupResult> {
-  // Late require so the unit tests can stub the module before reaching
-  // this path. archiver is a CommonJS module with a default export.
+  // archiver v8 is ESM-only and exposes `ZipArchive` as a named export
+  // instead of the legacy `archiver.create('zip', opts)` factory. The
+  // dynamic import keeps the test seam (setBackupWriter) usable in
+  // vitest without depending on the real binary at module load time.
   const archiverMod = await import('archiver')
-  const archiver = (archiverMod.default ?? archiverMod) as (fmt: string, opts?: Record<string, unknown>) => NodeJS.ReadWriteStream
+  const { ZipArchive } = archiverMod as unknown as { ZipArchive: new (opts?: Record<string, unknown>) => NodeJS.ReadWriteStream }
 
   await mkdir(dirname(input.outputZip), { recursive: true })
   const out = createWriteStream(input.outputZip)
-  const archive = archiver('zip', input.password ? { encryptionMethod: 'aes256', password: input.password } : {})
+  const archive = new ZipArchive(input.password ? { encryptionMethod: 'aes256', password: input.password } : {})
   archive.pipe(out)
   let bytes = 0
   let count = 0

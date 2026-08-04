@@ -25,7 +25,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>88/88</span>
+                <span class='fraction'>115/115</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>88/88</span>
+                <span class='fraction'>115/115</span>
             </div>
         
             
@@ -172,7 +172,34 @@
 <a name='L107'></a><a href='#L107'>107</a>
 <a name='L108'></a><a href='#L108'>108</a>
 <a name='L109'></a><a href='#L109'>109</a>
-<a name='L110'></a><a href='#L110'>110</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L110'></a><a href='#L110'>110</a>
+<a name='L111'></a><a href='#L111'>111</a>
+<a name='L112'></a><a href='#L112'>112</a>
+<a name='L113'></a><a href='#L113'>113</a>
+<a name='L114'></a><a href='#L114'>114</a>
+<a name='L115'></a><a href='#L115'>115</a>
+<a name='L116'></a><a href='#L116'>116</a>
+<a name='L117'></a><a href='#L117'>117</a>
+<a name='L118'></a><a href='#L118'>118</a>
+<a name='L119'></a><a href='#L119'>119</a>
+<a name='L120'></a><a href='#L120'>120</a>
+<a name='L121'></a><a href='#L121'>121</a>
+<a name='L122'></a><a href='#L122'>122</a>
+<a name='L123'></a><a href='#L123'>123</a>
+<a name='L124'></a><a href='#L124'>124</a>
+<a name='L125'></a><a href='#L125'>125</a>
+<a name='L126'></a><a href='#L126'>126</a>
+<a name='L127'></a><a href='#L127'>127</a>
+<a name='L128'></a><a href='#L128'>128</a>
+<a name='L129'></a><a href='#L129'>129</a>
+<a name='L130'></a><a href='#L130'>130</a>
+<a name='L131'></a><a href='#L131'>131</a>
+<a name='L132'></a><a href='#L132'>132</a>
+<a name='L133'></a><a href='#L133'>133</a>
+<a name='L134'></a><a href='#L134'>134</a>
+<a name='L135'></a><a href='#L135'>135</a>
+<a name='L136'></a><a href='#L136'>136</a>
+<a name='L137'></a><a href='#L137'>137</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -250,6 +277,33 @@
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
@@ -360,8 +414,35 @@ const en = {
   'summary.next-step.update': 'Update later: marveen-install update',
 &nbsp;
   'uninstall.confirm': 'Really remove the Marveen installation? (yes/no)',
-  'uninstall.success': 'Marveen removed',
+  'uninstall.success': 'Marveen fully removed (%s steps, %s warnings)',
   'uninstall.cancelled': 'Cancelled',
+  'uninstall.step.service.stop': 'Stopping service units (systemd/launchd)',
+  'uninstall.step.unit.remove': 'Removing service unit files',
+  'uninstall.step.store.remove': 'Removing store/ directory (claudeclaw.db, vault.json, .vault-key)',
+  'uninstall.step.vault.remove': 'Removing Vault master key',
+  'uninstall.step.vault.macos-keychain': 'Removing macOS Keychain entry',
+  'uninstall.step.bumblebee.remove': 'Removing bumblebee seed files',
+  'uninstall.step.node-modules.remove': 'Removing packages/marveen/node_modules',
+  'uninstall.step.dist.remove': 'Removing packages/marveen/dist',
+  'uninstall.step.env.remove': 'Removing $INSTALL_DIR/.env',
+  'uninstall.step.oauth.remove': 'Removing store/.claude-oauth-token',
+  'uninstall.step.rc.strip': 'Removing Marveen exports from .bashrc/.zshrc',
+  'uninstall.step.state.remove': 'Removing installer state (~/.config/marneen-installer/)',
+  'uninstall.warning.prereq': 'System packages (curl, git, ca-certificates) were left -- uninstall does not remove shared deps other tools rely on.',
+  'uninstall.warning.bun': '~/.bun/ was left in place.',
+  'uninstall.warning.claude': 'The claude CLI shim under ~/.bun/bin/ was left.',
+  'uninstall.warning.ollama': 'Ollama install and downloaded models were left.',
+  'uninstall.backup.prompt': 'What backup should we make of the soon-to-be-deleted files?',
+  'uninstall.backup.choice.full': '1. Full backup (env+store+RC), AES-256 password-protected zip',
+  'uninstall.backup.choice.config': '2. Config-only backup (config-overrides, seed-config, bumblebee), no password',
+  'uninstall.backup.choice.none': '3. No backup -- direct deletion',
+  'uninstall.backup.full.password': 'Enter a password for backup.zip (min 8 chars):',
+  'uninstall.backup.done': 'Backup written: %s (%s files, %s bytes)',
+  'uninstall.backup.skipped': 'Backup skipped',
+  'uninstall.summary.title': 'Uninstall summary',
+  'uninstall.summary.removed': 'Removed files:',
+  'uninstall.summary.warnings': 'Warnings:',
+  'uninstall.summary.backup': 'Backup: %s',
 &nbsp;
   'doctor.checks.os': 'OS version',
   'doctor.checks.bun': 'Bun installed',
@@ -397,7 +478,7 @@ export default en</pre></td></tr></table></pre>
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-08-04T00:15:40.151Z
+                at 2026-08-04T14:42:49.399Z
             </div>
         <script src="../../prettify.js"></script>
         <script>
