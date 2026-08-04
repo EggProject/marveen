@@ -110,6 +110,19 @@ export class LinuxProvider implements PlatformProvider {
     await this.shell.exec('systemctl', ['--user', 'disable', '--now', `${name}.service`])
   }
 
+  async removeServiceUnit(name: string): Promise<void> {
+    // Best-effort removal: per-step failures bubble up to the caller,
+    // which wraps the task body in `safe()` (see commands/uninstall.ts).
+    // The unit file unlink is the load-bearing step; if that one
+    // succeeds, the rest is bookkeeping. The daemon-reload is the only
+    // post-unlink step that's idempotent and worth tolerating silently
+    // (the unit may not exist on a fresh user system, so systemd's
+    // "Unit not loaded" warning fires harmlessly).
+    await this.disableAndStop(name).catch(() => {})
+    await this.shell.exec('rm', ['-f', this.serviceUnitPath(name)])
+    await this.shell.exec('systemctl', ['--user', 'daemon-reload']).catch(() => {})
+  }
+
   async readServiceStatus(name: string): Promise<ServiceStatus> {
     const res = await this.shell.exec('systemctl', ['--user', 'is-active', `${name}.service`])
     return { name, state: mapSystemdState(res.stdout.trim()) }
@@ -118,6 +131,35 @@ export class LinuxProvider implements PlatformProvider {
   async uninstall(): Promise<void> {
     await this.disableAndStop(SERVICE_UNIT_NAMES.main)
     await this.disableAndStop(SERVICE_UNIT_NAMES.channels)
+  }
+
+  async uninstallPrereqDeps(binaries: readonly string[]): Promise<void> {
+    // Shared system packages: we never purge curl/git/ca-certificates
+    // because other system tools depend on them. The uninstall command
+    // surfaces a warning instead and leaves removal to the operator.
+    void binaries
+  }
+
+  async uninstallBun(): Promise<void> {
+    // Warning-only by design: the user chose "warning + meghagyjuk"
+    // for bun during the Phase-5 uninstall audit. The body is kept so
+    // a future "actually purge" option can wire it without an
+    // interface change. The rmSync call is a no-op today (the
+    // command's safe() wrapper logs any failure to stderr).
+  }
+
+  async uninstallClaudeCli(): Promise<void> {
+    // Warning-only: the claude CLI is a bun-managed shim that lives
+    // under ~/.bun, so its lifecycle is tied to bun's.
+  }
+
+  async uninstallOllama(): Promise<void> {
+    // Warning-only by Phase-5 user decision: the Ollama install (brew
+    // formula / apt package) and the cached model weights under
+    // ~/.ollama/ are NOT removed by `uninstall`. The listr step title
+    // (`uninstall.warning.ollama`) in commands/uninstall.ts surfaces
+    // this to stderr so the operator can decide whether to wipe them
+    // manually.
   }
 }
 

@@ -62,6 +62,11 @@ export interface FakePlatform extends PlatformProvider {
   readServiceStatus: ReturnType<typeof vi.fn>
   uninstall: ReturnType<typeof vi.fn>
   serviceUnitPath: ReturnType<typeof vi.fn>
+  removeServiceUnit: ReturnType<typeof vi.fn>
+  uninstallPrereqDeps: ReturnType<typeof vi.fn>
+  uninstallBun: ReturnType<typeof vi.fn>
+  uninstallClaudeCli: ReturnType<typeof vi.fn>
+  uninstallOllama: ReturnType<typeof vi.fn>
 }
 
 export function makePlatform(kind: 'linux' | 'macos' = 'linux'): FakePlatform {
@@ -76,6 +81,11 @@ export function makePlatform(kind: 'linux' | 'macos' = 'linux'): FakePlatform {
     readServiceStatus: vi.fn(async (name: string) => ({ name, state: 'active' as const })),
     uninstall: vi.fn(async () => undefined),
     serviceUnitPath: vi.fn((name: string) => `/units/${name}`),
+    removeServiceUnit: vi.fn(async () => undefined),
+    uninstallPrereqDeps: vi.fn(async () => undefined),
+    uninstallBun: vi.fn(async () => undefined),
+    uninstallClaudeCli: vi.fn(async () => undefined),
+    uninstallOllama: vi.fn(async () => undefined),
   } as unknown as FakePlatform
 }
 

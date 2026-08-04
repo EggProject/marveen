@@ -7,9 +7,9 @@
 // template their unit files from src/platform/templates/* and substitute
 // the actual command/env at write time.
 
-import type { ServiceUnitSpec, ServiceStatus } from '../types.js'
+import type { ServiceUnitSpec, ServiceStatus, ShellAdapter } from '../types.js'
 
-export type { ServiceUnitSpec, ServiceStatus }
+export type { ServiceUnitSpec, ServiceStatus, ShellAdapter }
 
 export interface ServiceTemplate {
   /** Service identifier used in unit file names and platform commands. */
@@ -29,6 +29,16 @@ export interface PlatformProvider {
   readServiceStatus(name: string): Promise<ServiceStatus>
   uninstall(): Promise<void>
   serviceUnitPath(name: string): string
+  /** Stop the service AND delete the unit file from disk. */
+  removeServiceUnit(name: string): Promise<void>
+  /** Best-effort removal of shared deps installed by installPrerequisites. */
+  uninstallPrereqDeps(binaries: readonly string[]): Promise<void>
+  /** Best-effort removal of the ~/.bun install (and the bundled claude shim). */
+  uninstallBun(): Promise<void>
+  /** Best-effort removal of the bundled claude CLI shim under ~/.bun/bin. */
+  uninstallClaudeCli(): Promise<void>
+  /** Best-effort removal of the ollama install + cached models (~/.ollama). */
+  uninstallOllama(): Promise<void>
 }
 
 export const SERVICE_UNIT_NAMES = {

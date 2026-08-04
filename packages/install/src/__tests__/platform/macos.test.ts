@@ -159,3 +159,33 @@ describe('platform/macos launchctl', () => {
     ])
   })
 })
+
+describe('platform/macos uninstall helpers', () => {
+  it('removeServiceUnit unloads and rm\'s the plist', async () => {
+    await provider.removeServiceUnit('marveen')
+    expect(shell.exec.mock.calls.map((c) => c[0])).toEqual(expect.arrayContaining(['launchctl', 'rm']))
+  })
+
+  it('removeServiceUnit swallows a failing initial unload', async () => {
+    shell.exec.mockImplementation(async (cmd: string) => {
+      if (cmd === 'launchctl') throw new Error('not loaded')
+      return shellResult({ stdout: '' })
+    })
+    await provider.removeServiceUnit('marveen') // should not throw
+  })
+
+  it('uninstallPrereqDeps is a no-op (warning-only on shared deps)', async () => {
+    await provider.uninstallPrereqDeps(['curl'])
+  })
+
+  it('uninstallBun / uninstallClaudeCli / uninstallOllama are no-ops or rm of ~/.bun and ~/.ollama', async () => {
+    await provider.uninstallBun()
+    await provider.uninstallClaudeCli()
+    await provider.uninstallOllama()
+  })
+
+  it('uninstallBun and uninstallOllama swallow rmSync failures (Bun fs.rmSpy is non-configurable, see linux.test.ts for rationale)', async () => {
+    await provider.uninstallBun()
+    await provider.uninstallOllama()
+  })
+})

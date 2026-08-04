@@ -131,6 +131,31 @@ export class MacosProvider implements PlatformProvider {
     await this.disableAndStop(SERVICE_UNIT_NAMES.main)
     await this.disableAndStop(SERVICE_UNIT_NAMES.channels)
   }
+
+  async removeServiceUnit(name: string): Promise<void> {
+    await this.disableAndStop(name).catch(() => {})
+    await this.shell.exec('rm', ['-f', this.serviceUnitPath(name)])
+  }
+
+  async uninstallPrereqDeps(_binaries: readonly string[]): Promise<void> {
+    // Warning-only: brew uninstall of curl/git would also nuke system
+    // packages other apps depend on. The uninstall command surfaces a
+    // warning and leaves the choice to the operator.
+  }
+
+  async uninstallBun(): Promise<void> {
+    // Warning-only: same as Linux, see Phase-5 audit decision.
+  }
+
+  async uninstallClaudeCli(): Promise<void> {
+    // Warning-only on macOS too: the claude shim lives under ~/.bun
+    // so its lifecycle is tied to bun's.
+  }
+
+  async uninstallOllama(): Promise<void> {
+    // Warning-only by Phase-5 user decision: same as LinuxProvider.
+    // The listr step title surfaces this in commands/uninstall.ts.
+  }
 }
 
 export const MACOS_TEMPLATE_DIR_FALLBACK = DEFAULT_TEMPLATES_DIR
