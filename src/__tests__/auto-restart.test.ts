@@ -4,8 +4,19 @@ import {
   normalizeAutoRestartConfig,
   restartDue,
   dailyDueAtMs,
+  mainRestartMechanism,
   DEFAULT_AUTO_RESTART,
 } from '../auto-restart.js'
+
+describe('mainRestartMechanism', () => {
+  it('returns launchd when launchctl is present (macOS path)', () => {
+    expect(mainRestartMechanism(true)).toBe('launchd')
+  })
+
+  it('returns tmux-respawn when launchctl is absent (Linux/non-launchd path)', () => {
+    expect(mainRestartMechanism(false)).toBe('tmux-respawn')
+  })
+})
 
 describe('parseHHMM', () => {
   it('parses valid times to minutes since midnight', () => {
@@ -42,6 +53,32 @@ describe('normalizeAutoRestartConfig', () => {
   })
   it('defaults mode to continue for an unknown mode', () => {
     expect(normalizeAutoRestartConfig({ mode: 'wild' }).mode).toBe('continue')
+  })
+  it('drops non-finite interval values (NaN, Infinity)', () => {
+    expect(normalizeAutoRestartConfig({ intervalHours: Number.NaN }).intervalHours).toBeNull()
+    expect(normalizeAutoRestartConfig({ intervalHours: Number.POSITIVE_INFINITY }).intervalHours).toBeNull()
+    expect(normalizeAutoRestartConfig({ intervalHours: Number.NEGATIVE_INFINITY }).intervalHours).toBeNull()
+  })
+  it('drops non-numeric interval values (string, boolean)', () => {
+    expect(normalizeAutoRestartConfig({ intervalHours: '8' as unknown }).intervalHours).toBeNull()
+    expect(normalizeAutoRestartConfig({ intervalHours: true as unknown }).intervalHours).toBeNull()
+  })
+  it('drops negative interval even though typeof === number and isFinite', () => {
+    expect(normalizeAutoRestartConfig({ intervalHours: -3 }).intervalHours).toBeNull()
+  })
+  it('keeps a positive, finite interval when no daily time is set', () => {
+    expect(normalizeAutoRestartConfig({ intervalHours: 1.5 }).intervalHours).toBe(1.5)
+  })
+  it('keeps the trimmed dailyTime string when valid', () => {
+    const c = normalizeAutoRestartConfig({ dailyTime: '  09:30  ' })
+    expect(c.dailyTime).toBe('09:30')
+    expect(c.intervalHours).toBeNull()
+  })
+  it('treats a missing falsy enabled/handoff flags as false', () => {
+    expect(normalizeAutoRestartConfig({ enabled: false, handoff: false }).enabled).toBe(false)
+    expect(normalizeAutoRestartConfig({ enabled: false, handoff: false }).handoff).toBe(false)
+    expect(normalizeAutoRestartConfig({ enabled: 1 as unknown, handoff: 'yes' as unknown }).enabled).toBe(false)
+    expect(normalizeAutoRestartConfig({ enabled: 1 as unknown, handoff: 'yes' as unknown }).handoff).toBe(false)
   })
 })
 
