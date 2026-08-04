@@ -92,3 +92,11 @@ __pycache__/
 # Claude Code Channels runtime config/session dir (sessions, history, tokens,
 # plugins, skills). Per-install runtime state -- never source, never commit.
 .channels-config/
+
+# v8 coverage output from `npm run coverage`. Regenerated on every run, never
+# source.
+coverage/
+coverage-temp/
+
+# Throwaway worktrees agents create while the live-install guard is engaged.
+.worktrees/
