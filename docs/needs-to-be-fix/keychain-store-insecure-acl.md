@@ -1,0 +1,135 @@
+# keychain.ts: `keychainStore` passes `-A`, the flag `security(1)` itself labels "insecure, not recommended", for the vault master key
+
+## Location
+
+`src/web/keychain.ts`, lines 12-21 (`keychainStore`):
+
+```ts
+export function keychainStore(value: string): void {
+  execFileSync(SECURITY, [
+    'add-generic-password',
+    '-U',
+    '-s', SERVICE,
+    '-a', ACCOUNT,
+    '-w', value,
+    '-A',
+  ], { stdio: ['ignore', 'ignore', 'ignore'] })
+}
+```
+
+## Excerpt
+
+`-A` sets an empty trusted-application list on the item's ACL. From the
+macOS `security(1)` man page, verbatim:
+
+```
+-A		Allow any application to access this item without
+		warning (insecure, not recommended!)
+```
+
+The item being written is the vault master key: the single AES-256-GCM key
+that `src/web/vault.ts` derives every stored secret from
+(`vault.ts:65-91`). It is the highest-value item the product owns.
+
+**Severity is low, not high, and the reason matters.** Dropping `-A` does not
+close the exposure. An item created by `/usr/bin/security` without `-A` gets
+`/usr/bin/security` itself as its sole ACL entry, and *any* local process can
+invoke `/usr/bin/security find-generic-password` -- so the credential is
+readable with no prompt either way. This is the exact weakness Silverfort
+published against the Claude Code CLI keychain item (see Sources), and that
+item carries no `-A` at all.
+
+What `-A` adds on top is narrower but real:
+
+- The key becomes readable through the `SecKeychain` C API directly, not only
+  by way of an `exec` of `/usr/bin/security`. That matters wherever exec is
+  the constrained resource: a sandboxed app, or a host where an EDR/execution
+  policy flags or blocks `security` invocations. `-A` removes the one
+  observable chokepoint a defender could monitor.
+- It contradicts an explicit vendor warning in the tool's own documentation,
+  which is the kind of thing a security review or a compliance audit flags on
+  sight.
+- It is very likely redundant. `-A` was presumably added to suppress an
+  access prompt, but since reads go back through `/usr/bin/security` -- the
+  binary already in the default ACL -- the prompt should not occur without it.
+  This is stated as a hypothesis: it was not verified empirically, because
+  doing so requires writing to the operator's real login keychain, and a
+  wrong guess pops a GUI dialog.
+
+## Failure scenario
+
+1. Marveen runs on a shared or multi-profile macOS host, or the operator runs
+   any untrusted code as their own uid (an `npm install` postinstall script, a
+   VS Code extension, a downloaded binary).
+2. That code links `Security.framework` and issues a
+   `SecItemCopyMatching` for service `com.marveen.vault`, account
+   `master-key`. It never execs anything.
+3. With `-A` the ACL is empty, so the copy succeeds with no prompt and no
+   user interaction.
+4. The attacker now holds the master key. Combined with `store/vault.json`
+   (mode `0600`, but same-uid, so readable by the same process) every secret
+   in the vault decrypts offline: `scryptSync(master, salt)` then
+   AES-256-GCM, all parameters carried in the ciphertext blob
+   (`vault.ts:80-91`).
+
+Without `-A` step 3 requires spawning `/usr/bin/security`, which still
+succeeds -- hence "low". The delta is purely the loss of the exec chokepoint
+and the vendor-flagged ACL.
+
+## Pinning test
+
+`src/__tests__/keychain.test.ts`, describe block
+`keychain.ts - known deviations (pinning)`:
+
+- `passes -A, granting every process on the box read access`
+
+```ts
+mocks.execFileSync.mockReturnValue('')
+keychainStore('master')
+expect(onlyCall().args).toContain('-A')
+```
+
+This MUST fail once the flag is removed; delete the assertion (or invert it to
+`not.toContain('-A')`) as part of the fix.
+
+## Suggested direction
+
+Two steps, in order:
+
+1. Replace `-A` with an explicit trusted application:
+
+   ```ts
+   '-T', SECURITY,
+   ```
+
+   Verify on a real host first that reads still complete without a prompt --
+   over SSH a prompt manifests as exit 36, so
+   `keychainStore` + `keychainRetrieve` in one non-interactive session is a
+   sufficient check. Note the interaction with
+   `keychain-retrieve-swallows-locked-keychain`: until that is fixed, a
+   prompt introduced here would be silently swallowed as `null` and would
+   trigger a vault re-key. **Fix that one first.**
+
+2. If the master key genuinely needs to resist same-uid reads, the CLI
+   wrapper is the wrong primitive entirely -- `security(1)` cannot express
+   `kSecAccessControlUserPresence`. That requires the `SecAccessControl` API
+   via a native binding, which is a much larger change and should be its own
+   decision.
+
+Per the task rule "NEVER modify src/web/keychain.ts" this was not applied.
+
+## Sources
+
+- `man 1 security` on macOS (local, Darwin 24.3.0), `add-generic-password`
+  section: `-A  Allow any application to access this item without warning
+  (insecure, not recommended!)`.
+- <https://github.com/yo-yo-yo-jbo/macos_key_redefinition/> -- "Note the `-A`
+  flag which sets up an empty ACL for the item, making all applications
+  accessible to this [item]".
+- <https://www.silverfort.com/blog/skipping-the-lock-a-claude-code-cli-weakness-lets-any-macos-process-read-stored-credentials/>
+  -- "`security` is the only entry in the ACL, so a single query with no
+  prompts lets any user-mode process read the [credentials]". This is the
+  source for the "removing `-A` is not sufficient" caveat above.
+- <https://objectivebythesea.org/v5/talks/OBTS_v5_cThomas.pdf> ("Lock Picking
+  the macOS Keychain") -- '"No application" means "without prompting for user
+  consent"'.

@@ -1,6 +1,6 @@
 # needs-to-be-fix index
 
-Every bug MD filed in this session. Total count: 31
+Every bug MD filed in this session. Total count: 36
 (`find docs/needs-to-be-fix -name '*.md' | wc -l`).
 
 Sorted by severity: high (security / data loss / silent corruption),
@@ -18,6 +18,7 @@ dead code, doc issue).
 | `multipart-boundary-greedy` | `src/web/multipart.ts:9-12` | greedy `boundary=(.+)` keeps quotes and trailing params, silently corrupting every field | `src/__tests__/multipart.test.ts` |
 | `multipart-latin1-fields` | `src/web/multipart.ts:31,36` | text fields and filenames are latin1-decoded, so every non-ASCII value is mojibake | `src/__tests__/multipart.test.ts` |
 | `profiles-traversal-id` | `src/web/profiles.ts:42-49` | `loadProfileTemplate` never validates `id`, so `../` escapes `PROFILES_DIR` (arbitrary JSON read + security-profile bypass via unguarded `POST /api/agents`) | `src/__tests__/profiles.test.ts` |
+| `keychain-retrieve-swallows-locked-keychain` | `src/web/keychain.ts:32-34` | a locked keychain returns `null` like a missing item, so `vault.ts:44-49` overwrites the master key with `-U` and every stored secret becomes undecryptable | `src/__tests__/keychain.test.ts` |
 
 ## Medium
 
@@ -32,6 +33,7 @@ dead code, doc issue).
 | `memory-digest-empty-trim` | `src/memory.ts:200-206` | `runDailyDigest` saves an empty digest when `runAgent` returns whitespace-only text | `src/__tests__/memory.test.ts` |
 | `multipart-case-sensitive-disposition` | `src/web/multipart.ts:17` | case-sensitive `Content-Disposition` filter silently drops conforming parts | `src/__tests__/multipart.test.ts` |
 | `profiles-replace-dollar-pattern` | `src/web/profiles.ts:51-56` | `resolveProfilePlaceholders` interpolates ctx values as `String.replace` patterns, so `$&` / `` $` `` in a path corrupts the emitted permission rule | `src/__tests__/profiles.test.ts` |
+| `stuck-tool-call-watcher-skew-defer` | `src/web/stuck-tool-call-watcher.ts:141` | a future-dated respawn stamp makes `shouldDeferForRecentRespawn` suppress wedge recovery for the whole skew, not just the grace window | `src/__tests__/stuck-tool-call-watcher.test.ts` |
 | `model-fallback-runner-writemainmodel-nonobject` | `src/web/model-fallback-runner.ts:56-61` | `writeMainModel` guards only a JSON *parse* failure, so a `null` body throws (swap abandoned) and an array body silently drops the model while logging success | `src/__tests__/model-fallback-runner.test.ts` |
 
 ## Low
@@ -49,3 +51,5 @@ dead code, doc issue).
 | `channel-coordinator-internals-untestable` | `src/channel-coordinator.ts:117-441` | internal state-machine functions are not unit-testable | `src/__tests__/channel-coordinator.test.ts` |
 | `heartbeat-brief-rundiceaysweep-not-applicable` | `src/heartbeat.ts` (no symbol) | task brief mentions `runDecaySweep` integration but the integration does not exist | `src/__tests__/heartbeat-cov.test.ts` |
 | `http-helpers-gzip-memo-evict-guard` | `src/web/http-helpers.ts:122` | gzip memo eviction guard is dead code (`oldest` can never be `undefined`) | `src/__tests__/http-helpers.test.ts` |
+| `stuck-tool-call-watcher-dead-ternary` | `src/web/stuck-tool-call-watcher.ts:192` | `sinceRespawnMs` ternary has a dead `null` arm (blocks 100% branch coverage) | `src/__tests__/stuck-tool-call-watcher.test.ts` |
+| `keychain-store-insecure-acl` | `src/web/keychain.ts:19` | the master key is written with `-A`, the flag `security(1)` labels "insecure, not recommended" (empty ACL); low because the key is readable without `-A` too | `src/__tests__/keychain.test.ts` |
