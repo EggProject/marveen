@@ -12,10 +12,10 @@ describe('steps/claude-install', () => {
     expect(ctx.claudeInstalled).toBe(true)
   })
 
-  it('marks claude as missing when the binary is still absent', async () => {
+  it('fails when the binary is still absent after installation', async () => {
     const ctx = makeCtx({ claudeInstalled: true })
     ctx.shell.which.mockResolvedValue(null)
-    await stepClaudeInstall(ctx)
+    await expect(stepClaudeInstall(ctx)).rejects.toThrow('claude executable is not on PATH')
     expect(ctx.claudeInstalled).toBe(false)
   })
 

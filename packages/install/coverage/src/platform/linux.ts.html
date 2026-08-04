@@ -25,28 +25,28 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>103/103</span>
+                <span class='fraction'>110/110</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">100% </span>
+                <span class="strong">97.91% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>45/45</span>
+                <span class='fraction'>47/48</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>22/22</span>
+                <span class='fraction'>24/24</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>103/103</span>
+                <span class='fraction'>110/110</span>
             </div>
         
             
@@ -235,7 +235,16 @@
 <a name='L170'></a><a href='#L170'>170</a>
 <a name='L171'></a><a href='#L171'>171</a>
 <a name='L172'></a><a href='#L172'>172</a>
-<a name='L173'></a><a href='#L173'>173</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
+<a name='L173'></a><a href='#L173'>173</a>
+<a name='L174'></a><a href='#L174'>174</a>
+<a name='L175'></a><a href='#L175'>175</a>
+<a name='L176'></a><a href='#L176'>176</a>
+<a name='L177'></a><a href='#L177'>177</a>
+<a name='L178'></a><a href='#L178'>178</a>
+<a name='L179'></a><a href='#L179'>179</a>
+<a name='L180'></a><a href='#L180'>180</a>
+<a name='L181'></a><a href='#L181'>181</a>
+<a name='L182'></a><a href='#L182'>182</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -313,6 +322,7 @@
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
@@ -398,6 +408,14 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">4x</span>
@@ -486,7 +504,8 @@ export class LinuxProvider implements PlatformProvider {
   }
 &nbsp;
   async installClaudeCli(): Promise&lt;void&gt; {
-    await this.shell.run('bunx @anthropic-ai/claude-code@latest --version', { stdio: 'inherit' })
+    const result = await this.shell.exec('bun', ['add', '--global', '@anthropic-ai/claude-code@latest'], { stdio: 'inherit' })
+    assertSuccess(result.exitCode, result.stderr, 'Claude Code installation')
   }
 &nbsp;
   serviceUnitPath(name: string): string {
@@ -506,7 +525,7 @@ export class LinuxProvider implements PlatformProvider {
     })
     const path = this.serviceUnitPath(spec.name)
     await this.shell.exec('mkdir', ['-p', join(homedir(), '.config', 'systemd', 'user')])
-    await this.shell.exec('sh', ['-c', `cat &gt; ${path} &lt;&lt;'__MARVEEN_UNIT__'\n${rendered}\n__MARVEEN_UNIT__`])
+    await this.shell.exec('sh', ['-c', `cat &gt; ${shellQuote(path)} &lt;&lt;'__MARVEEN_UNIT__'\n${rendered}\n__MARVEEN_UNIT__`])
     return { path }
   }
 &nbsp;
@@ -572,6 +591,14 @@ export class LinuxProvider implements PlatformProvider {
   }
 }
 &nbsp;
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`
+}
+&nbsp;
+function assertSuccess(exitCode: number, stderr: string, operation: string): void {
+  if (exitCode !== 0) <span class="branch-0 cbranch-no" title="branch not covered" >throw new Error(`${operation} failed: ${stderr || `exit code ${exitCode}`}`)</span>
+}
+&nbsp;
 function mapSystemdState(raw: string): ServiceStatus['state'] {
   if (raw === 'active') return 'active'
   if (raw === 'inactive') return 'inactive'
@@ -586,7 +613,7 @@ export const TEMPLATE_DIR_FALLBACK = DEFAULT_TEMPLATES_DIR</pre></td></tr></tabl
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-08-04T14:42:49.399Z
+                at 2026-08-04T15:04:53.409Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

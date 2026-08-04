@@ -11,9 +11,11 @@ import type { InstallerContext } from '../types.js'
 export async function stepNpmInstall(ctx: InstallerContext): Promise<{ manager: 'bun' | 'npm' }> {
   const cwd = join(ctx.cwd, 'packages', 'marveen')
   if (await ctx.shell.which('bun')) {
-    await ctx.shell.exec('bun', ['install', '--frozen-lockfile'], { cwd, stdio: 'inherit' })
+    const result = await ctx.shell.exec('bun', ['install', '--frozen-lockfile'], { cwd, stdio: 'inherit' })
+    if (result.exitCode !== 0) throw new Error(`Dependency installation failed: ${result.stderr || `exit code ${result.exitCode}`}`)
     return { manager: 'bun' }
   }
-  await ctx.shell.exec('npm', ['ci'], { cwd, stdio: 'inherit' })
+  const result = await ctx.shell.exec('npm', ['ci'], { cwd, stdio: 'inherit' })
+  if (result.exitCode !== 0) throw new Error(`Dependency installation failed: ${result.stderr || `exit code ${result.exitCode}`}`)
   return { manager: 'npm' }
 }

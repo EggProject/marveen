@@ -6,7 +6,7 @@ interface CapturedTask {
   title: string
   task: (ctx: InstallerContext) => unknown
   skip?: (ctx: InstallerContext) => string | false
-  enable?: (ctx: InstallerContext) => boolean
+  enabledd?: (ctx: InstallerContext) => boolean
   retry?: { tries: number }
 }
 
@@ -14,7 +14,7 @@ const stubs = vi.hoisted(() => ({
   shell: undefined as unknown as ReturnType<typeof import('../_helpers.js').makeShell>,
   platform: undefined as unknown as ReturnType<typeof import('../_helpers.js').makePlatform>,
   set: undefined as unknown as ReturnType<typeof vi.fn>,
-  tasks: [] as Array<{ title: string; task: unknown; skip?: unknown; enable?: unknown; retry?: unknown }>,
+  tasks: [] as Array<{ title: string; task: unknown; skip?: unknown; enabled?: unknown; retry?: unknown }>,
   listrOptions: undefined as unknown,
   run: undefined as unknown as (ctx: InstallerContext) => Promise<unknown>,
   steps: {} as Record<string, ReturnType<typeof vi.fn>>,
@@ -57,7 +57,11 @@ vi.mock('../../steps/systemd.js', () => ({
   mainServiceSpec: () => ({ name: 'marveen', command: 'node dist/index.js' }),
   channelsServiceSpec: () => ({ name: 'marveen-channels', command: 'node dist/channels.js' }),
 }))
-vi.mock('../../steps/launchd.js', () => ({ stepLaunchd: step('launchd') }))
+vi.mock('../../steps/launchd.js', () => ({
+  stepLaunchd: step('launchd'),
+  mainServiceSpec: () => ({ name: 'marveen', command: 'node dist/index.js' }),
+  channelsServiceSpec: () => ({ name: 'marveen-channels', command: 'node dist/channels.js' }),
+}))
 
 const { installCommand } = await import('../../commands/install.js')
 const { initLocale } = await import('../../locale/index.js')
@@ -68,14 +72,13 @@ const TITLES = [
   'Előfeltételek ellenőrzése',
   'Bun telepítése',
   'Claude Code telepítése',
-  'Claude hitelesítés',
   'Személyes adatok',
   'Függőségek telepítése',
   'TypeScript build',
   'Provider választás',
   'Ollama felfedezés',
-  'Vault push',
   'Rendszerszolgáltatás telepítése',
+  'Vault push',
   'Bumblebee scheduled task',
   'Összefoglaló',
 ]
@@ -134,12 +137,11 @@ describe('commands/install task graph', () => {
     await list[3]!.task(ctx)
     await list[4]!.task(ctx)
     await list[5]!.task(ctx)
-    await list[6]!.task(ctx)
-    await list[8]!.task(ctx)
+    await list[7]!.task(ctx)
     await list[9]!.task(ctx)
+    await list[10]!.task(ctx)
     await list[11]!.task(ctx)
-    await list[12]!.task(ctx)
-    for (const name of ['prereq', 'bun', 'claude', 'claudeAuth', 'personal', 'npmInstall', 'build', 'ollama', 'vault', 'bumblebee', 'summary']) {
+    for (const name of ['prereq', 'bun', 'claude', 'personal', 'npmInstall', 'build', 'ollama', 'vault', 'bumblebee', 'summary']) {
       expect(stubs.steps[name], name).toHaveBeenCalledWith(ctx)
     }
   })
@@ -147,7 +149,7 @@ describe('commands/install task graph', () => {
   it('the provider task stores the choice on the context', async () => {
     await run()
     const ctx = lastCtx!
-    await tasks()[7]!.task(ctx)
+    await tasks()[6]!.task(ctx)
     expect(ctx.providerChoice).toEqual({ mode: 'minimax' })
   })
 
@@ -165,23 +167,18 @@ describe('commands/install task graph', () => {
     expect(skip({ claudeInstalled: false } as InstallerContext)).toBe(false)
   })
 
-  it('retries the auth task three times', async () => {
-    await run()
-    expect(tasks()[3]!.retry).toEqual({ tries: 3 })
-  })
-
   it('enables the ollama task only for the ollama provider', async () => {
     await run()
-    const enable = tasks()[8]!.enable!
-    expect(enable({ providerChoice: { mode: 'ollama' } } as InstallerContext)).toBe(true)
-    expect(enable({ providerChoice: { mode: 'minimax' } } as InstallerContext)).toBe(false)
-    expect(enable({} as InstallerContext)).toBe(false)
+    const enabled = tasks()[7]!.enabled!
+    expect(enabled({ providerChoice: { mode: 'ollama' } } as InstallerContext)).toBe(true)
+    expect(enabled({ providerChoice: { mode: 'minimax' } } as InstallerContext)).toBe(false)
+    expect(enabled({} as InstallerContext)).toBe(false)
   })
 
   it('installs both systemd units on linux', async () => {
     await run()
     const ctx = lastCtx!
-    await tasks()[10]!.task(ctx)
+    await tasks()[8]!.task(ctx)
     expect(stubs.steps['systemd']).toHaveBeenNthCalledWith(1, ctx, { name: 'marveen', command: 'node dist/index.js' })
     expect(stubs.steps['systemd']).toHaveBeenNthCalledWith(2, ctx, { name: 'marveen-channels', command: 'node dist/channels.js' })
     expect(stubs.steps['launchd']).not.toHaveBeenCalled()
@@ -191,7 +188,7 @@ describe('commands/install task graph', () => {
     stubs.platform = makePlatform('macos')
     await run()
     const ctx = lastCtx!
-    await tasks()[10]!.task(ctx)
+    await tasks()[8]!.task(ctx)
     expect(stubs.steps['launchd']).toHaveBeenCalledTimes(2)
     expect(stubs.steps['systemd']).not.toHaveBeenCalled()
   })

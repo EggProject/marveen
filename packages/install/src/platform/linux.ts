@@ -77,7 +77,8 @@ export class LinuxProvider implements PlatformProvider {
   }
 
   async installClaudeCli(): Promise<void> {
-    await this.shell.run('bunx @anthropic-ai/claude-code@latest --version', { stdio: 'inherit' })
+    const result = await this.shell.exec('bun', ['add', '--global', '@anthropic-ai/claude-code@latest'], { stdio: 'inherit' })
+    assertSuccess(result.exitCode, result.stderr, 'Claude Code installation')
   }
 
   serviceUnitPath(name: string): string {
@@ -97,7 +98,7 @@ export class LinuxProvider implements PlatformProvider {
     })
     const path = this.serviceUnitPath(spec.name)
     await this.shell.exec('mkdir', ['-p', join(homedir(), '.config', 'systemd', 'user')])
-    await this.shell.exec('sh', ['-c', `cat > ${path} <<'__MARVEEN_UNIT__'\n${rendered}\n__MARVEEN_UNIT__`])
+    await this.shell.exec('sh', ['-c', `cat > ${shellQuote(path)} <<'__MARVEEN_UNIT__'\n${rendered}\n__MARVEEN_UNIT__`])
     return { path }
   }
 
@@ -161,6 +162,14 @@ export class LinuxProvider implements PlatformProvider {
     // this to stderr so the operator can decide whether to wipe them
     // manually.
   }
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`
+}
+
+function assertSuccess(exitCode: number, stderr: string, operation: string): void {
+  if (exitCode !== 0) throw new Error(`${operation} failed: ${stderr || `exit code ${exitCode}`}`)
 }
 
 function mapSystemdState(raw: string): ServiceStatus['state'] {

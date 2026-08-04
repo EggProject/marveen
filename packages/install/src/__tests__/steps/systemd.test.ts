@@ -24,7 +24,7 @@ describe('steps/systemd', () => {
     expect(mainServiceSpec(ctx)).toEqual({
       name: 'marveen',
       command: 'node dist/index.js',
-      workingDirectory: '/srv/marveen',
+      workingDirectory: '/srv/marveen/packages/marveen',
       env: { NODE_ENV: 'production', PORT: '1234', WEB_PORT: '5678' },
     })
   })
@@ -34,7 +34,7 @@ describe('steps/systemd', () => {
     expect(channelsServiceSpec(ctx)).toEqual({
       name: 'marveen-channels',
       command: 'node dist/channels.js',
-      workingDirectory: '/srv/marveen',
+      workingDirectory: '/srv/marveen/packages/marveen',
       env: { NODE_ENV: 'production', WEB_PORT: '5678' },
     })
   })

@@ -11,9 +11,11 @@ import type { InstallerContext } from '../types.js'
 export async function stepBuild(ctx: InstallerContext): Promise<{ manager: 'bun' | 'npm' }> {
   const cwd = join(ctx.cwd, 'packages', 'marveen')
   if (await ctx.shell.which('bun')) {
-    await ctx.shell.exec('bunx', ['tsc'], { cwd, stdio: 'inherit' })
+    const result = await ctx.shell.exec('bunx', ['tsc'], { cwd, stdio: 'inherit' })
+    if (result.exitCode !== 0) throw new Error(`TypeScript build failed: ${result.stderr || `exit code ${result.exitCode}`}`)
     return { manager: 'bun' }
   }
-  await ctx.shell.exec('npx', ['tsc'], { cwd, stdio: 'inherit' })
+  const result = await ctx.shell.exec('npx', ['tsc'], { cwd, stdio: 'inherit' })
+  if (result.exitCode !== 0) throw new Error(`TypeScript build failed: ${result.stderr || `exit code ${result.exitCode}`}`)
   return { manager: 'npm' }
 }

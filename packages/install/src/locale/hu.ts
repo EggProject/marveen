@@ -91,7 +91,7 @@ const hu = {
   'uninstall.step.env.remove': '$INSTALL_DIR/.env törlése',
   'uninstall.step.oauth.remove': 'store/.claude-oauth-token törlése',
   'uninstall.step.rc.strip': 'Marveen export sorok eltávolítása a .bashrc / .zshrc-ből',
-  'uninstall.step.state.remove': 'Installer state könyvtár törlése (~/.config/marneen-installer/)',
+  'uninstall.step.state.remove': 'Installer state könyvtár törlése (~/.config/marveen-installer/)',
   'uninstall.warning.prereq': 'A rendszer-csomagok (curl, git, ca-certificates) maradtak — ezeket az uninstall nem törli, mert más rendszertool is függ tőlük.',
   'uninstall.warning.bun': 'A ~/.bun/ maradt — uninstall warning, marad.',
   'uninstall.warning.claude': 'A claude CLI a ~/.bun/bin/claude alatt maradt.',

@@ -19,7 +19,7 @@
 
 import { Command } from 'commander'
 import { Listr } from 'listr2'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { existsSync } from 'node:fs'
 import { createShell } from '../shell/exec.js'
 import { runBackup, type BackupMode, type BackupInput, writeBackupManifest } from '../shell/backup.js'
@@ -141,8 +141,9 @@ export const uninstallCommand = new Command('uninstall')
 
       { title: t('uninstall.step.state.remove'), task: () => safe('state.remove', () => {
         const s = createState()
+        const confDir = s.path ? dirname(s.path) : stateConfPath()
         s.clear()
-        removeStateConfDir(stateConfPath())
+        removeStateConfDir(confDir)
       }) },
     ], { concurrent: false, exitOnError: false })
 
@@ -163,15 +164,15 @@ export const uninstallCommand = new Command('uninstall')
       t('uninstall.summary.title'),
       '',
       t('uninstall.summary.removed'),
-      `  - ~/.config/systemd/user/marneen{,-channels}.service  (Linux) / ~/Library/LaunchAgents/com.marveen.*.plist  (macOS)`,
+      `  - ~/.config/systemd/user/marveen{,-channels}.service  (Linux) / ~/Library/LaunchAgents/com.marveen.*.plist  (macOS)`,
       `  - store/claudeclaw.db, store/vault.json, store/.vault-key, store/.dashboard-token, ...`,
       `  - store/.claude-oauth-token (legacy)`,
       `  - seed-scheduled-tasks/bumblebee-hygiene-scan.{cron,json}`,
-      `  - packages/marneen/node_modules/`,
-      `  - packages/marneen/dist/`,
+      `  - packages/marveen/node_modules/`,
+      `  - packages/marveen/dist/`,
       `  - $INSTALL_DIR/.env  (+ .env backup kept as .env.marveen.bak if existed)`,
       `  - Marveen export lines removed from ~/.bashrc / ~/.zshrc (backups: *.marveen.bak)`,
-      `  - ~/.config/marneen-installer/  (installer state)`,
+      `  - ~/.config/marveen-installer/  (installer state)`,
       '',
       t('uninstall.summary.warnings'),
       `  - ${t('uninstall.warning.prereq')}`,
@@ -220,17 +221,25 @@ function collectBackupCandidates(p: {
 
   // store/ contents (recurse shallowly -- vault.json + .vault-key live at store/ root).
   if (existsSync(p.storePath)) {
-    out.push({ absolutePath: join(p.storePath, 'claudeclaw.db'), archivePath: 'store/claudeclaw.db' })
-    out.push({ absolutePath: join(p.storePath, 'vault.json'), archivePath: 'store/vault.json' })
-    out.push({ absolutePath: join(p.storePath, '.vault-key'), archivePath: 'store/.vault-key' })
-    out.push({ absolutePath: join(p.storePath, '.dashboard-token'), archivePath: 'store/.dashboard-token' })
-    out.push({ absolutePath: join(p.storePath, 'config-overrides.json'), archivePath: 'store/config-overrides.json' })
+    const storeEntries = [
+      ['claudeclaw.db', 'store/claudeclaw.db'],
+      ['vault.json', 'store/vault.json'],
+      ['.vault-key', 'store/.vault-key'],
+      ['.dashboard-token', 'store/.dashboard-token'],
+      ['config-overrides.json', 'store/config-overrides.json'],
+    ] as const
+    for (const [name, archivePath] of storeEntries) {
+      const absolutePath = join(p.storePath, name)
+      if (existsSync(absolutePath)) out.push({ absolutePath, archivePath })
+    }
   }
 
   // bumblebee seed files
   if (existsSync(p.seedDir)) {
-    out.push({ absolutePath: join(p.seedDir, 'bumblebee-hygiene-scan.cron'), archivePath: 'seed-scheduled-tasks/bumblebee-hygiene-scan.cron' })
-    out.push({ absolutePath: join(p.seedDir, 'bumblebee-hygiene-scan.json'), archivePath: 'seed-scheduled-tasks/bumblebee-hygiene-scan.json' })
+    for (const name of ['bumblebee-hygiene-scan.cron', 'bumblebee-hygiene-scan.json']) {
+      const absolutePath = join(p.seedDir, name)
+      if (existsSync(absolutePath)) out.push({ absolutePath, archivePath: `seed-scheduled-tasks/${name}` })
+    }
   }
   return out
 }

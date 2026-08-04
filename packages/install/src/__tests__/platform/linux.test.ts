@@ -63,9 +63,9 @@ describe('platform/linux prerequisites', () => {
     expect(shell.run).toHaveBeenCalledWith('curl -fsSL https://bun.sh/install | bash', { stdio: 'inherit' })
   })
 
-  it('installClaudeCli runs bunx', async () => {
+  it('installClaudeCli installs Claude Code globally with bun', async () => {
     await provider.installClaudeCli()
-    expect(shell.run).toHaveBeenCalledWith('bunx @anthropic-ai/claude-code@latest --version', { stdio: 'inherit' })
+    expect(shell.exec).toHaveBeenCalledWith('bun', ['add', '--global', '@anthropic-ai/claude-code@latest'], { stdio: 'inherit' })
   })
 })
 

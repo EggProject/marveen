@@ -231,6 +231,6 @@ describe('stripRcMarveenLines + isMarveenLine', () => {
 describe('path helpers', () => {
   it('stateConfPath / confPathForProject yield canonical paths', () => {
     void stateConfPath
-    expect(confPathForProject('marneen')).toBe(join(homedir(), '.config', 'marneen-installer'))
+    expect(confPathForProject('marveen')).toBe(join(homedir(), '.config', 'marveen-installer'))
   })
 })

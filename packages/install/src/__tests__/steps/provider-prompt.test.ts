@@ -147,11 +147,15 @@ describe('steps/provider-prompt anthropic', () => {
   })
 
   // 11: "Anthropic headless default"
-  it('headless mode picks the API key method without asking', async () => {
-    const rec = script({ passwords: [TOKEN] })
+  it('headless mode reads the API key without asking', async () => {
+    process.env['ANTHROPIC_API_KEY'] = TOKEN
+    const rec = script({})
     const choice = await stepProviderPrompt(makeCtx({ nonInteractive: true, preSelectedProvider: 'anthropic' }))
     expect(choice.vaultId).toBe('ANTHROPIC_API_KEY')
+    expect(choice.vaultValue).toBe(TOKEN)
     expect(rec.selects).toHaveLength(0)
+    expect(rec.passwords).toHaveLength(0)
+    delete process.env['ANTHROPIC_API_KEY']
   })
 })
 
@@ -341,11 +345,14 @@ describe('steps/provider-prompt pre-selection', () => {
     expect(rec.selects).toHaveLength(0)
   })
 
-  it('a headless pre-selected openrouter still asks for the key', async () => {
-    const rec = script({ passwords: [TOKEN] })
+  it('a headless pre-selected openrouter reads the environment without prompting', async () => {
+    process.env['OPENROUTER_API_KEY'] = TOKEN
+    const rec = script({})
     const choice = await stepProviderPrompt(makeCtx({ nonInteractive: true, preSelectedProvider: 'openrouter' }))
     expect(choice.vaultId).toBe('OPENROUTER_API_KEY')
-    expect(rec.passwords).toHaveLength(1)
+    expect(choice.vaultValue).toBe(TOKEN)
+    expect(rec.passwords).toHaveLength(0)
+    delete process.env['OPENROUTER_API_KEY']
   })
 
   it('follows the active locale for every prompt message', async () => {

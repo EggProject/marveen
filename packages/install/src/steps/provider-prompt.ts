@@ -25,8 +25,11 @@ const TOKEN_RE = /^[A-Za-z0-9._-]{20,}$/
 const DEEPSEEK_RE = /^[A-Za-z0-9-]{20,}$/
 
 export async function stepProviderPrompt(ctx: InstallerContext): Promise<ProviderChoice> {
+  if (ctx.nonInteractive) {
+    return nonInteractiveChoice(ctx.preSelectedProvider ?? 'skip')
+  }
   if (ctx.preSelectedProvider) {
-    return await handlePreSelected(ctx, ctx.preSelectedProvider)
+    return await runProvider(ctx, ctx.preSelectedProvider)
   }
   const choice = await select(t('provider.choose'), [
     { name: t('provider.choices.anthropic'), value: 'anthropic' },
@@ -50,18 +53,31 @@ async function runProvider(ctx: InstallerContext, mode: ProviderChoice['mode']):
   }
 }
 
-async function handlePreSelected(ctx: InstallerContext, mode: ProviderChoice['mode']): Promise<ProviderChoice> {
-  if (ctx.nonInteractive) {
-    // Non-interactive path: only succeeds if the matching env var is
-    // already set. The wizard skips prompting entirely.
-    if (mode === 'skip') return { mode: 'skip' }
-    if (mode === 'ollama') {
-      const url = process.env['OLLAMA_BASE_URL'] ?? t('provider.ollama.default')
-      return { mode: 'ollama', vaultId: 'OLLAMA_BASE_URL', vaultLabel: 'Ollama base URL', vaultValue: url, baseUrlKey: 'OLLAMA_BASE_URL', baseUrlValue: url }
-    }
-    return await runProvider(ctx, mode)
+function nonInteractiveChoice(mode: ProviderChoice['mode']): ProviderChoice {
+  if (mode === 'skip') return { mode: 'skip' }
+  if (mode === 'ollama') {
+    const url = process.env['OLLAMA_BASE_URL'] ?? t('provider.ollama.default')
+    return { mode, vaultId: 'OLLAMA_BASE_URL', vaultLabel: 'Ollama base URL', vaultValue: url, baseUrlKey: 'OLLAMA_BASE_URL', baseUrlValue: url }
   }
-  return await runProvider(ctx, mode)
+
+  const definitions: Record<Exclude<ProviderChoice['mode'], 'skip' | 'ollama'>, {
+    env: string
+    vaultLabel: string
+    baseUrlKey?: string
+    baseUrlValue?: string
+  }> = {
+    anthropic: { env: process.env['ANTHROPIC_API_KEY'] ? 'ANTHROPIC_API_KEY' : 'CLAUDE_CODE_OAUTH_TOKEN', vaultLabel: 'Anthropic credential' },
+    minimax: { env: 'MINIMAX_API_KEY', vaultLabel: 'MiniMax API key', baseUrlKey: 'MINIMAX_BASE_URL', baseUrlValue: process.env['MINIMAX_BASE_URL'] ?? 'https://api.minimax.io/anthropic' },
+    deepseek: { env: 'DEEPSEEK_API_KEY', vaultLabel: 'DeepSeek API key', baseUrlKey: 'DEEPSEEK_BASE_URL', baseUrlValue: process.env['DEEPSEEK_BASE_URL'] ?? 'https://api.deepseek.com/anthropic' },
+    openrouter: { env: 'OPENROUTER_API_KEY', vaultLabel: 'OpenRouter API key', baseUrlKey: 'OPENROUTER_BASE_URL', baseUrlValue: process.env['OPENROUTER_BASE_URL'] ?? 'https://openrouter.ai/api/v1' },
+  }
+  const definition = definitions[mode]
+  const token = process.env[definition.env]
+  return {
+    mode,
+    ...(token ? { vaultId: definition.env, vaultLabel: definition.vaultLabel, vaultValue: token } : {}),
+    ...(definition.baseUrlKey && definition.baseUrlValue ? { baseUrlKey: definition.baseUrlKey, baseUrlValue: definition.baseUrlValue } : {}),
+  }
 }
 
 async function promptAnthropic(ctx: InstallerContext): Promise<ProviderChoice> {

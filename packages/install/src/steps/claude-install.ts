@@ -11,4 +11,7 @@ import type { InstallerContext } from '../types.js'
 export async function stepClaudeInstall(ctx: InstallerContext): Promise<void> {
   await ctx.platform.installClaudeCli()
   ctx.claudeInstalled = Boolean(await ctx.shell.which('claude'))
+  if (!ctx.claudeInstalled) {
+    throw new Error('Claude Code installation completed but the claude executable is not on PATH')
+  }
 }

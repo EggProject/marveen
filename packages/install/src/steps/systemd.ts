@@ -3,6 +3,7 @@
 // so the install command's Listr2 task list reads naturally and so a
 // future "user service vs system service" toggle has a single seam.
 
+import { join } from 'node:path'
 import type { InstallerContext } from '../types.js'
 import { SERVICE_UNIT_NAMES, type ServiceUnitSpec } from '../platform/types.js'
 
@@ -16,7 +17,7 @@ export function mainServiceSpec(ctx: InstallerContext): ServiceUnitSpec {
   return {
     name: SERVICE_UNIT_NAMES.main,
     command: 'node dist/index.js',
-    workingDirectory: ctx.cwd,
+    workingDirectory: join(ctx.cwd, 'packages', 'marveen'),
     env: {
       NODE_ENV: 'production',
       PORT: String(ctx.port),
@@ -29,7 +30,7 @@ export function channelsServiceSpec(ctx: InstallerContext): ServiceUnitSpec {
   return {
     name: SERVICE_UNIT_NAMES.channels,
     command: 'node dist/channels.js',
-    workingDirectory: ctx.cwd,
+    workingDirectory: join(ctx.cwd, 'packages', 'marveen'),
     env: {
       NODE_ENV: 'production',
       WEB_PORT: String(ctx.webPort),

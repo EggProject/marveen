@@ -90,7 +90,7 @@ const en = {
   'uninstall.step.env.remove': 'Removing $INSTALL_DIR/.env',
   'uninstall.step.oauth.remove': 'Removing store/.claude-oauth-token',
   'uninstall.step.rc.strip': 'Removing Marveen exports from .bashrc/.zshrc',
-  'uninstall.step.state.remove': 'Removing installer state (~/.config/marneen-installer/)',
+  'uninstall.step.state.remove': 'Removing installer state (~/.config/marveen-installer/)',
   'uninstall.warning.prereq': 'System packages (curl, git, ca-certificates) were left -- uninstall does not remove shared deps other tools rely on.',
   'uninstall.warning.bun': '~/.bun/ was left in place.',
   'uninstall.warning.claude': 'The claude CLI shim under ~/.bun/bin/ was left.',

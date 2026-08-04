@@ -1,13 +1,11 @@
 // install subcommand.
 //
-// Builds the 12-task Listr2 graph from the plan section 6 step order:
-//   prereq -> bun -> claude -> claude-auth -> personal -> npm-install
-//   -> build -> provider-prompt -> (ollama) -> vault-push -> service
+// Builds the installer task graph in dependency order:
+//   prereq -> bun -> claude -> personal -> npm-install -> build
+//   -> provider-prompt -> (ollama) -> service -> vault-push
 //   -> bumblebee -> summary
 //
-// Each task exposes a `rollback` so a failure in step N reverses any
-// partial state from steps <N. Listr2's exitOnError stops the graph at
-// the first failing task and walks the rollback chain in reverse.
+// Tasks run sequentially and stop at the first failure.
 
 import { Command } from 'commander'
 import { Listr } from 'listr2'
@@ -19,15 +17,14 @@ import { createPlatformProvider } from '../platform/index.js'
 import { stepPrereq } from '../steps/prereq.js'
 import { stepBunInstall } from '../steps/bun-install.js'
 import { stepClaudeInstall } from '../steps/claude-install.js'
-import { stepClaudeAuth } from '../steps/claude-auth.js'
 import { stepPersonalInfo } from '../steps/personal-info.js'
 import { stepNpmInstall } from '../steps/npm-install.js'
 import { stepBuild } from '../steps/build.js'
 import { stepProviderPrompt } from '../steps/provider-prompt.js'
 import { stepOllamaDiscovery } from '../steps/ollama-discovery.js'
 import { stepVaultPush } from '../steps/vault-push.js'
-import { stepSystemd, mainServiceSpec, channelsServiceSpec } from '../steps/systemd.js'
-import { stepLaunchd } from '../steps/launchd.js'
+import { stepSystemd, mainServiceSpec as systemdMainServiceSpec, channelsServiceSpec as systemdChannelsServiceSpec } from '../steps/systemd.js'
+import { stepLaunchd, mainServiceSpec as launchdMainServiceSpec, channelsServiceSpec as launchdChannelsServiceSpec } from '../steps/launchd.js'
 import { stepBumblebee } from '../steps/bumblebee.js'
 import { stepSummary } from '../steps/summary.js'
 import { t } from '../locale/index.js'
@@ -65,27 +62,23 @@ export const installCommand = new Command('install')
       { title: t('install.steps.prereq'), task: stepPrereq },
       { title: t('install.steps.bun'), task: stepBunInstall, skip: (c) => c.bunInstalled ? 'már telepítve' : false },
       { title: t('install.steps.claude'), task: stepClaudeInstall, skip: (c) => c.claudeInstalled ? 'már telepítve' : false },
-      { title: t('install.steps.claude-auth'), task: stepClaudeAuth, retry: { tries: 3 } },
       { title: t('install.steps.personal'), task: stepPersonalInfo },
       { title: t('install.steps.dependencies'), task: stepNpmInstall },
       { title: t('install.steps.build'), task: stepBuild },
       { title: t('install.steps.provider'), task: async (c) => { c.providerChoice = await stepProviderPrompt(c) } },
-      { title: t('install.steps.ollama'), task: stepOllamaDiscovery, enable: (c) => c.providerChoice?.mode === 'ollama' },
-      { title: t('install.steps.vault'), task: stepVaultPush },
+      { title: t('install.steps.ollama'), task: stepOllamaDiscovery, enabled: (c) => c.providerChoice?.mode === 'ollama' },
       { title: t('install.steps.service'), task: async (c) => {
-        const mainSpec = c.platform.kind === 'macos' ? mainServiceSpec(c) : mainServiceSpec(c)
+        const mainSpec = c.platform.kind === 'macos' ? launchdMainServiceSpec(c) : systemdMainServiceSpec(c)
+        const channelsSpec = c.platform.kind === 'macos' ? launchdChannelsServiceSpec(c) : systemdChannelsServiceSpec(c)
         if (c.platform.kind === 'macos') {
           await stepLaunchd(c, mainSpec)
-        } else {
-          await stepSystemd(c, mainSpec)
-        }
-        const channelsSpec = channelsServiceSpec(c)
-        if (c.platform.kind === 'macos') {
           await stepLaunchd(c, channelsSpec)
         } else {
+          await stepSystemd(c, mainSpec)
           await stepSystemd(c, channelsSpec)
         }
       } },
+      { title: t('install.steps.vault'), task: stepVaultPush },
       { title: t('install.steps.bumblebee'), task: stepBumblebee },
       { title: t('install.steps.summary'), task: stepSummary },
     ], { concurrent: false, exitOnError: true })
