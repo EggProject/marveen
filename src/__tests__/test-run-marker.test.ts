@@ -26,7 +26,7 @@ vi.mock('../channel-provider.js', async (importOriginal) => {
   }
 })
 
-import { markIfTestRun, TEST_RUN_PREFIX } from '../test-run-marker.js'
+import { markIfTestRun, isTestRun, TEST_RUN_PREFIX } from '../test-run-marker.js'
 import { notifyChannel, notifySecurityEvent } from '../notify.js'
 import { sendTelegramMessage } from '../web/telegram.js'
 
@@ -129,5 +129,49 @@ describe('sendTelegramMessage direct Bot API funnel (schedule-runner path)', () 
     const captured = stubFetch()
     await sendTelegramMessage('fake-token', '42', 'scheduler riasztas')
     expect(captured.bodies[0].text).toBe('scheduler riasztas')
+  })
+})
+
+describe('isTestRun (direct)', () => {
+  // Detecting "are we inside a test runner" is the entire reason this module
+  // exists; pin every branch of the OR so a future refactor that drops one
+  // half (e.g. removes the NODE_ENV=test fallback) is caught immediately.
+  it('returns true when VITEST is set (vitest workers)', () => {
+    process.env['VITEST'] = 'true'
+    process.env['NODE_ENV'] = 'production'
+    expect(isTestRun()).toBe(true)
+  })
+
+  it('returns true when only NODE_ENV=test is set (non-vitest runner, e.g. jest/mocha)', () => {
+    delete process.env['VITEST']
+    process.env['NODE_ENV'] = 'test'
+    expect(isTestRun()).toBe(true)
+  })
+
+  it('returns true when both VITEST and NODE_ENV=test are set', () => {
+    process.env['VITEST'] = 'true'
+    process.env['NODE_ENV'] = 'test'
+    expect(isTestRun()).toBe(true)
+  })
+
+  it('returns false in production (no VITEST, NODE_ENV not "test")', () => {
+    enterProductionEnv()
+    expect(isTestRun()).toBe(false)
+  })
+})
+
+describe('markIfTestRun under NODE_ENV=test only (no VITEST)', () => {
+  // The NODE_ENV=test fallback exists for non-vitest runners; the marker must
+  // still fire so those suites do not blast the owner with unmarked alerts.
+  it('prefixes when text has no marker yet', () => {
+    delete process.env['VITEST']
+    process.env['NODE_ENV'] = 'test'
+    expect(markIfTestRun('altalanos runner uzenet')).toBe(`${TEST_RUN_PREFIX}altalanos runner uzenet`)
+  })
+
+  it('is idempotent: text already carrying the marker is not doubled', () => {
+    delete process.env['VITEST']
+    process.env['NODE_ENV'] = 'test'
+    expect(markIfTestRun(`${TEST_RUN_PREFIX}mar megvolt`)).toBe(`${TEST_RUN_PREFIX}mar megvolt`)
   })
 })
