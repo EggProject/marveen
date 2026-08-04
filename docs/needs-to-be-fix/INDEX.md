@@ -1,6 +1,6 @@
 # needs-to-be-fix index
 
-Every bug MD filed in this session. Total count: 21
+Every bug MD filed in this session. Total count: 25
 (`find docs/needs-to-be-fix -name '*.md' | wc -l`).
 
 Sorted by severity: high (security / data loss / silent corruption),
@@ -15,6 +15,8 @@ dead code, doc issue).
 | `config-empty-env-blanks-identity` | `src/config.ts:129,135,143,200,209` | an empty `.env` line blanks the whole install identity | `src/__tests__/config.test.ts` |
 | `db-missing-telegram-history-table` | `src/db.ts:2563,2588` (no `CREATE TABLE` in `initDatabase`) | `telegram_history` table is referenced but never created (silent data loss) | `src/__tests__/db.test.ts` |
 | `google-api-refresh-race` | `src/google-api.ts:108-142` | `refreshAccessToken` has no in-flight de-duplication (race overwrites tokens) | `src/__tests__/google-api.test.ts` |
+| `multipart-boundary-greedy` | `src/web/multipart.ts:9-12` | greedy `boundary=(.+)` keeps quotes and trailing params, silently corrupting every field | `src/__tests__/multipart.test.ts` |
+| `multipart-latin1-fields` | `src/web/multipart.ts:31,36` | text fields and filenames are latin1-decoded, so every non-ASCII value is mojibake | `src/__tests__/multipart.test.ts` |
 
 ## Medium
 
@@ -27,6 +29,7 @@ dead code, doc issue).
 | `notify-fallback-hardcodes-telegram-limit` | `src/notify.ts:25` | fallback hardcodes Telegram 4096 limit for every provider | `src/__tests__/notify.test.ts` |
 | `notify-fallback-repeats-head` | `src/notify.ts:19-28` | per-chunk fallback re-sends the same first 4096 chars, dropping the tail | `src/__tests__/notify.test.ts` |
 | `memory-digest-empty-trim` | `src/memory.ts:200-206` | `runDailyDigest` saves an empty digest when `runAgent` returns whitespace-only text | `src/__tests__/memory.test.ts` |
+| `multipart-case-sensitive-disposition` | `src/web/multipart.ts:17` | case-sensitive `Content-Disposition` filter silently drops conforming parts | `src/__tests__/multipart.test.ts` |
 
 ## Low
 
@@ -42,3 +45,4 @@ dead code, doc issue).
 | `agent-detect-linux-libc-redundant-guard` | `src/agent.ts:72-80` (line 73) | `detectLinuxLibc`'s platform check is unreachable in production | `src/__tests__/agent-run-paths.test.ts` |
 | `channel-coordinator-internals-untestable` | `src/channel-coordinator.ts:117-441` | internal state-machine functions are not unit-testable | `src/__tests__/channel-coordinator.test.ts` |
 | `heartbeat-brief-rundiceaysweep-not-applicable` | `src/heartbeat.ts` (no symbol) | task brief mentions `runDecaySweep` integration but the integration does not exist | `src/__tests__/heartbeat-cov.test.ts` |
+| `http-helpers-gzip-memo-evict-guard` | `src/web/http-helpers.ts:122` | gzip memo eviction guard is dead code (`oldest` can never be `undefined`) | `src/__tests__/http-helpers.test.ts` |
