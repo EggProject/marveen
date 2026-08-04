@@ -1,4 +1,8 @@
-// TEM (tmpdir) sandbox helpers for the test suite.
+// TEMP (system temporary directory) sandbox helpers for the test suite.
+//
+// "TEMP" here is just `os.tmpdir()` -- the system temp dir the OS hands us
+// per-user. NOT a custom abstraction: every helper in this file uses
+// `mkdtempSync(join(tmpdir(), ...))` and nothing fancier.
 //
 // Every test that needs filesystem state must run inside an `os.tmpdir()`
 // scratch dir. This module centralizes the boilerplate that used to be
