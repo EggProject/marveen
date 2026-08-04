@@ -107,7 +107,6 @@ describe('PORTCHAIN1: the port chain follows WEB_PORT on a NON-default port', ()
     'src/web/channel-monitor.ts',
     'templates/settings.json.template',
     'install-windows.ps1',
-    'install-lang.sh',
   ])('%s contains no literal localhost:3420 at any call site', (f) => {
     expect(readFileSync(join(ROOT, f), 'utf-8')).not.toContain('localhost:3420')
   })

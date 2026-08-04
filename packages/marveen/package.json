@@ -1,0 +1,35 @@
+{
+  "name": "@marveen/core",
+  "version": "1.28.1",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "test": "cd ../.. && vitest run --config packages/marveen/vitest.config.ts",
+    "test:refactor-coverage": "vitest run --config vitest.refactor-coverage.config.ts --coverage",
+    "typecheck": "tsc --noEmit",
+    "syntax-check": "node --check web/app.js web/sw.js",
+    "smoke": "playwright test --config=playwright.config.ts"
+  },
+  "engines": {
+    "node": ">=20 <24"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.116",
+    "better-sqlite3": "^13.0.2",
+    "cron-parser": "^5.0.0",
+    "pino": "^9.6.0",
+    "pino-pretty": "^13.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.0",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.10.0",
+    "@vitest/coverage-v8": "^2.1.9",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}

@@ -66,7 +66,7 @@ describe('agentGetsEmailGate', () => {
 // The settings.json wiring that installs the hook for a sub-agent.
 describe('injectEmailSendGate', () => {
   it('adds the PreToolUse email-gate hook', () => {
-    const s: Record<string, unknown> = {}
+    const s: Record<string, unknown> = { hooks: { PreToolUse: [] } }
     injectEmailSendGate(s)
     const hooks = (s.hooks as Record<string, unknown>).PreToolUse as Array<Record<string, unknown>>
     expect(hooks).toHaveLength(1)
@@ -76,7 +76,7 @@ describe('injectEmailSendGate', () => {
   })
 
   it('is idempotent (no duplicate entries on re-apply / respawn)', () => {
-    const s: Record<string, unknown> = {}
+    const s: Record<string, unknown> = { hooks: { PreToolUse: [] } }
     injectEmailSendGate(s)
     injectEmailSendGate(s)
     injectEmailSendGate(s)

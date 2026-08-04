@@ -1,0 +1,16 @@
+[Unit]
+Description=Marveen dashboard service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory={{workingDirectory}}
+ExecStart={{command}}
+Restart=on-failure
+RestartSec=5
+Environment={{env}}
+EnvironmentFile=-{{envFile}}
+
+[Install]
+WantedBy=default.target

@@ -78,9 +78,18 @@ describe('package.json scripts', () => {
   })
 
   it('still contains the core scripts that must remain', () => {
-    const pkg = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8'))
+    // Phase 4 bun workspace: the root package.json is a thin aggregator whose
+    // scripts delegate to `bun --filter '*' <name>`. The actual `build`,
+    // `start`, `dev`, `test`, and `typecheck` scripts live in the per-package
+    // manifest (packages/marveen/package.json). Read both and assert the core
+    // names are reachable from at least one of them.
+    const root = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8'))
+    const core = JSON.parse(readFileSync(join(REPO_ROOT, 'packages/marveen/package.json'), 'utf8'))
     for (const name of ['build', 'start', 'dev', 'test', 'typecheck']) {
-      expect(pkg.scripts, `"${name}" script must remain`).toHaveProperty(name)
+      const reachable =
+        Object.prototype.hasOwnProperty.call(root.scripts ?? {}, name) ||
+        Object.prototype.hasOwnProperty.call(core.scripts ?? {}, name)
+      expect(reachable, `"${name}" script must remain in root or packages/marveen`).toBe(true)
     }
   })
 })

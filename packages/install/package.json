@@ -1,0 +1,38 @@
+{
+  "name": "@marveen/install",
+  "version": "1.28.1",
+  "type": "module",
+  "bin": {
+    "marveen-install": "./dist/cli.js"
+  },
+  "dependencies": {
+    "commander": "^15",
+    "chalk": "^6",
+    "ora": "^9",
+    "cli-progress": "^3",
+    "listr2": "^11",
+    "@inquirer/prompts": "^8",
+    "cli-table3": "^0.6",
+    "boxen": "^8",
+    "execa": "^10",
+    "conf": "^15",
+    "zod": "^3.23"
+  },
+  "devDependencies": {
+    "typescript": "^5.7",
+    "vitest": "^2.1",
+    "@vitest/coverage-v8": "^2.1",
+    "@types/cli-progress": "^3.11",
+    "@types/node": "^22",
+    "typescript-eslint": "^8",
+    "@stylistic/eslint-plugin": "^2",
+    "eslint": "^9"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
+    "start": "node dist/cli.js",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  }
+}

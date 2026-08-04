@@ -89,7 +89,7 @@ A dashboard Beállítások oldala egy háromrétegű konfigurációs rendszert k
 1. `store/config-overrides.json` -- a dashboard által mentett felülbírálatok
 2. Registry alapértelmezett érték (`src/config-registry.ts`)
 
-A `.env` fájl kizárólag a telepítés utáni egyszeri migráció forrása; az aktuális production runtime a `.env`-ből nem olvas beállításokat. A marveen-specifikus kulcsok a `store/config-overrides.json`-ba, a secret-ek a titkosított Vaultba kerülnek; a régi Marveen-kulcs használata konfigurációs hibát ad, nem csendes fallback-et.
+A `.env` fájl **kizárólag az operátor shell RC-jét szolgálja** (lokális `claude` parancsok, kézi smoke tesztek, debug). A service-ek a modell-szolgáltatói credentialt a **Vault**-ból olvassák (AES-256-GCM, master key a Keychain-ben / fájl-fallback), a nem-érzékeny konfigurációt pedig a `store/config-overrides.json`-ból. Az aktuális production runtime a `.env`-ből nem olvas beállításokat. A marveen-specifikus kulcsok a `store/config-overrides.json`-ba, a secret-ek a titkosított Vaultba kerülnek; a régi Marveen-kulcs használata konfigurációs hibát ad, nem csendes fallback-et.
 
 **`store/config-overrides.json` struktúra:**
 
@@ -392,21 +392,25 @@ Az MCP konfigurációk scope-olva vannak: az ágensek `agents/<name>/.mcp.json` 
 
 ## Környezeti változók (.env / launchd plist)
 
-A főbb konfigurációs változók a launchd plist-ben (`~/Library/LaunchAgents/com.marveen.dashboard.plist`) vagy a `.env` fájlban élnek.
+A `.env` fájl **kizárólag az operátor shell RC-jét szolgálja** (lokális `claude` parancsok, kézi smoke tesztek, debug). A service-ek a modell-szolgáltatói credentialt a Vault-ból olvassák, a nem-érzékeny beállításokat a `store/config-overrides.json`-ból. A `.env`-ben csak az alábbi, nem-érzékeny operátor-shell kulcsok maradnak:
 
 | Változó | Leírás |
 |---------|--------|
 | `CHANNEL_PROVIDER` | `telegram` vagy `slack` |
-| `TELEGRAM_BOT_TOKEN` | Telegram bot API token |
+| `TELEGRAM_BOT_TOKEN` | Telegram bot API token (channel scope) |
 | `ALLOWED_CHAT_ID` | Az egyetlen engedélyezett Telegram chat ID |
 | `SLACK_BOT_TOKEN` | Slack bot token (ha Slack provider) |
 | `SLACK_CHANNEL_ID` | Slack csatorna ID |
-| `WEB_PORT` | Dashboard port (alapértelmezett: 3420). Telepítéskor megadható a `--port <N>` CLI flaggel (`./install-linux.sh --port 3421`) vagy env-változóként (`WEB_PORT=3421 ./install.sh`). |
-| `ANTHROPIC_API_KEY` | Claude API kulcs |
+| `WEB_PORT` | Dashboard port (alapértelmezett: 3420). Telepítéskor megadható a `--port <N>` CLI flaggel (`./install.sh install --port 3421`) vagy env-változóként (`WEB_PORT=3421 ./install.sh`). |
 | `OWNER_NAME` | A tulajdonos neve (pl. "Jónás Gergő") |
 | `BOT_NAME` | A főágens neve (pl. "Jarvis") |
+| `MINIMAX_BASE_URL` | A MiniMax endpoint. A `MINIMAX_API_KEY` Vault secret-tel együtt használható. |
+| `OLLAMA_URL` | Ollama API alap-URL (memória-kereséshez) |
+| `DASHBOARD_PUBLIC_URL` | A dashboard nyilvánosan elérhető URL-je |
+| `DEFAULT_AGENT_MODEL` | Az új ügynökök alapértelmezett modellje (canonical `provider:model` ref) |
+| `AUTO_UPDATE_ENABLED` | Opt-in automatikus frissítés (0/1) |
 
-A `.env` fájl kizárólag a telepítés utáni egyszeri migráció forrása; az aktuális production runtime a `.env`-ből nem olvas beállításokat (lásd a `Beállítások rendszer` fejezetet). A dashboard Beállítások oldalán keresztül a `store/config-overrides.json`-ba, a titkokat a Vaultba írd.
+A `.env` SOHA nem tartalmaz modell-szolgáltatói API kulcsot (Anthropic, MiniMax, DeepSeek, OpenRouter). Ezek a telepítéskor a `marveen-install` `POST /api/vault` hívásával a Vaultba kerülnek, és a service indulás után onnan olvassa őket a runtime. A telepítés utáni kulcs-csere a dashboard `Beállítások` oldaláról (`POST /api/settings`) vagy a `marveen-install provider` parancs újbóli futtatásával történik.
 
 ---
 

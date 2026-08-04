@@ -214,16 +214,20 @@ describe('runtime-seeded placeholders are all substituted', () => {
     expect(scaffold, 'src/web/agent-scaffold.ts must use ${WEB_PORT}, not localhost:3420').not.toContain('localhost:3420')
   })
 
-  it('install scripts write WEB_PORT into the generated .env (heredoc contains WEB_PORT line)', () => {
-    for (const script of ['install-linux.sh', 'install-macos.sh']) {
-      const src = readFileSync(join(REPO_ROOT, script), 'utf-8')
-      // The .env heredoc block must contain a WEB_PORT= line so the runtime
-      // dashboard reads the correct port from .env and matches what the
-      // CLAUDE.md templates were seeded with at install time.
-      expect(src, `${script}: .env heredoc must contain WEB_PORT= line`).toMatch(/WEB_PORT=/)
-      // A --port CLI flag must exist so non-default-port installs are ergonomic.
-      expect(src, `${script}: must accept a --port CLI flag`).toMatch(/--port/)
-    }
+  it('install package writes WEB_PORT into the generated .env and exposes --port', () => {
+    // Phase 4 bun workspace: the install package lives at packages/install/.
+    // The TypeScript CLI replaces the legacy shell installer scripts. The
+    // --port flag must exist on the install command (commander) so non-default
+    // port installs stay ergonomic, and the .env write helper must reference
+    // WEB_PORT so the runtime dashboard matches the seeded CLAUDE.md templates.
+    const cliRoot = readFileSync(join(REPO_ROOT, 'packages/install/src/cli.ts'), 'utf-8')
+    const installCmd = readFileSync(join(REPO_ROOT, 'packages/install/src/commands/install.ts'), 'utf-8')
+    const systemdStep = readFileSync(join(REPO_ROOT, 'packages/install/src/steps/systemd.ts'), 'utf-8')
+    const launchdStep = readFileSync(join(REPO_ROOT, 'packages/install/src/steps/launchd.ts'), 'utf-8')
+    expect(cliRoot + installCmd, 'install command must accept a --port flag').toMatch(/--port/)
+    // WEB_PORT must be written into the unit/plist Environment so the
+    // runtime dashboard reads the same port the install was seeded with.
+    expect(systemdStep + launchdStep, 'install steps must reference WEB_PORT in unit/plist Environment').toMatch(/WEB_PORT/)
   })
 
   it('substituteTemplatePlaceholders with non-default WEB_PORT seeds the correct port into CLAUDE.md.template', () => {

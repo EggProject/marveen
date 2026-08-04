@@ -111,6 +111,19 @@ A telepítő végigvezet a beállításokon:
 4. Személyes beállítások (a bot neve és a termék/márka neve)
 5. Szolgáltatások indítása
 
+### marveen-install CLI
+
+A `./install.sh` wrapper a `marveen-install` parancsot indítja (a `@marveen/install` csomag). Elérhető szubparancsok:
+
+- `install` -- Marveen teljes telepítése (alapértelmezett flow)
+- `uninstall` -- Marveen eltávolítása (service-ek, szimbolikus linkek, conf)
+- `status` -- A szolgáltatások aktuális állapotának kiírása
+- `doctor` -- Diagnosztika: OS, bun, claude, node, service, vault, dashboard
+- `provider` -- Csak a modell-szolgáltató újraválasztása (Vault push)
+- `update` -- Marveen frissítése a legújabb verzióra
+
+További részletek: [docs/install-cli.md](docs/install-cli.md).
+
 ### Branding (saját márkanév)
 
 A platform szabadon márkázható telepítéskor. Két, egymástól **független** beállítás:

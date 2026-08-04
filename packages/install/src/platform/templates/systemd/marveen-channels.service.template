@@ -1,0 +1,15 @@
+[Unit]
+Description=Marveen channels bridge
+After=network-online.target marveen.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory={{workingDirectory}}
+ExecStart={{command}}
+Restart=on-failure
+RestartSec=10
+Environment={{env}}
+
+[Install]
+WantedBy=default.target

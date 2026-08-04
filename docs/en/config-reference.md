@@ -89,7 +89,7 @@ The dashboard Settings page manages a three-layer configuration system.
 1. `store/config-overrides.json` -- overrides saved by the dashboard
 2. Registry default (`src/config-registry.ts`)
 
-The `.env` file is ONLY an input source for the one-time post-install migration; the active production runtime does not read Marveen configuration from `.env`. Marveen keys land in `store/config-overrides.json` and secrets in the encrypted Vault; using a legacy Marveen key returns a typed configuration error, not a silent fallback.
+The `.env` file is **only an input source for the operator's shell RC** (local `claude` commands, manual smoke tests, debug). The active production runtime reads model-provider credentials from the **Vault** (AES-256-GCM, master key in the Keychain / file fallback) and non-secret configuration from `store/config-overrides.json`. Marveen keys land in `store/config-overrides.json` and secrets in the encrypted Vault; using a legacy Marveen key returns a typed configuration error, not a silent fallback.
 
 **`store/config-overrides.json` structure:**
 
@@ -372,21 +372,25 @@ MCP configurations are scoped: agent `agents/<name>/.mcp.json` files contain onl
 
 ## Environment Variables (.env / launchd plist)
 
-Key configuration variables live in the launchd plist (`~/Library/LaunchAgents/com.marveen.dashboard.plist`) or `.env` file.
+The `.env` file is **only an input source for the operator's shell RC** (local `claude` commands, manual smoke tests, debug). The active production runtime reads model-provider credentials from the Vault and non-secret settings from `store/config-overrides.json`. Only the following non-secret operator-shell keys remain in `.env`:
 
 | Variable | Description |
 |----------|-------------|
 | `CHANNEL_PROVIDER` | `telegram` or `slack` |
-| `TELEGRAM_BOT_TOKEN` | Telegram bot API token |
+| `TELEGRAM_BOT_TOKEN` | Telegram bot API token (channel scope) |
 | `ALLOWED_CHAT_ID` | The single allowed Telegram chat ID |
 | `SLACK_BOT_TOKEN` | Slack bot token (if Slack provider) |
 | `SLACK_CHANNEL_ID` | Slack channel ID |
-| `WEB_PORT` | Dashboard port (default: 3420). Can be set at install time via the `--port <N>` CLI flag (`./install-linux.sh --port 3421`) or as an env variable (`WEB_PORT=3421 ./install.sh`). |
-| `ANTHROPIC_API_KEY` | Claude API key |
+| `WEB_PORT` | Dashboard port (default: 3420). Can be set at install time via the `--port <N>` CLI flag (`./install.sh install --port 3421`) or as an env variable (`WEB_PORT=3421 ./install.sh`). |
 | `OWNER_NAME` | Owner name (e.g. "Jónás Gergő") |
 | `BOT_NAME` | Main agent name (e.g. "Jarvis") |
+| `MINIMAX_BASE_URL` | MiniMax endpoint. Used together with the `MINIMAX_API_KEY` Vault secret. |
+| `OLLAMA_URL` | Ollama API base URL (used for memory search) |
+| `DASHBOARD_PUBLIC_URL` | Publicly accessible URL of the dashboard |
+| `DEFAULT_AGENT_MODEL` | Default model for new agents (canonical `provider:model` ref) |
+| `AUTO_UPDATE_ENABLED` | Opt-in automatic update (0/1) |
 
-The `.env` file is ONLY an input source for the one-time post-install migration (see the "Settings System" section above). The active production runtime does NOT read Marveen configuration from `.env`; the dashboard Settings page writes to `store/config-overrides.json` and secrets go to the encrypted Vault.
+The `.env` file NEVER contains model-provider API keys (Anthropic, MiniMax, DeepSeek, OpenRouter). These are pushed to the Vault at install time via `marveen-install`'s `POST /api/vault` call, and the runtime reads them from there after the service starts. Post-install key rotation happens through the dashboard `Settings` page (`POST /api/settings`) or by re-running `marveen-install provider`.
 
 ---
 
