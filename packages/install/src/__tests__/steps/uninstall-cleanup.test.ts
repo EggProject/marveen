@@ -166,32 +166,41 @@ describe('removeStateConfDir', () => {
 })
 
 describe('stripRcMarveenLines + isMarveenLine', () => {
-  it('isMarveenLine filters empty/comment lines and matches Marveen exports', () => {
+  it('isMarveenLine filters empty/comment lines and matches ONLY exact legacy install lines', () => {
     expect(isMarveenLine('')).toBe(false)
     expect(isMarveenLine('   ')).toBe(false)
     expect(isMarveenLine('# a comment')).toBe(false)
     expect(isMarveenLine('export PATH=/usr/bin')).toBe(false)
-    expect(isMarveenLine('export PATH="$HOME/.bun/bin:$PATH"')).toBe(true)
-    expect(isMarveenLine('export BUN_INSTALL="$HOME/.bun"')).toBe(true)
-    expect(isMarveenLine('export DISABLE_AUTOUPDATER=1')).toBe(true)
+    // The ONLY two lines the legacy installer wrote that uninstall removes:
     expect(isMarveenLine('export PATH="$HOME/.local/bin:$PATH"')).toBe(true)
+    expect(isMarveenLine('export DISABLE_AUTOUPDATER=1')).toBe(true)
+    // Bun lines are NOT removed (Phase-5 user decision: keep bun):
+    expect(isMarveenLine('export PATH="$HOME/.bun/bin:$PATH"')).toBe(false)
+    expect(isMarveenLine('export BUN_INSTALL="$HOME/.bun"')).toBe(false)
   })
 
-  it('stripRcMarveenLines rewrites HOME RC files and writes backups', () => {
+  it('stripRcMarveenLines rewrites HOME RC files and preserves bun lines', () => {
     const fakeHome = mkdtempSync(join(tmpdir(), 'rc-fake-'))
     const bashrc = join(fakeHome, '.bashrc')
     const zshrc = join(fakeHome, '.zshrc')
-    writeFileSync(bashrc, '# comment\nexport PATH=/usr/bin\nexport PATH="$HOME/.bun/bin:$PATH"\n')
-    writeFileSync(zshrc, 'export BUN_INSTALL="$HOME/.bun"\n')
+    writeFileSync(bashrc, '# comment\nexport PATH="$HOME/.local/bin:$PATH"\nexport PATH="$HOME/.bun/bin:$PATH"\n')
+    writeFileSync(zshrc, 'export DISABLE_AUTOUPDATER=1\nexport BUN_INSTALL="$HOME/.bun"\n')
 
     setHomedirForTests(() => fakeHome)
     try {
       const { removedLines, files } = stripRcMarveenLines()
-      expect(removedLines).toBeGreaterThanOrEqual(2)
+      expect(removedLines).toBe(2) // .local/bin from .bashrc + DISABLE_AUTOUPDATER from .zshrc
       expect(files.find((f) => f.path === bashrc)?.removed).toBe(true)
       expect(files.find((f) => f.path === zshrc)?.removed).toBe(true)
-      expect(readFileSync(bashrc, 'utf-8')).not.toContain('.bun/bin')
-      expect(readFileSync(`${bashrc}.marveen.bak`, 'utf-8')).toContain('.bun/bin')
+      // Bun lines preserved:
+      expect(readFileSync(bashrc, 'utf-8')).toContain('.bun/bin')
+      expect(readFileSync(zshrc, 'utf-8')).toContain('BUN_INSTALL')
+      // Marveen lines removed:
+      expect(readFileSync(bashrc, 'utf-8')).not.toContain('.local/bin')
+      expect(readFileSync(zshrc, 'utf-8')).not.toContain('DISABLE_AUTOUPDATER')
+      // Backups hold the original:
+      expect(readFileSync(`${bashrc}.marveen.bak`, 'utf-8')).toContain('.local/bin')
+      expect(readFileSync(`${zshrc}.marveen.bak`, 'utf-8')).toContain('DISABLE_AUTOUPDATER')
     } finally {
       resetHomedirForTests()
       rmSync(fakeHome, { recursive: true, force: true })

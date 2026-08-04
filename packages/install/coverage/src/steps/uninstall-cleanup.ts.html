@@ -25,28 +25,28 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>102/102</span>
+                <span class='fraction'>97/97</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>44/44</span>
+                <span class='fraction'>42/42</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>17/17</span>
+                <span class='fraction'>16/16</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>102/102</span>
+                <span class='fraction'>97/97</span>
             </div>
         
             
@@ -232,7 +232,16 @@
 <a name='L167'></a><a href='#L167'>167</a>
 <a name='L168'></a><a href='#L168'>168</a>
 <a name='L169'></a><a href='#L169'>169</a>
-<a name='L170'></a><a href='#L170'>170</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
+<a name='L170'></a><a href='#L170'>170</a>
+<a name='L171'></a><a href='#L171'>171</a>
+<a name='L172'></a><a href='#L172'>172</a>
+<a name='L173'></a><a href='#L173'>173</a>
+<a name='L174'></a><a href='#L174'>174</a>
+<a name='L175'></a><a href='#L175'>175</a>
+<a name='L176'></a><a href='#L176'>176</a>
+<a name='L177'></a><a href='#L177'>177</a>
+<a name='L178'></a><a href='#L178'>178</a>
+<a name='L179'></a><a href='#L179'>179</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -271,14 +280,34 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">145x</span>
+<span class="cline-any cline-yes">145x</span>
+<span class="cline-any cline-yes">60x</span>
+<span class="cline-any cline-yes">60x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -313,17 +342,6 @@
 <span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-yes">18x</span>
 <span class="cline-any cline-yes">18x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">159x</span>
-<span class="cline-any cline-yes">159x</span>
-<span class="cline-any cline-yes">159x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">174x</span>
-<span class="cline-any cline-yes">174x</span>
-<span class="cline-any cline-yes">29x</span>
-<span class="cline-any cline-yes">29x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -439,22 +457,42 @@ export interface CleanupResult {
   error?: string
 }
 &nbsp;
-/** The 4 RC export lines the legacy installer guaranteed to append. */
+/**
+ * The exact lines the legacy shell installer (install-linux.sh /
+ * install-macos.sh) appended to $HOME/.bashrc and $HOME/.zshrc via the
+ * `ensure_in_rc` helper. The Phase-5 uninstall audit deliberately
+ * EXCLUDES the bun-related lines (BUN_INSTALL, .bun/bin PATH) because
+ * the user wanted those to remain even after uninstall -- the bun
+ * toolchain is shared with the user's other projects. The two
+ * lines below are Marveen-specific and safe to remove.
+ */
 export const RC_MARKERS = [
-  '.local/bin',
-  'BUN_INSTALL',
-  '.bun/bin',
-  'DISABLE_AUTOUPDATER',
+  'export PATH="$HOME/.local/bin:$PATH"',
+  'export DISABLE_AUTOUPDATER=1',
 ] as const
 &nbsp;
 /**
- * Detect Marveen lines in $HOME/.bashrc and $HOME/.zshrc and rewrite
- * each file with those lines stripped. Returns the count of lines
- * removed across all RC files for logging.
+ * Detect Marveen-owned lines in $HOME/.bashrc and $HOME/.zshrc.
  *
- * Backup semantics: the original file is moved to `&lt;file&gt;.marveen.bak`
- * before the rewrite so the operator can `mv .bashrc.marveen.bak .bashrc`
- * later if they discover they need one of the removed exports.
+ * Match policy: EXACT LINE EQUALITY on the trimmed line. The previous
+ * substring match (`.bun/bin`, `BUN_INSTALL`, etc.) was too broad --
+ * it ate the user's `export BUN_INSTALL="$HOME/.bun"` etc. because
+ * those literals HAPPEN to match the install's own lines. Exact
+ * match is the only safe option: the install writes a fixed set of
+ * literal lines, and we identify them by their full text.
+ */
+export function isMarveenLine(line: string): boolean {
+  const trimmed = line.trim()
+  if (trimmed === '' || trimmed.startsWith('#')) return false
+  return (RC_MARKERS as readonly string[]).includes(trimmed)
+}
+&nbsp;
+/**
+ * Rewrite $HOME/.bashrc and $HOME/.zshrc with the install-written lines
+ * stripped. Returns the count of lines removed across both files for
+ * logging. Backup semantics: the original file is moved to
+ * `&lt;file&gt;.marveen.bak` before the rewrite so the operator can
+ * `mv .bashrc.marveen.bak .bashrc` later if they want to restore.
  */
 export function stripRcMarveenLines(): { removedLines: number; files: CleanupResult[] } {
   const files: CleanupResult[] = []
@@ -467,7 +505,7 @@ export function stripRcMarveenLines(): { removedLines: number; files: CleanupRes
     }
     const content = readFileSync(path, 'utf-8')
     const before = content.split('\n').length
-    const kept = content.split('\n').filter((line) =&gt; !isMarveenLineForStrip(line)).join('\n')
+    const kept = content.split('\n').filter((line) =&gt; !isMarveenLine(line)).join('\n')
     const after = kept.split('\n').length
     removedLines += before - after
     if (kept === content) {
@@ -481,17 +519,6 @@ export function stripRcMarveenLines(): { removedLines: number; files: CleanupRes
     void existsSync(bakPath)
   }
   return { removedLines, files }
-}
-&nbsp;
-function isMarveenLineForStrip(line: string): boolean {
-  return isMarveenLine(line)
-}
-&nbsp;
-/** Helper used by tests to assert which lines would be stripped. */
-export function isMarveenLine(line: string): boolean {
-  const trimmed = line.trim()
-  if (trimmed === '' || trimmed.startsWith('#')) return false
-  return RC_MARKERS.some((marker) =&gt; trimmed.includes(marker))
 }
 &nbsp;
 /**
@@ -577,7 +604,7 @@ export function confPathForProject(projectSuffix: string): string {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-08-04T15:04:53.409Z
+                at 2026-08-04T15:34:49.588Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

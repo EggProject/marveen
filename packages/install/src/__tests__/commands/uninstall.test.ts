@@ -301,12 +301,15 @@ describe('commands/uninstall', () => {
 })
 
 describe('RC line stripping', () => {
-  it('detects Marveen lines via the marker list', async () => {
+  it('detects ONLY the exact legacy install lines (bun lines preserved)', async () => {
     const { isMarveenLine } = await import('../../steps/uninstall-cleanup.js')
-    expect(isMarveenLine('export PATH="$HOME/.bun/bin:$PATH"')).toBe(true)
-    expect(isMarveenLine('export BUN_INSTALL="$HOME/.bun"')).toBe(true)
-    expect(isMarveenLine('export DISABLE_AUTOUPDATER=1')).toBe(true)
+    // The ONLY two lines the legacy installer wrote that uninstall removes:
     expect(isMarveenLine('export PATH="$HOME/.local/bin:$PATH"')).toBe(true)
+    expect(isMarveenLine('export DISABLE_AUTOUPDATER=1')).toBe(true)
+    // Bun lines are NOT removed (Phase-5 user decision: keep bun):
+    expect(isMarveenLine('export PATH="$HOME/.bun/bin:$PATH"')).toBe(false)
+    expect(isMarveenLine('export BUN_INSTALL="$HOME/.bun"')).toBe(false)
+    // Comments / blanks / generic exports are never Marveen:
     expect(isMarveenLine('# comment')).toBe(false)
     expect(isMarveenLine('')).toBe(false)
     expect(isMarveenLine('export PATH=/usr/bin')).toBe(false)

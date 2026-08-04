@@ -36,22 +36,42 @@ export interface CleanupResult {
   error?: string
 }
 
-/** The 4 RC export lines the legacy installer guaranteed to append. */
+/**
+ * The exact lines the legacy shell installer (install-linux.sh /
+ * install-macos.sh) appended to $HOME/.bashrc and $HOME/.zshrc via the
+ * `ensure_in_rc` helper. The Phase-5 uninstall audit deliberately
+ * EXCLUDES the bun-related lines (BUN_INSTALL, .bun/bin PATH) because
+ * the user wanted those to remain even after uninstall -- the bun
+ * toolchain is shared with the user's other projects. The two
+ * lines below are Marveen-specific and safe to remove.
+ */
 export const RC_MARKERS = [
-  '.local/bin',
-  'BUN_INSTALL',
-  '.bun/bin',
-  'DISABLE_AUTOUPDATER',
+  'export PATH="$HOME/.local/bin:$PATH"',
+  'export DISABLE_AUTOUPDATER=1',
 ] as const
 
 /**
- * Detect Marveen lines in $HOME/.bashrc and $HOME/.zshrc and rewrite
- * each file with those lines stripped. Returns the count of lines
- * removed across all RC files for logging.
+ * Detect Marveen-owned lines in $HOME/.bashrc and $HOME/.zshrc.
  *
- * Backup semantics: the original file is moved to `<file>.marveen.bak`
- * before the rewrite so the operator can `mv .bashrc.marveen.bak .bashrc`
- * later if they discover they need one of the removed exports.
+ * Match policy: EXACT LINE EQUALITY on the trimmed line. The previous
+ * substring match (`.bun/bin`, `BUN_INSTALL`, etc.) was too broad --
+ * it ate the user's `export BUN_INSTALL="$HOME/.bun"` etc. because
+ * those literals HAPPEN to match the install's own lines. Exact
+ * match is the only safe option: the install writes a fixed set of
+ * literal lines, and we identify them by their full text.
+ */
+export function isMarveenLine(line: string): boolean {
+  const trimmed = line.trim()
+  if (trimmed === '' || trimmed.startsWith('#')) return false
+  return (RC_MARKERS as readonly string[]).includes(trimmed)
+}
+
+/**
+ * Rewrite $HOME/.bashrc and $HOME/.zshrc with the install-written lines
+ * stripped. Returns the count of lines removed across both files for
+ * logging. Backup semantics: the original file is moved to
+ * `<file>.marveen.bak` before the rewrite so the operator can
+ * `mv .bashrc.marveen.bak .bashrc` later if they want to restore.
  */
 export function stripRcMarveenLines(): { removedLines: number; files: CleanupResult[] } {
   const files: CleanupResult[] = []
@@ -64,7 +84,7 @@ export function stripRcMarveenLines(): { removedLines: number; files: CleanupRes
     }
     const content = readFileSync(path, 'utf-8')
     const before = content.split('\n').length
-    const kept = content.split('\n').filter((line) => !isMarveenLineForStrip(line)).join('\n')
+    const kept = content.split('\n').filter((line) => !isMarveenLine(line)).join('\n')
     const after = kept.split('\n').length
     removedLines += before - after
     if (kept === content) {
@@ -78,17 +98,6 @@ export function stripRcMarveenLines(): { removedLines: number; files: CleanupRes
     void existsSync(bakPath)
   }
   return { removedLines, files }
-}
-
-function isMarveenLineForStrip(line: string): boolean {
-  return isMarveenLine(line)
-}
-
-/** Helper used by tests to assert which lines would be stripped. */
-export function isMarveenLine(line: string): boolean {
-  const trimmed = line.trim()
-  if (trimmed === '' || trimmed.startsWith('#')) return false
-  return RC_MARKERS.some((marker) => trimmed.includes(marker))
 }
 
 /**

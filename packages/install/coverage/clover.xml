@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<coverage generated="1785855893439" clover="3.2.0">
-  <project timestamp="1785855893439" name="All files">
-    <metrics statements="2002" coveredstatements="2002" conditionals="746" coveredconditionals="735" methods="235" coveredmethods="235" elements="2983" coveredelements="2972" complexity="0" loc="2002" ncloc="2002" packages="9" files="40" classes="40"/>
+<coverage generated="1785857689616" clover="3.2.0">
+  <project timestamp="1785857689616" name="All files">
+    <metrics statements="1997" coveredstatements="1997" conditionals="744" coveredconditionals="733" methods="234" coveredmethods="234" elements="2975" coveredelements="2964" complexity="0" loc="1997" ncloc="1997" packages="9" files="40" classes="40"/>
     <package name="src">
       <metrics statements="31" coveredstatements="31" conditionals="3" coveredconditionals="3" methods="0" coveredmethods="0"/>
       <file name="cli.ts" path="/Users/eggp/marveen/packages/install/src/cli.ts">
@@ -53,18 +53,18 @@
         <line num="30" count="23" type="cond" truecount="1" falsecount="0"/>
         <line num="31" count="23" type="stmt"/>
         <line num="32" count="23" type="cond" truecount="1" falsecount="0"/>
-        <line num="33" count="68" type="stmt"/>
-        <line num="34" count="68" type="cond" truecount="1" falsecount="0"/>
-        <line num="35" count="68" type="cond" truecount="1" falsecount="0"/>
-        <line num="36" count="68" type="cond" truecount="1" falsecount="0"/>
+        <line num="33" count="69" type="stmt"/>
+        <line num="34" count="69" type="cond" truecount="1" falsecount="0"/>
+        <line num="35" count="69" type="cond" truecount="1" falsecount="0"/>
+        <line num="36" count="69" type="cond" truecount="1" falsecount="0"/>
         <line num="38" count="1" type="cond" truecount="1" falsecount="0"/>
-        <line num="39" count="48" type="stmt"/>
-        <line num="40" count="48" type="cond" truecount="1" falsecount="0"/>
+        <line num="39" count="49" type="stmt"/>
+        <line num="40" count="49" type="cond" truecount="1" falsecount="0"/>
         <line num="41" count="3" type="stmt"/>
         <line num="42" count="3" type="stmt"/>
-        <line num="44" count="48" type="cond" truecount="1" falsecount="0"/>
-        <line num="45" count="48" type="cond" truecount="1" falsecount="0"/>
-        <line num="46" count="48" type="stmt"/>
+        <line num="44" count="49" type="cond" truecount="1" falsecount="0"/>
+        <line num="45" count="49" type="cond" truecount="1" falsecount="0"/>
+        <line num="46" count="49" type="stmt"/>
         <line num="48" count="18" type="cond" truecount="1" falsecount="0"/>
         <line num="49" count="18" type="stmt"/>
         <line num="50" count="18" type="stmt"/>
@@ -1198,7 +1198,7 @@
       </file>
     </package>
     <package name="src.steps">
-      <metrics statements="624" coveredstatements="624" conditionals="254" coveredconditionals="246" methods="66" coveredmethods="66"/>
+      <metrics statements="619" coveredstatements="619" conditionals="252" coveredconditionals="244" methods="65" coveredmethods="65"/>
       <file name="build.ts" path="/Users/eggp/marveen/packages/install/src/steps/build.ts">
         <metrics statements="12" coveredstatements="12" conditionals="8" coveredconditionals="6" methods="1" coveredmethods="1"/>
         <line num="1" count="1" type="stmt"/>
@@ -1358,23 +1358,23 @@
       <file name="ollama-discovery.ts" path="/Users/eggp/marveen/packages/install/src/steps/ollama-discovery.ts">
         <metrics statements="89" coveredstatements="89" conditionals="32" coveredconditionals="32" methods="8" coveredmethods="8"/>
         <line num="1" count="1" type="stmt"/>
-        <line num="30" count="100" type="cond" truecount="1" falsecount="0"/>
-        <line num="31" count="100" type="cond" truecount="1" falsecount="0"/>
-        <line num="32" count="100" type="stmt"/>
-        <line num="33" count="100" type="cond" truecount="1" falsecount="0"/>
-        <line num="34" count="98" type="stmt"/>
-        <line num="35" count="100" type="cond" truecount="1" falsecount="0"/>
+        <line num="30" count="101" type="cond" truecount="1" falsecount="0"/>
+        <line num="31" count="101" type="cond" truecount="1" falsecount="0"/>
+        <line num="32" count="101" type="stmt"/>
+        <line num="33" count="101" type="cond" truecount="1" falsecount="0"/>
+        <line num="34" count="99" type="stmt"/>
+        <line num="35" count="101" type="cond" truecount="1" falsecount="0"/>
         <line num="36" count="2" type="stmt"/>
         <line num="37" count="2" type="stmt"/>
-        <line num="38" count="100" type="stmt"/>
+        <line num="38" count="101" type="stmt"/>
         <line num="40" count="7" type="cond" truecount="1" falsecount="0"/>
         <line num="45" count="7" type="stmt"/>
         <line num="46" count="7" type="cond" truecount="1" falsecount="0"/>
         <line num="47" count="7" type="cond" truecount="1" falsecount="0"/>
         <line num="48" count="7" type="cond" truecount="1" falsecount="0"/>
-        <line num="49" count="82" type="cond" truecount="2" falsecount="0"/>
-        <line num="50" count="78" type="stmt"/>
-        <line num="51" count="78" type="cond" truecount="1" falsecount="0"/>
+        <line num="49" count="83" type="cond" truecount="2" falsecount="0"/>
+        <line num="50" count="79" type="stmt"/>
+        <line num="51" count="79" type="cond" truecount="1" falsecount="0"/>
         <line num="52" count="3" type="stmt"/>
         <line num="53" count="3" type="stmt"/>
         <line num="55" count="10" type="cond" truecount="1" falsecount="0"/>
@@ -1440,12 +1440,12 @@
         <line num="124" count="1" type="cond" truecount="1" falsecount="0"/>
         <line num="125" count="1" type="stmt"/>
         <line num="126" count="1" type="stmt"/>
-        <line num="128" count="100" type="cond" truecount="1" falsecount="0"/>
-        <line num="129" count="100" type="stmt"/>
-        <line num="130" count="100" type="stmt"/>
-        <line num="132" count="78" type="cond" truecount="1" falsecount="0"/>
-        <line num="133" count="78" type="cond" truecount="1" falsecount="0"/>
-        <line num="134" count="78" type="stmt"/>
+        <line num="128" count="101" type="cond" truecount="1" falsecount="0"/>
+        <line num="129" count="101" type="stmt"/>
+        <line num="130" count="101" type="stmt"/>
+        <line num="132" count="79" type="cond" truecount="1" falsecount="0"/>
+        <line num="133" count="79" type="cond" truecount="1" falsecount="0"/>
+        <line num="134" count="79" type="stmt"/>
       </file>
       <file name="personal-info.ts" path="/Users/eggp/marveen/packages/install/src/steps/personal-info.ts">
         <metrics statements="35" coveredstatements="35" conditionals="17" coveredconditionals="17" methods="6" coveredmethods="6"/>
@@ -1709,7 +1709,7 @@
         <line num="39" count="1" type="stmt"/>
       </file>
       <file name="uninstall-cleanup.ts" path="/Users/eggp/marveen/packages/install/src/steps/uninstall-cleanup.ts">
-        <metrics statements="102" coveredstatements="102" conditionals="44" coveredconditionals="44" methods="17" coveredmethods="17"/>
+        <metrics statements="97" coveredstatements="97" conditionals="42" coveredconditionals="42" methods="16" coveredmethods="16"/>
         <line num="1" count="1" type="stmt"/>
         <line num="19" count="1" type="cond" truecount="1" falsecount="0"/>
         <line num="20" count="1" type="cond" truecount="1" falsecount="0"/>
@@ -1719,99 +1719,94 @@
         <line num="24" count="3" type="cond" truecount="1" falsecount="0"/>
         <line num="25" count="3" type="stmt"/>
         <line num="26" count="52" type="cond" truecount="1" falsecount="0"/>
-        <line num="40" count="1" type="stmt"/>
-        <line num="41" count="1" type="stmt"/>
-        <line num="42" count="1" type="stmt"/>
-        <line num="43" count="1" type="stmt"/>
-        <line num="44" count="1" type="stmt"/>
-        <line num="45" count="1" type="stmt"/>
-        <line num="56" count="1" type="cond" truecount="1" falsecount="0"/>
-        <line num="57" count="18" type="stmt"/>
-        <line num="58" count="18" type="stmt"/>
-        <line num="59" count="18" type="cond" truecount="1" falsecount="0"/>
-        <line num="60" count="36" type="stmt"/>
-        <line num="61" count="36" type="cond" truecount="2" falsecount="0"/>
-        <line num="62" count="18" type="stmt"/>
-        <line num="63" count="18" type="stmt"/>
-        <line num="64" count="18" type="stmt"/>
-        <line num="65" count="18" type="stmt"/>
-        <line num="66" count="18" type="stmt"/>
-        <line num="67" count="18" type="cond" truecount="1" falsecount="0"/>
-        <line num="68" count="18" type="stmt"/>
-        <line num="69" count="18" type="stmt"/>
-        <line num="70" count="21" type="cond" truecount="1" falsecount="0"/>
-        <line num="71" count="16" type="stmt"/>
-        <line num="72" count="16" type="stmt"/>
-        <line num="73" count="16" type="cond" truecount="1" falsecount="0"/>
-        <line num="74" count="2" type="stmt"/>
-        <line num="75" count="2" type="stmt"/>
-        <line num="76" count="2" type="stmt"/>
-        <line num="77" count="2" type="stmt"/>
-        <line num="78" count="2" type="stmt"/>
-        <line num="79" count="2" type="stmt"/>
-        <line num="80" count="18" type="stmt"/>
-        <line num="81" count="18" type="stmt"/>
-        <line num="83" count="159" type="cond" truecount="1" falsecount="0"/>
-        <line num="84" count="159" type="stmt"/>
-        <line num="85" count="159" type="stmt"/>
-        <line num="88" count="1" type="cond" truecount="1" falsecount="0"/>
-        <line num="89" count="174" type="stmt"/>
-        <line num="90" count="174" type="cond" truecount="3" falsecount="0"/>
-        <line num="91" count="29" type="cond" truecount="1" falsecount="0"/>
-        <line num="92" count="29" type="stmt"/>
-        <line num="101" count="1" type="cond" truecount="1" falsecount="0"/>
-        <line num="102" count="18" type="cond" truecount="2" falsecount="0"/>
-        <line num="103" count="17" type="stmt"/>
-        <line num="104" count="17" type="stmt"/>
-        <line num="105" count="17" type="stmt"/>
-        <line num="106" count="18" type="cond" truecount="1" falsecount="0"/>
-        <line num="107" count="1" type="stmt"/>
-        <line num="108" count="1" type="stmt"/>
-        <line num="109" count="18" type="stmt"/>
-        <line num="112" count="1" type="cond" truecount="1" falsecount="0"/>
-        <line num="113" count="17" type="cond" truecount="2" falsecount="0"/>
-        <line num="114" count="1" type="stmt"/>
-        <line num="115" count="1" type="stmt"/>
+        <line num="48" count="1" type="stmt"/>
+        <line num="49" count="1" type="stmt"/>
+        <line num="50" count="1" type="stmt"/>
+        <line num="51" count="1" type="stmt"/>
+        <line num="63" count="1" type="cond" truecount="1" falsecount="0"/>
+        <line num="64" count="145" type="stmt"/>
+        <line num="65" count="145" type="cond" truecount="3" falsecount="0"/>
+        <line num="66" count="60" type="stmt"/>
+        <line num="67" count="60" type="stmt"/>
+        <line num="76" count="1" type="cond" truecount="1" falsecount="0"/>
+        <line num="77" count="18" type="stmt"/>
+        <line num="78" count="18" type="stmt"/>
+        <line num="79" count="18" type="cond" truecount="1" falsecount="0"/>
+        <line num="80" count="36" type="stmt"/>
+        <line num="81" count="36" type="cond" truecount="2" falsecount="0"/>
+        <line num="82" count="18" type="stmt"/>
+        <line num="83" count="18" type="stmt"/>
+        <line num="84" count="18" type="stmt"/>
+        <line num="85" count="18" type="stmt"/>
+        <line num="86" count="18" type="stmt"/>
+        <line num="87" count="18" type="cond" truecount="1" falsecount="0"/>
+        <line num="88" count="18" type="stmt"/>
+        <line num="89" count="18" type="stmt"/>
+        <line num="90" count="21" type="cond" truecount="1" falsecount="0"/>
+        <line num="91" count="16" type="stmt"/>
+        <line num="92" count="16" type="stmt"/>
+        <line num="93" count="16" type="cond" truecount="1" falsecount="0"/>
+        <line num="94" count="2" type="stmt"/>
+        <line num="95" count="2" type="stmt"/>
+        <line num="96" count="2" type="stmt"/>
+        <line num="97" count="2" type="stmt"/>
+        <line num="98" count="2" type="stmt"/>
+        <line num="99" count="2" type="stmt"/>
+        <line num="100" count="18" type="stmt"/>
+        <line num="101" count="18" type="stmt"/>
+        <line num="110" count="1" type="cond" truecount="1" falsecount="0"/>
+        <line num="111" count="18" type="cond" truecount="2" falsecount="0"/>
+        <line num="112" count="17" type="stmt"/>
+        <line num="113" count="17" type="stmt"/>
+        <line num="114" count="17" type="stmt"/>
+        <line num="115" count="18" type="cond" truecount="1" falsecount="0"/>
         <line num="116" count="1" type="stmt"/>
-        <line num="119" count="1" type="cond" truecount="1" falsecount="0"/>
-        <line num="120" count="17" type="cond" truecount="3" falsecount="0"/>
-        <line num="121" count="15" type="stmt"/>
-        <line num="122" count="15" type="stmt"/>
-        <line num="123" count="15" type="stmt"/>
-        <line num="126" count="1" type="cond" truecount="1" falsecount="0"/>
-        <line num="127" count="18" type="stmt"/>
-        <line num="128" count="18" type="cond" truecount="1" falsecount="0"/>
-        <line num="129" count="36" type="stmt"/>
-        <line num="130" count="36" type="cond" truecount="1" falsecount="0"/>
-        <line num="131" count="4" type="stmt"/>
-        <line num="132" count="4" type="stmt"/>
-        <line num="133" count="4" type="cond" truecount="1" falsecount="0"/>
-        <line num="134" count="32" type="stmt"/>
-        <line num="135" count="32" type="stmt"/>
-        <line num="136" count="32" type="stmt"/>
-        <line num="137" count="18" type="stmt"/>
-        <line num="138" count="18" type="stmt"/>
-        <line num="141" count="1" type="cond" truecount="1" falsecount="0"/>
-        <line num="142" count="17" type="cond" truecount="2" falsecount="0"/>
-        <line num="143" count="1" type="stmt"/>
-        <line num="144" count="1" type="stmt"/>
-        <line num="145" count="1" type="stmt"/>
-        <line num="148" count="1" type="cond" truecount="1" falsecount="0"/>
-        <line num="149" count="17" type="cond" truecount="2" falsecount="0"/>
-        <line num="150" count="2" type="stmt"/>
-        <line num="151" count="2" type="stmt"/>
-        <line num="152" count="2" type="stmt"/>
-        <line num="155" count="1" type="cond" truecount="1" falsecount="0"/>
-        <line num="156" count="17" type="cond" truecount="2" falsecount="0"/>
-        <line num="157" count="1" type="stmt"/>
-        <line num="158" count="1" type="stmt"/>
-        <line num="159" count="1" type="stmt"/>
-        <line num="162" count="1" type="cond" truecount="1" falsecount="0"/>
-        <line num="163" count="15" type="stmt"/>
-        <line num="164" count="15" type="stmt"/>
-        <line num="167" count="1" type="cond" truecount="1" falsecount="0"/>
+        <line num="117" count="1" type="stmt"/>
+        <line num="118" count="18" type="stmt"/>
+        <line num="121" count="1" type="cond" truecount="1" falsecount="0"/>
+        <line num="122" count="17" type="cond" truecount="2" falsecount="0"/>
+        <line num="123" count="1" type="stmt"/>
+        <line num="124" count="1" type="stmt"/>
+        <line num="125" count="1" type="stmt"/>
+        <line num="128" count="1" type="cond" truecount="1" falsecount="0"/>
+        <line num="129" count="17" type="cond" truecount="3" falsecount="0"/>
+        <line num="130" count="15" type="stmt"/>
+        <line num="131" count="15" type="stmt"/>
+        <line num="132" count="15" type="stmt"/>
+        <line num="135" count="1" type="cond" truecount="1" falsecount="0"/>
+        <line num="136" count="18" type="stmt"/>
+        <line num="137" count="18" type="cond" truecount="1" falsecount="0"/>
+        <line num="138" count="36" type="stmt"/>
+        <line num="139" count="36" type="cond" truecount="1" falsecount="0"/>
+        <line num="140" count="4" type="stmt"/>
+        <line num="141" count="4" type="stmt"/>
+        <line num="142" count="4" type="cond" truecount="1" falsecount="0"/>
+        <line num="143" count="32" type="stmt"/>
+        <line num="144" count="32" type="stmt"/>
+        <line num="145" count="32" type="stmt"/>
+        <line num="146" count="18" type="stmt"/>
+        <line num="147" count="18" type="stmt"/>
+        <line num="150" count="1" type="cond" truecount="1" falsecount="0"/>
+        <line num="151" count="17" type="cond" truecount="2" falsecount="0"/>
+        <line num="152" count="1" type="stmt"/>
+        <line num="153" count="1" type="stmt"/>
+        <line num="154" count="1" type="stmt"/>
+        <line num="157" count="1" type="cond" truecount="1" falsecount="0"/>
+        <line num="158" count="17" type="cond" truecount="2" falsecount="0"/>
+        <line num="159" count="2" type="stmt"/>
+        <line num="160" count="2" type="stmt"/>
+        <line num="161" count="2" type="stmt"/>
+        <line num="164" count="1" type="cond" truecount="1" falsecount="0"/>
+        <line num="165" count="17" type="cond" truecount="2" falsecount="0"/>
+        <line num="166" count="1" type="stmt"/>
+        <line num="167" count="1" type="stmt"/>
         <line num="168" count="1" type="stmt"/>
-        <line num="169" count="1" type="stmt"/>
+        <line num="171" count="1" type="cond" truecount="1" falsecount="0"/>
+        <line num="172" count="15" type="stmt"/>
+        <line num="173" count="15" type="stmt"/>
+        <line num="176" count="1" type="cond" truecount="1" falsecount="0"/>
+        <line num="177" count="1" type="stmt"/>
+        <line num="178" count="1" type="stmt"/>
       </file>
       <file name="vault-push.ts" path="/Users/eggp/marveen/packages/install/src/steps/vault-push.ts">
         <metrics statements="52" coveredstatements="52" conditionals="32" coveredconditionals="32" methods="3" coveredmethods="3"/>
