@@ -1,6 +1,6 @@
 # needs-to-be-fix index
 
-Every bug MD filed in this session. Total count: 25
+Every bug MD filed in this session. Total count: 31
 (`find docs/needs-to-be-fix -name '*.md' | wc -l`).
 
 Sorted by severity: high (security / data loss / silent corruption),
@@ -32,6 +32,7 @@ dead code, doc issue).
 | `memory-digest-empty-trim` | `src/memory.ts:200-206` | `runDailyDigest` saves an empty digest when `runAgent` returns whitespace-only text | `src/__tests__/memory.test.ts` |
 | `multipart-case-sensitive-disposition` | `src/web/multipart.ts:17` | case-sensitive `Content-Disposition` filter silently drops conforming parts | `src/__tests__/multipart.test.ts` |
 | `profiles-replace-dollar-pattern` | `src/web/profiles.ts:51-56` | `resolveProfilePlaceholders` interpolates ctx values as `String.replace` patterns, so `$&` / `` $` `` in a path corrupts the emitted permission rule | `src/__tests__/profiles.test.ts` |
+| `model-fallback-runner-writemainmodel-nonobject` | `src/web/model-fallback-runner.ts:56-61` | `writeMainModel` guards only a JSON *parse* failure, so a `null` body throws (swap abandoned) and an array body silently drops the model while logging success | `src/__tests__/model-fallback-runner.test.ts` |
 
 ## Low
 
