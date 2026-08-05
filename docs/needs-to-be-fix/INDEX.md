@@ -19,6 +19,7 @@ dead code, doc issue).
 | `multipart-latin1-fields` | `src/web/multipart.ts:31,36` | text fields and filenames are latin1-decoded, so every non-ASCII value is mojibake | `src/__tests__/multipart.test.ts` |
 | `profiles-traversal-id` | `src/web/profiles.ts:42-49` | `loadProfileTemplate` never validates `id`, so `../` escapes `PROFILES_DIR` (arbitrary JSON read + security-profile bypass via unguarded `POST /api/agents`) | `src/__tests__/profiles.test.ts` |
 | `keychain-retrieve-swallows-locked-keychain` | `src/web/keychain.ts:32-34` | a locked keychain returns `null` like a missing item, so `vault.ts:44-49` overwrites the master key with `-U` and every stored secret becomes undecryptable | `src/__tests__/keychain.test.ts` |
+| `routes-memories-put-skips-validation` | `src/web/routes/memories.ts:237-245` | `PUT /api/memories/:id` skips the POST content/category checks, so `containsSuspiciousContent` (a prompt-injection control) is fully bypassable by editing an existing memory | `src/__tests__/memories-routes.test.ts` |
 
 ## Medium
 
@@ -37,6 +38,8 @@ dead code, doc issue).
 | `model-fallback-runner-writemainmodel-nonobject` | `src/web/model-fallback-runner.ts:56-61` | `writeMainModel` guards only a JSON *parse* failure, so a `null` body throws (swap abandoned) and an array body silently drops the model while logging success | `src/__tests__/model-fallback-runner.test.ts` |
 | `routes-ideas-comment-orphan` | `src/web/routes/ideas.ts:135-144` | `POST /api/ideas/:id/comments` never checks that the idea exists, so the comment is written to an unreachable `idea_id` and returns 200 | `src/__tests__/ideas-routes.test.ts` |
 | `routes-ideas-promote-double` | `src/web/routes/ideas.ts:149-172` | re-promoting a `kanban` idea creates a second card and overwrites `kanban_id`, orphaning the first card and breaking `revertIdeaFromKanban` | `src/__tests__/ideas-routes.test.ts` |
+| `routes-memories-nan-limit` | `src/web/routes/memories.ts:72` | `limit` is clamped only from above, so `?limit=abc` binds `NaN` (SqliteError -> 500) and `?limit=-1` returns every row (SQLite treats a negative LIMIT as unlimited) | `src/__tests__/memories-routes.test.ts` |
+| `routes-memories-put-tier-precedence` | `src/web/routes/memories.ts:242` | `PUT` resolves `tier \|\| category` while `POST` resolves `category \|\| tier`, so the deprecated field wins on edit and a round-trip silently reclassifies the row | `src/__tests__/memories-routes.test.ts` |
 
 ## Low
 
@@ -61,3 +64,4 @@ dead code, doc issue).
 | `routes-ideas-body-parse-500` | `src/web/routes/ideas.ts:43,86,138,152,201` | unguarded `JSON.parse` + destructuring throws out of the handler, so a malformed or `null` body returns 500 "Szerver hiba" instead of 400 | `src/__tests__/ideas-routes.test.ts` |
 | `routes-ideas-breakdown-nonerror` | `src/web/routes/ideas.ts:186-189` | `(err as Error).message` is undefined for a non-Error throw, so the 500 response body is `{}` | `src/__tests__/ideas-routes.test.ts` |
 | `routes-ideas-title-validation` | `src/web/routes/ideas.ts:51` | `title` is neither trimmed nor type-checked (unlike the sibling comment endpoint), so a whitespace-only title is stored and an object title 500s in the driver | `src/__tests__/ideas-routes.test.ts` |
+| `fleet-transfer-assertsafename-dead` | `src/web/fleet-transfer.ts:48-52` | `assertSafeName` is defined but never called from anywhere (validateNames inlines `SAFE_NAME_RE.test`); caps line coverage at 99.35% on fleet-transfer.ts | `src/__tests__/fleet-transfer-routes.test.ts` |
