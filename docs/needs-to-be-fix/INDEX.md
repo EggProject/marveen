@@ -35,6 +35,8 @@ dead code, doc issue).
 | `profiles-replace-dollar-pattern` | `src/web/profiles.ts:51-56` | `resolveProfilePlaceholders` interpolates ctx values as `String.replace` patterns, so `$&` / `` $` `` in a path corrupts the emitted permission rule | `src/__tests__/profiles.test.ts` |
 | `stuck-tool-call-watcher-skew-defer` | `src/web/stuck-tool-call-watcher.ts:141` | a future-dated respawn stamp makes `shouldDeferForRecentRespawn` suppress wedge recovery for the whole skew, not just the grace window | `src/__tests__/stuck-tool-call-watcher.test.ts` |
 | `model-fallback-runner-writemainmodel-nonobject` | `src/web/model-fallback-runner.ts:56-61` | `writeMainModel` guards only a JSON *parse* failure, so a `null` body throws (swap abandoned) and an array body silently drops the model while logging success | `src/__tests__/model-fallback-runner.test.ts` |
+| `routes-ideas-comment-orphan` | `src/web/routes/ideas.ts:135-144` | `POST /api/ideas/:id/comments` never checks that the idea exists, so the comment is written to an unreachable `idea_id` and returns 200 | `src/__tests__/ideas-routes.test.ts` |
+| `routes-ideas-promote-double` | `src/web/routes/ideas.ts:149-172` | re-promoting a `kanban` idea creates a second card and overwrites `kanban_id`, orphaning the first card and breaking `revertIdeaFromKanban` | `src/__tests__/ideas-routes.test.ts` |
 
 ## Low
 
@@ -56,3 +58,6 @@ dead code, doc issue).
 | `keychain-store-insecure-acl` | `src/web/keychain.ts:19` | the master key is written with `-A`, the flag `security(1)` labels "insecure, not recommended" (empty ACL); low because the key is readable without `-A` too | `src/__tests__/keychain.test.ts` |
 | `vault-bindings-unreachable-coverage` | `src/web/vault-bindings.ts:163,236` | `maskValue`'s `<= 6` branch and `serverHasVaultRefs`'s `!env` branch are unreachable from any caller (`looksLikeSensitiveValue`'s 8-char gate and the `if (!serverCfg.env) continue` guard filter both inputs) | `src/__tests__/vault-bindings.test.ts` |
 | `agent-process-unreachable-defensive-branches` | `src/web/agent-process.ts:777,1384,1512` | three unreachable defensive branches (`runTmux` remote default timeout, `restartAgentProcess` `||` error fallback, `answerFirstRunGates` loop-exhaustion `'unchanged'` arm) cap branch coverage at 99.38% | `src/__tests__/agent-process.test.ts` |
+| `routes-ideas-body-parse-500` | `src/web/routes/ideas.ts:43,86,138,152,201` | unguarded `JSON.parse` + destructuring throws out of the handler, so a malformed or `null` body returns 500 "Szerver hiba" instead of 400 | `src/__tests__/ideas-routes.test.ts` |
+| `routes-ideas-breakdown-nonerror` | `src/web/routes/ideas.ts:186-189` | `(err as Error).message` is undefined for a non-Error throw, so the 500 response body is `{}` | `src/__tests__/ideas-routes.test.ts` |
+| `routes-ideas-title-validation` | `src/web/routes/ideas.ts:51` | `title` is neither trimmed nor type-checked (unlike the sibling comment endpoint), so a whitespace-only title is stored and an object title 500s in the driver | `src/__tests__/ideas-routes.test.ts` |
