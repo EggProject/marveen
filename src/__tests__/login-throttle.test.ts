@@ -65,6 +65,8 @@ describe('known vs unknown username indistinguishability', () => {
 
   it('runDummyVerify resolves without throwing (timing equalizer path)', async () => {
     await expect(runDummyVerify('any-password')).resolves.toBeUndefined()
+    // Second call exercises the cached dummyHashPromise branch (line 90).
+    await expect(runDummyVerify('another-password')).resolves.toBeUndefined()
   })
 })
 
