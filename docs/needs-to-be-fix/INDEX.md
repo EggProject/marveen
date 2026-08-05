@@ -1,6 +1,6 @@
 # needs-to-be-fix index
 
-Every bug MD filed in this session. Total count: 36
+Every bug MD filed in this session. Total count: 44
 (`find docs/needs-to-be-fix -name '*.md' | wc -l`).
 
 Sorted by severity: high (security / data loss / silent corruption),
@@ -45,6 +45,7 @@ dead code, doc issue).
 | `pane-state-defensive-branches` | `src/pane-state.ts:1064,1066,1104,1136,1161,1165,1489` | unreachable defensive branches block 100% branch coverage | `src/__tests__/pane-state.test.ts` |
 | `store-watcher-sensitive-names-unreachable` | `src/store-watcher.ts:142` | `SENSITIVE_NAMES` branch is dead code (`is_sensitive` can never be 1) | `src/__tests__/store-watcher.test.ts` |
 | `index-unreachable-coverage` | `src/index.ts:174,283,382` | three functions are unreachable from the test harness | `src/__tests__/index.test.ts` |
+| `channel-invites-unreachable-defensive-branches` | `src/web/channel-invites.ts:108,236` | two defensive `if` guards are unreachable through public API; callers gate on the same property | `src/__tests__/channel-invites.test.ts` |
 | `web-worker-warmup-ignores-close` | `src/web.ts:339-364` (warm-up) vs `544` (close override) | agent-worker warm-up import has no `close()` cancel flag, unlike the liveness monitor | `src/__tests__/web-server.test.ts` |
 | `auto-restart-parsehhmm-integer-guard` | `src/auto-restart.ts:63` | `parseHHMM`'s `Number.isInteger` guard is dead code | `src/__tests__/auto-restart.test.ts` |
 | `agent-detect-linux-libc-redundant-guard` | `src/agent.ts:72-80` (line 73) | `detectLinuxLibc`'s platform check is unreachable in production | `src/__tests__/agent-run-paths.test.ts` |
