@@ -1,6 +1,6 @@
 # needs-to-be-fix index
 
-Every bug MD filed in this session. Total count: 45
+Every bug MD filed in this session. Total count: 48
 (`find docs/needs-to-be-fix -name '*.md' | wc -l`).
 
 Sorted by severity: high (security / data loss / silent corruption),
@@ -20,6 +20,8 @@ dead code, doc issue).
 | `profiles-traversal-id` | `src/web/profiles.ts:42-49` | `loadProfileTemplate` never validates `id`, so `../` escapes `PROFILES_DIR` (arbitrary JSON read + security-profile bypass via unguarded `POST /api/agents`) | `src/__tests__/profiles.test.ts` |
 | `keychain-retrieve-swallows-locked-keychain` | `src/web/keychain.ts:32-34` | a locked keychain returns `null` like a missing item, so `vault.ts:44-49` overwrites the master key with `-U` and every stored secret becomes undecryptable | `src/__tests__/keychain.test.ts` |
 | `routes-memories-put-skips-validation` | `src/web/routes/memories.ts:237-245` | `PUT /api/memories/:id` skips the POST content/category checks, so `containsSuspiciousContent` (a prompt-injection control) is fully bypassable by editing an existing memory | `src/__tests__/memories-routes.test.ts` |
+| `test-suite-store-pollution-store-dir-frozen` | `src/__tests__/db-100.test.ts:1655-1717` + `src/config.ts:12-13` | `STORE_DIR` is frozen at module load (`__dirname/../store`); `db-100.test.ts:migrateTaskRunsFromJson` writes the live `./store/task-run-history.json`, renames it to `.migrated`, and the cleanup block fails to restore it -- production state mutated by the test suite | `src/__tests__/db-100.test.ts` |
+| `test-suite-guard-marker-only-blind` | `src/__tests__/setup/assert-not-live-install.ts:26-30` (pre-2026-08-06) | the live-install guard checked only 3 marker files (`.dashboard-token`, `claudeclaw.db`, `.claude-oauth-token`); the `task-run-history.json.migrated`, `agent-taskstate/`, `costops-config.json.example` artifacts all slipped through and the suite happily mutated production state | `src/__tests__/setup/assert-not-live-install.ts` |
 
 ## Medium
 
@@ -65,3 +67,4 @@ dead code, doc issue).
 | `routes-ideas-breakdown-nonerror` | `src/web/routes/ideas.ts:186-189` | `(err as Error).message` is undefined for a non-Error throw, so the 500 response body is `{}` | `src/__tests__/ideas-routes.test.ts` |
 | `routes-ideas-title-validation` | `src/web/routes/ideas.ts:51` | `title` is neither trimmed nor type-checked (unlike the sibling comment endpoint), so a whitespace-only title is stored and an object title 500s in the driver | `src/__tests__/ideas-routes.test.ts` |
 | `fleet-transfer-assertsafename-dead` | `src/web/fleet-transfer.ts:48-52` | `assertSafeName` is defined but never called from anywhere (validateNames inlines `SAFE_NAME_RE.test`); caps line coverage at 99.35% on fleet-transfer.ts | `src/__tests__/fleet-transfer-routes.test.ts` |
+| `test-suite-llm-api-audit-clean` | audit doc (not a bug) | the suite never makes a real LLM call, never reaches a real HTTP endpoint, and never spawns a real child process; every layer is mocked (`globalThis.fetch = vi.fn`, `vi.mock('../agent.js')`, `vi.mock('@anthropic-ai/claude-agent-sdk')`, `vi.mock('node:child_process')`). The user's "LLM call during tests" concern is unfounded; only side effect is the `./store/` pollution | n/a (audit record) |
