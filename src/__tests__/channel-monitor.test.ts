@@ -736,8 +736,18 @@ describe('hardRestartMarveenChannels', () => {
   // make that call return true. The real /Library/LaunchDaemons/... path is
   // not writable from the sandbox, so we re-import the SUT with a partial
   // vi.mock('node:fs', ...) that returns true ONLY for the plist path.
+  //
+  // We MUST also re-mock '../config.js' to point PROJECT_ROOT at the sandbox:
+  // vi.resetModules() drops the suite-level vi.mock('../config.js') too, and
+  // the SUT computes RESPAWN_STAMP_FILE at module load. Without this re-mock
+  // any writeRespawnStamp() call inside the test would land in the live
+  // ./store/.channel-last-respawn and trip the next suite's live-install guard.
   async function importWithExistsOverride(existsImpl: (p: unknown) => boolean): Promise<typeof import('../web/channel-monitor.js')> {
     vi.resetModules()
+    vi.doMock('../config.js', async (orig) => {
+      const actual = await orig<typeof import('../config.js')>()
+      return { ...actual, PROJECT_ROOT: sandbox.PROJECT_ROOT, STORE_DIR: join(sandbox.PROJECT_ROOT, 'store') }
+    })
     vi.doMock('node:fs', async (orig) => {
       const actual = await orig<typeof import('node:fs')>()
       return {
@@ -762,6 +772,7 @@ describe('hardRestartMarveenChannels', () => {
     expect(m.execFileSync).toHaveBeenCalledWith('/bin/launchctl', ['unload', '/Library/LaunchDaemons/com.marveen.channels.plist'], expect.any(Object))
     expect(m.execFileSync).toHaveBeenCalledWith('/bin/launchctl', ['load', '/Library/LaunchDaemons/com.marveen.channels.plist'], expect.any(Object))
     vi.doUnmock('node:fs')
+    vi.doUnmock('../config.js')
     vi.resetModules()
   })
 
@@ -775,6 +786,7 @@ describe('hardRestartMarveenChannels', () => {
     expect(r.ok).toBe(false)
     expect(r.error).toContain('launchctl denied')
     vi.doUnmock('node:fs')
+    vi.doUnmock('../config.js')
     vi.resetModules()
   })
 

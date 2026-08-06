@@ -1,6 +1,6 @@
 # needs-to-be-fix index
 
-Every bug MD filed in this session. Total count: 48
+Every bug MD filed in this session. Total count: 50
 (`find docs/needs-to-be-fix -name '*.md' | wc -l`).
 
 Sorted by severity: high (security / data loss / silent corruption),
@@ -69,4 +69,6 @@ dead code, doc issue).
 | `routes-ideas-title-validation` | `src/web/routes/ideas.ts:51` | `title` is neither trimmed nor type-checked (unlike the sibling comment endpoint), so a whitespace-only title is stored and an object title 500s in the driver | `src/__tests__/ideas-routes.test.ts` |
 | `fleet-transfer-assertsafename-dead` | `src/web/fleet-transfer.ts:48-52` | `assertSafeName` is defined but never called from anywhere (validateNames inlines `SAFE_NAME_RE.test`); caps line coverage at 99.35% on fleet-transfer.ts | `src/__tests__/fleet-transfer-routes.test.ts` |
 | `test-suite-llm-api-audit-clean` | audit doc (not a bug) | the suite never makes a real LLM call, never reaches a real HTTP endpoint, and never spawns a real child process; every layer is mocked (`globalThis.fetch = vi.fn`, `vi.mock('../agent.js')`, `vi.mock('@anthropic-ai/claude-agent-sdk')`, `vi.mock('node:child_process')`). The user's "LLM call during tests" concern is unfounded; only side effect is the `./store/` pollution | n/a (audit record) |
+| `overview-routes-yesterday-timestamp-flake` | `src/__tests__/overview-routes.test.ts:534` (was `now - 25h`) | the "yesterday" timestamp is computed as `now - 25 * 60 * 60 * 1000`, which only falls in the `[yesterday, startTs)` bin when `now >= 01:00 LOCAL`. Tests run just past midnight (00:00-01:00) flake-fail because the line lands in the day-before-yesterday bin | `src/__tests__/overview-routes.test.ts` |
+| `channel-monitor-importwith-existsoverride-leaks-live-store` | `src/__tests__/channel-monitor.test.ts:739` `importWithExistsOverride` | `vi.resetModules()` drops the suite-level `vi.mock('../config.js', ...)`; the function only re-mocks `node:fs`, so the re-imported SUT computes `RESPAWN_STAMP_FILE` against the live `PROJECT_ROOT`. `writeRespawnStamp()` during these tests lands in the live `./store/.channel-last-respawn`, tripping the live-install guard on parallel suite runs | `src/__tests__/channel-monitor.test.ts` |
 | `channel-poller-reap-isclaudebinary-unreachable-fallbacks` | `src/web/channel-poller-reap.ts:267,268` | `isClaudeBinary`'s two `?? ''` arms are unreachable (`split(sep, 1)` always yields >= 1 element, `pop()` on it never returns `undefined`); reached in the suite only by patching `String.prototype.split` | `src/__tests__/channel-poller-reap.test.ts` |

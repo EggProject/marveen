@@ -531,7 +531,14 @@ describe('tryHandleOverview -- tasksToday / tasksYesterday', () => {
     const projectsDir = join(sandboxHome, '.claude', 'projects', 'p1')
     mkdirSync(projectsDir, { recursive: true })
     const now = Date.now()
-    const tsYesterday = now - 25 * 60 * 60 * 1000 // ~25h ago
+    const startOfDay = new Date(now); startOfDay.setHours(0, 0, 0, 0)
+    const startTs = startOfDay.getTime()
+    // 1h after midnight yesterday -- inside the [yesterday, startTs) bin at any
+    // wall-clock time. The earlier `now - 25h` only worked when now >= 01:00
+    // LOCAL; just past midnight it landed in the day-before-yesterday bin and
+    // the test flake-failed. See docs/needs-to-be-fix/overview-routes-yesterday-
+    // timestamp-flake.md for the full failure scenario.
+    const tsYesterday = startTs - 1 * 60 * 60 * 1000
     writeFileSync(join(projectsDir, 'session.jsonl'),
       [
         JSON.stringify({ type: 'user', message: { content: 'today prompt' }, timestamp: new Date(now - 1000).toISOString() }),
