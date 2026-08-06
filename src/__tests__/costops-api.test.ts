@@ -1,11 +1,29 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { writeFileSync, unlinkSync, existsSync, mkdirSync } from 'node:fs'
-import { dirname } from 'node:path'
-import { initDatabase, getDb } from '../db.js'
-import { tryHandleCosts, startCostsSyncTask } from '../web/routes/costs.js'
-import { monthWindow } from '../costops/ledger.js'
-import { COSTOPS_CONFIG_PATH } from '../costops/config.js'
+import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from 'vitest'
+import { writeFileSync, unlinkSync, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { tmpdir } from 'node:os'
 import type { RouteContext } from '../web/routes/types.js'
+
+// ENFORCED sandbox -- COSTOPS_CONFIG_PATH and COSTOPS_EXAMPLE_PATH are computed
+// from PROJECT_ROOT at module load time (src/costops/config.ts:13,16-17), and
+// loadCostopsConfig()'s missing-config branch writes the example skeleton.
+// Without redirecting PROJECT_ROOT/STORE_DIR into a tmpdir-scoped sandbox,
+// this suite would write live ./store/costops-config.json* files and trip the
+// strengthened live-install guard (src/__tests__/setup/assert-not-live-install.ts).
+const SANDBOX = mkdtempSync(join(tmpdir(), 'costops-api-'))
+const STORE = join(SANDBOX, 'store')
+
+vi.mock('../config.js', async (orig) => {
+  const actual = await orig<typeof import('../config.js')>()
+  return { ...actual, PROJECT_ROOT: SANDBOX, STORE_DIR: STORE }
+})
+
+// ALL imports that pull COSTOPS_CONFIG_PATH or transitively call
+// loadCostopsConfig MUST come AFTER the mock.
+const { initDatabase, getDb } = await import('../db.js')
+const { tryHandleCosts, startCostsSyncTask } = await import('../web/routes/costs.js')
+const { monthWindow } = await import('../costops/ledger.js')
+const { COSTOPS_CONFIG_PATH } = await import('../costops/config.js')
 
 // Minimal fake ServerResponse capturing what json() writes.
 function fakeCtx(path: string, method = 'GET'): { ctx: RouteContext; out: { status: number; body: any } } {
@@ -95,4 +113,8 @@ describe('costops API (route smoke)', () => {
       expect(row?.billed_cost).toBe(22000)
     })
   })
+})
+
+afterAll(() => {
+  rmSync(SANDBOX, { recursive: true, force: true })
 })

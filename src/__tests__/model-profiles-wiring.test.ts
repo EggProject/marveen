@@ -6,20 +6,35 @@
 // this covers the part the unit tests cannot: that readAgentModel still answers
 // what it always answered.
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from 'node:fs';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { mkdirSync, writeFileSync, rmSync, readFileSync, mkdtempSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import {
+
+// ENFORCED sandbox -- the previous version of this file wrote to
+// <repoRoot>/store/model-profile-map.json directly. agent-config.ts computes
+// MODEL_PROFILE_MAP_PATH and AGENTS_BASE_DIR from PROJECT_ROOT at module load
+// time (agent-config.ts:15, :77), so the only safe path is to redirect
+// PROJECT_ROOT to a tmpdir-scoped sandbox BEFORE the module loads.
+const SANDBOX = mkdtempSync(join(tmpdir(), 'model-profiles-wiring-'))
+const STORE = join(SANDBOX, 'store')
+const MAP_PATH = join(STORE, 'model-profile-map.json')
+
+vi.mock('../config.js', async (orig) => {
+  const actual = await orig<typeof import('../config.js')>()
+  return { ...actual, PROJECT_ROOT: SANDBOX, STORE_DIR: STORE }
+})
+
+// ALL imports that transitively reach config.js MUST come AFTER the mock.
+const {
   readAgentModel,
   resolveAgentModelDetailed,
   invalidateModelProfileMapCache,
   AGENTS_BASE_DIR,
-} from '../web/agent-config.js';
+} = await import('../web/agent-config.js')
 
 const SRC = join(dirname(fileURLToPath(import.meta.url)), '..');
-const PROJECT_ROOT = join(SRC, '..');
-const MAP_PATH = join(PROJECT_ROOT, 'store', 'model-profile-map.json');
 
 const MAP = {
   version: 'wiring-test-1',
@@ -43,8 +58,8 @@ const FIXTURES: Record<string, Record<string, unknown>> = {
 let createdStore = false;
 
 beforeAll(() => {
-  createdStore = !existsSync(join(PROJECT_ROOT, 'store'));
-  mkdirSync(join(PROJECT_ROOT, 'store'), { recursive: true });
+  createdStore = !existsSync(STORE);
+  mkdirSync(STORE, { recursive: true });
   writeFileSync(MAP_PATH, JSON.stringify(MAP, null, 2));
   invalidateModelProfileMapCache();
   for (const [name, cfg] of Object.entries(FIXTURES)) {
@@ -56,8 +71,9 @@ beforeAll(() => {
 afterAll(() => {
   for (const name of Object.keys(FIXTURES)) rmSync(join(AGENTS_BASE_DIR, name), { recursive: true, force: true });
   rmSync(MAP_PATH, { force: true });
-  if (createdStore) rmSync(join(PROJECT_ROOT, 'store'), { recursive: true, force: true });
+  if (createdStore) rmSync(STORE, { recursive: true, force: true });
   invalidateModelProfileMapCache();
+  rmSync(SANDBOX, { recursive: true, force: true });
 });
 
 describe('additive over the existing selector', () => {

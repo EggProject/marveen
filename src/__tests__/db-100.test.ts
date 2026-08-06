@@ -23,6 +23,30 @@ import * as fs from 'node:fs'
 import Database from 'better-sqlite3'
 import { STORE_DIR, DB_FILENAME } from '../config.js'
 
+// SANDBOX STORE_DIR — without this, the migrateTaskRunsFromJson tests below
+// write task-run-history.json into the live checkout's ./store/ (config.ts:13
+// freezes STORE_DIR at module load via __dirname). The live-install guard
+// catches the resulting `.migrated` artifact on the next suite run and
+// hard-fails the whole batch. vi.hoisted runs before vi.mock so the
+// SANDBOX_STORE_DIR is available to the factory closure.
+//
+// We compute the path synchronously here (no fs call) so vi.hoisted does not
+// need to await anything. The directory itself is created in `beforeAll`.
+const sandbox = vi.hoisted(() => {
+  // `tmpdir` is a sync builtin import via node:os; vitest hoists vi.hoisted
+  // above static imports, so we use Node's CJS `require` instead of ESM.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { tmpdir } = require('node:os') as typeof import('node:os')
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { join } = require('node:path') as typeof import('node:path')
+  const stamp = `${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`
+  return { STORE_DIR: join(tmpdir(), `db100-store-${stamp}`) }
+})
+vi.mock('../config.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../config.js')>()
+  return { ...actual, STORE_DIR: sandbox.STORE_DIR }
+})
+
 // ---------------------------------------------------------------------------
 // Mock fetch (Ollama embeddings) -- global so hybridSearch/backfillEmbeddings
 // can be driven without a real Ollama.
@@ -42,11 +66,12 @@ function setFetchThrow(err: Error): void {
 }
 
 // ---------------------------------------------------------------------------
-// Mocks for tighter paths (pre-create openSync + chmod failure)
+// Mocks for tighter paths (pre-create openSync + chmod + mkdir failures)
 // ---------------------------------------------------------------------------
 const fsState = {
   openSyncImpl: openSync,
   chmodShouldThrow: false as boolean,
+  mkdirSyncShouldThrow: undefined as Error | undefined,
 }
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>()
@@ -56,6 +81,10 @@ vi.mock('node:fs', async (importOriginal) => {
       if (fsState.chmodShouldThrow) throw new Error('mock chmod fail')
       return (actual.chmodSync as unknown as typeof chmodSync)(p, mode)
     }) as typeof chmodSync,
+    mkdirSync: ((p: fs.PathLike, opts: unknown) => {
+      if (fsState.mkdirSyncShouldThrow) throw fsState.mkdirSyncShouldThrow
+      return (actual.mkdirSync as unknown as typeof import('node:fs').mkdirSync)(p, opts)
+    }) as typeof import('node:fs').mkdirSync,
   }
 })
 
@@ -131,12 +160,17 @@ let priorHome: string | undefined
 
 beforeAll(() => {
   tmpDir = mkdtempSync(join(tmpdir(), 'db100-'))
+  // Pre-create the sandbox STORE_DIR so the migrateTaskRunsFromJson tests
+  // can write task-run-history.json into a known-empty directory. initDatabase
+  // normally mkdirSync's this, but for the migrate test we touch it directly.
+  fs.mkdirSync(sandbox.STORE_DIR, { recursive: true })
   initDatabase(':memory:')
 })
 
 afterAll(() => {
   globalThis.fetch = originalFetch
   try { rmSync(tmpDir, { recursive: true, force: true }) } catch { /* noop */ }
+  try { rmSync(sandbox.STORE_DIR, { recursive: true, force: true }) } catch { /* noop */ }
 })
 
 beforeEach(() => {
@@ -1207,16 +1241,13 @@ describe('branch coverage helpers', () => {
     // false ternary branch, allow mkdirSync to no-op and mock Database.pragma
     // to throw AFTER the ternary is evaluated. Clean up the prod-DB file we
     // create in the process so a follow-up `initDatabase()` is not surprising.
-    const realMkdirSync = fs.mkdirSync
     const realPragma = Database.prototype.pragma
-    fs.mkdirSync = (() => undefined) as typeof fs.mkdirSync
     Database.prototype.pragma = function (): never { throw new Error('mock pragma fail') }
     const prodDbPath = join(STORE_DIR, DB_FILENAME)
     const prodExisted = existsSync(prodDbPath)
     try {
       expect(() => initDatabase()).toThrow('mock pragma fail')
     } finally {
-      fs.mkdirSync = realMkdirSync
       Database.prototype.pragma = realPragma
       if (!prodExisted) {
         // Best-effort cleanup; the suite MUST NOT leave a prod DB file behind.
@@ -2158,22 +2189,11 @@ describe('initDatabase: full branch coverage', () => {
     // We use a temporary cwd by pre-creating an empty dir + an isolated
     // STORE_DIR via mocking the imported STORE_DIR. Easier: spy on
     // fs.mkdirSync so we can confirm it was invoked with STORE_DIR.
-    const original = fs.mkdirSync
-    let called = false
-    fs.mkdirSync = ((p: fs.PathLike, opts: unknown) => {
-      if (typeof p === 'string' && p.endsWith('store') && !called) {
-        called = true
-        // Return without actually mkdir-ing -- the next step is to open
-        // a DB; we abort by throwing to short-circuit.
-        throw new Error('mock mkdir done')
-      }
-      return original(p, opts)
-    }) as typeof fs.mkdirSync
+    fsState.mkdirSyncShouldThrow = new Error('mock mkdir done')
     try {
       expect(() => initDatabase()).toThrow('mock mkdir done')
-      expect(called).toBe(true)
     } finally {
-      fs.mkdirSync = original
+      fsState.mkdirSyncShouldThrow = undefined
       initDatabase(':memory:')
     }
   })
