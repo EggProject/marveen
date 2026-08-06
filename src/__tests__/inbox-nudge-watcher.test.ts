@@ -8,6 +8,22 @@
 // exact sequence of tick executions.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
+// SANDBOX STORE_DIR -- redirect PROJECT_ROOT/STORE_DIR to a tmpdir so modules
+// that freeze those paths at module load (channel-monitor.ts:828
+// RESPAWN_STAMP_FILE, channel-coordinator/liveness.ts:30 RESPAWN_STAMP_FILE,
+// store-watcher.ts:29 SENSITIVE_NAMES) don't pollute the live ./store/.
+// Merged into the existing '../config.js' mock factory below.
+const configSandbox = vi.hoisted(() => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { tmpdir } = require('node:os') as typeof import('node:os')
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { join } = require('node:path') as typeof import('node:path')
+  const stamp = `${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`
+  const dir = join(tmpdir(), `cfg-${stamp}`)
+  return { PROJECT_ROOT: dir, STORE_DIR: join(dir, 'store') }
+})
+
+
 const mockGetPending = vi.fn<() => Array<{ id: number; created_at: number }>>()
 const mockIsReady = vi.fn<(session: string, host: string | null) => Promise<boolean>>()
 const mockSend = vi.fn<(session: string, text: string, host: string | null, opts: { onBusyTimeout: 'send' | 'abort'; idleTimeoutMs: number }) => Promise<'sent' | 'aborted-busy'>>()
@@ -31,6 +47,7 @@ vi.mock('../logger.js', () => ({
 }))
 
 vi.mock('../config.js', () => ({
+  ...configSandbox,
   MAIN_AGENT_ID: 'marveen',
 }))
 

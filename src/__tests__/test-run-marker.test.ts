@@ -1,5 +1,21 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 
+// SANDBOX STORE_DIR -- redirect PROJECT_ROOT/STORE_DIR to a tmpdir so modules
+// that freeze those paths at module load (channel-monitor.ts:828
+// RESPAWN_STAMP_FILE, channel-coordinator/liveness.ts:30 RESPAWN_STAMP_FILE,
+// store-watcher.ts:29 SENSITIVE_NAMES) don't pollute the live ./store/.
+// Merged into the existing '../config.js' mock factory below.
+const configSandbox = vi.hoisted(() => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { tmpdir } = require('node:os') as typeof import('node:os')
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { join } = require('node:path') as typeof import('node:path')
+  const stamp = `${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`
+  const dir = join(tmpdir(), `cfg-${stamp}`)
+  return { PROJECT_ROOT: dir, STORE_DIR: join(dir, 'store') }
+})
+
+
 // Regression guard for 2026-07-27: the auth-recovery suite drove a REAL
 // break-glass alert to the owner, indistinguishable from production. The
 // requirement is labelling, not suppression: under a test runner every
@@ -10,7 +26,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 // module load, and the work rule blanks CHANNEL_TOKEN/CHANNEL_CHAT_ID).
 vi.mock('../config.js', async (importOriginal) => {
   const real = await importOriginal<typeof import('../config.js')>()
-  return { ...real, CHANNEL_PROVIDER: 'telegram', CHANNEL_TOKEN: 'fake-token', CHANNEL_CHAT_ID: '42' }
+  return { ...real, ...configSandbox, CHANNEL_PROVIDER: 'telegram', CHANNEL_TOKEN: 'fake-token', CHANNEL_CHAT_ID: '42' }
 })
 
 const sent: string[] = []

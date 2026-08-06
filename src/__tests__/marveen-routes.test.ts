@@ -27,6 +27,22 @@ import {
 import { join, extname } from 'node:path'
 import { tmpdir } from 'node:os'
 
+// SANDBOX STORE_DIR -- redirect PROJECT_ROOT/STORE_DIR to a tmpdir so modules
+// that freeze those paths at module load (channel-monitor.ts:828
+// RESPAWN_STAMP_FILE, channel-coordinator/liveness.ts:30 RESPAWN_STAMP_FILE,
+// store-watcher.ts:29 SENSITIVE_NAMES) don't pollute the live ./store/.
+// Merged into the existing '../config.js' mock factory below.
+const configSandbox = vi.hoisted(() => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { tmpdir } = require('node:os') as typeof import('node:os')
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { join } = require('node:path') as typeof import('node:path')
+  const stamp = `${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`
+  const dir = join(tmpdir(), `cfg-${stamp}`)
+  return { PROJECT_ROOT: dir, STORE_DIR: join(dir, 'store') }
+})
+
+
 // --- hoisted harness --------------------------------------------------------
 
 const H = vi.hoisted(() => {
@@ -143,7 +159,9 @@ vi.mock('../config.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../config.js')>()
   return {
     ...actual,
+    ...configSandbox,
     PROJECT_ROOT: H.PROJECT_ROOT,
+    STORE_DIR: join(H.PROJECT_ROOT, 'store'),
     MAIN_AGENT_ID: H.MAIN_AGENT_ID,
     CHANNEL_PROVIDER: H.CHANNEL_PROVIDER,
     currentBotName: H.currentBotName,
