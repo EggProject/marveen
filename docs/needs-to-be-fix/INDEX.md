@@ -48,6 +48,7 @@ dead code, doc issue).
 
 | Bug ID | File:Line | Title | Pinning test path |
 | --- | --- | --- | --- |
+| `vault-readvault-missing-entries-fatal` | `src/web/vault.ts:93-96` | `readVault` returns parsed JSON as-is, so any shape that lacks `entries` is fatal on every public call | `src/__tests__/vault.test.ts` |
 | `graph-mail-stat-not-isdir` | `src/graph-mail.ts:105-119` | stat-successful / read-failing `CREDS_PATH` produces an opaque error | `src/__tests__/graph-mail.test.ts` |
 | `prompt-safety-origin-note-tab-strip` | `src/prompt-safety.ts:96-103` | `sanitizeOriginNote` strips tab/newline/NBSP instead of collapsing them | `src/__tests__/prompt-safety.test.ts` |
 | `pane-state-defensive-branches` | `src/pane-state.ts:1064,1066,1104,1136,1161,1165,1489` | unreachable defensive branches block 100% branch coverage | `src/__tests__/pane-state.test.ts` |
