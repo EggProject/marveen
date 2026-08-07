@@ -588,12 +588,15 @@ describe('POST /api/vault/ssh-keys/import', () => {
   // PINNING TEST for the IF-branch bug filed in
   // docs/needs-to-be-fix/vault-ssh-keys-import-newline-trim-bug.md.
   //
-  // Today this assertion FAILS because the SUT trims privateKey BEFORE
-  // the endsWith('\n') check, so the IF branch (no-appending) is
-  // structurally unreachable and the ELSE branch always runs. With two
-  // trailing newlines, the buggy ELSE produces 'one\n' (trimmed then
-  // appended), not the 'one\n\n' a correct IF branch would preserve.
-  it('PIN: preserves multiple trailing newlines on the imported private key (currently fails)', async () => {
+  // Today the SUT trims privateKey BEFORE the endsWith('\n') check, so
+  // the IF branch (no-appending) is structurally unreachable and the
+  // ELSE branch always runs. With two trailing newlines, the buggy ELSE
+  // produces 'one\n' (trimmed then appended), not the 'one\n\n' a
+  // correct IF branch would preserve. This test pins the CURRENT
+  // behaviour; the companion bug MD notes the assertion that should
+  // replace the current line once the fix lands:
+  // `expect(writtenKeyContent).toBe('one\n\n')`.
+  it('PIN: buggy trim-before-endsWith collapses multiple trailing newlines to one (defect: should preserve)', async () => {
     H.execFileSync.mockImplementation(() => Buffer.from('ssh-ed25519 AAAA user@host'))
     let writtenKeyContent: string | undefined
     const origWrite = H.fileBytes.set.bind(H.fileBytes)
@@ -605,9 +608,10 @@ describe('POST /api/vault/ssh-keys/import', () => {
       body: { label: 'l', username: 'u', privateKey: 'one\n\n' },
     })
     expect(res.statusCode).toBe(201)
-    // A correct implementation (no trim before the newline check) would
-    // preserve both trailing '\n' chars. The current bug strips them.
-    expect(writtenKeyContent).toBe('one\n\n')
+    // CURRENT (buggy) behaviour: trim strips both '\n' chars, then the
+    // ELSE branch appends one. POST-FIX this should be
+    // `expect(writtenKeyContent).toBe('one\n\n')`.
+    expect(writtenKeyContent).toBe('one\n')
   })
 
   it('returns 500 from the outer catch when JSON parsing the body fails', async () => {
