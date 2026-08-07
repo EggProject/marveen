@@ -1,14 +1,10 @@
-// Channel-coordinator core coverage: live-pid, reconcilePending, idle->backfill
-// success/hw-null, and the entry-point catch handler.
-//
-// The project's bug MD notes that each main() invocation leaves orphan
-// Promises on the heap (~10 test ceiling). To stay under that, this file
-// contains only ~5 tests. The backfilling/runLoop/processBatch branches
-// live in channel-coordinator-runloop-extra.test.ts to keep each worker
-// under the OOM threshold.
+// processBatch branch coverage (lines 233-258 of src/channel-coordinator.ts).
+// Lives in its own file (separate vitest worker) so the heap pressure of
+// driving main() through the 5 batch branches (mapUpdate null, insert throws,
+// dedup, happy, handoff throws) doesn't compound the OOM.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -18,7 +14,7 @@ const configSandbox = vi.hoisted(() => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { join } = require('node:path') as typeof import('node:path')
   const stamp = `${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`
-  const dir = join(tmpdir(), `cc-full-${stamp}`)
+  const dir = join(tmpdir(), `cc-pb1-${stamp}`)
   return { PROJECT_ROOT: dir, STORE_DIR: join(dir, 'store') }
 })
 vi.mock('../config.js', async (orig) => ({
@@ -180,6 +176,20 @@ async function runMain(advance: number): Promise<void> {
   if (advance > 0) await vi.advanceTimersByTimeAsync(advance)
 }
 
+function eventFor(updateId: number, chatId = 1) {
+  return {
+    update_id: updateId,
+    kind: 'message' as const,
+    chat_id: chatId,
+    user_id: chatId,
+    username: 'u',
+    message_id: updateId,
+    content: `msg ${updateId}`,
+    meta: {},
+    tg_date: 1700000000,
+  }
+}
+
 function probeTrueThenFalse(n: number) {
   let calls = 0
   return () => {
@@ -196,169 +206,58 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-// =============================================================================
-// 1. acquireSingleInstanceLock live-pid branch (line 151)
-// =============================================================================
-
-describe('acquireSingleInstanceLock: live prev pid branch', () => {
-  it('exits with code 1 when a live other process holds the pid file', async () => {
-    const ctx = setupCtx('cc-live-')
-    writeFileSync(join(ctx.stateDir, 'coordinator.pid'), String(0x7FFFFFFE))
-    const killSpy = vi
-      .spyOn(process, 'kill')
-      .mockImplementation(((pid: number) => true) as never)
-
-    const exitCalls: number[] = []
-    ctx.exitSpy.mockImplementation(((c?: number) => {
-      exitCalls.push(c ?? 0)
-    }) as never)
-
+describe('processBatch branches via runLoop backfilling', () => {
+  it('mapUpdate null + insert throws + dedup + happy + handoff throws', async () => {
+    const ctx = setupCtx('cc-pb-')
     const m = makeMocks()
-    installMocks(m)
-
-    try {
-      vi.resetModules()
-      await import(SRC)
-      expect(exitCalls).toContain(1)
-      expect(
-        m.loggerError.mock.calls.some((c) =>
-          /another live instance/.test(String(c[1] ?? c[0] ?? '')),
-        ),
-      ).toBe(true)
-    } finally {
-      killSpy.mockRestore()
-      await shutdownAndCleanup(ctx)
-      teardown()
-    }
-  })
-})
-
-// =============================================================================
-// 2. reconcilePending branches (consolidated)
-// =============================================================================
-
-describe('reconcilePending: query error + happy + JSON.parse catch + handoff throws', () => {
-  it('consolidated branches', async () => {
-    const ctx = setupCtx('cc-rec-')
-    const m = makeMocks()
-    m.getEventsNeedingHandoff
-      .mockImplementationOnce(() => {
-        throw new Error('SQLITE_BUSY')
-      })
-      .mockReturnValueOnce([
-        {
-          id: 7,
-          source: 'telegram',
-          update_id: 100,
-          chat_id: 1,
-          user_id: 2,
-          username: 'szabi',
-          message_id: 50,
-          kind: 'message',
-          content: 'hello',
-          meta: JSON.stringify({ voice: { file_id: 'voice-1' } }),
-          tg_date: 1700000000,
-          status: 'pending',
-          agent_message_id: null,
-          error: null,
-          created_at: 1700000000,
-          delivered_at: null,
-        },
-        {
-          id: 8,
-          source: 'telegram',
-          update_id: 200,
-          chat_id: 1,
-          user_id: 2,
-          username: 'szabi',
-          message_id: 60,
-          kind: 'message',
-          content: 'plain',
-          meta: '{ not valid json',
-          tg_date: 1700000000,
-          status: 'pending',
-          agent_message_id: null,
-          error: null,
-          created_at: 1700000000,
-          delivered_at: null,
-        },
+    m.probeNativeChannelDown.mockImplementation(probeTrueThenFalse(12))
+    m.probeHighWater.mockResolvedValue(null)
+    // Five distinct batches to exercise every processBatch branch.
+    m.getUpdates
+      .mockResolvedValueOnce([{ update_id: 555, message: {} }])
+      .mockResolvedValueOnce([{ update_id: 100, message: {} }])
+      .mockResolvedValueOnce([{ update_id: 200, message: {} }])
+      .mockResolvedValueOnce([
+        { update_id: 300, message: {} },
+        { update_id: 301, message: {} },
       ])
-      .mockReturnValue([])
-    let handoffCall = 0
+      .mockResolvedValueOnce([{ update_id: 400, message: {} }])
+      .mockResolvedValue([])
+
+    m.mapUpdate.mockImplementation((u: { update_id: number }) => {
+      if (u.update_id === 555) return null
+      return eventFor(u.update_id)
+    })
+    let insertCount = 0
+    m.insertIncomingEvent.mockImplementation(() => {
+      insertCount++
+      if (insertCount === 2) throw new Error('SQLITE_BUSY')
+      if (insertCount === 3) return { inserted: false, eventId: null }
+      return { inserted: true, eventId: 1000 + insertCount }
+    })
+    let handoffCount = 0
     m.createHandoffMessage.mockImplementation(() => {
-      handoffCall++
-      if (handoffCall === 2) throw new Error('db locked')
-      return 1000 + handoffCall
+      handoffCount++
+      // 3 handoffs total: batch 2, batch 4 event 2, batch 5.
+      // Throw on the 3rd to exercise the handoff-failed branch.
+      if (handoffCount === 3) throw new Error('agent_messages insert failed')
+      return 2000 + handoffCount
     })
     installMocks(m)
 
     try {
-      // advance(5000) -> 2 reconcilePending calls (initial + post-sleep)
-      await runMain(5000)
-      expect(findLog(m.loggerError, 'reconcile query failed')).toBe(true)
-      expect(m.createHandoffMessage).toHaveBeenCalledTimes(2)
-      expect(m.markEventDelivered).toHaveBeenCalledTimes(1)
-      expect(findLog(m.loggerError, 'reconcile re-handoff failed')).toBe(true)
-      expect(findLog(m.loggerWarn, 're-queued abandoned')).toBe(true)
-    } finally {
-      await shutdownAndCleanup(ctx)
-      teardown()
-    }
-  })
-})
-
-// =============================================================================
-// 3. runLoop idle -> backfill: success + hw=null
-// =============================================================================
-
-describe('runLoop idle -> backfill: success + hw=null', () => {
-  it('success: setOffset called with hw value; hw=null: skip setOffset', async () => {
-    const ctx = setupCtx('cc-seed-ok-')
-    const m = makeMocks()
-    m.probeNativeChannelDown.mockImplementation(probeTrueThenFalse(2))
-    m.probeHighWater.mockResolvedValue(999)
-    installMocks(m)
-
-    try {
       await runMain(11000)
-      expect(m.probeHighWater).toHaveBeenCalledTimes(1)
-      expect(m.setOffset).toHaveBeenCalledWith('telegram', 999)
-      expect(findLog(m.loggerWarn, 'native channel DOWN')).toBe(true)
+      expect(findLog(m.loggerInfo, 'backfilled to main agent')).toBe(true)
+      expect(findLog(m.loggerError, 'insertIncomingEvent failed')).toBe(true)
+      expect(findLog(m.loggerError, 'handoff failed')).toBe(true)
+      expect(m.setOffset).toHaveBeenCalledWith('telegram', 555)
+      expect(m.setOffset).toHaveBeenCalledWith('telegram', 100)
+      expect(m.setOffset).toHaveBeenCalledWith('telegram', 200)
+      expect(m.setOffset).toHaveBeenCalledWith('telegram', 301)
+      expect(m.setOffset).toHaveBeenCalledWith('telegram', 400)
     } finally {
       await shutdownAndCleanup(ctx)
       teardown()
-    }
-  })
-})
-
-// =============================================================================
-// 4. entry-point catch handler (lines 436-439)
-// =============================================================================
-
-describe('entry-point catch handler', () => {
-  it('logs and exits(1) when main() throws (readToken path)', async () => {
-    const ctx = setupCtx('cc-catch-')
-    delete process.env.TELEGRAM_BOT_TOKEN
-    delete process.env.COORDINATOR_STATE_DIR
-
-    const exitCalls: number[] = []
-    ctx.exitSpy.mockImplementation(((c?: number) => {
-      exitCalls.push(c ?? 0)
-    }) as never)
-
-    const m = makeMocks()
-    installMocks(m)
-
-    try {
-      vi.resetModules()
-      await import(SRC)
-      await vi.advanceTimersByTimeAsync(50)
-      expect(exitCalls).toContain(1)
-      expect(findLog(m.loggerError, 'channel-coordinator: crashed')).toBe(true)
-    } finally {
-      teardown()
-      rmSync(ctx.stateDir, { recursive: true, force: true })
-      process.argv[1] = undefined
     }
   })
 })

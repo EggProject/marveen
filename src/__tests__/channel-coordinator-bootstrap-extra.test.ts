@@ -1,11 +1,9 @@
-// Channel-coordinator core coverage: live-pid, reconcilePending, idle->backfill
-// success/hw-null, and the entry-point catch handler.
+// Supplementary coverage for src/channel-coordinator.ts: readToken branches,
+// transient seed error path, and down-streak-reset path.
 //
-// The project's bug MD notes that each main() invocation leaves orphan
-// Promises on the heap (~10 test ceiling). To stay under that, this file
-// contains only ~5 tests. The backfilling/runLoop/processBatch branches
-// live in channel-coordinator-runloop-extra.test.ts to keep each worker
-// under the OOM threshold.
+// Lives in its own file (separate vitest worker) so heap pressure of driving
+// main() through these scenarios doesn't compound the OOM seen when many
+// main()-invoking tests share one worker.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -18,7 +16,7 @@ const configSandbox = vi.hoisted(() => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { join } = require('node:path') as typeof import('node:path')
   const stamp = `${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`
-  const dir = join(tmpdir(), `cc-full-${stamp}`)
+  const dir = join(tmpdir(), `cc-bs-${stamp}`)
   return { PROJECT_ROOT: dir, STORE_DIR: join(dir, 'store') }
 })
 vi.mock('../config.js', async (orig) => ({
@@ -196,156 +194,14 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-// =============================================================================
-// 1. acquireSingleInstanceLock live-pid branch (line 151)
-// =============================================================================
-
-describe('acquireSingleInstanceLock: live prev pid branch', () => {
-  it('exits with code 1 when a live other process holds the pid file', async () => {
-    const ctx = setupCtx('cc-live-')
-    writeFileSync(join(ctx.stateDir, 'coordinator.pid'), String(0x7FFFFFFE))
-    const killSpy = vi
-      .spyOn(process, 'kill')
-      .mockImplementation(((pid: number) => true) as never)
-
-    const exitCalls: number[] = []
-    ctx.exitSpy.mockImplementation(((c?: number) => {
-      exitCalls.push(c ?? 0)
-    }) as never)
-
-    const m = makeMocks()
-    installMocks(m)
-
-    try {
-      vi.resetModules()
-      await import(SRC)
-      expect(exitCalls).toContain(1)
-      expect(
-        m.loggerError.mock.calls.some((c) =>
-          /another live instance/.test(String(c[1] ?? c[0] ?? '')),
-        ),
-      ).toBe(true)
-    } finally {
-      killSpy.mockRestore()
-      await shutdownAndCleanup(ctx)
-      teardown()
-    }
-  })
-})
-
-// =============================================================================
-// 2. reconcilePending branches (consolidated)
-// =============================================================================
-
-describe('reconcilePending: query error + happy + JSON.parse catch + handoff throws', () => {
-  it('consolidated branches', async () => {
-    const ctx = setupCtx('cc-rec-')
-    const m = makeMocks()
-    m.getEventsNeedingHandoff
-      .mockImplementationOnce(() => {
-        throw new Error('SQLITE_BUSY')
-      })
-      .mockReturnValueOnce([
-        {
-          id: 7,
-          source: 'telegram',
-          update_id: 100,
-          chat_id: 1,
-          user_id: 2,
-          username: 'szabi',
-          message_id: 50,
-          kind: 'message',
-          content: 'hello',
-          meta: JSON.stringify({ voice: { file_id: 'voice-1' } }),
-          tg_date: 1700000000,
-          status: 'pending',
-          agent_message_id: null,
-          error: null,
-          created_at: 1700000000,
-          delivered_at: null,
-        },
-        {
-          id: 8,
-          source: 'telegram',
-          update_id: 200,
-          chat_id: 1,
-          user_id: 2,
-          username: 'szabi',
-          message_id: 60,
-          kind: 'message',
-          content: 'plain',
-          meta: '{ not valid json',
-          tg_date: 1700000000,
-          status: 'pending',
-          agent_message_id: null,
-          error: null,
-          created_at: 1700000000,
-          delivered_at: null,
-        },
-      ])
-      .mockReturnValue([])
-    let handoffCall = 0
-    m.createHandoffMessage.mockImplementation(() => {
-      handoffCall++
-      if (handoffCall === 2) throw new Error('db locked')
-      return 1000 + handoffCall
-    })
-    installMocks(m)
-
-    try {
-      // advance(5000) -> 2 reconcilePending calls (initial + post-sleep)
-      await runMain(5000)
-      expect(findLog(m.loggerError, 'reconcile query failed')).toBe(true)
-      expect(m.createHandoffMessage).toHaveBeenCalledTimes(2)
-      expect(m.markEventDelivered).toHaveBeenCalledTimes(1)
-      expect(findLog(m.loggerError, 'reconcile re-handoff failed')).toBe(true)
-      expect(findLog(m.loggerWarn, 're-queued abandoned')).toBe(true)
-    } finally {
-      await shutdownAndCleanup(ctx)
-      teardown()
-    }
-  })
-})
-
-// =============================================================================
-// 3. runLoop idle -> backfill: success + hw=null
-// =============================================================================
-
-describe('runLoop idle -> backfill: success + hw=null', () => {
-  it('success: setOffset called with hw value; hw=null: skip setOffset', async () => {
-    const ctx = setupCtx('cc-seed-ok-')
-    const m = makeMocks()
-    m.probeNativeChannelDown.mockImplementation(probeTrueThenFalse(2))
-    m.probeHighWater.mockResolvedValue(999)
-    installMocks(m)
-
-    try {
-      await runMain(11000)
-      expect(m.probeHighWater).toHaveBeenCalledTimes(1)
-      expect(m.setOffset).toHaveBeenCalledWith('telegram', 999)
-      expect(findLog(m.loggerWarn, 'native channel DOWN')).toBe(true)
-    } finally {
-      await shutdownAndCleanup(ctx)
-      teardown()
-    }
-  })
-})
-
-// =============================================================================
-// 4. entry-point catch handler (lines 436-439)
-// =============================================================================
-
-describe('entry-point catch handler', () => {
-  it('logs and exits(1) when main() throws (readToken path)', async () => {
-    const ctx = setupCtx('cc-catch-')
+describe('readToken branches', () => {
+  it('throws when neither env nor .env provides TELEGRAM_BOT_TOKEN', async () => {
+    const ctx = setupCtx('cc-tok-')
     delete process.env.TELEGRAM_BOT_TOKEN
-    delete process.env.COORDINATOR_STATE_DIR
-
     const exitCalls: number[] = []
     ctx.exitSpy.mockImplementation(((c?: number) => {
       exitCalls.push(c ?? 0)
     }) as never)
-
     const m = makeMocks()
     installMocks(m)
 
@@ -354,11 +210,132 @@ describe('entry-point catch handler', () => {
       await import(SRC)
       await vi.advanceTimersByTimeAsync(50)
       expect(exitCalls).toContain(1)
-      expect(findLog(m.loggerError, 'channel-coordinator: crashed')).toBe(true)
     } finally {
       teardown()
       rmSync(ctx.stateDir, { recursive: true, force: true })
       process.argv[1] = undefined
+    }
+  })
+
+  it('reads double-quoted token; skips non-matching keys (else branch)', async () => {
+    const ctx = setupCtx('cc-tok-dq-')
+    delete process.env.TELEGRAM_BOT_TOKEN
+    // OTHER_VAR exercises the key-not-matching else branch.
+    writeFileSync(
+      join(ctx.stateDir, '.env'),
+      '# comment\nNOT_A_LINE\nOTHER_VAR=ignored\nTELEGRAM_BOT_TOKEN="abc"\n',
+      { mode: 0o600 },
+    )
+    const m = makeMocks()
+    installMocks(m)
+
+    try {
+      await runMain(5000)
+      expect(m.initIngestDb).toHaveBeenCalled()
+    } finally {
+      await shutdownAndCleanup(ctx)
+      teardown()
+    }
+  })
+
+  it('reads single-quoted token (single-quoted AND branch)', async () => {
+    const ctx = setupCtx('cc-tok-sq-')
+    delete process.env.TELEGRAM_BOT_TOKEN
+    // Only single-quoted value present to exercise the single-quoted AND branch.
+    writeFileSync(
+      join(ctx.stateDir, '.env'),
+      "TELEGRAM_BOT_TOKEN='only-single-quoted'\n",
+      { mode: 0o600 },
+    )
+    const m = makeMocks()
+    installMocks(m)
+
+    try {
+      await runMain(5000)
+      expect(m.initIngestDb).toHaveBeenCalled()
+    } finally {
+      await shutdownAndCleanup(ctx)
+      teardown()
+    }
+  })
+
+  it('reads unquoted token (no-quote else branch)', async () => {
+    const ctx = setupCtx('cc-tok-nq-')
+    delete process.env.TELEGRAM_BOT_TOKEN
+    // Unquoted value exercises the `if (...)` falsy branch (no quote-stripping).
+    writeFileSync(
+      join(ctx.stateDir, '.env'),
+      'TELEGRAM_BOT_TOKEN=no-quotes-value\n',
+      { mode: 0o600 },
+    )
+    const m = makeMocks()
+    installMocks(m)
+
+    try {
+      await runMain(5000)
+      expect(m.initIngestDb).toHaveBeenCalled()
+    } finally {
+      await shutdownAndCleanup(ctx)
+      teardown()
+    }
+  })
+})
+
+describe('runLoop idle -> backfill: transient seed path', () => {
+  it('transient seed logs warn + stays idle (err is Error)', async () => {
+    const ctx = setupCtx('cc-seed-trn-')
+    const m = makeMocks()
+    m.probeNativeChannelDown.mockImplementation(probeTrueThenFalse(2))
+    m.probeHighWater.mockRejectedValueOnce(new Error('network reset'))
+    installMocks(m)
+
+    try {
+      await runMain(11000)
+      expect(findLog(m.loggerWarn, 'high-water seed failed')).toBe(true)
+      expect(m.probeHighWater).toHaveBeenCalledTimes(1)
+    } finally {
+      await shutdownAndCleanup(ctx)
+      teardown()
+    }
+  })
+
+  it('transient seed with non-Error rejection uses String(err) branch', async () => {
+    const ctx = setupCtx('cc-seed-str-')
+    const m = makeMocks()
+    m.probeNativeChannelDown.mockImplementation(probeTrueThenFalse(2))
+    // Reject with a non-Error value to exercise `String(err)` branch.
+    m.probeHighWater.mockRejectedValueOnce('just a string error')
+    installMocks(m)
+
+    try {
+      await runMain(11000)
+      expect(findLog(m.loggerWarn, 'high-water seed failed')).toBe(true)
+      expect(m.probeHighWater).toHaveBeenCalledTimes(1)
+    } finally {
+      await shutdownAndCleanup(ctx)
+      teardown()
+    }
+  })
+})
+
+describe('down streak reset when probe goes false mid-debounce', () => {
+  it('resets downStreak when probe goes false, preventing transition', async () => {
+    const ctx = setupCtx('cc-streak-')
+    const m = makeMocks()
+    let calls = 0
+    m.probeNativeChannelDown.mockImplementation(() => {
+      calls++
+      // DOWN, UP, DOWN -- never reaches DOWN_DEBOUNCE=2.
+      return calls === 1 || calls === 3
+    })
+    installMocks(m)
+
+    try {
+      await runMain(15000)
+      expect(m.probeHighWater).not.toHaveBeenCalled()
+    } finally {
+      await shutdownAndCleanup(ctx)
+      teardown()
     }
   })
 })

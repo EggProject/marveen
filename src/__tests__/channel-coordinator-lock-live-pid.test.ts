@@ -1,11 +1,10 @@
-// Channel-coordinator core coverage: live-pid, reconcilePending, idle->backfill
-// success/hw-null, and the entry-point catch handler.
+// acquireSingleInstanceLock live-pid branch coverage (lines 150-151 of
+// src/channel-coordinator.ts). When the PID file is held by a live other
+// process (process.kill succeeds), the coordinator logs and exits with 1.
 //
-// The project's bug MD notes that each main() invocation leaves orphan
-// Promises on the heap (~10 test ceiling). To stay under that, this file
-// contains only ~5 tests. The backfilling/runLoop/processBatch branches
-// live in channel-coordinator-runloop-extra.test.ts to keep each worker
-// under the OOM threshold.
+// Lives in its own file (separate vitest worker) so the heap pressure of
+// driving main() doesn't compound the OOM seen when many main()-invoking
+// tests share one worker.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -18,7 +17,7 @@ const configSandbox = vi.hoisted(() => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { join } = require('node:path') as typeof import('node:path')
   const stamp = `${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`
-  const dir = join(tmpdir(), `cc-full-${stamp}`)
+  const dir = join(tmpdir(), `cc-live-${stamp}`)
   return { PROJECT_ROOT: dir, STORE_DIR: join(dir, 'store') }
 })
 vi.mock('../config.js', async (orig) => ({
@@ -130,15 +129,6 @@ function teardown(): void {
   process.removeAllListeners('SIGINT')
 }
 
-function findLog(
-  mock: { mock: { calls: unknown[][] } },
-  substring: string,
-): boolean {
-  return mock.mock.calls.some((c) =>
-    c.some((arg) => typeof arg === 'string' && arg.includes(substring)),
-  )
-}
-
 interface TestCtx {
   stateDir: string
   origArgv: string | undefined
@@ -174,20 +164,6 @@ async function shutdownAndCleanup(ctx: TestCtx): Promise<void> {
   rmSync(ctx.stateDir, { recursive: true, force: true })
 }
 
-async function runMain(advance: number): Promise<void> {
-  vi.resetModules()
-  await import(SRC)
-  if (advance > 0) await vi.advanceTimersByTimeAsync(advance)
-}
-
-function probeTrueThenFalse(n: number) {
-  let calls = 0
-  return () => {
-    calls++
-    return calls <= n
-  }
-}
-
 beforeEach(() => {
   vi.useFakeTimers()
 })
@@ -196,14 +172,11 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-// =============================================================================
-// 1. acquireSingleInstanceLock live-pid branch (line 151)
-// =============================================================================
-
 describe('acquireSingleInstanceLock: live prev pid branch', () => {
   it('exits with code 1 when a live other process holds the pid file', async () => {
     const ctx = setupCtx('cc-live-')
     writeFileSync(join(ctx.stateDir, 'coordinator.pid'), String(0x7FFFFFFE))
+    // Simulate a live prev pid by making process.kill signal-able.
     const killSpy = vi
       .spyOn(process, 'kill')
       .mockImplementation(((pid: number) => true) as never)
@@ -229,136 +202,6 @@ describe('acquireSingleInstanceLock: live prev pid branch', () => {
       killSpy.mockRestore()
       await shutdownAndCleanup(ctx)
       teardown()
-    }
-  })
-})
-
-// =============================================================================
-// 2. reconcilePending branches (consolidated)
-// =============================================================================
-
-describe('reconcilePending: query error + happy + JSON.parse catch + handoff throws', () => {
-  it('consolidated branches', async () => {
-    const ctx = setupCtx('cc-rec-')
-    const m = makeMocks()
-    m.getEventsNeedingHandoff
-      .mockImplementationOnce(() => {
-        throw new Error('SQLITE_BUSY')
-      })
-      .mockReturnValueOnce([
-        {
-          id: 7,
-          source: 'telegram',
-          update_id: 100,
-          chat_id: 1,
-          user_id: 2,
-          username: 'szabi',
-          message_id: 50,
-          kind: 'message',
-          content: 'hello',
-          meta: JSON.stringify({ voice: { file_id: 'voice-1' } }),
-          tg_date: 1700000000,
-          status: 'pending',
-          agent_message_id: null,
-          error: null,
-          created_at: 1700000000,
-          delivered_at: null,
-        },
-        {
-          id: 8,
-          source: 'telegram',
-          update_id: 200,
-          chat_id: 1,
-          user_id: 2,
-          username: 'szabi',
-          message_id: 60,
-          kind: 'message',
-          content: 'plain',
-          meta: '{ not valid json',
-          tg_date: 1700000000,
-          status: 'pending',
-          agent_message_id: null,
-          error: null,
-          created_at: 1700000000,
-          delivered_at: null,
-        },
-      ])
-      .mockReturnValue([])
-    let handoffCall = 0
-    m.createHandoffMessage.mockImplementation(() => {
-      handoffCall++
-      if (handoffCall === 2) throw new Error('db locked')
-      return 1000 + handoffCall
-    })
-    installMocks(m)
-
-    try {
-      // advance(5000) -> 2 reconcilePending calls (initial + post-sleep)
-      await runMain(5000)
-      expect(findLog(m.loggerError, 'reconcile query failed')).toBe(true)
-      expect(m.createHandoffMessage).toHaveBeenCalledTimes(2)
-      expect(m.markEventDelivered).toHaveBeenCalledTimes(1)
-      expect(findLog(m.loggerError, 'reconcile re-handoff failed')).toBe(true)
-      expect(findLog(m.loggerWarn, 're-queued abandoned')).toBe(true)
-    } finally {
-      await shutdownAndCleanup(ctx)
-      teardown()
-    }
-  })
-})
-
-// =============================================================================
-// 3. runLoop idle -> backfill: success + hw=null
-// =============================================================================
-
-describe('runLoop idle -> backfill: success + hw=null', () => {
-  it('success: setOffset called with hw value; hw=null: skip setOffset', async () => {
-    const ctx = setupCtx('cc-seed-ok-')
-    const m = makeMocks()
-    m.probeNativeChannelDown.mockImplementation(probeTrueThenFalse(2))
-    m.probeHighWater.mockResolvedValue(999)
-    installMocks(m)
-
-    try {
-      await runMain(11000)
-      expect(m.probeHighWater).toHaveBeenCalledTimes(1)
-      expect(m.setOffset).toHaveBeenCalledWith('telegram', 999)
-      expect(findLog(m.loggerWarn, 'native channel DOWN')).toBe(true)
-    } finally {
-      await shutdownAndCleanup(ctx)
-      teardown()
-    }
-  })
-})
-
-// =============================================================================
-// 4. entry-point catch handler (lines 436-439)
-// =============================================================================
-
-describe('entry-point catch handler', () => {
-  it('logs and exits(1) when main() throws (readToken path)', async () => {
-    const ctx = setupCtx('cc-catch-')
-    delete process.env.TELEGRAM_BOT_TOKEN
-    delete process.env.COORDINATOR_STATE_DIR
-
-    const exitCalls: number[] = []
-    ctx.exitSpy.mockImplementation(((c?: number) => {
-      exitCalls.push(c ?? 0)
-    }) as never)
-
-    const m = makeMocks()
-    installMocks(m)
-
-    try {
-      vi.resetModules()
-      await import(SRC)
-      await vi.advanceTimersByTimeAsync(50)
-      expect(exitCalls).toContain(1)
-      expect(findLog(m.loggerError, 'channel-coordinator: crashed')).toBe(true)
-    } finally {
-      teardown()
-      rmSync(ctx.stateDir, { recursive: true, force: true })
-      process.argv[1] = undefined
     }
   })
 })
