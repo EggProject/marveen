@@ -772,7 +772,6 @@ describe('hardRestartMarveenChannels', () => {
     expect(m.execFileSync).toHaveBeenCalledWith('/bin/launchctl', ['unload', '/Library/LaunchDaemons/com.marveen.channels.plist'], expect.any(Object))
     expect(m.execFileSync).toHaveBeenCalledWith('/bin/launchctl', ['load', '/Library/LaunchDaemons/com.marveen.channels.plist'], expect.any(Object))
     vi.doUnmock('node:fs')
-    vi.doUnmock('../config.js')
     vi.resetModules()
   })
 
@@ -786,7 +785,6 @@ describe('hardRestartMarveenChannels', () => {
     expect(r.ok).toBe(false)
     expect(r.error).toContain('launchctl denied')
     vi.doUnmock('node:fs')
-    vi.doUnmock('../config.js')
     vi.resetModules()
   })
 
@@ -1107,7 +1105,20 @@ describe('startChannelPluginMonitor', () => {
     const r = M.startChannelPluginMonitor()
     expect(r).toBeNull()
     // Logger was called
-    vi.doUnmock('../config.js')
+    vi.doMock('../config.js', async (orig) => {
+      const actual = await orig<typeof import('../config.js')>()
+      return {
+        ...actual,
+        PROJECT_ROOT: sandbox.PROJECT_ROOT,
+        STORE_DIR: join(sandbox.PROJECT_ROOT, 'store'),
+        RESPAWN_ENABLED: true,
+        MAIN_AGENT_ID: 'marveen',
+        SERVICE_ID: 'marveen',
+        BOT_NAME: 'Marveen',
+        CHANNEL_PROVIDER: 'telegram',
+        WEB_PORT: 3420,
+      }
+    })
     vi.resetModules()
   })
 
@@ -1620,6 +1631,13 @@ describe('startChannelPluginMonitor: handleMarveenDown cascade', () => {
   let cascadeMod: typeof import('../web/channel-monitor.js') | undefined
 
   beforeEach(() => {
+    // The cascade uses lastMainRespawnAt() to suppress itself within
+    // MARVEEN_POST_RESPAWN_GRACE_MS of a recent respawn stamp. Earlier tests
+    // (e.g. the stuck-input restart escalation that fires
+    // hardRestartMarveenChannels) write the stamp file into the sandbox; if
+    // we don't clear it here the cascade is permanently suppressed and the
+    // probeTelegramConflict assertion never fires.
+    rmSync(join(sandbox.PROJECT_ROOT, 'store', '.channel-last-respawn'), { force: true })
     vi.resetModules()
   })
 

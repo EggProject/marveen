@@ -9,8 +9,15 @@ export default defineConfig({
     exclude: [...configDefaults.exclude, 'tests/smoke/**'],
     // Hard gate: refuse to run inside a live install (see the setup file header
     // for the 2026-07-27 incident this prevents). Runs in every worker before
-    // any test module is imported.
-    setupFiles: ['./src/__tests__/setup/assert-not-live-install.ts'],
+    // any test module is imported. The second entry redirects PROJECT_ROOT /
+    // STORE_DIR to a per-file tmpdir sandbox so modules that freeze those
+    // paths at module load (channel-monitor.ts, db.ts, costops/config.ts)
+    // never resolve against the live checkout. See the file's header for
+    // the channel-monitor / respawn-stamp incident that motivated this.
+    setupFiles: [
+      './src/__tests__/setup/assert-not-live-install.ts',
+      './src/__tests__/setup/test-sandbox-setup.ts',
+    ],
     // Coverage thresholds pinned at 100% for every src/*.ts file. The hard
     // gate above already prevents the suite from running against a live
     // install, so this is the second defensive line: any source file that

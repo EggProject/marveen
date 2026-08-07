@@ -21,6 +21,27 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { join } from 'node:path'
 
+
+// SANDBOX STORE_DIR -- redirect PROJECT_ROOT/STORE_DIR to a tmpdir so modules
+// that freeze those paths at module load (channel-monitor.ts:828
+// RESPAWN_STAMP_FILE, channel-coordinator/liveness.ts:30 RESPAWN_STAMP_FILE,
+// store-watcher.ts:29 SENSITIVE_NAMES) don't pollute the live ./store/.
+// Must come BEFORE any import that transitively reaches '../config.js'.
+const configSandbox = vi.hoisted(() => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { tmpdir } = require('node:os') as typeof import('node:os')
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { join } = require('node:path') as typeof import('node:path')
+  const stamp = `${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`
+  const dir = join(tmpdir(), `cfg-${stamp}`)
+  return { PROJECT_ROOT: dir, STORE_DIR: join(dir, 'store') }
+})
+vi.mock('../config.js', async (orig) => {
+  const actual = await orig<typeof import('../config.js')>()
+  return { ...actual, ...configSandbox }
+})
+
+
 const SRC_DIR = join(process.cwd(), 'src', 'channel-coordinator')
 const SRC = join(SRC_DIR, 'liveness.ts')
 

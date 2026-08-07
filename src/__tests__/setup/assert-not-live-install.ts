@@ -40,7 +40,20 @@ if (existsSync(storeDir)) {
     const st = statSync(storeDir)
     if (st.isDirectory()) {
       try {
-        foundStoreContents = readdirSync(storeDir)
+        // Only FILES under store/ count as a pollution signal. A leftover
+        // empty directory (e.g. a test's `mkdirSync(STORE_DIR, { recursive:
+        // true })` ran but every file it wrote was cleaned up by afterAll) is
+        // harmless -- the next suite's first test would just see an empty
+        // dir and skip the migration. Previously an empty store/ would
+        // still trip the guard, blocking parallel workers that happened to
+        // spawn right after the dir-creating test.
+        foundStoreContents = readdirSync(storeDir).filter((name) => {
+          try {
+            return statSync(join(storeDir, name)).isFile()
+          } catch {
+            return false
+          }
+        })
       } catch {
         // unreadable; treat as empty for the purposes of the error message
       }
