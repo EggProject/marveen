@@ -154,6 +154,37 @@ describe('sweep + listing', () => {
     expect(resolveSession(fresh)).not.toBeNull()
   })
 
+  it('prunes expired entries from the in-memory cache alongside the DB sweep', async () => {
+    // The sweep must touch BOTH stores -- otherwise a cached entry would
+    // keep resolving after its durable row was deleted, until the next
+    // restart drops the cache. We seed the cache with an entry whose
+    // timestamps make it expired under the current clock, then assert the
+    // sweep empties both the cache and the DB.
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
+    const { _cacheForTest } = await import('../web/auth-sessions.js')
+    const u = makeUser('cache-pruner')
+    // Insert a stale row directly so the DB-side delete returns 1.
+    const stale = Math.floor(Date.now() / 1000) - 40 * 24 * 60 * 60
+    getDb().prepare('INSERT INTO auth_sessions (id_hash, user_id, username, created_at, last_seen_at) VALUES (?,?,?,?,?)')
+      .run('a'.repeat(64), u.id, u.username, stale, stale)
+    // Seed the cache with a matching expired entry; the sweep must drop it.
+    _cacheForTest.set('a'.repeat(64), { userId: u.id, username: u.username, createdAt: stale, lastSeenAt: stale })
+    expect(sweepExpiredSessions()).toBe(1)
+    expect(_cacheForTest.has('a'.repeat(64))).toBe(false)
+  })
+
+  it('keeps a fresh cached entry across the sweep', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
+    const { _cacheForTest } = await import('../web/auth-sessions.js')
+    const now = Math.floor(Date.now() / 1000)
+    _cacheForTest.set('b'.repeat(64), { userId: 1, username: 'fresh', createdAt: now, lastSeenAt: now })
+    expect(sweepExpiredSessions()).toBe(0)
+    expect(_cacheForTest.has('b'.repeat(64))).toBe(true)
+    _cacheForTest.delete('b'.repeat(64))
+  })
+
   it('lists a user sessions with hashed prefix only', () => {
     const u = makeUser('lister')
     createSession({ userId: u.id, username: u.username }, { userAgent: 'test-agent' })
@@ -161,5 +192,56 @@ describe('sweep + listing', () => {
     expect(list.length).toBe(1)
     expect(list[0].idHashPrefix).toHaveLength(12)
     expect(list[0].userAgent).toBe('test-agent')
+  })
+})
+
+describe('out-of-band revocation (cache says yes, DB says no)', () => {
+  it('returns null within one debounce window when the row was deleted outside this process', () => {
+    // The dashboard-user `sessions:clear` and the security:reset break-glass
+    // both run in their own process and cannot reach this cache. The
+    // debounced UPDATE doubles as an existence check: zero changed rows
+    // means the row was revoked externally, and we honor the revocation
+    // within <=60s instead of serving the cached session until restart.
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
+    const u = makeUser('oob')
+    const token = createSession({ userId: u.id, username: u.username })
+    // Simulate an external revocation: delete the DB row, leave the cache.
+    getDb().prepare('DELETE FROM auth_sessions').run()
+    // First call within debounce window: cached entry served, no UPDATE fires.
+    vi.setSystemTime(new Date('2026-01-01T00:00:30Z'))
+    expect(resolveSession(token)).not.toBeNull()
+    // Past the debounce window: UPDATE returns 0 changes -> cache.delete + null.
+    vi.setSystemTime(new Date('2026-01-01T00:01:01Z'))
+    expect(resolveSession(token)).toBeNull()
+  })
+})
+
+describe('revokeAllSessions (break-glass: cache + DB together)', () => {
+  it('wipes every row and clears the in-memory cache in one call', async () => {
+    const { revokeAllSessions } = await import('../web/auth-sessions.js')
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
+    const u = makeUser('mass')
+    const a = createSession({ userId: u.id, username: u.username })
+    const b = createSession({ userId: u.id, username: u.username })
+    const removed = revokeAllSessions()
+    expect(removed).toBe(2)
+    expect(resolveSession(a)).toBeNull()
+    expect(resolveSession(b)).toBeNull()
+    expect(getDb().prepare('SELECT COUNT(*) c FROM auth_sessions').get()).toEqual({ c: 0 })
+  })
+})
+
+describe('revokeSession edge cases', () => {
+  it('is a no-op on an empty cookie value', () => {
+    // The dashboard middleware always passes the cookie value through, but
+    // a stray empty string (e.g. `mv_session=;`) must not blow up nor trigger
+    // any DB write.
+    const u = makeUser('empty-revoke')
+    createSession({ userId: u.id, username: u.username })
+    expect(() => revokeSession('')).not.toThrow()
+    // The previously-minted row is still intact.
+    expect(getDb().prepare('SELECT COUNT(*) c FROM auth_sessions').get()).toEqual({ c: 1 })
   })
 })

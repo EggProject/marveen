@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, beforeEach } from 'vitest'
+import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest'
 import type http from 'node:http'
 import { Readable } from 'node:stream'
 import { initDatabase, getDb } from '../db.js'
@@ -8,6 +8,8 @@ import {
   createDeviceKey,
   resolveDeviceKey,
   listDeviceKeys,
+  getDeviceKey,
+  findDeviceKeyByInstallId,
   revokeDeviceKey,
   revokeAllDeviceKeys,
   sweepExpiredDeviceKeys,
@@ -176,11 +178,18 @@ describe('restart survival', () => {
 
 describe('revocation + expiry', () => {
   it('revocation takes effect immediately, cache and DB together', () => {
-    const minted = createDeviceKey('stolen-phone')
-    expect(resolveDeviceKey(minted.key)).not.toBeNull()
-    expect(revokeDeviceKey(minted.id)).toBe(true)
-    expect(resolveDeviceKey(minted.key)).toBeNull()
-    expect(listDeviceKeys()).toHaveLength(0)
+    const target = createDeviceKey('stolen-phone')
+    // A second key in the cache guarantees the revokeDeviceKey loop hits
+    // BOTH branches: `entry.id === target.id` (true) for one entry, and
+    // `entry.id === target.id` (false) for the other.
+    const bystander = createDeviceKey('keep-me')
+    expect(resolveDeviceKey(target.key)).not.toBeNull()
+    expect(resolveDeviceKey(bystander.key)).not.toBeNull()
+    expect(revokeDeviceKey(target.id)).toBe(true)
+    expect(resolveDeviceKey(target.key)).toBeNull()
+    // The bystander survives the targeted revocation.
+    expect(resolveDeviceKey(bystander.key)).not.toBeNull()
+    expect(listDeviceKeys().map((k) => k.name)).toEqual(['keep-me'])
   })
   it('revoking an unknown id returns false', () => {
     expect(revokeDeviceKey(99999)).toBe(false)
@@ -199,12 +208,112 @@ describe('revocation + expiry', () => {
     expect(sweepExpiredDeviceKeys()).toBe(1)
     expect(listDeviceKeys().map((k) => k.name)).toEqual(['immortal'])
   })
+  it('sweep prunes expired entries from the cache alongside the DB rows', async () => {
+    // The sweep must touch BOTH stores, not only the durable table -- a
+    // cached entry whose row has just been swept would otherwise keep
+    // resolving until the next restart drops the cache. We seed the cache
+    // directly with an expires_at timestamp in the past (matching the
+    // corresponding DB row) so the cache-prune branch fires.
+    const { _cacheForTest } = await import('../web/auth-device-keys.js')
+    const minted = createDeviceKey('sweep-cache', { expiresInDays: 1 })
+    _clearDeviceKeyCacheForTest()
+    const past = Math.floor(Date.now() / 1000) - 10
+    getDb().prepare('UPDATE device_keys SET expires_at = ? WHERE id = ?').run(past, minted.id)
+    // Find the keyHash by looking it up in the DB and recomputing the hash
+    // is not exposed; instead rehydrate via a no-op resolveDeviceKey at the
+    // current time so the cache pulls the updated expires_at from the DB.
+    // resolveDeviceKey returns null because the row is already expired, but
+    // that path removes the row before the sweep runs. To exercise the
+    // sweep body with a still-present row, hand-seed the cache instead.
+    const rows = getDb().prepare('SELECT key_hash FROM device_keys WHERE id = ?').all(minted.id) as { key_hash: string }[]
+    const keyHash = rows[0]!.key_hash
+    _cacheForTest.set(keyHash, { id: minted.id, name: minted.name, lastUsedAt: null, expiresAt: past })
+    expect(_cacheForTest.has(keyHash)).toBe(true)
+    expect(sweepExpiredDeviceKeys()).toBe(1)
+    // After the sweep both the DB row and the cached entry are gone.
+    expect(_cacheForTest.has(keyHash)).toBe(false)
+    expect(getDb().prepare('SELECT COUNT(*) c FROM device_keys').get()).toEqual({ c: 0 })
+  })
   it('revokeAllDeviceKeys clears everything (security:reset path)', () => {
     const a = createDeviceKey('a')
     const b = createDeviceKey('b')
     expect(revokeAllDeviceKeys()).toBe(2)
     expect(resolveDeviceKey(a.key)).toBeNull()
     expect(resolveDeviceKey(b.key)).toBeNull()
+  })
+})
+
+describe('out-of-band revocation (cache says yes, DB says no)', () => {
+  it('returns null within one debounce window when the row was deleted outside this process', async () => {
+    // The security:reset break-glass runs in its own process and cannot
+    // reach this cache. The debounced UPDATE doubles as an existence
+    // check: zero changed rows means the row was revoked externally, and
+    // we honor the revocation within <=60s instead of serving the cached
+    // key until the next restart.
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
+    const minted = createDeviceKey('oob')
+    // First resolve seeds last_used_at into both the cache and the DB,
+    // so a follow-up call within 60s does NOT fire the UPDATE.
+    expect(resolveDeviceKey(minted.key)).not.toBeNull()
+    // Simulate an external revocation: drop the DB row, keep the cache.
+    getDb().prepare('DELETE FROM device_keys WHERE id = ?').run(minted.id)
+    // 30s later: cached entry served, no UPDATE fires.
+    vi.setSystemTime(new Date('2026-01-01T00:00:30Z'))
+    expect(resolveDeviceKey(minted.key)).not.toBeNull()
+    // Past the debounce window: UPDATE returns 0 -> cache.delete + null.
+    vi.setSystemTime(new Date('2026-01-01T00:01:01Z'))
+    expect(resolveDeviceKey(minted.key)).toBeNull()
+  })
+})
+
+describe('Bridge re-pairing lookup (findDeviceKeyByInstallId)', () => {
+  it('finds a previously-paired key by its install_id', () => {
+    const minted = createDeviceKey('paired', { installId: 'marveen-remote:abc-123' })
+    const found = findDeviceKeyByInstallId('marveen-remote:abc-123')
+    expect(found).not.toBeNull()
+    expect(found?.id).toBe(minted.id)
+    expect(found?.name).toBe('paired')
+    expect(found?.installId).toBe('marveen-remote:abc-123')
+  })
+  it('returns null for an unknown install_id', () => {
+    expect(findDeviceKeyByInstallId('marveen-remote:nope')).toBeNull()
+  })
+  it('returns null when there are zero device_keys rows at all', () => {
+    // Zero-row case: a fresh install, just like the bearer-lane contract.
+    expect(findDeviceKeyByInstallId('marveen-remote:anything')).toBeNull()
+  })
+})
+
+describe('resolveDeviceKey early-return guards', () => {
+  it('returns null for an empty raw value (no prefix check, no DB hit)', () => {
+    // The empty-string guard runs before any sha256/DB work, so even with a
+    // populated device_keys table the function must short-circuit.
+    createDeviceKey('present')
+    expect(resolveDeviceKey('')).toBeNull()
+  })
+  it('returns null for a raw value that does not carry the mvdk_ prefix', () => {
+    // The prefix is what makes a leaked credential recognizable in logs;
+    // a non-prefixed string is treated as not-ours before any sha256 work.
+    createDeviceKey('present')
+    expect(resolveDeviceKey('not-a-device-key')).toBeNull()
+  })
+  it('returns null for a prefix-matching but unknown raw value', () => {
+    expect(resolveDeviceKey('mvdk_does-not-exist')).toBeNull()
+  })
+})
+
+describe('getDeviceKey', () => {
+  it('returns the metadata for a minted key', () => {
+    const minted = createDeviceKey('lookup', { expiresInDays: 7, installId: 'marveen-remote:xyz' })
+    const info = getDeviceKey(minted.id)
+    expect(info).not.toBeNull()
+    expect(info?.name).toBe('lookup')
+    expect(info?.expiresAt).not.toBeNull()
+    expect(info?.installId).toBe('marveen-remote:xyz')
+  })
+  it('returns null for an unknown id', () => {
+    expect(getDeviceKey(99999)).toBeNull()
   })
 })
 

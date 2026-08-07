@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -13,6 +13,9 @@ describe('provisionMemoryBoundaryDir', () => {
   })
 
   afterEach(() => {
+    // Some tests leave the dir read-only (chmod 0o500); rmSync refuses those,
+    // so restore writable first to avoid spurious teardown failures.
+    try { chmodSync(dir, 0o755) } catch { /* dir may be gone */ }
     rmSync(dir, { recursive: true, force: true })
   })
 
@@ -50,5 +53,22 @@ describe('provisionMemoryBoundaryDir', () => {
 
   it('returns false for a missing dir without throwing', () => {
     expect(provisionMemoryBoundaryDir(join(dir, 'does-not-exist'))).toBe(false)
+  })
+
+  it('falls back to the shared auto-memory key when provisioning throws', () => {
+    // Pin the contract documented in the catch block: when anything in the
+    // git-stub dance fails (git init failure, mkdir/writeFile failure), the
+    // function returns false and logs the failure. The agent keeps the
+    // shared fleet-wide MEMORY.md instead of a per-agent one -- a noisy but
+    // reversible degradation, never a crash.
+    //
+    // We force the catch path by pre-creating `.git` as a REGULAR FILE.
+    // existsSync('.git') returns true so git init is skipped, then
+    // mkdirSync('.git/info', { recursive: true }) throws ENOTDIR because
+    // .git is a file, not a directory.
+    writeFileSync(join(dir, '.git'), 'not a directory')
+    expect(provisionMemoryBoundaryDir(dir)).toBe(false)
+    // The function must not have replaced the file with a real git dir.
+    expect(readFileSync(join(dir, '.git'), 'utf-8')).toBe('not a directory')
   })
 })

@@ -30,6 +30,23 @@ describe('isWorktreeRoot', () => {
   it('treats a normal checkout (git dir, non-worktree path) as non-worktree', () => {
     expect(isWorktreeRoot('/opt/app', { isGitFile: notAGitFile })).toBe(false)
   })
+  it('falls back to the real statSync when no isGitFile is injected and .git is missing', () => {
+    // Exercises the catch block of gitEntryIsFile: statSync throws ENOENT
+    // on a path with no .git entry, the catch returns false, and the
+    // overall isWorktreeRoot call resolves to false (no worktree fragment).
+    const dir = mkdtempSync(join(tmpdir(), 'no-git-entry-'))
+    expect(isWorktreeRoot(dir)).toBe(false)
+    rmSync(dir, { recursive: true, force: true })
+  })
+  it('falls back to the real statSync and treats a real .git file as a worktree signal', () => {
+    // Mirror case of the test above: the fallback gitEntryIsFile is called
+    // when no isGitFile is injected, and an actual .git FILE (linked-
+    // worktree gitdir pointer) makes isWorktreeRoot return true.
+    const dir = mkdtempSync(join(tmpdir(), 'real-git-file-'))
+    writeFileSync(join(dir, '.git'), 'gitdir: /tmp/wherever/.git/worktrees/abc\n')
+    expect(isWorktreeRoot(dir)).toBe(true)
+    rmSync(dir, { recursive: true, force: true })
+  })
 })
 
 describe('shouldRegisterHooks', () => {
@@ -221,6 +238,74 @@ describe('pruneStaleHookEntries', () => {
     // so a missing-file entry must be prunable-as-ours, not treated as foreign.
     expect(KNOWN_HOOK_SCRIPTS).toContain('channel-inbox-drain.py')
   })
+
+  it('keeps groups whose shape is malformed without crashing (the typeof / Array.isArray guard)', () => {
+    // A settings.json from an older Claude Code version (or a hand-edit) may
+    // contain a group that is not a plain object or whose `hooks` is not an
+    // array. The pruner must preserve the entry byte-identically and skip
+    // straight to the next group -- never throw, never silently drop it.
+    const settings: Record<string, unknown> = {
+      hooks: {
+        UserPromptSubmit: [
+          null,                 // !group true
+          'not a group',        // typeof group !== 'object' true
+          { hooks: 'oops' },    // !Array.isArray(group.hooks) true
+          { hooks: null },      // same, null hooks
+          // a valid sibling alongside the malformed ones -- must survive.
+          { hooks: [{ type: 'command', command: 'echo hi' }] },
+        ],
+      },
+    }
+    const before = JSON.stringify(settings)
+    const { changed, removed } = pruneStaleHookEntries(settings, { fileExists: () => true })
+    expect(changed).toBe(false)
+    expect(removed).toEqual([])
+    // Nothing inside the UserPromptSubmit array was rewritten.
+    expect(JSON.stringify(settings)).toBe(before)
+    // The valid sibling is still present.
+    const kept = (settings.hooks as Record<string, Array<{ hooks: Array<{ type: string; command: string }> }>>).UserPromptSubmit
+    expect(kept).toHaveLength(5)
+    expect(kept[4]?.hooks[0]?.command).toBe('echo hi')
+  })
+
+  it('skips events whose groups value is not an array (legacy / hand-edited shapes)', () => {
+    // Some older Claude Code settings.json files had a different shape:
+    // hooks.<event> was a plain object, not an array of groups. The pruner
+    // must skip such an event with the !Array.isArray(groups) guard and
+    // never crash.
+    const settings: Record<string, unknown> = {
+      hooks: {
+        Stop: 'legacy-string-not-array',
+        SessionStart: { hooks: [{ type: 'command', command: 'echo legacy' }] },
+        UserPromptSubmit: [{ hooks: [{ type: 'command', command: 'echo ok' }] }],
+      },
+    }
+    const before = JSON.stringify(settings)
+    const { changed, removed } = pruneStaleHookEntries(settings, { fileExists: () => true })
+    expect(changed).toBe(false)
+    expect(removed).toEqual([])
+    // Non-array events are preserved verbatim.
+    expect(JSON.stringify(settings)).toBe(before)
+  })
+
+  it('ourScriptPaths skips empty tokens (consecutive whitespace / empty quoted segments)', () => {
+    // A command like `python3 "" /opt/.../staleness-guard.py` -- the middle
+    // `""` is an empty token after the quote-strip, and the split(/\s+/)
+    // yields empty strings between runs of whitespace. The empty-token
+    // guard must skip them without ever throwing.
+    const liveScript = join(mkdtempSync(join(tmpdir(), 'empty-tokens-')), 'staleness-guard.py')
+    writeFileSync(liveScript, '# live')
+    const settings: Record<string, unknown> = {
+      hooks: {
+        UserPromptSubmit: [
+          { hooks: [{ type: 'command', command: `python3   ""   ${liveScript}` }] },
+        ],
+      },
+    }
+    const { changed, removed } = pruneStaleHookEntries(settings, { fileExists: (p) => p === liveScript })
+    expect(changed).toBe(false)
+    expect(removed).toEqual([])
+  })
 })
 
 describe('pruneStaleHooksFromSettingsFile', () => {
@@ -268,4 +353,72 @@ describe('pruneStaleHooksFromSettingsFile', () => {
       rmSync(dir, { recursive: true, force: true })
     }
   })
+
+  it('refuses to rewrite when the parsed JSON is not an object (null / string / array)', () => {
+    // Valid JSON, parseable, but the top-level value is null / a string /
+    // an array. The function must treat it as "not a settings file" and
+    // return [] without touching the file. Silently nuking such a file
+    // (overwriting with {}) would be a hostile failure mode -- the
+    // upstream caller (settings-watcher) would re-write `{}` on the next
+    // tick and lose user state.
+    const dir = mkdtempSync(join(tmpdir(), 'hook-guard-test-'))
+    try {
+      const path = join(dir, 'settings.json')
+      const payloads = ['null', '"a string"', '[1,2,3]', '42']
+      for (const p of payloads) {
+        writeFileSync(path, p)
+        expect(pruneStaleHooksFromSettingsFile(path)).toEqual([])
+        // File is untouched (no rewrite with {} or a default shape).
+        expect(readFileSync(path, 'utf-8')).toBe(p)
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('does NOT rewrite the file when the prune leaves nothing to remove (changed=false branch)', () => {
+    // The "rewrites the file" test above exercises the changed=true path;
+    // this one exercises the opposite: a fully valid settings.json must
+    // not be rewritten at all. Without this test the `if (changed)`
+    // branch's false arm is uncovered.
+    const dir = mkdtempSync(join(tmpdir(), 'hook-guard-test-'))
+    try {
+      const liveScript = join(dir, 'staleness-guard.py')
+      writeFileSync(liveScript, '# live')
+      const settingsPath = join(dir, 'settings.json')
+      const before = JSON.stringify({
+        enabledPlugins: { x: true },
+        hooks: {
+          UserPromptSubmit: [
+            { hooks: [{ type: 'command', command: `python3 ${liveScript}`, timeout: 10 }] },
+          ],
+        },
+      }, null, 2)
+      writeFileSync(settingsPath, before)
+      // Record mtime before -- the atomicWriteFileSync branch must NOT fire.
+      const mtimeBefore = statSyncSafe(settingsPath)
+      // Tiny sleep so a stray rewrite would be detectable via mtime drift.
+      sleepTiny()
+      expect(pruneStaleHooksFromSettingsFile(settingsPath)).toEqual([])
+      // Content and timestamp are unchanged.
+      expect(readFileSync(settingsPath, 'utf-8')).toBe(before)
+      expect(statSyncSafe(settingsPath)).toBe(mtimeBefore)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })
+
+// Tiny mtime helpers used by the rewrite-skip test. Imported lazily so the
+// happy-path tests do not pay for them.
+import { statSync as _statSync, utimesSync as _utimesSync } from 'node:fs'
+
+function statSyncSafe(path: string): number {
+  return _statSync(path).mtimeMs
+}
+function sleepTiny(): void {
+  // ~5ms -- enough for utimes drift to register on coarse-grained filesystems.
+  const until = Date.now() + 5
+  while (Date.now() < until) { /* spin */ }
+}
+void _utimesSync // keep the import in case we extend the test
