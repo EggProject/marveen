@@ -1807,20 +1807,58 @@ describe('hookCommand / HOOK_NODE_BIN', () => {
 // ===========================================================================
 // 27. ensureDefaultScheduledTasks line 711 -- non-task-config catch branch
 //     falls back to copyFileSync when the read/substitute throws.
-//     This case is also covered in agent-scaffold-scheduled-tasks-catch.test.ts
-//     via a node:fs mock, but pinning it here in-line keeps the full test
-//     self-contained.
+//
+// The previous incarnation of this test made the SKILL.md source a directory
+// (mkdirSync on the source path). That approach does NOT trigger the catch
+// branch: the source-stat isDirectory guard at line 701 skips directories before
+// the try/catch runs. The bare `expect(() => ...).not.toThrow()` passed only
+// because the directory was silently skipped, not because the catch ran.
+//
+// We need a real read failure on a regular file to exercise the catch. The
+// cleanest way without polluting the file-level module mocks -- vi.mock('node:fs')
+// is hoisted and would distort every other test in this file -- is vi.doMock + a
+// single import after vi.resetModules(). afterEach then unmocks so subsequent
+// tests get the real fs back.
 // ===========================================================================
 describe('ensureDefaultScheduledTasks: non-task-config catch (line 711)', () => {
-  it('falls back to copyFileSync when the read on a non-task-config file throws', () => {
+  it('falls back to copyFileSync (no placeholder substitution) when readFileSync throws', async () => {
     mkdirSync(join(SANDBOX, 'scheduled-tasks', 'task1'), { recursive: true })
+    const skillPath = join(SANDBOX, 'scheduled-tasks', 'task1', 'SKILL.md')
+    // Plant a placeholder so we can prove the catch branch used copyFileSync
+    // (verbatim bytes) and not the resolved writeFileSync path.
+    writeFileSync(skillPath, '# Skill {{BOT_NAME}} for {{OWNER_NAME}}\n')
     mkdirSync(join(HOME, '.claude'), { recursive: true })
-    // Make the SKILL.md a directory: existsSync -> true (file stat isDirectory false),
-    // but readFileSync on a directory throws EISDIR. The catch must fall back
-    // to copyFileSync -- which also fails on a directory -- so the function
-    // still must not throw. The point is the catch branch is reached.
-    mkdirSync(join(SANDBOX, 'scheduled-tasks', 'task1', 'SKILL.md'))
-    expect(() => scaffold.ensureDefaultScheduledTasks()).not.toThrow()
+
+    vi.doMock('node:fs', async () => {
+      const actual = await vi.importActual<typeof import('node:fs')>('node:fs')
+      return {
+        ...actual,
+        readFileSync: ((p: string | URL, enc?: string) => {
+          if (typeof p === 'string' && p === skillPath) {
+            throw new Error('forced read failure for test')
+          }
+          return actual.readFileSync(p as string, enc as BufferEncoding)
+        }) as typeof actual.readFileSync,
+      }
+    })
+    vi.resetModules()
+    const fresh = await import('../web/agent-scaffold.js')
+
+    try {
+      expect(() => fresh.ensureDefaultScheduledTasks()).not.toThrow()
+      const dest = join(HOME, '.claude', 'scheduled-tasks', 'task1', 'SKILL.md')
+      expect(existsSync(dest)).toBe(true)
+      // Pinning: the catch branch used copyFileSync, so the placeholders
+      // survive verbatim. The successful path would have substituted them.
+      const destContent = readFileSync(dest, 'utf-8')
+      expect(destContent).toContain('{{BOT_NAME}}')
+      expect(destContent).toContain('{{OWNER_NAME}}')
+      expect(destContent).not.toContain('MainBot')
+      expect(destContent).not.toContain('TestOwner')
+    } finally {
+      vi.doUnmock('node:fs')
+      vi.resetModules()
+    }
   })
 })
 

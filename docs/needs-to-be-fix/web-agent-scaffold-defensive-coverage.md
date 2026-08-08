@@ -103,8 +103,18 @@ branch of the file:
   every dedup branch, replacement branch, fresh-add branch, type-only
   skip, replace-with-different-cmd, no-prior-entry, missing-script skip
 - `ensureDefaultScheduledTasks` -- every reachable branch including the
-  non-task-config catch (line 711 pinned via the catch in
-  agent-scaffold-scheduled-tasks-catch.test.ts)
+  non-task-config catch (line 711: pinned by the in-file test in
+  `describe('ensureDefaultScheduledTasks: non-task-config catch (line 711)')`
+  via `vi.doMock('node:fs')` + `vi.resetModules()`; the placeholder
+  survives verbatim, proving the catch fell back to `copyFileSync`. The
+  earlier in-file version of the test made the SKILL.md source a directory,
+  which is silently skipped by the `statSync(...).isDirectory()` guard at
+  line 701 and never reaches the try/catch -- the test was rewritten
+  during the catch-branch coverage sweep to use the `vi.doMock` technique
+  instead. The sibling test file
+  `agent-scaffold-scheduled-tasks-catch.test.ts` covers the same case
+  via a module-level `vi.mock('node:fs')` and is now redundant -- kept
+  for the moment so the catch-branch test is duplicated at file level)
 - `scaffoldAgentDir` -- mkdir / copy / file rewrite / atomicWrite
   branches, every placeholder substitution path
 - `copyTaskConfigWithAgentRewrite` -- valid JSON, malformed JSON,
@@ -121,7 +131,8 @@ branch of the file:
   existsSync-missing-path path, the safe-command path, the no-extension
   path
 
-177 tests passing. Statements 99.76% (421/422), branches 93.61%
+177 tests passing in the full file alone, 178 with the sibling
+catch-test file. Statements 99.76% (421/422), branches 93.61%
 (264/282), functions 100% (55/55), lines 100% (350/350). The gap is
 exactly the 18 defensive nullish-coalesce / guard branches above.
 
