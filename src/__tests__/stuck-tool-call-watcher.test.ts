@@ -396,16 +396,30 @@ describe('src/web/stuck-tool-call-watcher.ts', () => {
       )
     })
 
-    // Pins CURRENT (dead-code) behaviour: see docs/needs-to-be-fix/stuck-tool-call-watcher-respawn-ternary-null-unreachable.md.
-    // The `null` arm of the `lastRespawn ? Date.now() - lastRespawn : null`
-    // ternary on line 192 cannot fire through normal control flow -- the
-    // enclosing `if (shouldDeferForRecentRespawn(...))` requires lastRespawnMs
-    // > 0, and 0 is the only falsy value the underlying stamp holds. The
-    // truthy arm IS exercised by the "defers recovery when another respawner
-    // acted inside the grace window" test above.
-    it('documents that the :null arm of the sinceRespawnMs ternary is unreachable in production', () => {
-      expect(mocks.resumeMarveenSession).not.toHaveBeenCalled() // sanity: prior test state
-      // The arm is unreachable; coverage is pinned via docs/needs-to-be-fix/.
+    // A 192. sor `lastRespawn ? Date.now() - lastRespawn : null` ternary-jének
+    // `: null` ága a JELENLEGI kódban strukturálisan elérhetetlen: a 190.
+    // sor `if (shouldDeferForRecentRespawn(lastRespawn, Date.now()))` őre
+    // CSAK akkor lép be, ha lastRespawnMs > 0; a 0 az egyetlen falsy érték,
+    // amit a lastMainRespawnAt() visszaadhat, és a 0-val a log egyáltalán
+    // nem hívódik. Tehát a log body-ban a lastRespawn MINDIG truthy szám,
+    // a `: null` ág soha nem fut le. A részletes elemzés a
+    // docs/needs-to-be-fix/stuck-tool-call-watcher-respawn-ternary-null-unreachable.md
+    // fájlban.
+    it('a defer-log mindig sinceRespawnMs=<szám> értéket ír (a :null ág nem érhető el)', async () => {
+      mocks.lastMainRespawnAt.mockImplementation(() => Date.now() - 1_000)
+      await run(RECOVERY_MS)
+      // A logger.info hívás a sinceRespawnMs payload mezőben egy pozitív
+      // számot tartalmaz, NEM null-t. Ez bizonyítja, hogy a ternary
+      // `Date.now() - lastRespawn` (truthy) ága fut, a `: null` (falsy)
+      // ág soha.
+      const deferCall = mocks.logger.info.mock.calls.find((c) =>
+        String(c[1]).includes('recent respawn within grace'),
+      )
+      expect(deferCall).toBeDefined()
+      const payload = deferCall![0] as { sinceRespawnMs: number | null; graceMs: number }
+      expect(typeof payload.sinceRespawnMs).toBe('number')
+      expect(payload.sinceRespawnMs).not.toBeNull()
+      expect(payload.sinceRespawnMs).toBeGreaterThan(0)
     })
 
     it('does not sample CPU when the grace guard defers', async () => {
