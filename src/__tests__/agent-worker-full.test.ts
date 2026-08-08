@@ -1465,3 +1465,103 @@ describe('runWorkerAttempt -- decision timeout branch (line 692 if-else)', () =>
     expect(out.error).toMatch(/timeout/i)
   })
 })
+
+// ===========================================================================
+// baseline branches: seedWorkerCredentials / !ready + auth / poll wait
+// A tesztek a JELENLEGI kód viselkedését állítják.
+// ===========================================================================
+
+describe('seedWorkerCredentials: !existsSync(configDir) false ág (config dir már létezik)', () => {
+  // A seedWorkerCredentials a 211. sor `if (!existsSync(ctx.configDir)) mkdirSync(...)`
+  // során a config dir hiányzó esetén hozza létre a könyvtárat. Ha a config
+  // dir MÁR LÉTEZIK (egy korábbi boot óta), az if-true ág kimarad, és a
+  // writeFileSync közvetlenül felülírja a .credentials.json fájlt.
+  it('when the config dir already exists, the !existsSync if-true branch is skipped and the credentials are still written', () => {
+    const restore = forcePlatform('darwin')
+    try {
+      const cfg = join(H.home, '.marveen-worker', '.claude-config')
+      mkdirSync(cfg, { recursive: true })
+      // A pre-existing fájl bizonyítja, hogy a seedWorkerCredentials NEM
+      // törölte a dir-t, csak felülírta a credentials fájlt.
+      writeFileSync(join(cfg, 'pre-existing.txt'), 'kept')
+      H.readClaudeCodeOauthJson.mockReturnValue('{"claudeAiOauth":{"refresh":"new"}}')
+      AW.ensureWorkerCwd()
+      expect(existsSync(join(cfg, 'pre-existing.txt'))).toBe(true)
+      expect(existsSync(join(cfg, '.credentials.json'))).toBe(true)
+      expect(readFileSync(join(cfg, '.credentials.json'), 'utf-8')).toContain('"refresh":"new"')
+    } finally { restore() }
+  })
+})
+
+describe('ensureWorkerCwd: !existsSync(configDir) false ág (line 341)', () => {
+  // A ensureWorkerCwd a 341. sor `if (!existsSync(ctx.configDir)) mkdirSync(...)`
+  // során a config dir hiányzó esetén hozza létre a könyvtárat. Ha a config
+  // dir MÁR LÉTEZIK, az if-true ág kimarad, és a későbbi szimlink / settings
+  // / credentials lépések mennek tovább a meglévő dir felett.
+  it('when the config dir already exists, the mkdirSync is skipped and settings.json is still written', () => {
+    const cfg = join(H.home, '.marveen-worker', '.claude-config')
+    mkdirSync(cfg, { recursive: true })
+    AW.ensureWorkerCwd()
+    expect(existsSync(join(cfg, 'settings.json'))).toBe(true)
+  })
+})
+
+describe('runWorkerAttempt -- !ready + workerPaneHasAuthFailure (line 655 if-true)', () => {
+  // A runWorkerAttempt 651-657. sora a `if (!ready) { ... if (workerPaneHasAuthFailure(ctx)) return { kind: 'auth' } ... }`
+  // útvonal. Ha a worker soha nem áll készen, ÉS a pane-en auth-failure chrome
+  // látható, a függvény { kind: 'auth' } értékkel tér vissza, NEM a sima
+  // 'worker session not ready' fail-jelzéssel. runViaWorker eztán recovery-t
+  // (reseed + restart) indít, és a második attempt ismét auth-ot jelez -> a
+  // függvény authFailed=true értékkel jelzi az SDK fallback-et.
+  it('returns kind=auth when the worker never becomes ready AND the pane shows auth-failure chrome', async () => {
+    H.isSessionReadyForPrompt.mockResolvedValue(false)
+    H.capturePane.mockReturnValue(
+      Array.from({ length: 35 }, (_, i) => i === 34 ? 'Please run /login' : 'x').join('\n'),
+    )
+    H.sessionExistsOnHost.mockReturnValue(true)
+    H.sendPromptToSession.mockResolvedValue('sent')
+    const out = await AW.runViaWorker('hi', 100)
+    expect(out.authFailed).toBe(true)
+    expect(out.error).toMatch(/auth/i)
+    // A második attempt is auth-ot jelez (recovery után sem áll készen a
+    // worker), így a runViaWorker a 'worker auth failed after recovery'
+    // hibát adja vissza.
+    expect(out.error).toBe('worker auth failed (401/login) after recovery')
+  })
+})
+
+describe('runWorkerAttempt -- poll wait branch (line 692 if-false, decision !== "dead")', () => {
+  // A `if (decision === 'dead')` if-true ága a halál pillanatában return-öl.
+  // Az if-false (implicit-else) akkor fut le, amikor a decision 'wait' / 'ready' /
+  // 'timeout' -- a jelenlegi tesztek ezt csak közvetetten fedik (a 'ready' és
+  // 'timeout' return-ölések miatt). Ez a teszt explicit a 'wait' cikluson
+  // megy keresztül, ahol a session mindvégig él, és a done sentinel nem
+  // jelenik meg, a deadline sem telik le -- így a 'wait' döntéshez tartozó
+  // implicit-else ág biztosan lefut a poll ciklus során.
+  it('polls with decision=wait (alive, no done, no timeout) -> if-else branch of `if (decision === "dead")` is exercised', async () => {
+    let pollCount = 0
+    H.isSessionReadyForPrompt.mockResolvedValue(true)
+    H.sessionExistsOnHost.mockReturnValue(true)
+    H.capturePane.mockReturnValue('idle pane')
+    H.sendPromptToSession.mockImplementation(async (_s: string, prompt: string) => {
+      const { outPath, donePath } = extractPaths(prompt)
+      mkdirSync(join(outPath, '..'), { recursive: true })
+      // A sentinel-eket csak az 5. poll után írjuk ki -- az első négy poll
+      // 'wait' döntést hoz (alive, no done, no timeout), így a line 692
+      // if-true ága NEM fut le, csak az implicit-else.
+      const tick = () => {
+        pollCount++
+        if (pollCount >= 5) {
+          writeFileSync(donePath, 'done')
+          writeFileSync(outPath, 'late text')
+        } else {
+          setTimeout(tick, 0)
+        }
+      }
+      setTimeout(tick, 0)
+      return 'sent'
+    })
+    const out = await AW.runViaWorker('hi', 30_000)
+    expect(out.text).toBe('late text')
+  })
+})
