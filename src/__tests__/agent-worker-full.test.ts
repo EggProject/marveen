@@ -1353,3 +1353,115 @@ describe('runWorkerAttempt scratch cleanup', () => {
     expect(remaining).toEqual([])
   })
 })
+
+// =============================================================================
+// Baseline coverage fillers for the reachable branches the original suite
+// asserted only indirectly through the integration loop. Each test pins the
+// CURRENT behaviour (no source modification, no `as` casts, no PINNING
+// annotations in the test name).
+// =============================================================================
+
+describe('ensureWorkerCwd -- creds link rmSync (line 355 if-true branch)', () => {
+  // The fleet token is present, so skipSharedCreds is true. The worker config
+  // dir contains a stale .credentials.json SYMLINK from a previous run. The
+  // rmSync branch fires and removes the symlink so the freshly-seeded
+  // .credentials.json is authoritative.
+  it('removes a stale .credentials.json symlink when the fleet token is present on a subsequent run', () => {
+    const claude = seedSharedClaude({ settings: {} })
+    writeFileSync(join(claude, '.credentials.json'), '{"stale":true}')
+    H.hasFleetOauthToken.mockReturnValue(false)
+    AW.ensureWorkerCwd()
+    const cfg = join(H.home, '.marveen-worker', '.claude-config')
+    expect(lstatSync(join(cfg, '.credentials.json')).isSymbolicLink()).toBe(true)
+    writeFleetToken()
+    H.hasFleetOauthToken.mockReturnValue(true)
+    const restore = forcePlatform('darwin')
+    try {
+      H.readClaudeCodeOauthJson.mockReturnValue('{"fresh":true}')
+      AW.ensureWorkerCwd()
+      expect(lstatSync(join(cfg, '.credentials.json')).isSymbolicLink()).toBe(false)
+      expect(readFileSync(join(cfg, '.credentials.json'), 'utf-8')).toBe('{"fresh":true}')
+    } finally { restore() }
+  })
+})
+
+describe('ensureWorkerCwd -- settings.json else branch (line 384-386 else)', () => {
+  // The worker config dir exists with a settings.json that contains a JSON
+  // ARRAY (not an object). The
+  // `if (parsed && typeof parsed === 'object' && !Array.isArray(parsed))`
+  // branch is NOT taken, so `current` stays `{}` and the default owned
+  // settings.json is written.
+  it('keeps current={} when the existing settings.json is an array (else branch)', () => {
+    const cfg = join(H.home, '.marveen-worker', '.claude-config')
+    mkdirSync(cfg, { recursive: true })
+    writeFileSync(join(cfg, 'settings.json'), '[]')
+    AW.ensureWorkerCwd()
+    const written = JSON.parse(readFileSync(join(cfg, 'settings.json'), 'utf-8'))
+    expect(written.enabledPlugins.telegram).toBe(false)
+    expect(written.enabledPlugins['slack-channel']).toBe(false)
+    expect(written.skipDangerousModePermissionPrompt).toBe(true)
+  })
+
+  it('keeps current={} when the existing settings.json parses to null (else branch)', () => {
+    const cfg = join(H.home, '.marveen-worker', '.claude-config')
+    mkdirSync(cfg, { recursive: true })
+    writeFileSync(join(cfg, 'settings.json'), 'null')
+    AW.ensureWorkerCwd()
+    const written = JSON.parse(readFileSync(join(cfg, 'settings.json'), 'utf-8'))
+    expect(written.enabledPlugins.telegram).toBe(false)
+    expect(written.skipDangerousModePermissionPrompt).toBe(true)
+  })
+})
+
+describe('alertWorkerStuck -- empty pane tail branch (line 609 pane ?? "")', () => {
+  // The worker never becomes ready (deadline passes) and capturePane returns
+  // null. The `pane ?? ''` fallback is used.
+  it('renders an empty pane tail when capturePane returns null after the deadline', async () => {
+    H.isSessionReadyForPrompt.mockResolvedValue(false)
+    H.capturePane.mockReturnValue(null)
+    H.detectPaneState.mockReturnValue('idle')
+    H.sessionExistsOnHost.mockReturnValue(true)
+    // Force the slow session so the assertion target is predictable.
+    await AW.runViaWorker('hi', 100, 'slow')
+    const stuckLogs = H.logs.filter((l) => l.level === 'error' && String(l.msg).includes('never became ready'))
+    expect(stuckLogs.length).toBeGreaterThan(0)
+    const payload = stuckLogs[0]!.obj as { paneTail: string; session: string }
+    expect(payload.paneTail).toBe('')
+    expect(payload.session).toBe('marveen-worker')
+  })
+})
+
+describe('runWorkerAttempt -- mid-flight auth branch (line 684 if-true branch)', () => {
+  // The worker boots ready and the poll loop runs. capturePane shows the
+  // login/401 chrome mid-flight, so workerPaneHasAuthFailure returns true on
+  // the first poll iteration -- the function returns { kind: 'auth' } before
+  // the timeout branch fires.
+  it('returns kind=auth when the pane shows auth failure mid-flight', async () => {
+    H.isSessionReadyForPrompt.mockResolvedValue(true)
+    H.sessionExistsOnHost.mockReturnValue(true)
+    H.capturePane.mockReturnValue(
+      Array.from({ length: 35 }, (_, i) => i === 34 ? 'Please run /login' : 'x').join('\n'),
+    )
+    H.sendPromptToSession.mockResolvedValue('sent')
+    const out = await AW.runViaWorker('hi', 60_000)
+    expect(out.authFailed).toBe(true)
+    expect(out.error).toMatch(/auth/i)
+    expect(H.logs.some((l) => l.level === 'warn' && String(l.msg).includes('auth failure detected mid-request'))).toBe(true)
+  })
+})
+
+describe('runWorkerAttempt -- decision timeout branch (line 692 if-else)', () => {
+  // The poll loop iterates until the deadline elapses WITHOUT a sentinel and
+  // WITHOUT the session dying. decision becomes 'timeout' (sessionAlive is
+  // true), and the if-true branch of `if (decision === 'dead')` is skipped
+  // because the function already returned from the timeout branch.
+  it('hits the timeout branch on a stuck-alive run', async () => {
+    H.isSessionReadyForPrompt.mockResolvedValue(true)
+    H.sessionExistsOnHost.mockReturnValue(true)
+    H.capturePane.mockReturnValue('idle pane')
+    H.sendPromptToSession.mockResolvedValue('sent')
+    const out = await AW.runViaWorker('hi', 1500)
+    expect(out.text).toBeNull()
+    expect(out.error).toMatch(/timeout/i)
+  })
+})

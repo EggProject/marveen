@@ -1690,4 +1690,31 @@ describe('coverage gap fillers (reachable branches)', () => {
     expect(summaryText).not.toContain('x'.repeat(121))
     vi.useRealTimers()
   })
+
+  // ---- msg.content ?? '' branch (line 82): null content in the abandon
+  //      notify still fires the handoff-failure system note, but the
+  //      truncated preview body is the empty string.
+  it('renders an empty preview when msg.content is null in the orchestrator notify', async () => {
+    const msg = {
+      id: 1800,
+      from_agent: 'mason',
+      to_agent: 'dex',
+      content: null,
+      created_at: NOW_SEC - 7200, // 2h ago -> past the abandon window
+      trace_id: null,
+      span_id: null,
+      parent_span_id: null,
+    }
+    H.getPendingMessages.mockImplementation((toAgent?: string) => (toAgent ? [] : [msg]))
+    H.sessionExistsOnHost.mockReturnValue(false)
+
+    await runMessageRouterTick()
+
+    expect(H.markMessageFailed).toHaveBeenCalledWith(1800, expect.stringContaining('Abandoned'))
+    const note = H.createAgentMessage.mock.calls.find(c =>
+      c[0] === 'system' && c[1] === H.MAIN_AGENT_ID && String(c[2]).includes('[handoff-failure]'),
+    )
+    expect(note).toBeDefined()
+    expect(String(note![2])).toMatch(/Content preview:\s*$/)
+  })
 })
