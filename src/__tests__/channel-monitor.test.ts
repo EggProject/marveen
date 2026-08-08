@@ -2180,13 +2180,65 @@ describe('persisted agent failure count', () => {
   })
 })
 
-describe('triggerMarveenMemorySave + post-respawn modal dismiss failures (pinned)', () => {
-  // These branches sit behind the full handleMarveenDown cascade (soft -> save
-  // -> resume -> hard -> gave_up) and cannot be reached without driving the
-  // cascade through 3-5 ticks with state-aware mock choreography. They are
-  // pinned here as failing-test markers; see docs/needs-to-be-fix/.
-  it.skip('triggerMarveenMemorySave: sendPromptToSession throws -> caught + logged', () => {})
-  it.skip('resumeMarveenSession: post-respawn modal dismiss throws -> caught + logged', () => {})
+describe('triggerMarveenMemorySave + post-respawn modal dismiss failures', () => {
+  // triggerMarveenMemorySave sits behind the full handleMarveenDown cascade
+  // (soft -> save -> resume -> hard -> gave_up). Drive it by:
+  //   * claude pid gone (m.getClaudePidForSession returns null for the main
+  //     session)
+  //   * main session still alive (m.execFileSync returns '' for tmux has-session)
+  //   * soft reconnect fails (m.attemptChannelMcpReconnect returns ok:false) so
+  //     the stage advances on the very next tick
+  //   * shouldEscalateMarveenDown returns true only after MARVEEN_DOWN_CONFIRM_MS
+  //     (120s) -- so we need at least 3 ticks (30s + 2*60s = 150s) before the
+  //     down handler fires, then one more tick (210s) for it to advance into
+  //     the 'save' stage and call triggerMarveenMemorySave.
+  it('triggerMarveenMemorySave: sendPromptToSession throws -> caught + logged', async () => {
+    vi.useFakeTimers()
+    // Clean any leftover respawn stamp so MARVEEN_POST_RESPAWN_GRACE_MS guard
+    // does not short-circuit handleMarveenDown.
+    rmSync(join(sandbox.PROJECT_ROOT, 'store', '.channel-last-respawn'), { force: true })
+    m.getClaudePidForSession.mockReturnValue(null)
+    m.listAgentNames.mockReturnValue([])
+    m.execFileSync.mockReturnValue('')
+    m.attemptChannelMcpReconnect.mockReturnValue({ ok: false, message: 'no' })
+    m.sendPromptToSession.mockRejectedValue(new Error('send err'))
+    const handle = startChannelPluginMonitor()
+    // Tick 1 (30s): set marveenSuspectFirstSeen, no escalation yet.
+    await vi.advanceTimersByTimeAsync(30_000)
+    // Tick 2 (90s): shouldEscalateMarveenDown still false (<120s confirmed).
+    await vi.advanceTimersByTimeAsync(60_000)
+    // Tick 3 (150s): shouldEscalateMarveenDown returns true; handleMarveenDown
+    // is called for the first time and sets marveenDownState.stage = 'soft'.
+    await vi.advanceTimersByTimeAsync(60_000)
+    // Tick 4 (210s): stage 'soft' advances to 'save'; triggerMarveenMemorySave
+    // is invoked, sendPromptToSession rejects, the catch logs warn.
+    await vi.advanceTimersByTimeAsync(60_000)
+    clearMonitorHandle(handle)
+    vi.useRealTimers()
+    const warnCalls = m.loggerWarn.mock.calls.flat()
+    const matched = warnCalls.some(
+      (c: unknown) => typeof c === 'string' && c.includes('Failed to dispatch'),
+    )
+    expect(matched).toBe(true)
+  })
+
+  it('resumeMarveenSession: post-respawn modal dismiss throws -> caught + logged', async () => {
+    // resumeMarveenSession has TWO identical try/catch blocks around
+    // dismissResumeSummaryModalIfPresent (lines 733-738 and 746-751). Make
+    // every dismiss call reject so BOTH catch blocks fire. The function
+    // should still return true because the catch only swallows the modal
+    // failure, not the entire respawn.
+    m.execFileSync.mockReturnValue('')
+    m.dismissResumeSummaryModalIfPresent.mockRejectedValue(new Error('modal err'))
+    const r = await resumeMarveenSession()
+    expect(r).toBe(true)
+    const warnCalls = m.loggerWarn.mock.calls.flat()
+    const matches = warnCalls.filter(
+      (c: unknown) => typeof c === 'string' && c.includes('post-respawn modal dismiss failed'),
+    )
+    // At least one of the two identical catch blocks must have logged warn.
+    expect(matches.length).toBeGreaterThanOrEqual(1)
+  })
 })
 
 // readConfiguredMainModel is a private helper invoked by respawnMainSessionFresh.
@@ -2217,29 +2269,144 @@ describe('readConfiguredMainModel (driven via respawnMainSessionFresh)', () => {
   })
 })
 
-describe('schedulePostResumePluginGuard (pinned)', () => {
-  // The guard setTimeouts run 90s after the respawn; vitest fake timers cannot
-  // intercept them after a non-fake setTimeout schedules them, so the
-  // branches are pinned here.
-  it.skip('plugin attached after --continue -> info log, no escalation', () => {})
-  it.skip('plugin missing after --continue -> escalate to fresh respawn + alert', () => {})
-  it.skip('post-resume guard probe throws -> logged, recovery continues', () => {})
+describe('schedulePostResumePluginGuard', () => {
+  // schedulePostResumePluginGuard schedules a setTimeout(POST_RESUME_GUARD_DELAY_MS).
+  // resumeMarveenSession also awaits delay(2000) twice before scheduling the
+  // guard. Use vi.useFakeTimers BEFORE resumeMarveenSession so the inner
+  // setTimeouts are intercepted by the fake clock; advance past the guard
+  // delay to fire the probe callback.
+  it('plugin attached after --continue -> info log, no escalation', async () => {
+    vi.useFakeTimers()
+    m.execFileSync.mockReturnValue('')
+    m.getClaudePidForSession.mockReturnValue(7777)
+    m.hasChannelPluginAlive.mockReturnValue(true)
+    const resumePromise = resumeMarveenSession()
+    await vi.advanceTimersByTimeAsync(POST_RESUME_GUARD_DELAY_MS + 5000)
+    await resumePromise
+    vi.useRealTimers()
+    const infoCalls = m.loggerInfo.mock.calls.flat()
+    const matched = infoCalls.some(
+      (c: unknown) => typeof c === 'string' && c.includes('channel plugin attached after --continue'),
+    )
+    expect(matched).toBe(true)
+  })
+
+  it('plugin missing after --continue -> escalate to fresh respawn + alert', async () => {
+    vi.useFakeTimers()
+    m.execFileSync.mockReturnValue('')
+    m.getClaudePidForSession.mockReturnValue(8888)
+    m.hasChannelPluginAlive.mockReturnValue(false)
+    const resumePromise = resumeMarveenSession()
+    await vi.advanceTimersByTimeAsync(POST_RESUME_GUARD_DELAY_MS + 5000)
+    await resumePromise
+    vi.useRealTimers()
+    const warnCalls = m.loggerWarn.mock.calls.flat()
+    const matched = warnCalls.some(
+      (c: unknown) => typeof c === 'string' && c.includes('escalating to fresh respawn'),
+    )
+    expect(matched).toBe(true)
+    const alertCalls = m.notifyChannel.mock.calls.flat()
+    const alertMatched = alertCalls.some(
+      (c: unknown) => typeof c === 'string' && c.includes('suketen jott fel'),
+    )
+    expect(alertMatched).toBe(true)
+  })
+
+  it('post-resume guard probe throws -> logged, recovery continues', async () => {
+    vi.useFakeTimers()
+    m.execFileSync.mockReturnValue('')
+    // Make the probe itself throw (e.g. getClaudePidForSession fails). The
+    // outer try/catch in schedulePostResumePluginGuard swallows the error
+    // and logs warn.
+    m.getClaudePidForSession.mockImplementation(() => { throw new Error('probe fail') })
+    const resumePromise = resumeMarveenSession()
+    await vi.advanceTimersByTimeAsync(POST_RESUME_GUARD_DELAY_MS + 5000)
+    await resumePromise
+    vi.useRealTimers()
+    const warnCalls = m.loggerWarn.mock.calls.flat()
+    const matched = warnCalls.some(
+      (c: unknown) => typeof c === 'string' && c.includes('Post-resume guard probe failed'),
+    )
+    expect(matched).toBe(true)
+  })
 })
 
-describe('readConfiguredMainModel (pinned -- direct tests need a re-import with a sandbox .claude dir)', () => {
-  it.skip('returns the model string from .claude/settings.json', () => {})
-  it.skip('returns "" when settings.json is missing', () => {})
-  it.skip('returns "" when settings.json has non-string model', () => {})
-  it.skip('returns "" when readFileSync throws (malformed JSON)', () => {})
+describe('readConfiguredMainModel (direct behavioural assertions)', () => {
+  // readConfiguredMainModel is a private helper. We can only invoke it via
+  // respawnMainSessionFresh() (which calls buildMainSessionRespawnCmd ->
+  // model: readConfiguredMainModel()). The function reads
+  // PROJECT_ROOT/.claude/settings.json; with the suite-level vi.mock for
+  // ../config.js the PROJECT_ROOT points at sandbox.PROJECT_ROOT. Each test
+  // controls the settings.json content and asserts no throw + the function
+  // returns the expected string by side-effect (the built respawn command
+  // contains the model string).
+  beforeEach(() => {
+    rmSync(join(sandbox.PROJECT_ROOT, '.claude', 'settings.json'), { force: true })
+  })
+
+  it('returns the model string from .claude/settings.json', () => {
+    mkdirSync(join(sandbox.PROJECT_ROOT, '.claude'), { recursive: true })
+    writeFileSync(join(sandbox.PROJECT_ROOT, '.claude', 'settings.json'), JSON.stringify({ model: 'claude-opus-4-8' }))
+    // Drive through respawnMainSessionFresh; buildMainSessionRespawnCmd receives
+    // the configured model so the shell command carries --model 'claude-opus-4-8'.
+    expect(() => respawnMainSessionFresh()).not.toThrow()
+    const execCalls = m.execFileSync.mock.calls.filter((c: unknown[]) => Array.isArray(c[1]) && (c[1] as unknown[])[0] === 'respawn-pane')
+    const cmd = String(execCalls[execCalls.length - 1]?.[2] ?? '')
+    expect(cmd).toContain(`'claude-opus-4-8'`)
+  })
+
+  it('returns "" when settings.json is missing', () => {
+    // No settings.json -> readConfiguredMainModel returns ''. The respawn
+    // command must therefore omit --model entirely.
+    expect(() => respawnMainSessionFresh()).not.toThrow()
+    const execCalls = m.execFileSync.mock.calls.filter((c: unknown[]) => Array.isArray(c[1]) && (c[1] as unknown[])[0] === 'respawn-pane')
+    const cmd = String(execCalls[execCalls.length - 1]?.[2] ?? '')
+    expect(cmd).not.toContain('--model')
+  })
+
+  it('returns "" when settings.json has non-string model', () => {
+    mkdirSync(join(sandbox.PROJECT_ROOT, '.claude'), { recursive: true })
+    writeFileSync(join(sandbox.PROJECT_ROOT, '.claude', 'settings.json'), JSON.stringify({ model: 42 }))
+    expect(() => respawnMainSessionFresh()).not.toThrow()
+    const execCalls = m.execFileSync.mock.calls.filter((c: unknown[]) => Array.isArray(c[1]) && (c[1] as unknown[])[0] === 'respawn-pane')
+    const cmd = String(execCalls[execCalls.length - 1]?.[2] ?? '')
+    expect(cmd).not.toContain('--model')
+  })
+
+  it('returns "" when readFileSync throws (malformed JSON)', () => {
+    mkdirSync(join(sandbox.PROJECT_ROOT, '.claude'), { recursive: true })
+    writeFileSync(join(sandbox.PROJECT_ROOT, '.claude', 'settings.json'), '{not json')
+    expect(() => respawnMainSessionFresh()).not.toThrow()
+    const execCalls = m.execFileSync.mock.calls.filter((c: unknown[]) => Array.isArray(c[1]) && (c[1] as unknown[])[0] === 'respawn-pane')
+    const cmd = String(execCalls[execCalls.length - 1]?.[2] ?? '')
+    expect(cmd).not.toContain('--model')
+  })
 })
 
-describe('createMainChannelsSession: script-missing + spawn-failed (pinned)', () => {
-  // These paths are reachable but the marveenLastSessionCreate cooldown from
-  // earlier tests in the same module load makes the assertion flaky. We tested
-  // them in isolation (with vi.resetModules + fresh import); here they're pinned
-  // to keep coverage honest without flaking the full-suite run.
-  it.skip('returns "script-missing" when channels.sh is absent', () => {})
-  it.skip('returns "spawn-failed" when spawn throws', () => {})
+describe('createMainChannelsSession: script-missing + spawn-failed', () => {
+  // marveenLastSessionCreate is a module-level variable set on every
+  // successful create. To exercise the script-missing / spawn-failed arms we
+  // need a fresh module so the cooldown is 0; vi.resetModules() + re-import
+  // gives us that while keeping the suite-level vi.mock declarations (they
+  // are hoisted, so they re-apply on the re-import).
+  it('returns "script-missing" when channels.sh is absent', async () => {
+    vi.resetModules()
+    const mod = await import('../web/channel-monitor.js')
+    mkdirSync(join(sandbox.PROJECT_ROOT, 'scripts'), { recursive: true })
+    rmSync(join(sandbox.PROJECT_ROOT, 'scripts', 'channels.sh'), { force: true })
+    const r = mod.createMainChannelsSession()
+    expect(r).toBe('script-missing')
+  })
+
+  it('returns "spawn-failed" when spawn throws', async () => {
+    vi.resetModules()
+    const mod = await import('../web/channel-monitor.js')
+    mkdirSync(join(sandbox.PROJECT_ROOT, 'scripts'), { recursive: true })
+    writeFileSync(join(sandbox.PROJECT_ROOT, 'scripts', 'channels.sh'), '#!/bin/bash\n')
+    m.spawn.mockImplementationOnce(() => { throw new Error('spawn boom') })
+    const r = mod.createMainChannelsSession()
+    expect(r).toBe('spawn-failed')
+  })
 })
 
 describe('stuck-input escalation hard restart failure path', () => {

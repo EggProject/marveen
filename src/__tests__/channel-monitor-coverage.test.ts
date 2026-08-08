@@ -726,15 +726,46 @@ describe('coverage: refreshKeepaliveFromInbound missing-file write', () => {
 })
 
 describe('coverage: refreshKeepaliveFromInbound error catch', () => {
-  // Documents the line 1188 debug-log branch as a pinned skip: forcing
-  // writeFileSync OR utimesSync to throw in the SUT's
-  // refreshKeepaliveFromInbound requires either mocking node:fs at module
-  // load (which the suite-level vi.mock cannot do per-test without
-  // bleeding into other tests) or filesystem-level permission tricks that
-  // are non-portable across the mac/linux CI matrix. The branch is exercised
-  // indirectly by the savePersistedAgentFailures catch test, which shares
-  // the same try/catch pattern.
-  it.skip('logs debug when the catch block fires (refreshKeepaliveFromInbound)', () => {})
+  // Drive the line 1188 debug-log branch by making utimesSync throw inside
+  // refreshKeepaliveFromInbound. The SUT only reaches utimesSync when the
+  // KEEPALIVE_FILE already exists (writeFileSync is the create-or-update
+  // branch above it). Pre-create the file so the writeFileSync branch is
+  // skipped, then vi.doMock('node:fs') so utimesSync rejects.
+  it('logs debug when the catch block fires (refreshKeepaliveFromInbound)', async () => {
+    const keepalive = `${sandbox.PROJECT_ROOT}/store/.channel-keepalive`
+    rmSync(keepalive, { force: true })
+    writeFileSync(keepalive, '0')
+
+    vi.doMock('node:fs', async () => {
+      const actual = await vi.importActual<typeof import('node:fs')>('node:fs')
+      const wrappedUtimesSync = (path: unknown, ...rest: unknown[]): void => {
+        if (String(path).includes('.channel-keepalive')) {
+          throw new Error('utimes boom')
+        }
+        ;(actual.utimesSync as (...a: unknown[]) => void)(path, ...rest)
+      }
+      return {
+        ...actual,
+        utimesSync: wrappedUtimesSync as typeof actual.utimesSync,
+      }
+    })
+    const mod = await freshMod()
+    vi.useFakeTimers()
+    m.getClaudePidForSession.mockReturnValue(100)
+    m.probeChannelPluginLiveness.mockReturnValue('alive')
+    m.listAgentNames.mockReturnValue([])
+    m.readLastIngestionTimestamp.mockReturnValue(Date.now())
+    const handle = mod.startChannelPluginMonitor()
+    await tickOnce()
+    clearMonitorHandle(handle)
+    vi.useRealTimers()
+    vi.doUnmock('node:fs')
+    const debugCalls = m.loggerDebug.mock.calls.flat()
+    const matched = debugCalls.some(
+      (c: unknown) => typeof c === 'string' && c.includes('refreshKeepaliveFromInbound failed'),
+    )
+    expect(matched).toBe(true)
+  })
 })
 
 describe('coverage: refreshKeepaliveFromInbound path via vi.doMock', () => {

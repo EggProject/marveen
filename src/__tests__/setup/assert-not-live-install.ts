@@ -74,3 +74,17 @@ if (foundMarkers.length > 0 || foundStoreContents.length > 0) {
       'Run it from a git worktree or CI checkout instead, e.g. `git worktree add /tmp/claw-test && cd /tmp/claw-test && npm test`.',
   )
 }
+
+// Post-suite cleanup: remove an empty root-level store directory created by a
+// test that initialized storage without applying its sandbox config mock.
+process.on('exit', () => {
+  try {
+    if (existsSync(storeDir) && readdirSync(storeDir).length === 0) {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { rmdirSync } = require('node:fs') as typeof import('node:fs')
+      rmdirSync(storeDir)
+    }
+  } catch {
+    // Ignore cleanup failures during process shutdown.
+  }
+})

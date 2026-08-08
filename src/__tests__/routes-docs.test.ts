@@ -272,16 +272,16 @@ describe('GET /api/docs', () => {
     expect(broken).toEqual({ name: 'broken.md', title: 'Title', created: null })
   })
 
-  it.fails('PINNING: inner catch should reset title to filename when statSync throws after readFileSync (broken)', async () => {
-    // Pin for docs/needs-to-be-fix/routes-docs-inner-catch-no-title-reset.md.
-    // The catch comment in src/web/routes/docs.ts:47 says "keep filename as
+  it('inner catch keeps titleOf result instead of resetting to filename (current behaviour)', async () => {
+    // The catch comment in src/web/routes/docs.ts says "keep filename as
     // title, created stays null", but the catch block is EMPTY. title was
     // already overwritten by titleOf() above the throw site, so it keeps the
     // extracted heading value (or whatever titleOf returned) instead of
-    // resetting to the filename. `.fails` flips vitest's verdict: the test
-    // EXPECTS failure (bug still present) and will start FAILING once the bug
-    // is fixed, which is the signal for the implementer to remove the
-    // pinning test along with the fix.
+    // resetting to the filename. Baseline: this test asserts CURRENT
+    // behaviour and will fail if the code is changed to reset title in the
+    // catch -- which is fine, the fix author updates the assertion. The dev
+    // intent / regression context lives in
+    // docs/needs-to-be-fix/routes-docs-inner-catch-no-title-reset.md.
     writeFileSync(join(DOCS_DIR, 'broken.md'), '# Real Title\nbody')
     const seen = new Set<string>()
     hoisted.fsState.statSyncOverride = (p) => {
@@ -296,9 +296,9 @@ describe('GET /api/docs', () => {
     expect(res.statusCode).toBe(200)
     const docs = json() as Array<{ name: string; title: string; created: string | null }>
     const broken = docs.find(d => d.name === 'broken.md')
-    // Documented intent: title should be the filename.
-    // Actual (buggy): title is 'Real Title' because the catch doesn't reset it.
-    expect(broken?.title).toBe('broken.md')
+    // Actual (buggy) result: title is 'Real Title' because the catch does
+    // not reset it. Documented intent (in the bug MD) is 'broken.md'.
+    expect(broken?.title).toBe('Real Title')
   })
 
   it('falls back to mtimeMs when birthtimeMs is 0 (filesystem does not track birthtime)', async () => {
