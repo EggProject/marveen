@@ -452,6 +452,38 @@ describe('store-watcher', () => {
       expect(agent).toBe('scheduler')
     })
 
+    // Pins CURRENT (buggy) behaviour: see docs/needs-to-be-fix/store-watcher-sensitive-unreachable.md.
+    // SENSITIVE_NAMES is fully contained in SYSTEM_FILES, so the watch callback
+    // returns early at the isSystemFile check (line 113) before reaching the
+    // isSensitive ternary on line 142. As a result, the isSensitive=1 branch
+    // is unreachable. This test documents that a "sensitive" file is filtered
+    // out and never logged -- and asserts the unreachable branch via a file
+    // whose name is in SENSITIVE_NAMES but NOT in SYSTEM_FILES (which is the
+    // empty set today).
+    it('the isSensitive=1 branch is unreachable today: every SENSITIVE_NAMES entry is also in SYSTEM_FILES', () => {
+      writeFileSync(join(STORE, '.dashboard-token'), 'secret-value')
+      fireRename('.dashboard-token')
+      // The file is filtered by SYSTEM_FILES (denylist wins), so it is NEVER
+      // passed to logStoreFileEvent. The isSensitive=1 ternary branch on line
+      // 142 cannot be reached unless a future refactor stops denylisting
+      // these names.
+      expect(logStoreFileEventMock).not.toHaveBeenCalled()
+    })
+
+    it('vault.json and .vault-key are also filtered by SYSTEM_FILES before isSensitive ever runs', () => {
+      writeFileSync(join(STORE, 'vault.json'), '{"x":1}')
+      fireRename('vault.json')
+      writeFileSync(join(STORE, '.vault-key'), '0123456789abcdef')
+      fireRename('.vault-key')
+      writeFileSync(join(STORE, '.claude-oauth-token'), 'token')
+      fireRename('.claude-oauth-token')
+      writeFileSync(join(STORE, 'federation.json'), '{}')
+      fireRename('federation.json')
+      writeFileSync(join(STORE, '.federation-token'), 'token')
+      fireRename('.federation-token')
+      expect(logStoreFileEventMock).not.toHaveBeenCalled()
+    })
+
     it('records the file in knownFiles after logging (a second event for the same path within the dedup window is suppressed)', () => {
       writeFileSync(join(STORE, 'record.txt'), 'x')
       fireRename('record.txt')

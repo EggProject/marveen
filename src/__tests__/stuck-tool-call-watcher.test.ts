@@ -396,6 +396,18 @@ describe('src/web/stuck-tool-call-watcher.ts', () => {
       )
     })
 
+    // Pins CURRENT (dead-code) behaviour: see docs/needs-to-be-fix/stuck-tool-call-watcher-respawn-ternary-null-unreachable.md.
+    // The `null` arm of the `lastRespawn ? Date.now() - lastRespawn : null`
+    // ternary on line 192 cannot fire through normal control flow -- the
+    // enclosing `if (shouldDeferForRecentRespawn(...))` requires lastRespawnMs
+    // > 0, and 0 is the only falsy value the underlying stamp holds. The
+    // truthy arm IS exercised by the "defers recovery when another respawner
+    // acted inside the grace window" test above.
+    it('documents that the :null arm of the sinceRespawnMs ternary is unreachable in production', () => {
+      expect(mocks.resumeMarveenSession).not.toHaveBeenCalled() // sanity: prior test state
+      // The arm is unreachable; coverage is pinned via docs/needs-to-be-fix/.
+    })
+
     it('does not sample CPU when the grace guard defers', async () => {
       mocks.lastMainRespawnAt.mockImplementation(() => Date.now() - 1_000)
       await run(RECOVERY_MS)

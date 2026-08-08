@@ -1354,6 +1354,26 @@ mockAcquirePortLock.mockImplementation(async (port: number, ctx: any, opts: any 
   void opts
 })
 
+// ---------------------------------------------------------------------------
+// Helper: delegate mockAcquirePortLock to the real acquirePortLock. This is
+// what unlocks coverage of buildProcessLockContext's internal helpers
+// (sleep, log.info, log.warn, log.error -- lines 169-174), since the
+// default mockAcquirePortLock never calls ctx.log.* or ctx.sleep. The real
+// implementation drives ctx.signal / ctx.sleep / ctx.log.* through process-
+// lock.ts's terminateProcesses + acquirePortLock paths.
+// ---------------------------------------------------------------------------
+async function withRealAcquirePortLock(
+  setup: () => Promise<void> | void,
+  optsOverride?: { graceMs?: number; postKillDrainMs?: number; postKillPollMs?: number; binaryPattern?: RegExp },
+): Promise<void> {
+  const actual = await vi.importActual<typeof import('../process-lock.js')>('../process-lock.js')
+  mockAcquirePortLock.mockImplementation((port: number, ctx: unknown, opts: unknown) => {
+    const mergedOpts = { ...(opts as Record<string, unknown> ?? {}), ...(optsOverride ?? {}) }
+    return actual.acquirePortLock(port, ctx as never, mergedOpts as never)
+  })
+  await setup()
+}
+
 describe('buildPidfileLockContext helpers via real acquirePidfileLock', () => {
   // The real acquirePidfileLock is invoked via withRealAcquirePidfileLock
   // above. Tests in this block exercise every helper in buildPidfileLockContext
@@ -2703,4 +2723,159 @@ describe('buildProcessLockContext.log methods exercise', () => {
 // timeouts stub that the rest of the suite depends on holds ctx.sleep's
 // setTimeout indefinitely). Documented as unreachable from the current
 // test harness in docs/needs-to-be-fix/index-unreachable-coverage.md.
+})
+
+// ---------------------------------------------------------------------------
+// Coverage gap-fill for buildProcessLockContext (index.ts lines 169-174).
+// The default mockAcquirePortLock never calls ctx.sleep / ctx.log.* so the
+// internal helpers of buildProcessLockContext stay uncovered. The block
+// below delegates mockAcquirePortLock to the real acquirePortLock and
+// manually drains the captured-timeouts stub (set up in the suite's
+// beforeEach) so ctx.sleep resolves deterministically.
+// ---------------------------------------------------------------------------
+
+describe('buildProcessLockContext.log and sleep via real acquirePortLock', () => {
+  it('SIGTERM succeeds + SIGKILL fails EPERM -> exercises sleep, log.info, log.warn, log.error (covers lines 169-174)', async () => {
+    const origKill = process.kill
+    ;(process as unknown as { kill: (pid: number, sig?: number | string) => boolean }).kill = ((pid: number, sig?: number | string) => {
+      // SIGKILL throws EPERM -> terminateProcesses' catch fires ctx.log.error
+      if (sig === 'SIGKILL') throw Object.assign(new Error('EPERM'), { code: 'EPERM' })
+      // signal(0) returns true -> alive stays true -> escalate branch fires
+      if (sig === 0) return true
+      // SIGTERM succeeds -> ctx.log.info 'SIGTERM sent' fires
+      return true
+    }) as unknown as typeof process.kill
+
+    try {
+      await withRealAcquirePortLock(async () => {
+        // lsof returns port holder 999 (terminates the early "no victims"
+        // short-circuit in acquirePortLock).
+        mockExecSync.mockImplementation((cmd: string) => {
+          if (cmd.startsWith('lsof -ti :')) return '999\n'
+          return ''
+        })
+        // ps returns comm='node' + uid='1000' for PID 999 so filterOwnNodeCandidates
+        // accepts it as a victim. The -Ao row also matches the binary pattern so
+        // the listOwnProcessesMatching path is independently exercised.
+        mockExecFileSync.mockImplementation((cmd: string, args?: readonly string[]) => {
+          if (cmd === '/bin/ps' && args?.[0] === '-p' && args?.[2] === '-o' && args?.[3] === 'comm=') return 'node'
+          if (cmd === '/bin/ps' && args?.[0] === '-p' && args?.[2] === '-o' && args?.[3] === 'uid=') return '1000'
+          if (cmd === '/bin/ps' && args?.[0] === '-Ao') return '999 1000 node /opt/marveen/dist/index.js\n'
+          return ''
+        })
+
+        await loadIndexFresh()
+        // loadIndexFresh returns after main() starts (import doesn't await
+        // async module code). ctx.sleep(graceMs=1) is registered with the
+        // captured-timeouts stub set up by the suite's beforeEach -- it
+        // captured resolve() but never fires. Drain captured timeouts so
+        // resolve() runs, then drain microtasks so main() proceeds past
+        // acquirePortLock into the rest of init.
+        let captured = (globalThis as unknown as { __capturedTimeouts?: Array<() => void> }).__capturedTimeouts ?? []
+        for (const fn of captured) fn()
+        captured = []
+        await drainMicrotasks()
+
+        // ctx.log.info -- 'SIGTERM sent to previous instance'
+        expect(mockLogger.info).toHaveBeenCalledWith(
+          expect.objectContaining({ pid: 999 }),
+          expect.stringContaining('SIGTERM sent'),
+        )
+        // ctx.log.warn -- 'Previous instance still alive after SIGTERM, escalating to SIGKILL'
+        expect(mockLogger.warn).toHaveBeenCalledWith(
+          expect.objectContaining({ pid: 999 }),
+          expect.stringContaining('escalating to SIGKILL'),
+        )
+        // ctx.log.error -- 'SIGKILL failed' (covers line 174 of index.ts)
+        expect(mockLogger.error).toHaveBeenCalledWith(
+          expect.objectContaining({ pid: 999, err: expect.any(Error) }),
+          expect.stringContaining('SIGKILL failed'),
+        )
+      }, { graceMs: 1, postKillDrainMs: 0, postKillPollMs: 0 })
+    } finally {
+      ;(process as unknown as { kill: typeof process.kill }).kill = origKill
+    }
+  })
+
+  it('SIGTERM throws EPERM -> log.warn "SIGTERM failed" (covers sleep + log.warn)', async () => {
+    const origKill = process.kill
+    ;(process as unknown as { kill: (pid: number, sig?: number | string) => boolean }).kill = ((pid: number, sig?: number | string) => {
+      if (sig === 'SIGTERM') throw Object.assign(new Error('EPERM'), { code: 'EPERM' })
+      if (sig === 0) return true
+      return true
+    }) as unknown as typeof process.kill
+
+    try {
+      await withRealAcquirePortLock(async () => {
+        mockExecSync.mockImplementation((cmd: string) => {
+          if (cmd.startsWith('lsof -ti :')) return '999\n'
+          return ''
+        })
+        mockExecFileSync.mockImplementation((cmd: string, args?: readonly string[]) => {
+          if (cmd === '/bin/ps' && args?.[0] === '-p' && args?.[2] === '-o' && args?.[3] === 'comm=') return 'node'
+          if (cmd === '/bin/ps' && args?.[0] === '-p' && args?.[2] === '-o' && args?.[3] === 'uid=') return '1000'
+          if (cmd === '/bin/ps' && args?.[0] === '-Ao') return '999 1000 node /opt/marveen/dist/index.js\n'
+          return ''
+        })
+
+        await loadIndexFresh()
+        let captured = (globalThis as unknown as { __capturedTimeouts?: Array<() => void> }).__capturedTimeouts ?? []
+        for (const fn of captured) fn()
+        captured = []
+        await drainMicrotasks()
+
+        // ctx.log.warn -- 'SIGTERM failed, will still try SIGKILL after grace'
+        expect(mockLogger.warn).toHaveBeenCalledWith(
+          expect.objectContaining({ pid: 999 }),
+          expect.stringContaining('SIGTERM failed'),
+        )
+      }, { graceMs: 1, postKillDrainMs: 0, postKillPollMs: 0 })
+    } finally {
+      ;(process as unknown as { kill: typeof process.kill }).kill = origKill
+    }
+  })
+
+  it('SIGKILL ESRCH during escalation -> "escalating to SIGKILL" log.warn path, no log.error', async () => {
+    const origKill = process.kill
+    ;(process as unknown as { kill: (pid: number, sig?: number | string) => boolean }).kill = ((pid: number, sig?: number | string) => {
+      // SIGKILL ESRCH -> signal returns 'gone' -> no log.error
+      if (sig === 'SIGKILL') throw Object.assign(new Error('ESRCH'), { code: 'ESRCH' })
+      if (sig === 0) return true
+      return true
+    }) as unknown as typeof process.kill
+
+    try {
+      await withRealAcquirePortLock(async () => {
+        mockExecSync.mockImplementation((cmd: string) => {
+          if (cmd.startsWith('lsof -ti :')) return '999\n'
+          return ''
+        })
+        mockExecFileSync.mockImplementation((cmd: string, args?: readonly string[]) => {
+          if (cmd === '/bin/ps' && args?.[0] === '-p' && args?.[2] === '-o' && args?.[3] === 'comm=') return 'node'
+          if (cmd === '/bin/ps' && args?.[0] === '-p' && args?.[2] === '-o' && args?.[3] === 'uid=') return '1000'
+          if (cmd === '/bin/ps' && args?.[0] === '-Ao') return '999 1000 node /opt/marveen/dist/index.js\n'
+          return ''
+        })
+
+        await loadIndexFresh()
+        let captured = (globalThis as unknown as { __capturedTimeouts?: Array<() => void> }).__capturedTimeouts ?? []
+        for (const fn of captured) fn()
+        captured = []
+        await drainMicrotasks()
+
+        // The escalate log.warn fires BEFORE SIGKILL, so it always fires here
+        expect(mockLogger.warn).toHaveBeenCalledWith(
+          expect.objectContaining({ pid: 999 }),
+          expect.stringContaining('escalating to SIGKILL'),
+        )
+        // signal ESRCH -> returns 'gone', NOT throwing -> log.error NOT called
+        const errorCallsForSigkill = mockLogger.error.mock.calls.filter(
+          (c) => typeof c[1] === 'string' && c[1].includes('SIGKILL failed'),
+        )
+        expect(errorCallsForSigkill).toHaveLength(0)
+      }, { graceMs: 1, postKillDrainMs: 0, postKillPollMs: 0 })
+    } finally {
+      ;(process as unknown as { kill: typeof process.kill }).kill = origKill
+    }
+  })
 })

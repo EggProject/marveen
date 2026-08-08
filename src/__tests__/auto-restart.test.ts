@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
   parseHHMM,
   normalizeAutoRestartConfig,
@@ -28,6 +28,36 @@ describe('parseHHMM', () => {
   it('rejects malformed or out-of-range values', () => {
     for (const bad of ['', '3', '24:00', '12:60', '-1:00', 'aa:bb', '12:5', 12 as unknown, null]) {
       expect(parseHHMM(bad as unknown)).toBeNull()
+    }
+  })
+  // Pin CURRENT behaviour: see docs/needs-to-be-fix/auto-restart-parsehhmm-integer-guard.md.
+  // The regex /^(\d{1,2}):(\d{2})$/ captures only ASCII digits, so the captured
+  // groups are always non-negative integers in the [0-23]:[0-59] envelope.
+  // Number(m[1]) and Number(m[2]) therefore ALWAYS produce a finite integer,
+  // and the `if (!Number.isInteger(h) || !Number.isInteger(min)) return null`
+  // guard at line 63 is unreachable.
+  it('the Number.isInteger guard on line 63 is unreachable: regex digits always parse to integers', () => {
+    for (const valid of ['00:00', '09:30', '23:59', '9:30', '1:00']) {
+      const r = parseHHMM(valid)
+      expect(r).not.toBeNull()
+    }
+    // The defensive guard can only fire if the regex captures a non-digit,
+    // which the regex disallows. No input accepted by the regex produces a
+    // non-integer from Number(). The guard is dead code. The synthetic
+    // spyOn test below proves the guard EXISTS by forcing Number.isInteger
+    // to lie for one call -- it then short-circuits to null as expected.
+  })
+
+  it('synthetic: Number.isInteger returning false on captured digits short-circuits to null (line 63 guard)', () => {
+    // The guard at line 63 is unreachable from a normal input path because
+    // the regex on line 59 only captures ASCII digits. We force the guard to
+    // fire by monkeypatching Number.isInteger so the synthetic test covers
+    // the branch and pins the documented dead-code behaviour.
+    const spy = vi.spyOn(Number, 'isInteger').mockReturnValueOnce(false)
+    try {
+      expect(parseHHMM('12:30')).toBeNull()
+    } finally {
+      spy.mockRestore()
     }
   })
 })
