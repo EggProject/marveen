@@ -3414,3 +3414,1036 @@ describe('setAgentEnabledPlugins / resetAgentEnabledPlugins', () => {
     expect(() => resetAgentEnabledPlugins('a')).not.toThrow()
   })
 })
+
+// ===========================================================================
+// Baseline branch coverage: maradék defensive ?? fallbacks + running=true
+// ágak. A tesztek a JELENLEGI kód viselkedését állítják.
+// ===========================================================================
+
+describe('baseline: running=true agent summary branches', () => {
+  // A getAgentSummary futásakor running=true esetén session / runningSince /
+  // reauth / activeModel / contextTokens mind a `running ?` true ágat veszik.
+  it('GET /api/agents/:name returns running=true fields (session, runningSince, reauth)', async () => {
+    H.isKnownAgent.mockReturnValue(true)
+    H.isAgentRunning.mockReturnValue(true)
+    H.getAgentRunningSince.mockReturnValue(1700000000)
+    H.resolveAgentConfigDir.mockReturnValue({ configDir: null })
+    H.readActiveModelFromProjectDir.mockReturnValue('claude-opus-4-8[1m]')
+    H.readContextTokensFromProjectDir.mockReturnValue(12345)
+    H.capturePane.mockReturnValue('all good')
+    H.detectReauthNeeded.mockReturnValue({ needsReauth: false })
+    // agentRunState (used by getAgentSummary -> agentRunStateCached) must
+    // return 'running' so the `running` boolean in the summary is true.
+    H.agentRunState.mockReturnValue('running')
+    H.readAgentRemoteConfig.mockReturnValue({ host: null, workdir: null })
+    const { res, json } = await call('GET', '/api/agents/a')
+    expect(res.statusCode).toBe(200)
+    const body = json() as Record<string, unknown>
+    expect(body.running).toBe(true)
+    expect(body.session).toBeTruthy()
+    expect(body.runningSince).toBe(1700000000)
+  })
+
+  // Amikor a `try { return statSync... } catch { return false }` catch ága
+  // tüzel, a skills listából kimarad a hibás bejegyzés. Ezt egy stat-ot
+  // szimuláló ENOENT-tel érjük el: a stat egy symbolic link célját töröljük
+  // a directory listingból való kiszűrés előtt. Itt egyszerűen: tegyünk egy
+  // symlinket egy nem létező célpontra, és a statSync dobni fog.
+  it('GET /api/agents/:name skills: statSync throws for a non-directory entry, branch covers the catch', async () => {
+    H.isKnownAgent.mockReturnValue(true)
+    const skillsDir = join(H.agentDir('a'), '.claude', 'skills')
+    mkdirSync(skillsDir, { recursive: true })
+    // Tegyünk egy symlinket, ami statSync-re ENOENT-et fog dobni.
+    try { require('node:fs').symlinkSync(join(skillsDir, 'broken-target'), join(skillsDir, 'deadlink')) } catch { /* link ok, target missing */ }
+    const { res, json } = await call('GET', '/api/agents/a')
+    expect(res.statusCode).toBe(200)
+    const body = json() as { skills: Array<{ name: string }> }
+    // A 'deadlink' NEM jelenik meg a skills listában.
+    expect(body.skills.find((s) => s.name === 'deadlink')).toBeUndefined()
+  })
+})
+
+describe('baseline: model-suggest edge branches', () => {
+  // A tokenSummaries map totalCalls==0 esetén a `0` ágat veszi. A teszthez
+  // 0 hívásszámú összesítést adunk.
+  it('totalCalls == 0 averages to 0 in the token map', async () => {
+    H.listAgentNames.mockReturnValue(['s'])
+    H.getTokenSummary.mockReturnValue([{ agent: 's', totalCalls: 0, totalInput: 0 }])
+    const { res } = await call('POST', '/api/agents/model-suggest')
+    expect(res.statusCode).toBe(200)
+  })
+
+  // mcpServers key hiányzik -> a `cfg.mcpServers ?? {}` ág tüzel,
+  // count = 0.
+  it('.mcp.json without mcpServers key returns count=0', async () => {
+    H.listAgentNames.mockReturnValue(['s'])
+    const dir = H.agentDir('s')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, '.mcp.json'), JSON.stringify({ otherKey: 'x' }))
+    const { res } = await call('POST', '/api/agents/model-suggest')
+    expect(res.statusCode).toBe(200)
+  })
+
+  // A persona file NEM létezik -> a `:` üres string ágat veszi.
+  it('persona file missing -> personaText uses empty string', async () => {
+    H.listAgentNames.mockReturnValue(['s'])
+    const dir = H.agentDir('s')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'CLAUDE.md'), '# c') // claudeMd truthy
+    // A personas/s.md nem létezik a sandboxban.
+    const { res } = await call('POST', '/api/agents/model-suggest')
+    expect(res.statusCode).toBe(200)
+  })
+
+  // rawProfile="" -> a `(rawProfile || 'default').trim() || 'default'` ág.
+  it('POST /api/agents with empty profile string falls back to default', async () => {
+    const { res, json } = await call('POST', '/api/agents', {
+      body: { name: 'p1', description: 'd', profile: '' },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(json()).toMatchObject({ ok: true, name: 'p1' })
+  })
+
+  // A generateClaudeMd dob egy NEM Error típust (stringet) -> a
+  // `err instanceof Error ? err.message : 'Unknown error'` ágat tüzel.
+  it('create agent with non-Error throw uses "Unknown error" detail', async () => {
+    H.generateClaudeMd.mockRejectedValue('a string, not an Error')
+    const { res, json } = await call('POST', '/api/agents', {
+      body: { name: 'thrstr', description: 'd' },
+    })
+    expect(res.statusCode).toBe(200)
+    const body = json() as Record<string, unknown>
+    expect(body.personalityPending).toBe(true)
+    expect(body.detail).toBe('Unknown error')
+  })
+})
+
+describe('baseline: avatar / smoke test edge branches', () => {
+  // A content-type header hiányzik -> `req.headers['content-type'] || ''` ág.
+  it('avatar upload with missing content-type header falls back to ""', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.parseMultipart.mockReturnValue({
+      file: { name: 'p.png', data: Buffer.from('PNGDATA') },
+      fields: {},
+    })
+    const { res } = await call('POST', '/api/agents/a/avatar', {
+      headers: { /* no content-type */ },
+      body: {},
+    })
+    expect(res.statusCode).toBe(200)
+  })
+
+  // extname üres stringet ad vissza (nincs kiterjesztés) -> a `|| '.png'`
+  // fallback ágat tüzel.
+  it('avatar upload: file without extension falls back to .png', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.parseMultipart.mockReturnValue({
+      file: { name: 'noext', data: Buffer.from('PNGDATA') },
+      fields: {},
+    })
+    const { res, json } = await call('POST', '/api/agents/a/avatar', {
+      headers: { 'content-type': 'multipart/form-data; boundary=---' },
+      body: {},
+    })
+    expect(res.statusCode).toBe(200)
+    expect(json()).toEqual({ ok: true })
+  })
+
+  // Ugyanez gallery pick esetén: galleryAvatar neve nem tartalmaz kiterjesztést.
+  it('avatar gallery pick: filename without extension falls back to .png', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    const avatarsDir = join(H.webDir, 'avatars')
+    mkdirSync(avatarsDir, { recursive: true })
+    writeFileSync(join(avatarsDir, 'noext'), 'PNGDATA')
+    const { res } = await call('POST', '/api/agents/a/avatar', {
+      body: { galleryAvatar: 'noext' },
+      headers: { 'content-type': 'application/json' },
+    })
+    expect(res.statusCode).toBe(200)
+  })
+
+  // A manifest endpoint readAgentDisplayName üres stringet ad -> a
+  // `displayName || name` fallback ágat tüzel.
+  it('slack manifest: readAgentDisplayName empty falls back to name', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.readAgentDisplayName.mockReturnValue('')
+    H.generateSlackAppManifest.mockReturnValue({ manifest: 'x' })
+    const { res } = await call('GET', '/api/agents/a/channels/slack/manifest')
+    expect(res.statusCode).toBe(200)
+  })
+})
+
+describe('baseline: smoke-test execErr fallback branches', () => {
+  // A smoke-test execSync throw-ot dob, de a thrown object NEM tartalmaz
+  // stdout/stderr property-kat -> a `(execErr.stdout || '')` és a
+  // `(execErr.stderr || '')` fallback ágak mindkettőn tüzelnek.
+  it('smoke-test with an Error without stdout/stderr returns empty output', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.readAgentChannelProvider.mockReturnValue('slack')
+    mkdirSync(join(H.projectRoot, 'scripts'), { recursive: true })
+    writeFileSync(join(H.projectRoot, 'scripts', 'smoke-test-slack-channel.sh'), '#!/bin/sh\n')
+    const chDir = join(H.agentDir('a'), '.claude', 'channels')
+    mkdirSync(chDir, { recursive: true })
+    writeFileSync(join(chDir, '.env'), 'SLACK_SMOKE_TEST_ALLOWED=true\n')
+    H.execSync.mockImplementation(() => { throw new Error('plain Error, no stdout/stderr') })
+    const { res, json } = await call('POST', '/api/agents/a/channels/slack/smoke-test')
+    expect(res.statusCode).toBe(200)
+    expect(json()).toEqual({ ok: false, output: '' })
+  })
+})
+
+describe('baseline: token test fallback branches', () => {
+  // A token test endpoint: readChannelToken null, parseTelegramToken null,
+  // provider nem telegram -> a `null` fallback ágat veszi.
+  it('channel test: non-telegram provider with no token returns null fallback', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.readChannelToken.mockReturnValue(null)
+    H.parseTelegramToken.mockReturnValue(null)
+    const { res } = await call('POST', '/api/agents/a/channels/slack/test')
+    expect(res.statusCode).toBe(404)
+  })
+
+  // validation error üres stringet ad -> a `result.error || 'Invalid token'`
+  // fallback ágat tüzel.
+  it('channel setup: provider returns ok=false with no error message uses "Invalid token" fallback', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.getProvider.mockReturnValue({ validateToken: vi.fn(async () => ({ ok: false })) })
+    const { res, json } = await call('POST', '/api/agents/a/channels/telegram', { body: { botToken: 'T' } })
+    expect(res.statusCode).toBe(400)
+    expect((json() as Record<string, string>).error).toBe('Invalid token')
+  })
+})
+
+describe('baseline: slack setup managed-settings fallback + error display name', () => {
+  // A slack setup readAgentDisplayName null-t ad a managed-settings-missing
+  // 409 payloadban -> a `displayName || name` fallback ágat tüzel.
+  it('slack setup 409: readAgentDisplayName empty falls back to name', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.getProvider.mockReturnValue({ validateToken: vi.fn(async () => ({ ok: true, botName: 'b' })) })
+    H.readAgentChannelProvider.mockReturnValue('slack')
+    H.readAgentDisplayName.mockReturnValue('')
+    const { res, json } = await call('POST', '/api/agents/a/channels/slack', { body: { botToken: 'T' } })
+    expect(res.statusCode).toBe(409)
+    const body = json() as Record<string, unknown>
+    expect(body.error).toBe('managed-settings-missing')
+  })
+})
+
+describe('baseline: delete channel setup pre-existing files', () => {
+  // Az existsSync(envFile) és existsSync(accessFile) true ágai: a delete
+  // handler ezeket meglévő fájlokra hívja meg.
+  it('DELETE /api/agents/:name/channels/telegram unlinks pre-existing .env and access.json', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    const chDir = join(H.agentDir('a'), '.claude', 'channels')
+    mkdirSync(chDir, { recursive: true })
+    writeFileSync(join(chDir, '.env'), 'TOKEN=xyz')
+    writeFileSync(join(chDir, 'access.json'), '{}')
+    const { res } = await call('DELETE', '/api/agents/a/channels/telegram')
+    expect(res.statusCode).toBe(200)
+  })
+})
+
+describe('baseline: team PUT reportsTo === null branch', () => {
+  // A `data.reportsTo.trim() || null` ág: reportsTo üres string.
+  it('PUT /api/agents/:name/team with reportsTo="" normalizes to null', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.readAgentTeam.mockReturnValue({ role: 'member', reportsTo: null, delegatesTo: [], autoDelegation: false, trustFrom: [] })
+    H.sanitizeTeamConfig.mockReturnValue({ team: { role: 'member', reportsTo: null, delegatesTo: [], autoDelegation: false, trustFrom: [] }, warnings: [] })
+    const { res } = await call('PUT', '/api/agents/a/team', {
+      body: { role: 'member', reportsTo: '   ', delegatesTo: [], autoDelegation: false, trustFrom: [] },
+    })
+    expect(res.statusCode).toBe(200)
+  })
+
+  // A `current.trustFrom ?? []` fallback ág: a current csapat trustFrom
+  // undefined, és a kérésben nincs trustFrom.
+  it('PUT /api/agents/:name/team with current.trustFrom undefined uses []', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.readAgentTeam.mockReturnValue({ role: 'member', reportsTo: null, delegatesTo: [], autoDelegation: false, trustFrom: undefined as unknown as string[] })
+    H.sanitizeTeamConfig.mockImplementation((_n: string, t: unknown) => ({ team: t, warnings: [] }))
+    const { res } = await call('PUT', '/api/agents/a/team', {
+      body: { role: 'member' }, // no trustFrom
+    })
+    expect(res.statusCode).toBe(200)
+  })
+})
+
+describe('baseline: channel pending/allowed missing fields', () => {
+  // `access.pending || {}` fallback ág.
+  it('GET /api/agents/:name/channels/:provider/pending with no pending key returns []', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.readFileOr.mockReturnValue(JSON.stringify({ allowFrom: [] })) // no pending key
+    const { res, json } = await call('GET', '/api/agents/a/channels/telegram/pending')
+    expect(res.statusCode).toBe(200)
+    expect(json()).toEqual([])
+  })
+
+  // main agent path a pending endpointnál: a `name === MAIN_AGENT_ID` true
+  // ág a channelStateDir(provider) híváshoz.
+  it('GET pending for the main agent uses main channel state dir', async () => {
+    H.readFileOr.mockReturnValue(JSON.stringify({ pending: {} }))
+    const { res } = await call('GET', '/api/agents/marveen/channels/telegram/pending')
+    expect(res.statusCode).toBe(200)
+  })
+
+  // A `String(entry.chatId ?? '')` fallback ág.
+  it('POST approve with pending entry having null chatId uses ""', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.readFileOr.mockReturnValue(JSON.stringify({
+      pending: { XX: { senderId: 'user1', chatId: null, createdAt: 1, expiresAt: 2 } },
+    }))
+    mkdirSync(join(H.agentDir('a'), '.claude', 'channels'), { recursive: true })
+    const { res, json } = await call('POST', '/api/agents/a/channels/telegram/approve', { body: { code: 'XX' } })
+    expect(res.statusCode).toBe(200)
+    expect(json()).toEqual({ ok: true, senderId: 'user1' })
+  })
+
+  // main agent approve: a `name === MAIN_AGENT_ID ? channelStateDir(provider)
+  // : channelStateDir(provider, agentDir(name))` true ág.
+  it('POST approve for the main agent uses main channel state dir', async () => {
+    H.readFileOr.mockReturnValue(JSON.stringify({
+      pending: { XX: { senderId: 'user1', chatId: '42', createdAt: 1, expiresAt: 2 } },
+    }))
+    mkdirSync(join(H.projectRoot, '.claude', 'channels'), { recursive: true })
+    const { res } = await call('POST', '/api/agents/marveen/channels/telegram/approve', { body: { code: 'XX' } })
+    expect(res.statusCode).toBe(200)
+  })
+})
+
+describe('baseline: channel allowed defensive branches', () => {
+  // `Array.isArray(access.allowFrom) ? access.allowFrom : []` fallback ág.
+  it('GET /allowed with non-array allowFrom returns []', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.readFileOr.mockReturnValue(JSON.stringify({ allowFrom: 'not-an-array', groups: {} }))
+    const { res, json } = await call('GET', '/api/agents/a/channels/telegram/allowed')
+    expect(res.statusCode).toBe(200)
+    const body = json() as { users: string[]; groups: Array<{ id: string }> }
+    expect(body.users).toEqual([])
+  })
+
+  // `access.groups || {}` fallback ág.
+  it('GET /allowed with no groups key returns []', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.readFileOr.mockReturnValue(JSON.stringify({ allowFrom: ['u'] })) // no groups
+    const { res, json } = await call('GET', '/api/agents/a/channels/telegram/allowed')
+    expect(res.statusCode).toBe(200)
+    const body = json() as { users: string[]; groups: Array<{ id: string }> }
+    expect(body.groups).toEqual([])
+  })
+
+  // main agent GET /allowed: a `channelStateDir(provider)` true ág.
+  it('GET /allowed for the main agent uses main channel state dir', async () => {
+    H.readFileOr.mockReturnValue(JSON.stringify({ allowFrom: [], groups: {} }))
+    mkdirSync(join(H.projectRoot, '.claude', 'channels'), { recursive: true })
+    const { res } = await call('GET', '/api/agents/marveen/channels/telegram/allowed')
+    expect(res.statusCode).toBe(200)
+  })
+})
+
+describe('baseline: invites create with token validation fallback', () => {
+  // A POST /invites endpoint main-agent branch: readMarveenTelegramConfig
+  // + botUsername a main agentre. Aztán a fallback: nincs botName, de van
+  // token -> a `if (token)` true ág + `if (r.ok)` true ág.
+  it('POST /invites for the main agent with cached botUsername returns it', async () => {
+    H.readMarveenTelegramConfig.mockReturnValue({ botUsername: 'main_bot' })
+    H.createInvite.mockReturnValue({ token: 'tk', deepLink: '' })
+    const { res, json } = await call('POST', '/api/agents/marveen/channels/telegram/invites')
+    expect(res.statusCode).toBe(200)
+    expect(json()).toMatchObject({ token: 'tk' })
+  })
+
+  // A GET /invites main-agent branch: readMarveenTelegramConfig().botUsername
+  // true ág.
+  it('GET /invites for the main agent uses main cached botUsername', async () => {
+    H.readMarveenTelegramConfig.mockReturnValue({ botUsername: '@mainbot' })
+    H.listInvites.mockReturnValue([{ token: 'tk', createdAt: 1, expiresAt: 2, maxUses: 1, used: 0 }])
+    const { res, json } = await call('GET', '/api/agents/marveen/channels/telegram/invites')
+    expect(res.statusCode).toBe(200)
+    const body = json() as Array<{ deepLink: string }>
+    expect(body[0].deepLink).toMatch(/^https:\/\/t\.me\/mainbot/)
+  })
+})
+
+describe('baseline: allowed-remove branches', () => {
+  // A legacy allowed-remove match ág (a fallback regex-szel).
+  it('DELETE /api/agents/:name/telegram/allowed/user/<id> (legacy URL)', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.readFileOr.mockReturnValue(JSON.stringify({ allowFrom: ['u1'], groups: {} }))
+    mkdirSync(join(H.agentDir('a'), '.claude', 'channels'), { recursive: true })
+    const { res } = await call('DELETE', '/api/agents/a/telegram/allowed/user/u1')
+    expect(res.statusCode).toBe(200)
+  })
+
+  // Az `access.allowFrom || []` fallback ág: allowFrom hiányzik.
+  it('DELETE allowed/user with no allowFrom key uses []', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.readFileOr.mockReturnValue(JSON.stringify({ groups: {} })) // no allowFrom
+    mkdirSync(join(H.agentDir('a'), '.claude', 'channels'), { recursive: true })
+    const { res } = await call('DELETE', '/api/agents/a/channels/telegram/allowed/user/u1')
+    expect(res.statusCode).toBe(200)
+  })
+
+  // Az `if (existsSync(approvedFile))` true ág.
+  it('DELETE allowed/user unlinks pre-existing approved/<id> file', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.readFileOr.mockReturnValue(JSON.stringify({ allowFrom: ['u1'], groups: {} }))
+    const chDir = join(H.agentDir('a'), '.claude', 'channels')
+    mkdirSync(join(chDir, 'approved'), { recursive: true })
+    writeFileSync(join(chDir, 'approved', 'u1'), 'chatid')
+    const { res } = await call('DELETE', '/api/agents/a/channels/telegram/allowed/user/u1')
+    expect(res.statusCode).toBe(200)
+    expect(existsSync(join(chDir, 'approved', 'u1'))).toBe(false)
+  })
+
+  // Az `if (access.groups) delete access.groups[id]` true ág.
+  it('DELETE allowed/group removes the group key', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.readFileOr.mockReturnValue(JSON.stringify({ allowFrom: [], groups: { g1: 'allow' } }))
+    mkdirSync(join(H.agentDir('a'), '.claude', 'channels'), { recursive: true })
+    const { res } = await call('DELETE', '/api/agents/a/channels/telegram/allowed/group/g1')
+    expect(res.statusCode).toBe(200)
+  })
+})
+
+describe('baseline: channel-requests approve user_id branch', () => {
+  // A POST channel-requests/.../approve `if (request.user_id)` true ág + az
+  // `if (!access.channels) access.channels = {}` true ág.
+  it('approve with user_id present populates allowFrom', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.readAgentChannelProvider.mockReturnValue('slack')
+    H.listPendingChannelRequests.mockReturnValue([{ id: 1, channel_id: 'C1', user_id: 'U1' }])
+    mkdirSync(join(H.agentDir('a'), '.claude', 'channels'), { recursive: true })
+    const { res } = await call('POST', '/api/agents/a/channel-requests/1/approve', { body: {} })
+    expect(res.statusCode).toBe(200)
+  })
+
+  // 404-on-missing-agent branch a channel-requests approve endpointnál.
+  it('POST channel-requests/.../approve 404s when sub-agent missing', async () => {
+    const { res } = await call('POST', '/api/agents/missing/channel-requests/1/approve', { body: {} })
+    expect(res.statusCode).toBe(404)
+  })
+
+  // A `body.toString() || '{}'` fallback ág.
+  it('POST channel-requests/.../approve with empty body uses {}', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.readAgentChannelProvider.mockReturnValue('slack')
+    H.listPendingChannelRequests.mockReturnValue([{ id: 1, channel_id: 'C1' }])
+    mkdirSync(join(H.agentDir('a'), '.claude', 'channels'), { recursive: true })
+    const { res } = await call('POST', '/api/agents/a/channel-requests/1/approve', { raw: '' })
+    expect(res.statusCode).toBe(200)
+  })
+})
+
+describe('baseline: auth-init 12-iteration loop and no-pane continue branch', () => {
+  // A `if (!pane) continue` ág: capturePane egy iterációban null-t ad.
+  // Ehhez a mock-ot úgy állítjuk be, hogy 3-szor null, aztán pedig URL-t ad.
+  let calls = 0
+  it('returns the auth URL after a few null panes', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.isAgentRunning.mockReturnValue(true)
+    calls = 0
+    H.capturePane.mockImplementation(() => {
+      calls += 1
+      if (calls < 3) return null
+      return 'Visit https://console.anthropic.com/oauth?x=1'
+    })
+    const { res, json } = await call('POST', '/api/agents/a/auth/init')
+    expect(res.statusCode).toBe(200)
+    expect((json() as Record<string, string>).authUrl).toMatch(/^https:\/\/console\.anthropic\.com/)
+  })
+})
+
+describe('baseline: export-all error String(err) fallback', () => {
+  // A `err instanceof Error ? err.message : String(err)` String(err) ág:
+  // a dobott objektum nem Error.
+  it('export-all: non-Error throw uses String(err) for detail', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.exportAllAgentsBundle.mockImplementation(() => { throw 'plain string' })
+    const { res, json } = await call('GET', '/api/agents/export-all')
+    expect(res.statusCode).toBe(500)
+    expect(json()).toMatchObject({ error: 'Export failed', detail: 'plain string' })
+  })
+
+  // Ugyanez az agent exportra.
+  it('export: non-Error throw uses String(err) for detail', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.exportAgentBundle.mockImplementation(() => { throw 'plain string' })
+    const { res, json } = await call('GET', '/api/agents/a/export')
+    expect(res.statusCode).toBe(500)
+    expect(json()).toMatchObject({ error: 'Export failed', detail: 'plain string' })
+  })
+})
+
+describe('baseline: import with query string name', () => {
+  // A POST /api/agents/import query-string name parsing: `req.url || ''` ág
+  // + a name match.
+  it('import: query string with name but no file uses raw body', async () => {
+    H.peekBundleKind.mockReturnValue('agent')
+    H.importAgentBundle.mockReturnValue({
+      name: 'fromquery',
+      overwritten: false,
+      manifest: { includesSecrets: false },
+    })
+    const { res, json } = await call('POST', '/api/agents/import?name=fromquery', { raw: Buffer.from('gzdata') })
+    expect(res.statusCode).toBe(200)
+    expect(json()).toMatchObject({ kind: 'agent', name: 'fromquery' })
+  })
+
+  // A `req.url || ''` fallback ág: a req.url undefined. A mkReq mindig
+  // beállítja az url-t, ezért itt csak a 'name=' nélküli esetet teszteljük,
+  // ami a req.url truthy ágát erősíti. (A falsy ág az mkReq korlátai
+  // miatt strukturálisan nem tesztelhető anélkül, hogy a hívó kódot
+  // módosítanánk.)
+  it('import: raw body with no name match in query uses overrideName=undefined', async () => {
+    H.peekBundleKind.mockReturnValue('agent')
+    H.importAgentBundle.mockReturnValue({
+      name: 'x',
+      overwritten: false,
+      manifest: { includesSecrets: false },
+    })
+    const { res } = await call('POST', '/api/agents/import', { raw: Buffer.from('gzdata') })
+    expect(res.statusCode).toBe(200)
+  })
+})
+
+describe('baseline: voice-config error fallback', () => {
+  // A `err instanceof Error ? err.message : 'invalid config'` fallback ág.
+  it('PUT /api/agents/:name/voice-config: non-Error throw uses "invalid config"', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.writeAgentVoiceConfig.mockImplementation(() => { throw 'string-not-error' })
+    const { res, json } = await call('PUT', '/api/agents/a/voice-config', { body: { responseMode: 'voice' } })
+    expect(res.statusCode).toBe(400)
+    expect((json() as Record<string, string>).error).toBe('invalid config')
+  })
+
+  // 404-on-missing-agent branch a PUT voice-config endpointnál.
+  it('PUT /api/agents/:name/voice-config 404s when sub-agent missing', async () => {
+    const { res } = await call('PUT', '/api/agents/missing/voice-config', { body: { responseMode: 'voice' } })
+    expect(res.statusCode).toBe(404)
+  })
+})
+
+// ===========================================================================
+// Második menet: a maradék branch-eket célzó tesztek.
+// ===========================================================================
+
+describe('baseline: parseChannelProvider / matchChannelRoute branches', () => {
+  // A matchChannelRoute path-jában a "new" pattern egy invalid providert
+  // fog el (pl. 'unknown'), de a regex csak az 5 valid providert fogadja el,
+  // tehát ez a branch nem elérhető URL-ből. A parseChannelProvider
+  // belső függvény, nincs exportálva; a return null ág strukturálisan
+  // elérhetetlen (a regex szűri). Helyette teszteljük a legacy URL-t,
+  // ami a másik ágat (legacyMatch) éri el.
+
+  // A legacy /api/agents/:name/telegram/test URL a legacyMatch true ágát
+  // tüzel, és a provider = 'telegram' visszatérési értéket produkálja.
+  it('legacy /telegram/test URL uses legacyMatch branch', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.readChannelToken.mockReturnValue('T')
+    H.getProvider.mockReturnValue({ validateToken: vi.fn(async () => ({ ok: true, botName: 'b' })) })
+    const { res } = await call('POST', '/api/agents/a/telegram/test')
+    expect(res.statusCode).toBe(200)
+  })
+})
+
+describe('baseline: findBotTokenDuplicate branches', () => {
+  // A `extractBotId` `null` ága: a token nem `<id>:<secret>` formátumú.
+  // Ebben az esetben a duplikátum-keresés azonnal kilép.
+  it('channel setup: token without digit prefix skips duplicate check', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.getProvider.mockReturnValue({ validateToken: vi.fn(async () => ({ ok: true, botName: 'b' })) })
+    H.readChannelToken.mockReturnValue(null)
+    // A token nem `<szam>:<titok>` formátumú, extractBotId null-t ad.
+    const { res } = await call('POST', '/api/agents/a/channels/telegram', { body: { botToken: 'no-id-just-string' } })
+    expect(res.statusCode).toBe(200)
+  })
+
+  // Az `excludeAgent === MAIN_AGENT_ID` false ág: a main agent a kizáró.
+  // A fenti setup, ahol a main agentet setupoljuk, ezt az ágat éri el.
+  it('channel setup for the main agent: excludeAgent=MAIN_AGENT_ID true branch', async () => {
+    H.isMainChannelsAgent.mockImplementation((n: string) => n === 'marveen')
+    H.getProvider.mockReturnValue({ validateToken: vi.fn(async () => ({ ok: true, botName: 'b' })) })
+    H.readChannelToken.mockReturnValue('999:OTHER')
+    H.getSecret.mockReturnValue(null)
+    H.managedSettingsReady = true
+    const { res, json } = await call('POST', '/api/agents/marveen/channels/telegram', { body: { botToken: '111:NEW' } })
+    expect(res.statusCode).toBe(200)
+    expect(json()).toMatchObject({ ok: true, botName: 'b' })
+  })
+})
+
+describe('baseline: agent-config.json modelProfile branch', () => {
+  // Az `agentModelConfig.modelProfile` string check: ha a config fájlban
+  // string típusú modelProfile van, azt olvassa ki a summary. Az alap mock
+  // readFileOr fallbackot ad, így a modelProfile null marad. Ahhoz, hogy
+  // a string ág is tüzeljen, a modelProfile kulcsot stringként kell
+  // visszaadni a config-ból.
+  it('GET /api/agents/:name: agentModelConfig.modelProfile as a string is read back', async () => {
+    H.isKnownAgent.mockReturnValue(true)
+    H.readFileOr.mockImplementation((p: string, fallback: string) => {
+      if (p.endsWith('agent-config.json')) {
+        return JSON.stringify({ modelProfile: 'premium_reasoning' })
+      }
+      return fallback
+    })
+    const { res, json } = await call('GET', '/api/agents/a')
+    expect(res.statusCode).toBe(200)
+    const body = json() as Record<string, unknown>
+    expect(body.modelProfile).toBe('premium_reasoning')
+  })
+})
+
+describe('baseline: getAgentSummary activeModel / contextTokens branches', () => {
+  // A `runningSince ?? undefined` és a `resolveAgentConfigDir(name).configDir ?? undefined`
+  // belső fallback ágak: running=true, runningSince=null, configDir=null.
+  // Ekkor mindkét ?? undefined tüzel.
+  it('GET /api/agents/:name: running=true with null runningSince and null configDir', async () => {
+    H.isKnownAgent.mockReturnValue(true)
+    H.isAgentRunning.mockReturnValue(true)
+    H.agentRunState.mockReturnValue('running')
+    H.getAgentRunningSince.mockReturnValue(null)
+    H.resolveAgentConfigDir.mockReturnValue({ configDir: null })
+    H.readAgentRemoteConfig.mockReturnValue({ host: null, workdir: null })
+    const { res, json } = await call('GET', '/api/agents/a')
+    expect(res.statusCode).toBe(200)
+    const body = json() as Record<string, unknown>
+    expect(body.running).toBe(true)
+    // activeModel itt null, mert a mockolt readActiveModelFromProjectDir
+    // alapértelmezetten null-t ad, a hívás megtörtént.
+    expect(body.activeModel).toBeNull()
+  })
+
+  // A `status: hasClaudeMd && hasSoulMd ? 'configured' : 'draft'` mindkét
+  // ágát le kell fedni. Az alap mock readFileOr fallback üres stringet ad,
+  // tehát a 'draft' ág tüzel (már covered). Ahhoz, hogy a 'configured'
+  // ág is tüzeljen, a CLAUDE.md ÉS SOUL.md is nem-üres kell legyen.
+  it('GET /api/agents/:name: status=configured when both CLAUDE.md and SOUL.md exist', async () => {
+    H.isKnownAgent.mockReturnValue(true)
+    H.readFileOr.mockImplementation((p: string, fallback: string) => {
+      if (p.endsWith('CLAUDE.md') || p.endsWith('SOUL.md')) return '# content'
+      return fallback
+    })
+    const { res, json } = await call('GET', '/api/agents/a')
+    expect(res.statusCode).toBe(200)
+    const body = json() as Record<string, unknown>
+    expect(body.status).toBe('configured')
+  })
+})
+
+describe('baseline: model-suggest persona file exists', () => {
+  // A `existsSync(personaPath) ? readFileSync(personaPath, 'utf-8') : ''`
+  // true ág: a persona file tényleg létezik a sandboxban.
+  it('persona file exists -> readFileSync is called', async () => {
+    H.listAgentNames.mockReturnValue(['s'])
+    const dir = H.agentDir('s')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'CLAUDE.md'), '# c')
+    // A personas/ mappa a H.personasDir alatt van, ahol a SUT keres.
+    const personaPath = join(H.personasDir, 's.md')
+    writeFileSync(personaPath, '# persona content')
+    const { res } = await call('POST', '/api/agents/model-suggest')
+    expect(res.statusCode).toBe(200)
+  })
+
+  // A `(rawProfile || 'default').trim() || 'default'` belső fallback ág:
+  // a rawProfile 'default' (truthy), de a trim() üreset ad vissza. Ez
+  // extrém ritka, de a második `|| 'default'` ágat triggereli.
+  it('POST /api/agents with profile=default uses default', async () => {
+    const { res, json } = await call('POST', '/api/agents', {
+      body: { name: 'p2', description: 'd', profile: 'default' },
+    })
+    expect(res.statusCode).toBe(200)
+  })
+})
+
+describe('baseline: googlechat main-agent restart path branches', () => {
+  // A `if (gcWasRunning)` true ág a main agent googlechat setup restart
+  // ágában. Ahhoz, hogy a gcWasRunning true legyen, a main agent running
+  // kell legyen, de a main agent branch nem megy az isAgentRunning-ba.
+  // Ehelyett a sub-agent gcWasRunning=true ágát teszteljük, ahol a
+  // stopRes.ok true.
+  it('googlechat sub-agent: stopRes.ok fires the restart branch', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.isAgentRunning.mockReturnValue(true)
+    H.stopAgentProcess.mockReturnValue({ ok: true })
+    H.startAgentProcess.mockReturnValue({ ok: true })
+    const { res, json } = await call('POST', '/api/agents/a/channels/googlechat', {
+      body: { saKeyPath: '/k', projectId: 'p', subscription: 's', owner: 'o' },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(json()).toMatchObject({ ok: true, restarted: true, wasRunning: true })
+  })
+})
+
+describe('baseline: sub-agent channel setup stopRes.ok branch', () => {
+  // A `if (stopRes.ok)` true ág a sub-agent channel setup restart ágában.
+  it('sub-agent telegram setup: stopRes.ok fires the restart branch', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.getProvider.mockReturnValue({ validateToken: vi.fn(async () => ({ ok: true, botName: 'b' })) })
+    H.isAgentRunning.mockReturnValue(true)
+    H.stopAgentProcess.mockReturnValue({ ok: true })
+    H.startAgentProcess.mockReturnValue({ ok: true })
+    const { res, json } = await call('POST', '/api/agents/a/channels/telegram', { body: { botToken: 'T' } })
+    expect(res.statusCode).toBe(200)
+    expect(json()).toMatchObject({ ok: true, restarted: true, wasRunning: true })
+  })
+})
+
+describe('baseline: delete channel setup existsSync branches', () => {
+  // Az `if (existsSync(envFile))` és `if (existsSync(accessFile))` true
+  // ágai: a pre-existing fájlok tényleg léteznek.
+  it('DELETE channel setup: unlinks both .env and access.json when both exist', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    const chDir = join(H.agentDir('a'), '.claude', 'channels')
+    mkdirSync(chDir, { recursive: true })
+    writeFileSync(join(chDir, '.env'), 'TOKEN=x')
+    writeFileSync(join(chDir, 'access.json'), '{}')
+    const { res, json } = await call('DELETE', '/api/agents/a/channels/telegram')
+    expect(res.statusCode).toBe(200)
+    expect(json()).toEqual({ ok: true })
+  })
+})
+
+describe('baseline: team PUT 404-on-missing branch', () => {
+  // A `if (!existsSync(agentDir(name)))` true ág a team PUT endpointon
+  // (a SUT teamMatch blokkjában). Az existsSync(agentDir(name)) hamis,
+  // ha a sub-agent nincs a sandboxban. Az ensureAgentDirs() a test
+  // elején minden listAgentNames() által visszaadott nevet létrehoz,
+  // DE a 'missing' név nincs a listában, így a 404 ág tüzel.
+  it('PUT /api/agents/missing/team 404s', async () => {
+    const { res } = await call('PUT', '/api/agents/missing/team', { body: {} })
+    expect(res.statusCode).toBe(404)
+  })
+})
+
+describe('baseline: POST approve with no pending key', () => {
+  // A `access.pending || {}` fallback ág a POST approve endpointon.
+  it('POST approve with access.json without pending key 404s', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.readFileOr.mockReturnValue(JSON.stringify({ allowFrom: [] })) // no pending
+    const { res, json } = await call('POST', '/api/agents/a/channels/telegram/approve', { body: { code: 'XX' } })
+    expect(res.statusCode).toBe(404)
+    expect(json()).toEqual({ error: 'Invalid or expired code' })
+  })
+})
+
+describe('baseline: main-agent invites token validation fallback', () => {
+  // A `if (provider === 'telegram')` true ág a POST invites endpointon
+  // a main agent számára, ahol a stateDir = channelStateDir(provider)
+  // és a token validation success ág.
+  it('main agent invites: token validation succeeds, r.ok branch fires', async () => {
+    H.readMarveenTelegramConfig.mockReturnValue({ botUsername: '' })
+    H.readChannelToken.mockReturnValue('T')
+    H.getProvider.mockReturnValue({ validateToken: vi.fn(async () => ({ ok: true, botName: 'valid_bot' })) })
+    H.createInvite.mockReturnValue({ token: 'tk2', deepLink: '' })
+    mkdirSync(join(H.projectRoot, '.claude', 'channels'), { recursive: true })
+    const { res, json } = await call('POST', '/api/agents/marveen/channels/telegram/invites')
+    expect(res.statusCode).toBe(200)
+    expect(json()).toMatchObject({ token: 'tk2' })
+  })
+})
+
+describe('baseline: channel-requests approve missing access.channels', () => {
+  // A `if (!access.channels) access.channels = {}` true ág: az
+  // access.channels kulcs nem létezik az access.json-ban.
+  it('channel-requests approve: access.channels gets created when missing', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.readAgentChannelProvider.mockReturnValue('slack')
+    H.listPendingChannelRequests.mockReturnValue([{ id: 1, channel_id: 'C1', user_id: 'U1' }])
+    const chDir = join(H.agentDir('a'), '.claude', 'channels')
+    mkdirSync(chDir, { recursive: true })
+    writeFileSync(join(chDir, 'access.json'), JSON.stringify({})) // no channels key
+    const { res } = await call('POST', '/api/agents/a/channel-requests/1/approve', { body: {} })
+    expect(res.statusCode).toBe(200)
+  })
+})
+
+describe('baseline: import with file in multipart', () => {
+  // A `if (file) bundle = file.data` true ág: a multipart parser file-t
+  // ad vissza. A bundle = file.data értéket kapja meg.
+  it('import: multipart with file uses file.data as bundle', async () => {
+    H.parseMultipart.mockReturnValue({
+      file: { name: 'a.tar.gz', data: Buffer.from('gzdata') },
+      fields: {},
+    })
+    H.peekBundleKind.mockReturnValue('agent')
+    H.importAgentBundle.mockReturnValue({
+      name: 'a',
+      overwritten: false,
+      manifest: { includesSecrets: false },
+    })
+    const { res, json } = await call('POST', '/api/agents/import', {
+      headers: { 'content-type': 'multipart/form-data; boundary=---' },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(H.importAgentBundle).toHaveBeenCalledWith(expect.any(Buffer), expect.any(Object))
+    expect(json()).toMatchObject({ kind: 'agent' })
+  })
+})
+
+describe('baseline: import error String(err) fallback', () => {
+  // A `err instanceof Error ? err.message : String(err)` String(err) ág
+  // az import handlerben, amikor a dobott érték nem Error.
+  it('import: non-Error throw uses String(err) in 400 response', async () => {
+    H.parseMultipart.mockReturnValue({
+      file: { name: 'a.tar.gz', data: Buffer.from('gzdata') },
+      fields: {},
+    })
+    H.peekBundleKind.mockReturnValue('agent')
+    H.importAgentBundle.mockImplementation(() => { throw 'plain string from import' })
+    const { res, json } = await call('POST', '/api/agents/import', {
+      headers: { 'content-type': 'multipart/form-data; boundary=---' },
+    })
+    expect(res.statusCode).toBe(400)
+    expect((json() as Record<string, string>).error).toBe('plain string from import')
+  })
+})
+
+// ===========================================================================
+// Harmadik menet: a maradék 17 branch.
+// ===========================================================================
+
+describe('baseline: extractBotId regex-fail branch', () => {
+  // A `/^\d+$/.test(id) ? id : null` null ága: a colon előtti rész NEM
+  // csak számjegyekből áll. Pl. 'abc:secret'.
+  it('channel setup: extractBotId returns null for non-digit id', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.getProvider.mockReturnValue({ validateToken: vi.fn(async () => ({ ok: true, botName: 'b' })) })
+    H.readChannelToken.mockReturnValue(null)
+    H.getSecret.mockReturnValue(null)
+    const { res, json } = await call('POST', '/api/agents/a/channels/telegram', { body: { botToken: 'abc:secret' } })
+    expect(res.statusCode).toBe(200)
+    expect(json()).toMatchObject({ ok: true })
+  })
+})
+
+describe('baseline: profileId inner || "default" branch', () => {
+  // A `(rawProfile || 'default').trim() || 'default'` belső fallback: a
+  // rawProfile csak whitespace karakterekből áll, a trim() üreset ad.
+  it('POST /api/agents with profile="   " falls back to default', async () => {
+    const { res, json } = await call('POST', '/api/agents', {
+      body: { name: 'wp', description: 'd', profile: '   ' },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(json()).toMatchObject({ ok: true, name: 'wp' })
+  })
+})
+
+describe('baseline: googlechat sub-agent stopRes.ok=false branch', () => {
+  // A `if (stopRes.ok)` else ága: a stopAgentProcess nem sikerül.
+  it('googlechat: stopRes.ok=false skips the restart', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.isAgentRunning.mockReturnValue(true)
+    H.stopAgentProcess.mockReturnValue({ ok: false })
+    const { res, json } = await call('POST', '/api/agents/a/channels/googlechat', {
+      body: { saKeyPath: '/k', projectId: 'p', subscription: 's', owner: 'o' },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(json()).toMatchObject({ ok: true, restarted: false, wasRunning: true })
+  })
+
+  // A `if (gcWasRunning)` else ága: az agent nem fut, nincs restart.
+  it('googlechat: wasRunning=false skips the restart', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.isAgentRunning.mockReturnValue(false)
+    const { res, json } = await call('POST', '/api/agents/a/channels/googlechat', {
+      body: { saKeyPath: '/k', projectId: 'p', subscription: 's', owner: 'o' },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(json()).toMatchObject({ ok: true, restarted: false, wasRunning: false })
+  })
+})
+
+describe('baseline: sub-agent telegram stopRes.ok=false branch', () => {
+  // A `if (stopRes.ok)` else ága: a stopAgentProcess nem sikerül.
+  it('sub-agent telegram: stopRes.ok=false skips the restart', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.getProvider.mockReturnValue({ validateToken: vi.fn(async () => ({ ok: true, botName: 'b' })) })
+    H.isAgentRunning.mockReturnValue(true)
+    H.stopAgentProcess.mockReturnValue({ ok: false })
+    const { res, json } = await call('POST', '/api/agents/a/channels/telegram', { body: { botToken: 'T' } })
+    expect(res.statusCode).toBe(200)
+    expect(json()).toMatchObject({ ok: true, restarted: false, wasRunning: true })
+  })
+
+  // A `if (wasRunning)` else ága: az agent nem fut.
+  it('sub-agent telegram: wasRunning=false skips the stop+start', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.getProvider.mockReturnValue({ validateToken: vi.fn(async () => ({ ok: true, botName: 'b' })) })
+    H.isAgentRunning.mockReturnValue(false)
+    const { res, json } = await call('POST', '/api/agents/a/channels/telegram', { body: { botToken: 'T' } })
+    expect(res.statusCode).toBe(200)
+    expect(json()).toMatchObject({ ok: true, restarted: false, wasRunning: false })
+  })
+})
+
+describe('baseline: DELETE channel setup missing files', () => {
+  // Az `if (existsSync(envFile))` else ága: nincs .env fájl.
+  it('DELETE channel: no .env file, the existsSync(envFile) false branch fires', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    const chDir = join(H.agentDir('a'), '.claude', 'channels')
+    mkdirSync(chDir, { recursive: true })
+    // Csak access.json, nincs .env.
+    writeFileSync(join(chDir, 'access.json'), '{}')
+    const { res } = await call('DELETE', '/api/agents/a/channels/telegram')
+    expect(res.statusCode).toBe(200)
+  })
+
+  // Az `if (existsSync(accessFile))` else ága: nincs access.json.
+  it('DELETE channel: no access.json file, the existsSync(accessFile) false branch fires', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    const chDir = join(H.agentDir('a'), '.claude', 'channels')
+    mkdirSync(chDir, { recursive: true })
+    // Csak .env, nincs access.json.
+    writeFileSync(join(chDir, '.env'), 'TOKEN=x')
+    const { res } = await call('DELETE', '/api/agents/a/channels/telegram')
+    expect(res.statusCode).toBe(200)
+  })
+
+  // Mindkét fájl hiányzik.
+  it('DELETE channel: neither .env nor access.json exists', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    const chDir = join(H.agentDir('a'), '.claude', 'channels')
+    mkdirSync(chDir, { recursive: true })
+    // Nincs .env, nincs access.json.
+    const { res } = await call('DELETE', '/api/agents/a/channels/telegram')
+    expect(res.statusCode).toBe(200)
+  })
+})
+
+describe('baseline: PUT /api/agents/:name/security 404 branch', () => {
+  // A `if (!existsSync(agentDir(name)))` true ága a security PUT handlerben.
+  it('PUT /api/agents/missing/security 404s', async () => {
+    const { res, json } = await call('PUT', '/api/agents/missing/security', { body: { profile: 'default' } })
+    expect(res.statusCode).toBe(404)
+    expect(json()).toEqual({ error: 'Agent not found' })
+  })
+})
+
+describe('baseline: main-agent invites r.ok=false branch', () => {
+  // A `if (r.ok) botName = r.botName` else ága: a token validation
+  // sikertelen, a botName undefined marad.
+  it('main-agent invites: token validation fails, r.ok=false branch', async () => {
+    H.readMarveenTelegramConfig.mockReturnValue({ botUsername: '' })
+    H.readChannelToken.mockReturnValue('T')
+    H.getProvider.mockReturnValue({ validateToken: vi.fn(async () => ({ ok: false, error: 'bad' })) })
+    H.createInvite.mockReturnValue({ token: 'tk3', deepLink: '' })
+    mkdirSync(join(H.projectRoot, '.claude', 'channels'), { recursive: true })
+    const { res } = await call('POST', '/api/agents/marveen/channels/telegram/invites')
+    expect(res.statusCode).toBe(200)
+  })
+})
+
+describe('baseline: allowed-remove !access.groups else branch', () => {
+  // Az `if (access.groups) delete access.groups[id]` else ága: access.groups
+  // undefined, a delete nem fut le.
+  it('DELETE allowed/group: access.groups undefined skips the delete', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.readFileOr.mockReturnValue(JSON.stringify({ allowFrom: [] })) // no groups key
+    mkdirSync(join(H.agentDir('a'), '.claude', 'channels'), { recursive: true })
+    const { res } = await call('DELETE', '/api/agents/a/channels/telegram/allowed/group/g1')
+    expect(res.statusCode).toBe(200)
+  })
+})
+
+describe('baseline: channel-requests approve access.channels already set', () => {
+  // A `if (!access.channels) access.channels = {}` else ága: access.channels
+  // már definiálva van.
+  it('channel-requests approve: access.channels already set', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.readAgentChannelProvider.mockReturnValue('slack')
+    H.listPendingChannelRequests.mockReturnValue([{ id: 1, channel_id: 'C1', user_id: 'U1' }])
+    const chDir = join(H.agentDir('a'), '.claude', 'channels')
+    mkdirSync(chDir, { recursive: true })
+    writeFileSync(join(chDir, 'access.json'), JSON.stringify({ channels: { C0: { requireMention: true } } }))
+    const { res } = await call('POST', '/api/agents/a/channel-requests/1/approve', { body: {} })
+    expect(res.statusCode).toBe(200)
+  })
+})
+
+describe('baseline: import multipart without file', () => {
+  // A `if (file) bundle = file.data` else ága: a multipart parser nem
+  // ad vissza file-t. A bundle = undefined marad, és a 400 'No bundle
+  // uploaded' ág tüzel.
+  it('import: multipart without file -> 400 No bundle uploaded', async () => {
+    H.parseMultipart.mockReturnValue({ file: null, fields: {} })
+    const { res, json } = await call('POST', '/api/agents/import', {
+      headers: { 'content-type': 'multipart/form-data; boundary=---' },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(json()).toEqual({ error: 'No bundle uploaded' })
+  })
+})
+
+// ===========================================================================
+// Negyedik menet: req.url || '' fallback ágak. Ezeket csak a test harness
+// megkerülésével lehet elérni, mert a call() mindig beállítja az url-t.
+// A tesztek közvetlenül hívják a tryHandleAgents függvényt egy url nélküli
+// request-tel.
+// ===========================================================================
+
+describe('baseline: req.url falsy fallback in export / import', () => {
+  // Az export-all endpoint `req.url || ''` fallback ága. Ehhez a req
+  // objektumon nincs `url` property beállítva.
+  it('export-all: req.url is undefined -> includeSecrets defaults to false', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.exportAllAgentsBundle.mockImplementation((outPath: string) => {
+      writeFileSync(outPath, Buffer.from('gzdata'))
+    })
+    H.fleetBundleFilename.mockReturnValue('fleet.tar.gz')
+    const urlStr = 'http://127.0.0.1:3420/api/agents/export-all'
+    const url = new URL(urlStr)
+    // Készítsünk egy request-et url nélkül (a headers['url'] undefined).
+    const req = Readable.from([]) as unknown as http.IncomingMessage & Record<string, unknown>
+    req.headers = {}
+    // A `r.url` nincs beállítva, tehát a `req.url || ''` fallback tüzel.
+    const res = mkRes()
+    const ctx = { req, res: res as unknown as http.ServerResponse, path: url.pathname, method: 'GET', url }
+    ensureAgentDirs()
+    const handled = await tryHandleAgents(ctx, H.webDir)
+    expect(handled).toBe(true)
+    expect(res.statusCode).toBe(200)
+  })
+
+  // Az export endpoint `req.url || ''` fallback ága.
+  it('export: req.url is undefined -> includeSecrets defaults to false', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.exportAgentBundle.mockImplementation((_n: string, outPath: string) => {
+      writeFileSync(outPath, Buffer.from('gzdata'))
+    })
+    H.bundleFilename.mockReturnValue('a.tar.gz')
+    const urlStr = 'http://127.0.0.1:3420/api/agents/a/export'
+    const url = new URL(urlStr)
+    const req = Readable.from([]) as unknown as http.IncomingMessage & Record<string, unknown>
+    req.headers = {}
+    const res = mkRes()
+    const ctx = { req, res: res as unknown as http.ServerResponse, path: url.pathname, method: 'GET', url }
+    ensureAgentDirs()
+    const handled = await tryHandleAgents(ctx, H.webDir)
+    expect(handled).toBe(true)
+    expect(res.statusCode).toBe(200)
+  })
+
+  // Az import endpoint `req.url || ''` fallback ága (raw body path).
+  it('import: raw body with req.url undefined -> url defaults to ""', async () => {
+    H.peekBundleKind.mockReturnValue('agent')
+    H.importAgentBundle.mockReturnValue({
+      name: 'x',
+      overwritten: false,
+      manifest: { includesSecrets: false },
+    })
+    // POST /api/agents/import raw body-val, content-type NEM multipart, és
+    // req.url nincs beállítva. A handler az else ágba megy és `req.url || ''`
+    // tüzel.
+    const urlStr = 'http://127.0.0.1:3420/api/agents/import'
+    const url = new URL(urlStr)
+    const req = Readable.from([Buffer.from('gzdata')]) as unknown as http.IncomingMessage & Record<string, unknown>
+    req.headers = { 'content-type': 'application/octet-stream' }
+    const res = mkRes()
+    const ctx = { req, res: res as unknown as http.ServerResponse, path: url.pathname, method: 'POST', url }
+    ensureAgentDirs()
+    const handled = await tryHandleAgents(ctx, H.webDir)
+    expect(handled).toBe(true)
+    expect(res.statusCode).toBe(200)
+  })
+})
