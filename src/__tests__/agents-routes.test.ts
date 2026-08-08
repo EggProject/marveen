@@ -1059,6 +1059,19 @@ describe('GET /api/agents/activity', () => {
     expect(res.statusCode).toBe(200)
     expect(H.capturePane).toHaveBeenCalledWith('agent-r', 'h')
   })
+
+  // BASELINE: amikor running=true es pane=null, a label függvény
+  // 'unknown'-t ad vissza a `if (pane === null) return 'unknown'` ágon.
+  it('running agent with null pane gets label "unknown"', async () => {
+    H.listAgentNames.mockReturnValue(['b'])
+    H.agentRunState.mockReturnValue('running')
+    H.capturePane.mockReturnValue(null)
+    const { res, json } = await call('GET', '/api/agents/activity')
+    expect(res.statusCode).toBe(200)
+    const entries = json() as Array<Record<string, unknown>>
+    const b = entries.find((e) => e.name === 'b') as Record<string, unknown>
+    expect(b.state).toBe('unknown')
+  })
 })
 
 // --- /api/agents/model-suggest ---------------------------------------------
