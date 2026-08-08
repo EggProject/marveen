@@ -649,4 +649,24 @@ describe('cleanupTeamReferences', () => {
     expect(after.delegatesTo).toEqual(['keep-del'])
     expect(after.trustFrom).toEqual(['keep-tf'])
   })
+
+  // A 191-192. sor `(team.trustFrom ?? [])` kifejezés `: []` fallback ága
+  // strukturálisan elérhetetlen a jelenlegi kódon: a readAgentTeam mindig
+  // normalizálja a trustFrom mezőt `[]` -re (vagy a JSON-ból jön tömbként,
+  // vagy a 48. sor DEFAULT_TEAM-ból jön `[]` -ként). A `?? []` így sosem
+  // fut le, mert a cleanupTeamReferences-be belépő team objektumban a
+  // trustFrom MINDIG definiált tömb. A részletes elemzés a
+  // docs/needs-to-be-fix/agent-team-trustfrom-nullish-coalesce.md fájlban.
+  it('a cleanupTeamReferences mindig `[]` tömbbé normalizálja a trustFrom-ot (a ?? [] fallback sosem fut le)', () => {
+    seedAgent('no-tf', { team: { role: 'member', reportsTo: null, delegatesTo: [], autoDelegation: false } })
+    // A JSON-ban nincs trustFrom kulcs; a readAgentTeam DEFAULT_TEAM fallback
+    // ága `[]` -t ad vissza. A cleanupTeamReferences 191-192. sorában a
+    // `(team.trustFrom ?? [])` a truthy ágat veszi (`[]`).
+    expect(() => at.cleanupTeamReferences('removed')).not.toThrow()
+    const after = at.readAgentTeam('no-tf')
+    expect(after.trustFrom).toEqual([])
+    // A cleanupTeamReferences a trustFrom mezőt nem írta felül (a `[]` -
+    // ből szűrve ugyanaz a `[]` jön ki), tehát a `team.trustFrom` értéke
+    // továbbra is a readAgentTeam által normalizált `[]` marad.
+  })
 })
