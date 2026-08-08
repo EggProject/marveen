@@ -632,6 +632,14 @@ describe('buildProcessLockContext.listPortHolders / getProcessCommand / getProce
     expect(mockAcquirePidfileLock).toHaveBeenCalled()
   })
 
+  it('listOwnProcessesMatching skips rows whose argv does not match the dashboard pattern', async () => {
+    mockExecFileSync.mockImplementation((cmd: string, args?: readonly string[]) => {
+      if (cmd === '/bin/ps' && args?.[0] === '-Ao') return '777 1000 node /opt/marveen/dist/index.js.map\n'
+      return ''
+    })
+    await loadIndexFresh()
+    expect(mockAcquirePidfileLock).toHaveBeenCalled()
+  })
   it('listOwnProcessesMatching filters out foreign-UID rows when getuid is callable', async () => {
     const origGetuid = process.getuid
     ;(process as unknown as { getuid: () => number }).getuid = () => 1000
@@ -1379,6 +1387,20 @@ describe('buildPidfileLockContext helpers via real acquirePidfileLock', () => {
   // above. Tests in this block exercise every helper in buildPidfileLockContext
   // (tryCreateExclusive, unlinkIfMatches, probeAlive, sendTerm,
   // isLegitimatePredecessor) and most of buildProcessLockContext.
+
+  it('forwards pidfile context errors to logger.error', async () => {
+    mockAcquirePidfileLock.mockImplementation(async (_path: string, _selfPid: number, ctx: unknown) => {
+      if (typeof ctx !== 'object' || ctx === null || !('log' in ctx)) return
+      const log = ctx.log
+      if (typeof log !== 'object' || log === null || !('error' in log) || typeof log.error !== 'function') return
+      log.error({ source: 'test' }, 'synthetic pidfile error')
+    })
+    await loadIndexFresh()
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      { source: 'test' },
+      'synthetic pidfile error',
+    )
+  })
 
   it('happy path: tryCreateExclusive returns "created" and the real lock returns silently', async () => {
     await withRealAcquirePidfileLock(async () => {
@@ -2176,6 +2198,21 @@ describe('main().catch() routes non-DeferToPeerError errors through shutdown', (
     // before calling shutdown, and shutdown's webServer=null branch calls
     // process.exit(exitCode)).
     expect(exitCallLog[exitCallLog.length - 1]?.code).toBe(1)
+  })
+
+  it('preserves exitCode when main rejects after shutdown has started', async () => {
+    mockMkdirSync.mockImplementation(() => {
+      emitShutdownSignal('SIGTERM')
+      throw new Error('failure after shutdown')
+    })
+    await loadIndexFresh()
+    await drainMicrotasks()
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      expect.stringContaining('Vegzetes hiba'),
+    )
+    expect(exitCallLog[0]?.code).toBe(0)
+    expect(exitCallLog[exitCallLog.length - 1]?.code).toBe(0)
   })
 
   it('does NOT overwrite exitCode when shutdown is already running', async () => {
