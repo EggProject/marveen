@@ -147,6 +147,20 @@ describe('findOwnNodeHolders', () => {
     const { ctx } = makeCtx({ procs, portHolders: { 3420: [300, 300] } })
     expect(findOwnNodeHolders(3420, ctx)).toEqual([300])
   })
+
+  it('skips a PID whose owning UID lookup returns null (process gone between ps and stat)', () => {
+    // Pins line 105: the ctx.uid != null guard enables a UID equality check;
+    // when getProcessUid returns null the helper must `continue` and leave
+    // the PID alone rather than treating it as a candidate. Simulate the
+    // race where the PID was alive when lsof listed it but died before ps.
+    const { ctx } = makeCtx({
+      uid: 501,
+      procs: [{ pid: 300, uid: 501, cmd: 'node', alive: true }],
+      portHolders: { 3420: [300] },
+    })
+    ctx.getProcessUid = () => null // process vanished between ps and stat
+    expect(findOwnNodeHolders(3420, ctx)).toEqual([])
+  })
 })
 
 describe('findOwnBinaryMatches', () => {
@@ -275,6 +289,27 @@ describe('terminateProcesses', () => {
     await terminateProcesses([200], ctx, { graceMs: 10 })
     expect(signalCalls.find(c => c.sig === 'SIGKILL')).toBeTruthy()
   })
+
+  it('logs an error and swallows SIGKILL failure (best-effort escalation)', async () => {
+    // The escalate-to-SIGKILL block has a try/catch around ctx.signal(SIGKILL).
+    // When SIGKILL throws (EPERM, EACCES, or a process that refuses SIGKILL
+    // entirely on a hardened kernel) the helper must log ctx.log.error and
+    // continue to the next PID rather than crash the loop. Pin the previously-
+    // missed line 158 branch (`SIGKILL failed`).
+    const procs: MockProc[] = [
+      { pid: 200, uid: 501, cmd: 'node', alive: true },
+    ]
+    const signalOverride: ProcessLockContext['signal'] = (pid, sig) => {
+      const p = procs.find(x => x.pid === pid)!
+      if (sig === 'SIGTERM') return 'sent' // no-op (hung process)
+      if (sig === 0) return p.alive ? 'sent' : 'gone' // still alive
+      if (sig === 'SIGKILL') throw Object.assign(new Error('EPERM'), { code: 'EPERM' })
+      return 'gone'
+    }
+    const { ctx, logs } = makeCtx({ procs, signalOverride })
+    await expect(terminateProcesses([200], ctx, { graceMs: 10 })).resolves.toBeUndefined()
+    expect(logs.some(l => l.level === 'error' && /SIGKILL failed/.test(l.msg))).toBe(true)
+  })
 })
 
 describe('acquirePortLock', () => {
@@ -378,6 +413,27 @@ describe('acquirePortLock', () => {
     await acquirePortLock(3420, stickyPort, { graceMs: 10, postKillDrainMs: 30, postKillPollMs: 10 })
     expect(logs.some(l => l.level === 'warn' && /still held after drain/.test(l.msg))).toBe(true)
   })
+
+  it('skips the post-kill drain polling when pollMs <= 0 even if drainMs > 0', async () => {
+    // Pins the `pollMs <= 0` right arm of the `if (drainMs <= 0 || pollMs <= 0)`
+    // short-circuit on line 183. The left arm (drainMs <= 0) is exercised by
+    // `postKillDrainMs: 0` cases; the right arm requires postKillPollMs: 0
+    // while postKillDrainMs > 0. The expected behaviour is to skip the
+    // drain-poll loop entirely -- the helper returns immediately after the
+    // SIGKILL escalation, and the "still held after drain" warning MUST NOT
+    // fire (we never polled, so we cannot know whether the port is held).
+    const procs: MockProc[] = [
+      { pid: 200, uid: 501, cmd: 'node', alive: true },
+    ]
+    const portHolders: Record<number, number[]> = { 3420: [200] }
+    const { ctx, logs } = makeCtx({ procs, portHolders })
+    const stickyPort: ProcessLockContext = {
+      ...ctx,
+      listPortHolders() { return [200] }, // would otherwise trip the drain warn
+    }
+    await acquirePortLock(3420, stickyPort, { graceMs: 10, postKillDrainMs: 30, postKillPollMs: 0 })
+    expect(logs.some(l => l.level === 'warn' && /still held after drain/.test(l.msg))).toBe(false)
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -410,11 +466,18 @@ function makePidfileCtx(state: PidfileState): PidfileLockContext {
     },
     unlinkIfMatches(path, expected) {
       const raw = state.files.get(path)
-      // The mock only stores numeric PIDs; a "non-parseable" file state
-      // is outside its scope (real I/O produces it, the abstract mock
-      // does not). expected === null never matches the mock's state,
-      // which is fine: those branches are exercised by the real impl.
+      // The mock only stores numeric PIDs; for the "non-parseable" file
+      // case (recorded === null) we encode it as undefined in the map and
+      // treat `expected === null` as "file content is still unparseable"
+      // -- in that case, unlink unconditionally.
       const current = raw === undefined ? undefined : raw
+      if (expected === null) {
+        if (current === undefined) {
+          state.unlinks.push(path)
+          state.files.delete(path)
+        }
+        return
+      }
       if (current !== expected) return
       state.unlinks.push(path)
       state.files.delete(path)
@@ -604,6 +667,49 @@ describe('acquirePidfileLock', () => {
     await acquirePidfileLock(state.path, 100, ctx, { graceMs: 10, onLiveLegitimate: 'defer' })
     expect(state.files.get(state.path)).toBe(100)
     expect(state.termed).toEqual([])
+  })
+
+  it('unlinks a non-parseable file (recorded === null) and retries', async () => {
+    // Pins lines 310-311: when tryCreateExclusive returns 'exists' but
+    // readRecordedPid returns null (file exists with truncated/corrupt
+    // content that doesn't parse to a number), the helper must call
+    // unlinkIfMatches(path, null) and continue to the next attempt.
+    // Use a custom ctx whose readRecordedPid signals "exists but corrupt"
+    // by returning null on the first read, then a parseable PID on the
+    // retry (after the corrupt-file branch has run).
+    const state = baseState()
+    // Pre-populate the file with an unparseable value so tryCreateExclusive
+    // returns 'exists' on the first attempt.
+    state.files.set(state.path, undefined as unknown as number)
+    let calls = 0
+    const ctx = makePidfileCtx(state)
+    const baseReadRecordedPid = ctx.readRecordedPid
+    ctx.readRecordedPid = (path) => {
+      calls += 1
+      if (calls === 1) return null // first read: corrupt
+      return baseReadRecordedPid(path) // subsequent reads: real mock
+    }
+    await acquirePidfileLock(state.path, 100, ctx, { graceMs: 10 })
+    // The lock is eventually acquired on the retry.
+    expect(state.files.get(state.path)).toBe(100)
+  })
+
+  it('logs a warning when sendTerm throws and continues with the retry', async () => {
+    // Pins line 352: when ctx.sendTerm(recorded) throws, the helper must
+    // log ctx.log.warn('SIGTERM to predecessor failed') and still proceed
+    // to the grace sleep + retry cycle. A failed SIGTERM on one attempt
+    // does NOT abort the loop.
+    const state = baseState()
+    state.files.set(state.path, 999)
+    state.livePids.add(999)
+    state.legitimatePids.add(999)
+    const ctx = makePidfileCtx(state)
+    ctx.sendTerm = (pid) => { state.termed.push(pid); throw Object.assign(new Error('EPERM'), { code: 'EPERM' }) }
+    await acquirePidfileLock(state.path, 100, ctx, { graceMs: 10 })
+    expect(state.logs.some(l => l.level === 'warn' && /SIGTERM to predecessor failed/.test(l.msg))).toBe(true)
+    // Eventually the predecessor is gone (the mock delete livePids before
+    // throwing), so the lock is acquired on the next iteration.
+    expect(state.files.get(state.path)).toBe(100)
   })
 })
 
