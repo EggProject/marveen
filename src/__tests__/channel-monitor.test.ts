@@ -2192,27 +2192,41 @@ describe('triggerMarveenMemorySave + post-respawn modal dismiss failures', () =>
   //     (120s) -- so we need at least 3 ticks (30s + 2*60s = 150s) before the
   //     down handler fires, then one more tick (210s) for it to advance into
   //     the 'save' stage and call triggerMarveenMemorySave.
+  //
+  // The cascade depends on module-level state (marveenSuspectFirstSeen,
+  // marveenDownState) that survives across tests, so this describe re-imports
+  // the SUT in beforeEach.
+  beforeEach(() => {
+    rmSync(join(sandbox.PROJECT_ROOT, 'store', '.channel-last-respawn'), { force: true })
+    vi.resetModules()
+  })
+
   it('triggerMarveenMemorySave: sendPromptToSession throws -> caught + logged', async () => {
     vi.useFakeTimers()
-    // Clean any leftover respawn stamp so MARVEEN_POST_RESPAWN_GRACE_MS guard
-    // does not short-circuit handleMarveenDown.
-    rmSync(join(sandbox.PROJECT_ROOT, 'store', '.channel-last-respawn'), { force: true })
     m.getClaudePidForSession.mockReturnValue(null)
     m.listAgentNames.mockReturnValue([])
     m.execFileSync.mockReturnValue('')
     m.attemptChannelMcpReconnect.mockReturnValue({ ok: false, message: 'no' })
     m.sendPromptToSession.mockRejectedValue(new Error('send err'))
-    const handle = startChannelPluginMonitor()
+    const mod = await import('../web/channel-monitor.js')
+    const handle = mod.startChannelPluginMonitor()
     // Tick 1 (30s): set marveenSuspectFirstSeen, no escalation yet.
     await vi.advanceTimersByTimeAsync(30_000)
+    await vi.advanceTimersByTimeAsync(100)
     // Tick 2 (90s): shouldEscalateMarveenDown still false (<120s confirmed).
     await vi.advanceTimersByTimeAsync(60_000)
+    await vi.advanceTimersByTimeAsync(100)
     // Tick 3 (150s): shouldEscalateMarveenDown returns true; handleMarveenDown
     // is called for the first time and sets marveenDownState.stage = 'soft'.
     await vi.advanceTimersByTimeAsync(60_000)
+    await vi.advanceTimersByTimeAsync(100)
     // Tick 4 (210s): stage 'soft' advances to 'save'; triggerMarveenMemorySave
     // is invoked, sendPromptToSession rejects, the catch logs warn.
     await vi.advanceTimersByTimeAsync(60_000)
+    await vi.advanceTimersByTimeAsync(100)
+    // Extra tick to let microtask promise chains resolve before we assert.
+    await vi.advanceTimersByTimeAsync(60_000)
+    await vi.advanceTimersByTimeAsync(100)
     clearMonitorHandle(handle)
     vi.useRealTimers()
     const warnCalls = m.loggerWarn.mock.calls.flat()
@@ -2228,9 +2242,10 @@ describe('triggerMarveenMemorySave + post-respawn modal dismiss failures', () =>
     // every dismiss call reject so BOTH catch blocks fire. The function
     // should still return true because the catch only swallows the modal
     // failure, not the entire respawn.
+    const mod = await import('../web/channel-monitor.js')
     m.execFileSync.mockReturnValue('')
     m.dismissResumeSummaryModalIfPresent.mockRejectedValue(new Error('modal err'))
-    const r = await resumeMarveenSession()
+    const r = await mod.resumeMarveenSession()
     expect(r).toBe(true)
     const warnCalls = m.loggerWarn.mock.calls.flat()
     const matches = warnCalls.filter(
@@ -2350,8 +2365,12 @@ describe('readConfiguredMainModel (direct behavioural assertions)', () => {
     // Drive through respawnMainSessionFresh; buildMainSessionRespawnCmd receives
     // the configured model so the shell command carries --model 'claude-opus-4-8'.
     expect(() => respawnMainSessionFresh()).not.toThrow()
-    const execCalls = m.execFileSync.mock.calls.filter((c: unknown[]) => Array.isArray(c[1]) && (c[1] as unknown[])[0] === 'respawn-pane')
-    const cmd = String(execCalls[execCalls.length - 1]?.[2] ?? '')
+    // execFileSync is called as execFileSync(TMUX, [args...], { timeout: 15000 });
+    // the claudeCmd shell string lives at args[4].
+    const respawnCalls = m.execFileSync.mock.calls.filter((c: unknown[]) => Array.isArray(c[1]) && (c[1] as unknown[])[0] === 'respawn-pane')
+    const last = respawnCalls[respawnCalls.length - 1]
+    const args = (last?.[1] ?? []) as unknown[]
+    const cmd = String(args[4] ?? '')
     expect(cmd).toContain(`'claude-opus-4-8'`)
   })
 
@@ -2359,8 +2378,10 @@ describe('readConfiguredMainModel (direct behavioural assertions)', () => {
     // No settings.json -> readConfiguredMainModel returns ''. The respawn
     // command must therefore omit --model entirely.
     expect(() => respawnMainSessionFresh()).not.toThrow()
-    const execCalls = m.execFileSync.mock.calls.filter((c: unknown[]) => Array.isArray(c[1]) && (c[1] as unknown[])[0] === 'respawn-pane')
-    const cmd = String(execCalls[execCalls.length - 1]?.[2] ?? '')
+    const respawnCalls = m.execFileSync.mock.calls.filter((c: unknown[]) => Array.isArray(c[1]) && (c[1] as unknown[])[0] === 'respawn-pane')
+    const last = respawnCalls[respawnCalls.length - 1]
+    const args = (last?.[1] ?? []) as unknown[]
+    const cmd = String(args[4] ?? '')
     expect(cmd).not.toContain('--model')
   })
 
@@ -2368,8 +2389,10 @@ describe('readConfiguredMainModel (direct behavioural assertions)', () => {
     mkdirSync(join(sandbox.PROJECT_ROOT, '.claude'), { recursive: true })
     writeFileSync(join(sandbox.PROJECT_ROOT, '.claude', 'settings.json'), JSON.stringify({ model: 42 }))
     expect(() => respawnMainSessionFresh()).not.toThrow()
-    const execCalls = m.execFileSync.mock.calls.filter((c: unknown[]) => Array.isArray(c[1]) && (c[1] as unknown[])[0] === 'respawn-pane')
-    const cmd = String(execCalls[execCalls.length - 1]?.[2] ?? '')
+    const respawnCalls = m.execFileSync.mock.calls.filter((c: unknown[]) => Array.isArray(c[1]) && (c[1] as unknown[])[0] === 'respawn-pane')
+    const last = respawnCalls[respawnCalls.length - 1]
+    const args = (last?.[1] ?? []) as unknown[]
+    const cmd = String(args[4] ?? '')
     expect(cmd).not.toContain('--model')
   })
 
@@ -2377,8 +2400,10 @@ describe('readConfiguredMainModel (direct behavioural assertions)', () => {
     mkdirSync(join(sandbox.PROJECT_ROOT, '.claude'), { recursive: true })
     writeFileSync(join(sandbox.PROJECT_ROOT, '.claude', 'settings.json'), '{not json')
     expect(() => respawnMainSessionFresh()).not.toThrow()
-    const execCalls = m.execFileSync.mock.calls.filter((c: unknown[]) => Array.isArray(c[1]) && (c[1] as unknown[])[0] === 'respawn-pane')
-    const cmd = String(execCalls[execCalls.length - 1]?.[2] ?? '')
+    const respawnCalls = m.execFileSync.mock.calls.filter((c: unknown[]) => Array.isArray(c[1]) && (c[1] as unknown[])[0] === 'respawn-pane')
+    const last = respawnCalls[respawnCalls.length - 1]
+    const args = (last?.[1] ?? []) as unknown[]
+    const cmd = String(args[4] ?? '')
     expect(cmd).not.toContain('--model')
   })
 })
