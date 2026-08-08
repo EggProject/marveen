@@ -1245,6 +1245,79 @@ describe('upgradeLegacyHookCommands', () => {
     expect(cmds).toContain('python3 stale.py')
     expect(cmds).not.toContain('python3 /new/path/stale.py')
   })
+
+  it('rewrites an existing command in place when both share a basename but differ (lines 187-189)', () => {
+    // Pins the previously-uncovered branch at lines 187-189 of agent-scaffold.ts.
+    // The `existBn === tplBn && existHook.command !== tplHook.command` arm
+    // requires BOTH sides to carry an extractable basename AND both paths to
+    // exist on disk (so isUnsafeHookCommand lets them through). The existing
+    // command is rewritten to the tpl command and the timeout is synced.
+    const hooksDir = join(SANDBOX, 'scripts', 'hooks')
+    mkdirSync(hooksDir, { recursive: true })
+    writeFileSync(join(hooksDir, 'staleness-guard.py'), '#!/usr/bin/env python3\n')
+    const existingCmd = `python3 ${join(hooksDir, 'staleness-guard.py')}`
+    // Build a second valid path under a different absolute location but the
+    // SAME basename so _hookScriptBasename extracts 'staleness-guard.py' on
+    // both sides.
+    const altDir = join(SANDBOX, 'scripts', 'hooks', 'alt')
+    mkdirSync(altDir, { recursive: true })
+    writeFileSync(join(altDir, 'staleness-guard.py'), '#!/usr/bin/env python3\n')
+    const tplCmd = `python3 ${join(altDir, 'staleness-guard.py')}`
+    const existing = {
+      PreCompact: [{ hooks: [{ command: existingCmd, timeout: 5 }] }],
+    }
+    const tpl = {
+      PreCompact: [{ hooks: [{ command: tplCmd, timeout: 10 }] }],
+    }
+    expect(scaffold.upgradeLegacyHookCommands(existing, tpl)).toBe(true)
+    expect(existing.PreCompact[0].hooks[0].command).toBe(tplCmd)
+    expect(existing.PreCompact[0].hooks[0].timeout).toBe(10)
+  })
+
+  it('still rewrites when the tpl hook has no timeout (else branch of line 188)', () => {
+    // The `if (tplHook.timeout != null)` on line 188 has two arms: the
+    // truthy arm was pinned by the test above; this test pins the FALSY arm
+    // (timeout omitted). The function must STILL rewrite the command; only
+    // the timeout sync is skipped. existHook.timeout is left untouched.
+    const hooksDir = join(SANDBOX, 'scripts', 'hooks')
+    mkdirSync(hooksDir, { recursive: true })
+    writeFileSync(join(hooksDir, 'staleness-guard.py'), '#!/usr/bin/env python3\n')
+    const altDir = join(SANDBOX, 'scripts', 'hooks', 'alt')
+    mkdirSync(altDir, { recursive: true })
+    writeFileSync(join(altDir, 'staleness-guard.py'), '#!/usr/bin/env python3\n')
+    const existingCmd = `python3 ${join(hooksDir, 'staleness-guard.py')}`
+    const tplCmd = `python3 ${join(altDir, 'staleness-guard.py')}`
+    const existing = {
+      PreCompact: [{ hooks: [{ command: existingCmd, timeout: 5 }] }],
+    }
+    // tpl hook has NO timeout field -> tplHook.timeout is undefined -> null
+    const tpl = {
+      PreCompact: [{ hooks: [{ command: tplCmd }] }],
+    }
+    expect(scaffold.upgradeLegacyHookCommands(existing, tpl)).toBe(true)
+    expect(existing.PreCompact[0].hooks[0].command).toBe(tplCmd)
+    // The existing timeout is preserved (no sync write).
+    expect(existing.PreCompact[0].hooks[0].timeout).toBe(5)
+  })
+
+  it('handles a tpl entry with no hooks array (line 178 ?? [] arm)', () => {
+    // The inner loop `for (const tplHook of tplEntry.hooks ?? [])` has a
+    // nullish-coalesce fallback when tplEntry.hooks is undefined. The
+    // base case (hooks present) is covered elsewhere; this test pins the
+    // fallback by omitting the hooks array.
+    const hooksDir = join(SANDBOX, 'scripts', 'hooks')
+    mkdirSync(hooksDir, { recursive: true })
+    writeFileSync(join(hooksDir, 'staleness-guard.py'), '#!/usr/bin/env python3\n')
+    const existingCmd = `python3 ${join(hooksDir, 'staleness-guard.py')}`
+    const existing = {
+      PreCompact: [{ hooks: [{ command: existingCmd, timeout: 5 }] }],
+    }
+    const tpl = {
+      PreCompact: [{ /* no hooks field */ }], // tplEntry.hooks === undefined
+    }
+    expect(scaffold.upgradeLegacyHookCommands(existing, tpl)).toBe(false)
+    expect(existing.PreCompact[0].hooks[0].command).toBe(existingCmd)
+  })
 })
 
 // ===========================================================================
