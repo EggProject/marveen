@@ -452,22 +452,22 @@ describe('store-watcher', () => {
       expect(agent).toBe('scheduler')
     })
 
-    // Pins CURRENT (buggy) behaviour: see docs/needs-to-be-fix/store-watcher-sensitive-unreachable.md.
-    // SENSITIVE_NAMES is fully contained in SYSTEM_FILES, so the watch callback
-    // returns early at the isSystemFile check (line 113) before reaching the
-    // isSensitive ternary on line 142. As a result, the isSensitive=1 branch
-    // is unreachable. This test documents that a "sensitive" file is filtered
-    // out and never logged -- and asserts the unreachable branch via a file
-    // whose name is in SENSITIVE_NAMES but NOT in SYSTEM_FILES (which is the
-    // empty set today).
-    it('the isSensitive=1 branch is unreachable today: every SENSITIVE_NAMES entry is also in SYSTEM_FILES', () => {
-      writeFileSync(join(STORE, '.dashboard-token'), 'secret-value')
-      fireRename('.dashboard-token')
-      // The file is filtered by SYSTEM_FILES (denylist wins), so it is NEVER
-      // passed to logStoreFileEvent. The isSensitive=1 ternary branch on line
-      // 142 cannot be reached unless a future refactor stops denylisting
-      // these names.
-      expect(logStoreFileEventMock).not.toHaveBeenCalled()
+    // A `0` oldali ág fedett: minden sikeresen naplózott új fájl isSensitive=0.
+    // Az `1` oldali ág strukturálisan elérhetetlen: a SENSITIVE_NAMES halmaz
+    // minden eleme a SYSTEM_FILES halmazban is benne van, ezért a watch
+    // callback a 113. sor `isSystemFile` korai return-jénél már kilép, mielőtt
+    // a 142. sor `isSensitive` ternary-jéhez érne. A részletes elemzés a
+    // docs/needs-to-be-fix/store-watcher-sensitive-unreachable.md fájlban.
+    it('a watch callback minden naplózott fájlnál isSensitive=0 értéket ad át (SENSITIVE_NAMES ⊆ SYSTEM_FILES)', () => {
+      writeFileSync(join(STORE, 'non-sensitive.txt'), 'x')
+      fireRename('non-sensitive.txt')
+      expect(logStoreFileEventMock).toHaveBeenCalledWith(
+        'non-sensitive.txt',
+        'create',
+        0, // 1-es oldal elérhetetlen: lásd a teszt leírását
+        expect.any(Number),
+        null,
+      )
     })
 
     it('vault.json and .vault-key are also filtered by SYSTEM_FILES before isSensitive ever runs', () => {
