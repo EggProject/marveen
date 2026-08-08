@@ -134,7 +134,9 @@ const H = vi.hoisted(() => {
     platform: 'darwin' as NodeJS.Platform,
     win32Dir: '',
     managedSettingsReady: false,
+    managedSettingsMissing: false,
     managedSettingsCorrupt: false,
+    controlledChannelsEnabled: undefined as boolean | undefined,
     setSecret: mkFn(),
     deleteSecret: mkFn(),
     listSecrets: vi.fn(() => []),
@@ -564,21 +566,35 @@ vi.mock('node:fs', async (orig) => {
     get(target, prop, receiver) {
       if (prop === 'existsSync') {
         return ((p: string) => {
-          if (H.managedSettingsReady && typeof p === 'string' && p.endsWith('managed-settings.json')) return true
+          if (typeof p === 'string' && p.endsWith('managed-settings.json')) {
+            // Explicit "missing" flag wins so tests can drive the
+            // `if (!existsSync(MANAGED_SETTINGS_PATH)) return false` branch
+            // (line 264) -- otherwise the file actually exists on the runner
+            // and the branch never fires.
+            if (H.managedSettingsMissing) return false
+            if (H.managedSettingsReady) return true
+          }
           return realExists(p)
         }) as typeof existsSync
       }
       if (prop === 'readFileSync') {
         return ((p: string, ...rest: unknown[]) => {
-          if (H.managedSettingsReady && typeof p === 'string' && p.endsWith('managed-settings.json')) {
-            if (H.managedSettingsCorrupt) return 'NOT VALID JSON'
-            return JSON.stringify({
-              channelsEnabled: true,
-              allowedChannelPlugins: [
-                { plugin: 'slack-channel', marketplace: 'marveen-marketplace' },
-                { plugin: 'telegram', marketplace: 'claude-plugins-official' },
-              ],
-            })
+          if (typeof p === 'string' && p.endsWith('managed-settings.json')) {
+            if (H.managedSettingsReady) {
+              if (H.managedSettingsCorrupt) return 'NOT VALID JSON'
+              // controlledChannelsEnabled: false drives the
+              // `if (!data.channelsEnabled) return false` branch (line 270)
+              // by combining an enabled=true-without-slack-allowlist payload
+              // with a NO-channelsEnabled payload so the test can distinguish
+              // which branch fired.
+              return JSON.stringify({
+                channelsEnabled: H.controlledChannelsEnabled ?? true,
+                allowedChannelPlugins: [
+                  { plugin: 'slack-channel', marketplace: 'marveen-marketplace' },
+                  { plugin: 'telegram', marketplace: 'claude-plugins-official' },
+                ],
+              })
+            }
           }
           return (realRead as (...a: unknown[]) => unknown)(p, ...rest)
         }) as typeof readFileSync
@@ -3174,6 +3190,18 @@ describe('tryHandleAgents fallthrough', () => {
 // --- exported helpers -------------------------------------------------------
 
 describe('isManagedSettingsReady', () => {
+  it('returns false when the file is missing (line 264 existsSync branch)', () => {
+    // Drive the `if (!existsSync(MANAGED_SETTINGS_PATH)) return false` branch
+    // (line 264) -- without this flag the runner's real managed-settings
+    // file shadows the test path and the branch never fires.
+    H.managedSettingsMissing = true
+    try {
+      expect(isManagedSettingsReady()).toBe(false)
+    } finally {
+      H.managedSettingsMissing = false
+    }
+  })
+
   it('returns false when the file is missing', () => {
     H.managedSettingsReady = false
     expect(isManagedSettingsReady()).toBe(false)
@@ -3185,24 +3213,17 @@ describe('isManagedSettingsReady', () => {
   })
 
   it('returns false when channelsEnabled is missing', () => {
-    // Force existsSync true but the readFileSync returns a payload with no
-    // channelsEnabled key -- the inner guard rejects it.
-    const fs = require('node:fs') as typeof import('node:fs')
-    const origRead = fs.readFileSync
-    const origExists = fs.existsSync
-    fs.readFileSync = ((p: string, ...rest: unknown[]) => {
-      if (typeof p === 'string' && p.endsWith('managed-settings.json')) return JSON.stringify({ allowedChannelPlugins: [] })
-      return (origRead as (...a: unknown[]) => unknown)(p, ...rest)
-    }) as typeof fs.readFileSync
-    fs.existsSync = ((p: string) => {
-      if (typeof p === 'string' && p.endsWith('managed-settings.json')) return true
-      return origExists(p)
-    }) as typeof fs.existsSync
+    // Drive the `if (!data.channelsEnabled) return false` branch (line 270)
+    // by setting controlledChannelsEnabled=false and the slack allowlist is
+    // otherwise valid -- so the function would return true at the .some()
+    // check if the channelsEnabled guard did not abort first.
+    H.managedSettingsReady = true
+    H.controlledChannelsEnabled = false
     try {
       expect(isManagedSettingsReady()).toBe(false)
     } finally {
-      fs.readFileSync = origRead
-      fs.existsSync = origExists
+      H.managedSettingsReady = false
+      H.controlledChannelsEnabled = undefined
     }
   })
 
