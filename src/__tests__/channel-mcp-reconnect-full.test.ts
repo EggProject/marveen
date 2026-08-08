@@ -91,7 +91,11 @@ const SUBMENU_STUCK_ON_VIEW_TOOLS = [
 ].join('\n')
 
 beforeEach(() => {
-  vi.clearAllMocks()
+  // Reset (not just clear) so the mockReturnValueOnce queue from the
+  // previous test doesn't leak into this one -- otherwise capturePane returns
+  // stale queued values and the function path differs from what each test
+  // claims to exercise.
+  vi.resetAllMocks()
   // Preflight capture returns a non-busy read so the busy-guard lets the
   // reconnect proceed.
   mockCapturePane.mockReturnValueOnce('preflight-not-busy')
@@ -169,17 +173,18 @@ describe('attemptChannelMcpReconnect: dismissMcpMenu catch branch (line 40)', ()
 describe('attemptChannelMcpReconnect: capture fails inside submenu (lines 223-225)', () => {
   it('returns "Failed to capture submenu pane" when capturePane returns null after matching the plugin', () => {
     mockCapturePane
-      .mockReturnValueOnce('/mcp menu')              // after /mcp
+      .mockReturnValueOnce('/mcp menu')                // after /mcp
       .mockReturnValueOnce('plugin:telegram:telegram') // matched on Up x1
       .mockReturnValueOnce(null)                       // submenu capture -> null
 
     const result = attemptChannelMcpReconnect('marveen')
 
-    // The null capture is normalized to an empty string before the loop, so
-    // the target is still inferred from the pane text and navigation exhausts.
+    // The submenu capture is checked BEFORE the loop (line 222 `if (!submenu)`),
+    // so a null capture short-circuits to the 'Failed to capture submenu pane'
+    // failure path. This branch (lines 223-225) is what was missing coverage.
     expect(result.ok).toBe(false)
-    expect(result.message).toContain('Could not select reconnect within 6 steps')
-    expect(result.message).not.toContain('Failed to capture submenu pane')
+    expect(result.message).toBe('Failed to capture submenu pane')
+    expect(result.message).not.toContain('Could not select')
   })
 })
 
@@ -432,5 +437,84 @@ describe('attemptChannelMcpReconnect: dismissMcpMenu swallows errors on success 
     expect(result.ok).toBe(true)
     expect(result.message).toContain('Reconnect')
     expect(result.message).toContain('Up x1')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Branch coverage for v8 ?? ternary branches on lines 173, 244, and 266.
+// ---------------------------------------------------------------------------
+// v8 treats `a ?? b` as a two-way branch (nullish -> use b, not-nullish -> use a)
+// and `err instanceof Error ? err.message : String(err)` as another. Each branch
+// must be hit for 100% branch coverage. The default test suite always feeds
+// non-null capturePane values and Error throws, so the "use right" / "not Error"
+// arms are missed.
+
+describe('attemptChannelMcpReconnect: branch coverage for ?? and ternary defaults', () => {
+  it('uses the empty-string default when preflight capturePane returns null (line 173 ?? branch)', () => {
+    // Preflight returns null (the nullish side) -> preflight = ''. The busy-guard
+    // does not fire ('' is not 'busy'), and execution proceeds to the /mcp
+    // send. We then return null again for pane1 capture so the function
+    // short-circuits at the 'Failed to capture pane after /mcp' guard, which
+    // proves the function continued past the nullish-coalesce.
+    mockCapturePane.mockReset()
+    mockCapturePane
+      .mockReturnValueOnce(null) // preflight -> ?? '' fires
+      .mockReturnValueOnce(null) // pane1 (after /mcp) -> fails fast
+    attemptChannelMcpReconnect('marveen')
+
+    // The proof that we got past the ?? branch: a send-keys call was made
+    // for /mcp Enter (the function only reaches that point if the busy-guard
+    // did not abort). If the function had died at the busy-guard, no send-keys
+    // would have been issued at all.
+    const sendKeysCalls = mockExecFileSync.mock.calls.filter(
+      (c) => Array.isArray(c[1]) && c[1].includes('send-keys'),
+    )
+    expect(sendKeysCalls.length).toBeGreaterThan(0)
+  })
+
+  it('uses the empty-string default when submenu-loop capturePane returns null (line 244 ?? branch)', () => {
+    // Full path: preflight ok, /mcp ok, plugin matched, submenu captured.
+    // The submenu-loop re-capture (line 244) is the one that returns null.
+    // The null becomes '' -> selectedSubmenuLine('') returns null -> the loop
+    // never sees a target -> exhausts SUBMENU_MAX_STEPS -> returns
+    // 'Could not select ... within 6 steps'.
+    mockCapturePane.mockReset()
+    mockCapturePane
+      .mockReturnValueOnce('preflight-not-busy')
+      .mockReturnValueOnce('/mcp menu')
+      .mockReturnValueOnce('plugin:telegram:telegram') // matched
+      .mockReturnValueOnce(SUBMENU_CONNECTED_TOP)      // initial submenu (cursor on View tools)
+      .mockReturnValueOnce(null)                        // line 244 re-capture -> ?? '' fires
+    // Subsequent line-244 re-captures for the rest of the loop:
+    for (let i = 0; i < 8; i++) {
+      mockCapturePane.mockReturnValueOnce(null)
+    }
+    // dismissMcpMenu's 4 line-42 re-captures:
+    for (let i = 0; i < 5; i++) {
+      mockCapturePane.mockReturnValueOnce(null)
+    }
+
+    const result = attemptChannelMcpReconnect('marveen')
+
+    expect(result.ok).toBe(false)
+    // The function completed the loop without finding the target because the
+    // ?? '' default kept producing empty panes.
+    expect(result.message).toContain('Could not select')
+    expect(result.message).toContain('within 6 steps')
+  })
+
+  it('uses String(err) when the catch receives a non-Error throw (line 266 ternary branch)', () => {
+    // Force a non-Error throw by mocking execFileSync to throw a string.
+    // The string "not an error instance" hits the String(err) branch.
+    mockExecFileSync.mockReset()
+    mockExecFileSync.mockImplementation(() => {
+      throw 'not an error instance'
+    })
+
+    const result = attemptChannelMcpReconnect('marveen')
+
+    expect(result.ok).toBe(false)
+    // String(err) produces the literal string we threw.
+    expect(result.message).toBe('not an error instance')
   })
 })
