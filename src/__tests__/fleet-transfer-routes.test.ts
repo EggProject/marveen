@@ -2150,3 +2150,61 @@ describe('TEMP sandbox smoke test', () => {
     require('fs').rmSync(d, { recursive: true, force: true })
   })
 })
+
+// ---------------------------------------------------------------------------
+// Branch-coverage pinning tests for ?? and || defensive defaults.
+// ---------------------------------------------------------------------------
+// v8 counts every `?? X` and `|| X` as a branch decision. Each branch must
+// be hit for 100% coverage. The default test suite always feeds `[]` or `{}`
+// for these fields, so the "use the fallback" arms are missed. These tests
+// pin the nullish path: pass `undefined` for the field and assert the function
+// walks the fallback path without throwing.
+
+describe('fleet-transfer: pinning nullish-coalesce fallback branches', () => {
+  it('validateNames: walks the nullish fallback for skills/scheduledTasks/agent fields', async () => {
+    const { importFleet } = await import('../web/fleet-transfer.js')
+    // agents must be an array (validateSchema rejects non-arrays), but
+    // skills, scheduledTasks, agent.agentSkills, agent.channelsAccess and
+    // fleet.memories/dailyLogs/kanban/ideaBox are all allowed to be
+    // undefined -- the `?? []`/`?? {}` fallbacks walk the right arm.
+    const body = JSON.stringify({
+      schemaVersion: 1,
+      exportedAt: '2026-01-01T00:00:00.000Z',
+      sourceHost: 'test-host',
+      agents: [{ name: 'a', config: {}, claudeMd: '', soulMd: '', mcp: {}, settings: {},
+                 channelsAccess: undefined, agentSkills: undefined }],
+      skills: undefined,
+      scheduledTasks: undefined,
+      memories: undefined,
+      dailyLogs: undefined,
+      kanban: undefined,
+      ideaBox: undefined,
+      dashboardSettings: { autonomy: {}, autoRestart: {}, agentsDesired: {}, norbertPersonal: {} },
+    })
+    const result = importFleet(body, { apply: false }) as any
+    expect(result.dryRun).toBe(true)
+    // No errors -- the nullish coalesces turned undefined into [] / {}
+    expect(result.errors).toEqual([])
+  })
+
+  it('buildDiffReport: warns about vault even when fleet.vault is missing', async () => {
+    const { importFleet } = await import('../web/fleet-transfer.js')
+    const body = JSON.stringify(makeFleet({ vault: undefined }))
+    const result = importFleet(body, { apply: false }) as any
+    // The `if (!fleet.vault)` warning branch fires.
+    expect(result.warnings.some((w: string) => w.includes('vault'))).toBe(true)
+  })
+
+  it('apply: tracks no work when mainAgent.channelsAccess is undefined', async () => {
+    const { importFleet } = await import('../web/fleet-transfer.js')
+    const body = JSON.stringify(makeFleet({
+      mainAgent: {
+        agentId: 'main',
+        identity: { MAIN_AGENT_ID: 'main', BOT_NAME: 'M', BRAND_NAME: 'M', OWNER_NAME: 'O', CHANNEL_PROVIDER: 't' },
+        claudeMd: '', soulMd: '', config: {}, mcp: {}, settings: {}, channelsAccess: undefined,
+      },
+    }))
+    const result = importFleet(body, { apply: true }) as any
+    expect(result.ok).toBe(true)
+  })
+})
