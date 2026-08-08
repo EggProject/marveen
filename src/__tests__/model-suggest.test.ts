@@ -198,4 +198,19 @@ describe('suggestForAgent -- reason structure (6 sections)', () => {
     expect(result.suggestedModel).toBe('claude-haiku-4-5-20251001')
     expect(result.reason).toMatch(/olcsóbb/)
   })
+
+  it('cost section shows "azonos árszint" when currentModel has no prefix match and suggestion matches default', () => {
+    // The current model is not in MODEL_COST_PER_M (no prefix match). The
+    // suggested model is the default Sonnet (cost 3). Both fall through to
+    // the 3 USD/M default, so the price tier is reported as identical.
+    const result = suggestForAgent('x', 'unknown-future-model-xyz', 'Általános.', 0, {
+      tokenAvgInputPerCall: 5_000,
+      kanbanOpenCount: 1,
+      kanbanUrgentCount: 0,
+      scheduledFreqPerDay: 3,
+      mcpServerCount: 2,
+    })
+    expect(result.suggestedModel).toBe('claude-sonnet-5')
+    expect(result.reason).toMatch(/azonos árszint/)
+  })
 })

@@ -333,6 +333,72 @@ describe('decideDownAgentAction', () => {
     expect(decideDownAgentAction({ ...restartable, consecutiveFailures: 999 }, 0)).toBe('restart')
   })
 
+  it("skips (defers) when the agent is busy and no busyDefer cap is set", () => {
+    // Restarting a busy agent throws away in-flight work. Without a cap the
+    // watchdog waits for idle forever (only `alert-busy` cancels the wait).
+    expect(decideDownAgentAction({
+      ...restartable,
+      agentBusy: true,
+      consecutiveFailures: 1,
+    }, MAX)).toBe('skip')
+  })
+
+  it("skips (defers) when the agent is busy and msDown is below busyDefer cap", () => {
+    // Pane is still spinning -- not yet past the cap, so still wait.
+    expect(decideDownAgentAction({
+      ...restartable,
+      agentBusy: true,
+      busyDeferMaxMs: 60_000,
+      msDown: 30_000,
+      consecutiveFailures: 1,
+    }, MAX)).toBe('skip')
+  })
+
+  it("escalates to 'alert-busy' when the agent is busy and the defer cap is exceeded", () => {
+    // Down long enough that the watchdog refuses to wait further AND refuses
+    // to kill live work: alert the operator instead.
+    expect(decideDownAgentAction({
+      ...restartable,
+      agentBusy: true,
+      busyDeferMaxMs: 60_000,
+      msDown: 90_000,
+      consecutiveFailures: 1,
+    }, MAX)).toBe('alert-busy')
+  })
+
+  it("treats a non-finite busyDeferMaxMs as 'no cap' (defers indefinitely)", () => {
+    // NaN / Infinity / negative should not arm the alert-busy escalation.
+    expect(decideDownAgentAction({
+      ...restartable,
+      agentBusy: true,
+      busyDeferMaxMs: Number.NaN,
+      msDown: 10_000_000,
+      consecutiveFailures: 1,
+    }, MAX)).toBe('skip')
+  })
+
+  it("skips within the msDown confirmation window (downConfirmMs not yet elapsed)", () => {
+    // A single down sample is a suspicion, not a verdict: do not act until
+    // the plugin has been continuously down for at least downConfirmMs.
+    expect(decideDownAgentAction({
+      ...restartable,
+      msDown: 5_000,
+      downConfirmMs: 30_000,
+      consecutiveFailures: 1,
+    }, MAX)).toBe('skip')
+  })
+
+  it("passes through the confirmation window when msDown >= downConfirmMs", () => {
+    // Confirmation satisfied -> control reaches the underlying restart policy.
+    // The wrapped policy says restart, so we get 'restart'.
+    expect(decideDownAgentAction({
+      ...restartable,
+      msDown: 60_000,
+      downConfirmMs: 30_000,
+      consecutiveFailures: 1,
+    }, MAX)).toBe('restart')
+  })
+
   // The channel-monitor passes maxRestartAttempts=1 when the unlock probe has
   // confirmed the plugin ABSENT from /mcp (never loaded). Fresh-restarting
   // cannot reload it, so one attempt then escalate. Pin that exact semantics.
