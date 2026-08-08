@@ -1440,3 +1440,157 @@ describe('maybeWakeSubAgentsForTelegram integration', () => {
     expect(H.maybeWakeSubAgentsForTelegram).toHaveBeenCalledTimes(1)
   })
 })
+
+// ===========================================================================
+// 8) Coverage gap fillers: reachable branches not exercised by the suite above
+//
+//   * recent.push (batchDeliverBacklog else branch): mixed-age pending --
+//     some messages older than RECONNECT_BATCH_AGE_MS, some younger. The
+//     older ones get batched, the younger ones stay for individual delivery
+//     on the next tick.
+//   * if (!markMessageFailed(...)) false branch in the inject-give-up
+//     path: markMessageFailed returns false (concurrent row close) so the
+//     "0 rows affected" warn fires.
+//   * if (oldestAge > BATCH_AGE_MS) else branch: the oldest pending is
+//     younger than BATCH_AGE_MS, so the reconnect-batch pre-pass is
+//     short-circuited even with >= 6 pending messages.
+//   * stampTraceOnMessage else branch (stamped === falsy): the in-memory
+//     trace cache is populated from a previous successful delivery, so the
+//     message gets an inherited trace_id; stampMessageTrace returns false
+//     and the upsertOtelSpan side-effect is skipped.
+// ===========================================================================
+
+describe('coverage gap fillers (reachable branches)', () => {
+  // ---- recent.push: mixed-age messages trigger both arms in batchDeliverBacklog
+  it('batchDeliverBacklog puts recent messages into the recent list while batching older ones', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(NOW_MS)
+    const freshMs = Math.floor(NOW_MS / 1000)
+    // Tick 1: dex absent (recorded in agentWasAbsent).
+    const oldMsg = makeLocalMsg({ id: 1000, to_agent: 'dex', created_at: freshMs - 60 * 60 })
+    H.getPendingMessages.mockImplementationOnce(() => [oldMsg])
+    H.sessionExistsOnHost.mockReturnValue(false)
+    await runMessageRouterTick()
+
+    // Tick 2: dex returns with a mixed-age backlog.
+    // - First 6 messages (oldest first) are 1h old -> all go into `old`.
+    // - 7th message is 1 minute old -> goes into `recent`.
+    // The oldest (>30min) gate is satisfied so the batch pre-pass fires.
+    const mixed = [
+      ...Array.from({ length: 6 }, (_, i) => makeLocalMsg({
+        id: 1100 + i, to_agent: 'dex', created_at: freshMs - 60 * 60, // 1h old
+      })),
+      makeLocalMsg({ id: 1106, to_agent: 'dex', created_at: freshMs - 60 }), // 1 min old
+    ]
+    H.getPendingMessages.mockImplementation((toAgent?: string) => toAgent === 'dex' ? mixed : mixed)
+    H.sessionExistsOnHost.mockReturnValue(true)
+    await runMessageRouterTick()
+
+    // The 7th (recent) message must NOT be in the batched summary; it is
+    // preserved for the next tick. Only the 6 old ones are summarised.
+    expect(H.markMessageDone).toHaveBeenCalledTimes(6)
+    const summary = H.createAgentMessage.mock.calls.find(c =>
+      c[0] === 'system' && c[1] === 'dex' && String(c[2]).includes('[BACKLOG-SUMMARY]'),
+    )
+    expect(summary).toBeDefined()
+    const summaryText = String(summary![2])
+    // 6 old items summarised, 1 recent left for individual delivery.
+    expect(summaryText).toContain('6 inter-agent message(s)')
+    // The recent (1 min old) message id 1106 should be absent from the summary lines.
+    expect(summaryText).not.toContain('1106:')
+    vi.useRealTimers()
+  })
+
+  // ---- markMessageFailed false in inject give-up: 0-rows-affected warn fires
+  it('warns when markMessageFailed returns false during the inject-give-up path', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(NOW_MS)
+    const msg = makeLocalMsg({ id: 1200 })
+    H.getPendingMessages.mockImplementation((toAgent?: string) => (toAgent ? [] : [msg]))
+    H.sessionExistsOnHost.mockReturnValue(true)
+    H.isSessionReadyForPrompt.mockResolvedValue(true)
+    H.classifyAgentMessage.mockReturnValue({ category: 'trusted-peer', safeFrom: 'orin' })
+    H.sendPromptToSession.mockRejectedValue(new Error('pane not ready'))
+    // On the 3rd retry (which crosses MAX_INJECT_FAILURES), markMessageFailed
+    // returns false -> the loop emits the "0 rows affected" warn.
+    H.markMessageFailed.mockReturnValue(false)
+
+    await runMessageRouterTick() // failCount 1
+    await runMessageRouterTick() // failCount 2
+    await runMessageRouterTick() // failCount 3 -> give up
+    expect(H.logWarn).toHaveBeenCalledWith(
+      { id: 1200 },
+      'markMessageFailed affected 0 rows (deleted concurrently?)',
+    )
+    vi.useRealTimers()
+  })
+
+  // ---- if (oldestAge > BATCH_AGE_MS) else: oldest is younger than threshold
+  it('skips the reconnect-batch when the oldest pending is younger than BATCH_AGE_MS', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(NOW_MS)
+    const freshMs = Math.floor(NOW_MS / 1000)
+    // Tick 1: dex absent.
+    const absentMsg = makeLocalMsg({ id: 1300, to_agent: 'dex' })
+    H.getPendingMessages.mockImplementationOnce(() => [absentMsg])
+    H.sessionExistsOnHost.mockReturnValue(false)
+    await runMessageRouterTick()
+
+    // Tick 2: dex returns, threshold met (>=6 messages), but oldest is 1
+    // minute old -> oldestAge <= BATCH_AGE_MS -> the if-else arm fires
+    // and we do NOT enter the batch pre-pass body.
+    const recent = Array.from({ length: 6 }, (_, i) => makeLocalMsg({
+      id: 1400 + i, to_agent: 'dex', created_at: freshMs - 60, // 1 min old
+    }))
+    H.getPendingMessages.mockImplementation((toAgent?: string) => toAgent === 'dex' ? recent : recent)
+    H.sessionExistsOnHost.mockReturnValue(true)
+
+    await runMessageRouterTick()
+
+    // No batch summary, no markMessageDone for the batch.
+    expect(H.createAgentMessage).not.toHaveBeenCalledWith(
+      'system', 'dex',
+      expect.stringContaining('[BACKLOG-SUMMARY]'),
+    )
+    expect(H.markMessageDone).not.toHaveBeenCalled()
+    vi.useRealTimers()
+  })
+
+  // ---- stampTraceOnMessage else branch: stampMessageTrace returns falsy
+  it('skips upsertOtelSpan when stampMessageTrace returns falsy', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(NOW_MS)
+    // Pre-warm the in-memory deliveredTraceCtx cache with a synthetic
+    // trace context so this delivery inherits (the production "propagation"
+    // path). The cache is module-scoped, so any value we put here is read
+    // by the next stampTraceOnMessage call for the same from_agent.
+    const msg = makeLocalMsg({
+      id: 1500, from_agent: 'orin', to_agent: 'mason', trace_id: null, span_id: null,
+    })
+    H.getPendingMessages.mockImplementation((toAgent?: string) => (toAgent ? [] : [msg]))
+    H.sessionExistsOnHost.mockReturnValue(true)
+    H.isSessionReadyForPrompt.mockResolvedValue(true)
+    H.classifyAgentMessage.mockReturnValue({ category: 'untrusted', safeFrom: 'orin' })
+    // First delivery: stamps successfully, populates deliveredTraceCtx.
+    H.stampMessageTrace.mockReturnValueOnce(true)
+    const firstMsg = makeLocalMsg({
+      id: 1500, from_agent: 'orin', to_agent: 'mason', trace_id: null, span_id: null,
+    })
+    H.getPendingMessages.mockImplementationOnce((toAgent?: string) => (toAgent ? [] : [firstMsg]))
+    await runMessageRouterTick()
+    expect(H.upsertOtelSpan).toHaveBeenCalled()
+
+    // Second delivery (same from_agent, fresh receiver): stampMessageTrace
+    // returns falsy -> the upsertOtelSpan side-effect is skipped.
+    H.stampMessageTrace.mockReturnValueOnce(false)
+    const secondMsg = makeLocalMsg({
+      id: 1501, from_agent: 'orin', to_agent: 'dex', trace_id: null, span_id: null,
+    })
+    H.getPendingMessages.mockImplementationOnce((toAgent?: string) => (toAgent ? [] : [secondMsg]))
+    H.upsertOtelSpan.mockClear()
+    await runMessageRouterTick()
+    expect(H.upsertOtelSpan).not.toHaveBeenCalled()
+    expect(H.markMessageDelivered).toHaveBeenCalledWith(1501)
+    vi.useRealTimers()
+  })
+})
