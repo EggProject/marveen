@@ -1418,6 +1418,27 @@ describe('voice helpers (channel-inbound)', () => {
       903, undefined,
     )
   })
+
+  // ---- extractVoiceFileId null arm (line 663): attachment_kind="voice" present
+  //      but attachment_file_id missing -> regex doesn't match, returns null.
+  it('falls through to text modality when extractVoiceFileId returns null (no attachment_file_id attribute)', async () => {
+    const msg = makeLocalMsg({
+      id: 904, from_agent: 'telegram-coordinator', to_agent: 'dex',
+      content: '<channel chat_id="42" attachment_kind="voice">orig voice</channel>',
+    })
+    H.getPendingMessages.mockImplementationOnce(() => [msg])
+    H.sessionExistsOnHost.mockReturnValue(true)
+    H.isSessionReadyForPrompt.mockResolvedValue(true)
+    H.classifyAgentMessage.mockReturnValue({ category: 'channel-inbound', safeFrom: 'telegram-coordinator' })
+    H.readAgentVoiceConfig.mockReturnValue({ responseMode: 'auto' })
+
+    await runMessageRouterTick()
+
+    // extractVoiceFileId returns null (regex no match) -> STT path is NOT entered.
+    expect(H.transcribeVoiceFile).not.toHaveBeenCalled()
+    // else-if branch fires: chat_id present but no voice file id -> text modality.
+    expect(H.setLastInboundModality).toHaveBeenCalledWith('dex', '42', 'text')
+  })
 })
 
 // ===========================================================================
@@ -1591,6 +1612,82 @@ describe('coverage gap fillers (reachable branches)', () => {
     await runMessageRouterTick()
     expect(H.upsertOtelSpan).not.toHaveBeenCalled()
     expect(H.markMessageDelivered).toHaveBeenCalledWith(1501)
+    vi.useRealTimers()
+  })
+
+  // ---- batchDeliverBacklog || 'unknown' arm (line 326): backlog contains a
+  //      pending message with empty from_agent. The walk over `old` records
+  //      the sender as "unknown" instead of crashing on the empty string.
+  it('batchDeliverBacklog labels a backlog message with empty from_agent as "unknown"', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(NOW_MS)
+    const freshMs = Math.floor(NOW_MS / 1000)
+    // Tick 1: dex absent.
+    const absentMsg = makeLocalMsg({ id: 1600, to_agent: 'dex', created_at: freshMs })
+    H.getPendingMessages.mockImplementationOnce(() => [absentMsg])
+    H.sessionExistsOnHost.mockReturnValue(false)
+    await runMessageRouterTick()
+
+    // Tick 2: dex returns with 6+ old messages; the first one has empty
+    // from_agent (a malformed/corrupt DB row). The router still summarises
+    // it via the `|| 'unknown'` fallback.
+    const backlog = [
+      makeLocalMsg({ id: 1601, to_agent: 'dex', from_agent: '', created_at: freshMs - 60 * 60 }),
+      ...Array.from({ length: 5 }, (_, i) => makeLocalMsg({
+        id: 1602 + i, to_agent: 'dex', created_at: freshMs - 60 * 60,
+      })),
+    ]
+    H.getPendingMessages.mockImplementation((toAgent?: string) => toAgent === 'dex' ? backlog : backlog)
+    H.sessionExistsOnHost.mockReturnValue(true)
+    await runMessageRouterTick()
+
+    const summary = H.createAgentMessage.mock.calls.find(c =>
+      c[0] === 'system' && c[1] === 'dex' && String(c[2]).includes('[BACKLOG-SUMMARY]'),
+    )
+    expect(summary).toBeDefined()
+    const summaryText = String(summary![2])
+    // Sender aggregator lists the empty-from_agent row under "unknown".
+    expect(summaryText).toContain('unknown (1)')
+    // The summary line for the empty-from_agent message also uses "unknown".
+    expect(summaryText).toMatch(/\[.*\] unknown: /)
+    vi.useRealTimers()
+  })
+
+  // ---- batchDeliverBacklog preview truncation arm (line 329): a backlog
+  //      message with content > 120 chars gets truncated with the ellipsis
+  //      suffix rather than rendered in full.
+  it('batchDeliverBacklog truncates a long backlog preview with the ellipsis suffix', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(NOW_MS)
+    const freshMs = Math.floor(NOW_MS / 1000)
+    // Tick 1: dex absent.
+    const absentMsg = makeLocalMsg({ id: 1700, to_agent: 'dex', created_at: freshMs })
+    H.getPendingMessages.mockImplementationOnce(() => [absentMsg])
+    H.sessionExistsOnHost.mockReturnValue(false)
+    await runMessageRouterTick()
+
+    // Tick 2: dex returns with 6+ old messages; the first one has a 200-char
+    // content string (well past the 120-char preview cap).
+    const longContent = 'x'.repeat(200)
+    const backlog = [
+      makeLocalMsg({ id: 1701, to_agent: 'dex', content: longContent, created_at: freshMs - 60 * 60 }),
+      ...Array.from({ length: 5 }, (_, i) => makeLocalMsg({
+        id: 1702 + i, to_agent: 'dex', created_at: freshMs - 60 * 60,
+      })),
+    ]
+    H.getPendingMessages.mockImplementation((toAgent?: string) => toAgent === 'dex' ? backlog : backlog)
+    H.sessionExistsOnHost.mockReturnValue(true)
+    await runMessageRouterTick()
+
+    const summary = H.createAgentMessage.mock.calls.find(c =>
+      c[0] === 'system' && c[1] === 'dex' && String(c[2]).includes('[BACKLOG-SUMMARY]'),
+    )
+    expect(summary).toBeDefined()
+    const summaryText = String(summary![2])
+    // The truncated preview is exactly 120 'x's followed by the ellipsis.
+    expect(summaryText).toContain('x'.repeat(120) + '…')
+    // The full 200-char content is NOT in the summary (truncated).
+    expect(summaryText).not.toContain('x'.repeat(121))
     vi.useRealTimers()
   })
 })

@@ -1167,6 +1167,36 @@ describe('selfHealWorkerOnce (via ensureWorkerReady)', () => {
     // can deterministically reproduce the race. See bug MD for direction.
     expect(true).toBe(true)
   })
+
+  // ---- line 751 (runViaWorker after-loop fallback) is structurally dead.
+  //      Every iteration of the for loop above returns from inside it:
+  //        - 'ok'  returns immediately with the text
+  //        - 'fail' on attempt === 0 with r.error === 'worker session not
+  //          ready' continues, otherwise returns the error
+  //        - 'auth' on attempt === 0 continues (recovery), otherwise
+  //          returns authFailed
+  //      So attempt === 1 always returns from inside the loop on the
+  //      second iteration. The fall-out-of-loop return is unreachable.
+  it('runViaWorker line 751 after-loop fallback is unreachable (every iteration returns inside the loop)', async () => {
+    // Drive the auth-recovery path: first attempt returns auth, the
+    // recovery restart happens, second attempt also returns auth, and
+    // the function returns authFailed from INSIDE the loop (attempt 1
+    // hits the 'authFailed after recovery' return on line 749).
+    H.isSessionReadyForPrompt.mockResolvedValue(true)
+    H.capturePane.mockReturnValue(
+      Array.from({ length: 35 }, (_, i) => i === 34 ? 'Please run /login' : 'x').join('\n'),
+    )
+    H.sessionExistsOnHost.mockReturnValue(true)
+    H.sendPromptToSession.mockResolvedValue('sent') // no sentinel files
+    const out = await AW.runViaWorker('hi', 100)
+    // Auth failure persisted across the recovery retry -> authFailed=true
+    // from the inside-loop return on line 749. The after-loop return on
+    // line 751 would produce the SAME payload, so it is structurally a
+    // duplicate of an inside-loop path. See
+    // docs/needs-to-be-fix/agent-worker-runviaworker-afterloop.md.
+    expect(out.authFailed).toBe(true)
+    expect(out.error).toBe('worker auth failed (401/login) after recovery')
+  })
 })
 
 // ===========================================================================
