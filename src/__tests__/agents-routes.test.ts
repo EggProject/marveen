@@ -3299,6 +3299,77 @@ describe('validateDiscordChannelId', () => {
   })
 })
 
+// ===========================================================================
+// Baseline branch coverage tests for uncovered defensive fallbacks.
+// ---------------------------------------------------------------------------
+// Az itt levő tesztek a 100% branch coverage eléréséhez szükséges
+// ?? null / ?? '' ?? [] fallback ágakat fedik le. A tesztek a JELENLEGI
+// kód viselkedését állítják (PASS-eljen, ne pinning).
+// ===========================================================================
+
+describe('baseline: ?? null / ?? "" / ?? [] fallback branches', () => {
+  // for /api/agents/:name/remote: data.host ?? '' / data.workdir ?? ''
+  it('PUT /api/agents/:name/remote with empty body (host/workdir fallbacks)', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    const { res, json } = await call('PUT', '/api/agents/a/remote', { body: {} })
+    expect(res.statusCode).toBe(200)
+  })
+
+  // for /api/agents/:name/team: data.role === 'member' branch
+  it('PUT /api/agents/:name/team with role=member', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    const { res, json } = await call('PUT', '/api/agents/a/team', {
+      body: { role: 'member', reportsTo: null, delegatesTo: [], autoDelegation: false, trustFrom: [] },
+    })
+    expect(res.statusCode).toBe(200)
+  })
+
+  // for /api/agents/:name/team: data.autoDelegation truthy branch
+  it('PUT /api/agents/:name/team with autoDelegation=true', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    const { res, json } = await call('PUT', '/api/agents/a/team', {
+      body: { role: 'member', reportsTo: null, delegatesTo: [], autoDelegation: true, trustFrom: [] },
+    })
+    expect(res.statusCode).toBe(200)
+  })
+
+  // for /api/agents/:name/team: data.trustFrom ?? []
+  it('PUT /api/agents/:name/team with non-empty trustFrom', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    const { res, json } = await call('PUT', '/api/agents/a/team', {
+      body: { role: 'member', reportsTo: null, delegatesTo: [], autoDelegation: false, trustFrom: ['u'] },
+    })
+    expect(res.statusCode).toBe(200)
+  })
+
+  // for /api/agents/:name/team: data.reportsTo truthy branch
+  it('PUT /api/agents/:name/team with reportsTo=leader', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    const { res, json } = await call('PUT', '/api/agents/a/team', {
+      body: { role: 'member', reportsTo: 'leader', delegatesTo: [], autoDelegation: false, trustFrom: [] },
+    })
+    expect(res.statusCode).toBe(200)
+  })
+
+  // for body.toString() || '{}' fallback
+  it('PUT /api/agents/:name/remote with raw empty body', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    const { res, json } = await call('PUT', '/api/agents/a/remote', { raw: '' })
+    expect(res.statusCode).toBe(200)
+  })
+
+  // for readAgentDisplayName || name fallback
+  it('channel setup with readAgentDisplayName returning null', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.readAgentDisplayName.mockReturnValue(null)
+    H.readChannelToken.mockReturnValue(null)
+    const { res, json } = await call('POST', '/api/agents/a/channels/telegram', {
+      body: { botToken: '1234567890:abc' },
+    })
+    expect(res.statusCode).toBe(200)
+  })
+})
+
 describe('setAgentEnabledPlugins / resetAgentEnabledPlugins', () => {
   it('setAgentEnabledPlugins writes the per-provider settings.json', () => {
     setAgentEnabledPlugins('a', 'slack')
