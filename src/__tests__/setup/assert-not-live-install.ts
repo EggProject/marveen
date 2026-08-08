@@ -75,16 +75,8 @@ if (foundMarkers.length > 0 || foundStoreContents.length > 0) {
   )
 }
 
-// Post-suite cleanup: remove an empty root-level store directory created by a
-// test that initialized storage without applying its sandbox config mock.
-process.on('exit', () => {
-  try {
-    if (existsSync(storeDir) && readdirSync(storeDir).length === 0) {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { rmdirSync } = require('node:fs') as typeof import('node:fs')
-      rmdirSync(storeDir)
-    }
-  } catch {
-    // Ignore cleanup failures during process shutdown.
-  }
-})
+// Post-suite cleanup of empty root-level store/ and agents/ directories
+// moved to src/__tests__/setup/clean-empty-store.ts, which uses
+// process.on('beforeExit', ...) AND a beforeAll-sweep to ensure the cleanup
+// runs reliably even in vitest workers (process.on('exit', ...) does NOT
+// fire reliably there).

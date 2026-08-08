@@ -17,6 +17,7 @@ export default defineConfig({
     setupFiles: [
       './src/__tests__/setup/assert-not-live-install.ts',
       './src/__tests__/setup/test-sandbox-setup.ts',
+      './src/__tests__/setup/clean-empty-store.ts',
     ],
     // Coverage thresholds pinned at 100% for every src/*.ts file. The hard
     // gate above already prevents the suite from running against a live
