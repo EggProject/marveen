@@ -40,7 +40,7 @@ export default defineConfig({
         statements: 100,
         perFile: true,
       },
-      reporter: ['default', 'html', 'json-summary'],
+      reporter: ['text-summary', 'html', 'json-summary'],
     },
   },
 })
