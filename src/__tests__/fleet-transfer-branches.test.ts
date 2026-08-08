@@ -1352,3 +1352,179 @@ describe('exportAgent: settings.env with no secrets', () => {
     expect(fleet.agents[0].settings.env.FOO).toBe('bar')
   })
 })
+
+// ===========================================================================
+// 30. fix: trackedMkdir pre-existing path (else branch)
+// -------------------------------------------------------------------------
+// A fenti 27. számú teszt (line 1286) NEM hívja a baseMainDir() segédet,
+// ezért a PROJECT_ROOT/.claude NEM szerepel a `dirs` halmazban, és a
+// trackedMkdir az if-true (mkdir) ágat futtatja. Ez a teszt explicit
+// pre-létrehozza a dir-t, hogy az else ág (NO-OP) valóban lefusson.
+// ===========================================================================
+
+describe('apply phase: trackedMkdir pre-existing path (fixed)', () => {
+  it('PROJECT_ROOT/.claude pre-created -> trackedMkdir sees existing path -> else branch', async () => {
+    addDir(`${H.PROJECT_ROOT}/.claude`)
+    const { importFleet } = await import('../web/fleet-transfer.js')
+    const body = JSON.stringify(makeFleet({
+      mainAgent: {
+        agentId: 'main',
+        identity: { MAIN_AGENT_ID: 'main', BOT_NAME: 'M', BRAND_NAME: 'M', OWNER_NAME: 'O', CHANNEL_PROVIDER: 't' },
+        claudeMd: '#', soulMd: '#', config: { x: 1 }, mcp: {}, settings: {}, channelsAccess: {},
+      },
+    }))
+    const result = importFleet(body, { apply: true }) as any
+    expect(result.ok).toBe(true)
+  })
+})
+
+// ===========================================================================
+// 31. fix: trackedWrite pre-existing file (else branch)
+// -------------------------------------------------------------------------
+// A fenti 28. számú teszt (line 1310) NEM pre-létrehozza a CLAUDE.md-t,
+// ezért a trackedWrite a `preexisted = false` értékkel fut, és az if-true
+// (unlink cleanup) ágat veszi. Ez a teszt pre-létrehozza a fájlt, hogy a
+// `preexisted = true` else ág valóban lefusson.
+// ===========================================================================
+
+describe('apply phase: trackedWrite pre-existing file (fixed)', () => {
+  it('CLAUDE.md pre-created -> trackedWrite sees preexisted=true -> cleanup else branch', async () => {
+    addDir(`${H.PROJECT_ROOT}/.claude`)
+    addFile(`${H.PROJECT_ROOT}/CLAUDE.md`, '# old')
+    const { importFleet } = await import('../web/fleet-transfer.js')
+    const body = JSON.stringify(makeFleet({
+      mainAgent: {
+        agentId: 'main',
+        identity: { MAIN_AGENT_ID: 'main', BOT_NAME: 'M', BRAND_NAME: 'M', OWNER_NAME: 'O', CHANNEL_PROVIDER: 't' },
+        claudeMd: '# new', soulMd: '# soul', config: {}, mcp: {}, settings: {}, channelsAccess: {},
+      },
+    }))
+    const result = importFleet(body, { apply: true }) as any
+    expect(result.ok).toBe(true)
+  })
+})
+
+// ===========================================================================
+// 32. fleet.agents ?? [] right-arm (validateNames, buildDiffReport, apply, log)
+// -------------------------------------------------------------------------
+// A fleet.agents mező opcionális. Ha undefined vagy null, a `?? []` fallback
+// ág fut le. A makeFleet default `agents: []` értéket ad, így a spread az
+// üres tömböt hagyja; csak explicit `agents: null` felülírással érjük el a
+// jobb oldali ágat.
+// ===========================================================================
+
+describe('fleet.agents: null/undefined rejected by schema validation (?? [] right-arm unreachable)', () => {
+  // A validateSchema 741. sora megköveteli, hogy f.agents tömb legyen --
+  // ha null vagy undefined, a séma-ellenőrzés hibát dob, mielőtt az
+  // alábbi függvények (validateNames, buildDiffReport, applyFleetImport)
+  // egyáltalán lefutnának. A `?? []` jobb oldali ágak tehát a jelenlegi
+  // kódban strukturálisan elérhetetlenek. A részletes elemzés a
+  // docs/needs-to-be-fix/fleet-transfer-fleet-agents-nullish-unreachable.md
+  // fájlban.
+  it('agents: null is rejected by the schema validation (the ?? [] right-arms never fire)', async () => {
+    addDir(`${H.PROJECT_ROOT}/.claude`)
+    const { importFleet } = await import('../web/fleet-transfer.js')
+    const body = JSON.stringify({ ...makeFleet(), agents: null })
+    const result = importFleet(body, { apply: false }) as any
+    // A schema-validation hibaüzenet a fleet.agents mezőt kifogásolja;
+    // a `?? []` fallback ágak SOHA nem futnak le.
+    expect(result.errors).toContain('agents mező hiányzik vagy nem tömb.')
+  })
+
+  it('agents: undefined is rejected by the schema validation (the ?? [] right-arms never fire)', async () => {
+    addDir(`${H.PROJECT_ROOT}/.claude`)
+    const { importFleet } = await import('../web/fleet-transfer.js')
+    // A JSON.stringify(undefined) kihagyja a kulcsot, így agents hiányzik
+    // -- ugyanaz a hiba, mint a null esetén.
+    const body = JSON.stringify({ ...makeFleet(), agents: undefined })
+    const result = importFleet(body, { apply: false }) as any
+    expect(result.errors).toContain('agents mező hiányzik vagy nem tömb.')
+  })
+})
+
+// ===========================================================================
+// 33. deplaceholderMcp: cfg null or non-object entry (if-true continue)
+// -------------------------------------------------------------------------
+// A deplaceholderMcp 420. sor `if (!cfg || typeof cfg !== 'object') continue`
+// ága akkor fut, amikor a mcpServers bejegyzés nem object (pl. string vagy
+// null). A default makeFleet cfg-értéke `{}`, így a cfg mindig object; ez
+// a teszt explicit nem-object értéket ad át.
+// ===========================================================================
+
+describe('deplaceholderMcp: non-object mcpServers entry is skipped', () => {
+  it('mcpServers entry with a string value is skipped (continue branch)', async () => {
+    addDir(`${H.PROJECT_ROOT}/.claude`)
+    const { importFleet } = await import('../web/fleet-transfer.js')
+    const body = JSON.stringify(makeFleet({
+      mainAgent: {
+        agentId: 'main',
+        identity: { MAIN_AGENT_ID: 'main', BOT_NAME: 'M', BRAND_NAME: 'M', OWNER_NAME: 'O', CHANNEL_PROVIDER: 't' },
+        claudeMd: '#', soulMd: '#', config: {}, settings: {}, channelsAccess: {},
+        mcp: { mcpServers: { srv: 'not-an-object' } },
+      },
+    }))
+    const result = importFleet(body, { apply: true }) as any
+    expect(result.ok).toBe(true)
+  })
+
+  it('mcpServers entry with a null value is skipped (continue branch)', async () => {
+    addDir(`${H.PROJECT_ROOT}/.claude`)
+    const { importFleet } = await import('../web/fleet-transfer.js')
+    const body = JSON.stringify(makeFleet({
+      mainAgent: {
+        agentId: 'main',
+        identity: { MAIN_AGENT_ID: 'main', BOT_NAME: 'M', BRAND_NAME: 'M', OWNER_NAME: 'O', CHANNEL_PROVIDER: 't' },
+        claudeMd: '#', soulMd: '#', config: {}, settings: {}, channelsAccess: {},
+        mcp: { mcpServers: { srv: null } },
+      },
+    }))
+    const result = importFleet(body, { apply: true }) as any
+    expect(result.ok).toBe(true)
+  })
+})
+
+// ===========================================================================
+// 34. cleanupTracked: preexisted file (else branch of `if (!preexisted)`)
+// -------------------------------------------------------------------------
+// A cleanupTracked 3534. sor `if (!preexisted) { unlinkSync(path) }`
+// else-ága akkor fut, amikor a tracked file a cleanup előtt már létezett
+// (preexisted=true). Ilyenkor a cleanup NEM törli a fájlt, mert nem
+// készítettünk róla biztonsági másolatot. A cleanupTracked csak a catch
+// ágban fut le (H3: rollback on failure), ezért a teszt egy
+// atomicWriteMock-throw segítségével kényszeríti ki a hibát.
+// ===========================================================================
+
+describe('apply phase: cleanupTracked else branch (preexisted files not deleted)', () => {
+  it('when an apply error fires, preexisted CLAUDE.md is preserved (else branch)', async () => {
+    addDir(`${H.PROJECT_ROOT}/.claude`)
+    addFile(`${H.PROJECT_ROOT}/CLAUDE.md`, '# old')
+    // A trackedWrite az első atomicWrite hívásra kapja meg a CLAUDE.md-t;
+    // a második hívás (SOUL.md) legyen az, amelyik elszáll, így a
+    // cleanupTracked fut le, és a CLAUDE.md preexisted=true bejegyzéssel
+    // bent marad a tracker.files-ban.
+    let callIndex = 0
+    H.atomicWriteMock.mockImplementation((p: string, data: string | Buffer) => {
+      callIndex++
+      if (callIndex >= 2) throw new Error('simulated disk full')
+      H.fsState.files.set(p, Buffer.isBuffer(data) ? data : Buffer.from(data))
+    })
+    const { importFleet } = await import('../web/fleet-transfer.js')
+    const body = JSON.stringify(makeFleet({
+      mainAgent: {
+        agentId: 'main',
+        identity: { MAIN_AGENT_ID: 'main', BOT_NAME: 'M', BRAND_NAME: 'M', OWNER_NAME: 'O', CHANNEL_PROVIDER: 't' },
+        claudeMd: '# new', soulMd: '# soul', config: {}, mcp: {}, settings: {}, channelsAccess: {},
+      },
+    }))
+    let caught: Error | null = null
+    try {
+      importFleet(body, { apply: true })
+    } catch (err) {
+      caught = err as Error
+    }
+    expect(caught).not.toBeNull()
+    expect(caught!.message).toBe('simulated disk full')
+    // A preexisted CLAUDE.md a cleanup után is megmarad (else ág).
+    expect(H.fsState.files.has(`${H.PROJECT_ROOT}/CLAUDE.md`)).toBe(true)
+  })
+})
