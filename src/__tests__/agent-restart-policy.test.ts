@@ -302,6 +302,24 @@ describe('decideDownAgentAction', () => {
     expect(decideDownAgentAction({ ...restartable, consecutiveFailures: MAX - 1 }, MAX)).toBe('restart')
   })
 
+  // Pinning test for `consecutiveFailures: null`: the line-132
+  // `(input.consecutiveFailures ?? 0) > 0` short-circuits on
+  // `Number.isFinite(null)` BEFORE the `??` is evaluated (Number.isFinite
+  // returns false for null per ECMA-262, so failures = 0 via the
+  // ternary's else arm). Pin that current behaviour here so the gap
+  // between `null` and `0` (both produce the same 'restart' result via
+  // the else arm) is explicit. See docs/needs-to-be-fix/agent-restart-policy-consecutivefailures-nullish-coalesce.md
+  it("treats consecutiveFailures: null identically to 0 (Number.isFinite short-circuits before ?? is evaluated)", () => {
+    // Use a non-restartable shape so the result lands in 'skip' via a
+    // different guard, making it unambiguous that the null-vs-zero path
+    // is the only thing distinguishing this test from the above.
+    const freshProcess = { ...restartable, processAgeMs: 1_000 } // within startup grace
+    expect(decideDownAgentAction({ ...freshProcess, consecutiveFailures: null }, MAX)).toBe('skip')
+    expect(decideDownAgentAction({ ...freshProcess, consecutiveFailures: 0 }, MAX)).toBe('skip')
+    // Restartable case: null and 0 both let shouldAutoRestartDownAgent reach 'restart'
+    expect(decideDownAgentAction({ ...restartable, consecutiveFailures: null }, MAX)).toBe('restart')
+  })
+
   it("alerts exactly once when the cap is first reached", () => {
     expect(decideDownAgentAction({ ...restartable, consecutiveFailures: MAX }, MAX)).toBe('alert')
   })
