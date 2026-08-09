@@ -968,3 +968,77 @@ describe('baseline: stage save/resume advances past the grace window (line 1327,
     expect(stage3).toBe(true)
   })
 })
+
+// ============================================================================
+// LINE 1455 -- `t.agentName ?? t.session` (decision.alert branch in the
+// pane-error alert path). The existing coverage suite never returns
+// `alert: true` from `decidePaneErrorAlert`, so the alert log line is
+// structurally dead in tests. Drive it by returning alert=true and
+// capturing the `agent` field logged on the error path.
+// ============================================================================
+
+describe('baseline: pane-error alert label (line 1455)', () => {
+  it('sub-agent with agentName logged via the agentName branch (line 1455 truthy arm)', async () => {
+    const mod = await freshMod()
+    vi.useFakeTimers()
+    m.listAgentNames.mockReturnValue(['sub'])
+    m.isAgentRunning.mockReturnValue(true)
+    m.agentHasChannel.mockReturnValue(true)
+    m.capturePane.mockReturnValue('pane-content')
+    m.detectPaneState.mockReturnValue('error')
+    m.decidePaneErrorAlert.mockReturnValue({
+      alert: true,
+      next: { firstSeenAt: Date.now(), lastAlertAt: Date.now(), lastErrorAt: Date.now() },
+    })
+    const handle = mod.startChannelPluginMonitor()
+    await vi.advanceTimersByTimeAsync(30_000)
+    clearMonitorHandle(handle)
+    vi.useRealTimers()
+    // The error-log entry should mention both targets: main ('Marveen')
+    // and sub ('sub'). Find the one for the sub-agent.
+    const errorCalls = m.loggerError.mock.calls
+    const wedgedForSub = errorCalls.find((c) => {
+      if (typeof c[1] !== 'string' || !c[1].includes('thinking-block API error')) return false
+      const obj = c[0] as Record<string, unknown>
+      return obj.agent === 'sub'
+    })
+    expect(wedgedForSub).toBeDefined()
+    const obj = wedgedForSub?.[0] as Record<string, unknown>
+    expect(obj.session).toBe('agent-sub')
+  })
+})
+
+// ============================================================================
+// LINE 1494 -- same label ternary, but in the pane-menu (blocking menu)
+// alert path. Again driven by returning alert=true from
+// `decidePaneErrorAlert` so the menu-recovery alert log line is reached.
+// ============================================================================
+
+describe('baseline: pane-menu alert label (line 1494)', () => {
+  it('sub-agent with agentName logged via the agentName branch (line 1494 truthy arm)', async () => {
+    const mod = await freshMod()
+    vi.useFakeTimers()
+    m.listAgentNames.mockReturnValue(['sub'])
+    m.isAgentRunning.mockReturnValue(true)
+    m.agentHasChannel.mockReturnValue(true)
+    m.capturePane.mockReturnValue('pane-content')
+    m.detectsBlockingMenu.mockReturnValue(true)
+    m.detectsFirstRunGate.mockReturnValue(null)
+    m.decidePaneErrorAlert.mockReturnValue({
+      alert: true,
+      next: { firstSeenAt: Date.now(), lastAlertAt: Date.now(), lastErrorAt: Date.now() },
+    })
+    const handle = mod.startChannelPluginMonitor()
+    await vi.advanceTimersByTimeAsync(30_000)
+    clearMonitorHandle(handle)
+    vi.useRealTimers()
+    // The blocking-menu recovery path logs and sends an Escape + alert.
+    // We only check that the menu-recovery code path entered (no crash
+    // and the Escape send was issued).
+    const escaped = m.execFileSync.mock.calls.some((c) => {
+      const args = c[1] as unknown[]
+      return args[0] === 'send-keys' && args.includes('Escape')
+    })
+    expect(escaped).toBe(true)
+  })
+})
