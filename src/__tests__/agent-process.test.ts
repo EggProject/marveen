@@ -2158,6 +2158,21 @@ describe('capturePane', () => {
     AP.capturePane('agent-zara', 'laptop')
     expect(calls()[0].file).toBe('ssh')
   })
+  // captureTmux timeout default: `host ? 8000 : 3000`. The remote branch is
+  // already pinned by the agentRunState suite (ssh timeout=8000). The local
+  // branch only takes the 3000ms default when the caller passes no `opts`,
+  // which capturePane does (captureTmux wraps it with the default timeout).
+  // Pin that here so the `host ? 8000 : 3000` ternary's else arm is covered.
+  it('uses the 3000ms default timeout for a local captureTmux (host=null)', () => {
+    paneSequence(['x'])
+    AP.capturePane('agent-zara')
+    expect(H.execFileSync.mock.calls[0][2]).toMatchObject({ timeout: 3000 })
+  })
+  it('uses the 8000ms default timeout for a remote captureTmux (host=string, no opts)', () => {
+    paneSequence(['x'])
+    AP.capturePane('agent-zara', 'laptop')
+    expect(H.execFileSync.mock.calls[0][2]).toMatchObject({ timeout: 8000 })
+  })
 })
 
 describe('captureParkedInputView', () => {
