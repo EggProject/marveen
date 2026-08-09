@@ -443,6 +443,33 @@ describe('GET /api/federation/directory', () => {
     spy.mockRestore()
   })
 
+  it('handles a peer with no manifest field at all (line 419 ?? [] branch)', async () => {
+    // Line 419: claimedAgents: (st.manifest?.agents ?? []).slice(...) -- the
+    // nullish branch where st.manifest is itself undefined (not just missing
+    // .agents). The previous test covers the truthy-manifest path (skills
+    // absent but agents present); here we omit the manifest entirely.
+    writeConfigFile({ enabled: true, systemId: 'localsys', peers: [] })
+    const pollerMod = await import('../web/federation/poller.js')
+    const stubPeer = { id: 'teodor', state: 'stale', lastOkAt: 0 }
+    const spy = vi.spyOn(pollerMod, 'getFederationStatus').mockReturnValueOnce([stubPeer])
+    const r = await call('GET', '/api/federation/directory')
+    expect(r.json.peers[0].claimedAgents).toEqual([])
+    spy.mockRestore()
+  })
+
+  it('handles a peer with manifest but no agents array (line 419 ?? [] branch)', async () => {
+    // Line 419 second nullish variant: st.manifest is defined but
+    // st.manifest.agents is undefined. The ?? [] defaults the slice target
+    // to an empty array, so claimedAgents is empty.
+    writeConfigFile({ enabled: true, systemId: 'localsys', peers: [] })
+    const pollerMod = await import('../web/federation/poller.js')
+    const stubPeer = { id: 'teodor', state: 'stale', lastOkAt: 0, manifest: { skills: [] } }
+    const spy = vi.spyOn(pollerMod, 'getFederationStatus').mockReturnValueOnce([stubPeer])
+    const r = await call('GET', '/api/federation/directory')
+    expect(r.json.peers[0].claimedAgents).toEqual([])
+    spy.mockRestore()
+  })
+
   it('reports the local sub-agent summary with stale: true marker', async () => {
     // Line 403: summary ? { capabilitySummary: summary, ...(fresh ? {} : { stale: true }) } : {}
     // -- the truthy-summary + not-fresh branch (the stale marker).
