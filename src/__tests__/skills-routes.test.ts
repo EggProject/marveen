@@ -645,6 +645,27 @@ describe('GET /api/skills', () => {
     expect(arr.map((s) => s.label)).toEqual(['a-user', 'z-user', 'aaa:aplug', 'zzz:zplug'])
   })
 
+  it('exercises the sort comparator a.source === "user" branch (line 156 true side)', async () => {
+    // The 2+2 sort test above happens to never invoke the comparator with
+    // a.source === 'user' (V8's TimSort sees an already-sorted run and
+    // skips most comparisons). Seed a deliberately unsorted mix so the
+    // comparator MUST be called with a=user,b=plugin to satisfy the
+    // source-comparison arm: insert a plugin BEFORE a user in alphabetical
+    // terms, then a user, etc. so V8 can't skip the merge.
+    seedPluginSkill(['zzz', '1.0.0'], 'zplug')
+    seedUserSkill('a-user')
+    seedPluginSkill(['aaa', '1.0.0'], 'aplug')
+    seedUserSkill('z-user')
+    seedPluginSkill(['mmm', '1.0.0'], 'mplug')
+    seedUserSkill('m-user')
+    const { json } = await call('GET', '/api/skills')
+    const arr = json() as Array<Record<string, unknown>>
+    expect(arr.map((s) => s.label)).toEqual([
+      'a-user', 'm-user', 'z-user',
+      'aaa:aplug', 'mmm:mplug', 'zzz:zplug',
+    ])
+  })
+
   it('parses a keywords frontmatter field with empty values', async () => {
     seedUserSkill('kw-empty', { keywords: '' })
     const { json } = await call('GET', '/api/skills')
