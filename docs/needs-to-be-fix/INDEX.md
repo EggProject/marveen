@@ -1,7 +1,12 @@
 # needs-to-be-fix index
 
-Every bug MD filed in this session. Total count: 50
+Every bug MD filed in this session. Total count: 165
 (`find docs/needs-to-be-fix -name '*.md' | wc -l`).
+
+The original 50 entries below were filed during the first coverage pass.
+The 115 additional entries were filed during the unreachable/branches closure
+pass (2026-08-09 to 2026-08-13) and are listed in the **Baseline unreachable
+addenda** section at the bottom.
 
 Sorted by severity: high (security / data loss / silent corruption),
 medium (functional defect with workaround), low (test-coverage gap,
@@ -73,3 +78,113 @@ dead code, doc issue).
 | `overview-routes-yesterday-timestamp-flake` | `src/__tests__/overview-routes.test.ts:534` (was `now - 25h`) | the "yesterday" timestamp is computed as `now - 25 * 60 * 60 * 1000`, which only falls in the `[yesterday, startTs)` bin when `now >= 01:00 LOCAL`. Tests run just past midnight (00:00-01:00) flake-fail because the line lands in the day-before-yesterday bin | `src/__tests__/overview-routes.test.ts` |
 | `channel-monitor-importwith-existsoverride-leaks-live-store` | `src/__tests__/channel-monitor.test.ts:739` `importWithExistsOverride` | `vi.resetModules()` drops the suite-level `vi.mock('../config.js', ...)`; the function only re-mocks `node:fs`, so the re-imported SUT computes `RESPAWN_STAMP_FILE` against the live `PROJECT_ROOT`. `writeRespawnStamp()` during these tests lands in the live `./store/.channel-last-respawn`, tripping the live-install guard on parallel suite runs | `src/__tests__/channel-monitor.test.ts` |
 | `channel-poller-reap-isclaudebinary-unreachable-fallbacks` | `src/web/channel-poller-reap.ts:267,268` | `isClaudeBinary`'s two `?? ''` arms are unreachable (`split(sep, 1)` always yields >= 1 element, `pop()` on it never returns `undefined`); reached in the suite only by patching `String.prototype.split` | `src/__tests__/channel-poller-reap.test.ts` |
+
+## Baseline unreachable addenda (2026-08-09 to 2026-08-13)
+
+Additional coverage gaps filed during the unreachable/branches closure pass. Most are
+defensive `?? null`/`?? []`/`?? 0` fallback arms that are guarded by upstream checks
+and are therefore structurally unreachable. Source-code modifications are out of scope
+for the baseline phase; these MDs are handoffs to the future-fix phase.
+
+| Bug ID | Title |
+| --- | --- |
+| `agent-conversation-fractional-limit` | Fractional conversation limits can exceed the requested page size |
+| `agent-conversation-malformed-name-uri` | Malformed encoded agent names escape conversation route handling |
+| `agent-process-answerfirstrungates-acted-unchanged-unreachable` | agent-process.ts: `answerFirstRunGates` final-return `'unchanged'` arm is unreachable |
+| `agent-process-restartagentprocess-stop-error-default-unreachable` | agent-process.ts: `restartAgentProcess` `||` default error string is unreachable |
+| `agent-process-runtmux-host-truthy-cond-unreachable` | agent-process.ts: `runTmux` `(host ? 8000 : 3000)` truthy arm is unreachable |
+| `agent-restart-policy-consecutivefailures-nullish-coalesce` | agent-restart-policy.ts: `consecutiveFailures ?? 0` nullish-coalesce left arm is unreachable |
+| `agent-scaffold-unreachable-defensive-branches` | agent-scaffold.ts: four unreachable defensive branches block 100% branch coverage |
+| `agent-team-trustfrom-nullish-coalesce` | agent-team.ts: `team.trustFrom ?? []` nullish-coalesce right-arm is unreachable |
+| `agent-worker-array-claude-json` | agent-worker.ts: array-valued host .claude.json silently drops the worker's trust flags |
+| `agent-worker-blank-line-v8-quirk` | agent-worker.ts: a 20. sor (üres sor) v8 coverage quirk miatt 1 line uncoverable |
+| `agent-worker-ensure-ready-throw` | agent-worker.ts: ensureWorkerReady does not catch startWorkerSessionFor throws |
+| `agent-worker-runviaworker-afterloop` | agent-worker.ts: runViaWorker's after-loop `return` is dead code |
+| `agent-worker-seedworkercredentials-unreachable` | agent-worker.ts: seedWorkerCredentials mkdirSync arm is unreachable |
+| `agent-worker-selfheal-catch-unreachable` | agent-worker.ts: ensureWorkerReady's self-heal catch arm is unreachable |
+| `agent-worker-settings-symlink-preserve` | agent-worker.ts: ensureWorkerCwd drops the shared settings.json content when the link is replaced |
+| `agent-worker-symlink-catch` | agent-worker.ts: ensureWorkerCwd's symlinkSync catch is unreachable from tests |
+| `approvals-raw-resolved-by-in-log` | approvals PATCH logger receives untrimmed resolved_by |
+| `auto-restart-runner-unreachable-defensive-fallbacks` | auto-restart-runner.ts: two `??` fallbacks are unreachable defensive code |
+| `channel-coordinator-coverage-limits` | channel-coordinator.ts: unreachable branches block 100% branch coverage |
+| `channel-health-monitor-spawndetach-inflight-redundant-guard` | channel-health-monitor.ts: spawnDetachedReconnect's in-flight guard is unreachable through public API |
+| `channel-monitor-agentdownsince-nullish-coalesce` | channel-monitor.ts: agentDownSince.get(t.session) ?? Date.now() at line 1647 is structurally dead |
+| `channel-monitor-t-agentname-nullish-coalesce` | channel-monitor.ts: t.agentName ?? t.session at lines 1455 and 1494 is structurally dead |
+| `channel-monitor-test-holes` | channel-monitor.ts: pinned test holes in handleMarveenDown cascade + post-resume guard |
+| `channel-monitor-unreachable-defensive-branches` | channel-monitor.ts: seven unreachable defensive branches block 100% branch coverage |
+| `channel-plugin-unlock-unreachable-raw-nullish-fallback` | channel-plugin-unlock.ts: `raw ?? ''` nullish fallback is structurally unreachable |
+| `channel-request-watcher-unreachable-provider-check` | channel-request-watcher.ts: lookupChannelName's `if (provider !== 'slack') return` is unreachable |
+| `claude-credentials-guard-line-224-dead-code` | claude-credentials-guard.ts: line 224 `?? ''` fallback is dead code |
+| `command-task-persist-healthmap-empty-fallback-unreachable` | command-task.ts: `persist()` `healthMap ?? {}` empty-fallback arm is unreachable |
+| `context-guard-runner-dead-code-branches` | context-guard-runner.ts: four branches in the restart/request-handoff switch are unreachable |
+| `federation-capability-runner-unreachable-promise-resolve` | federation/capability-runner.ts: the `?? Promise.resolve()` right branch is structurally unreachable defensive code |
+| `federation-poller-defensive-coverage` | federation/poller.ts: belt catch and startFederationPoller swallow require contrived test setups |
+| `federation-v8-coverage-quirks` | v8 coverage reports unreachable binary-expr branches in federation.ts |
+| `federation-validator-refusal-paths` | federation.ts validator-refusal 400 paths are unreachable in practice |
+| `fleet-transfer-agents-nullish-coalesce-dead-code` | fleet-transfer.ts: `fleet.agents ?? []` nullish-coalesce right arm is unreachable |
+| `fleet-transfer-assertsafename-dead-code` | fleet-transfer.ts: assertSafeName is dead code (lines 49-52) |
+| `fleet-transfer-fleet-agents-nullish-unreachable` | fleet-transfer.ts: `fleet.agents ?? []` nullish-coalesce right-arms are unreachable (7 sites) |
+| `message-router-cache-fallback-unreachable` | message-router.ts: cached session-lookup `??` fallback arms are unreachable |
+| `message-router-dead-defensive-branches` | message-router.ts: three dead defensive branches block 100% branch coverage |
+| `message-router-unreachable-defensive-branches` | message-router.ts: four unreachable defensive branches block 100% branch coverage |
+| `model-suggest-buildreason-preapplied-fallbacks-unreachable` | model-suggest.ts: `buildReason` `signals` and field-specific `?? 0` fallbacks are unreachable |
+| `model-suggest-buildreason-unreachable-fallbacks` | model-suggest.ts: three unreachable `?? X` fallbacks in buildReason block 100% branch coverage |
+| `openrouter-models-tier1-auto-empty-fallback` | openrouter-models.ts: `??` misses the empty-string tier1.auto fallback |
+| `password-hash-defensive-branches` | password-hash.ts: two defensive branches unreachable through real inputs |
+| `platform-xdg-session-type-tty-bug` | platform.ts: XDG_SESSION_TYPE=tty is misclassified as `linux-gui` |
+| `reauth-healer-stampalert-if-st-dead-code` | reauth-healer.ts: stampAlert `if (st)` false branch is dead code |
+| `reauth-healer-sweep-callsite-dead-arms` | reauth-healer.ts: two structurally unreachable arms at lines 391 and 395 |
+| `recall-unreachable-defensive-fallbacks` | recall.ts: two unreachable defensive `?? 0` fallbacks block 100% branch coverage |
+| `remote-enroll-core-merge-trailing-newline-skip` | `mergeAuthorizedKeys` has a single-input trailing newline guard that is only reachable when the input has multiple trailing newlines |
+| `remote-enroll-fs-lock-vanish-spin` | `acquireLock` spins forever when statSync throws but the lock file is still there |
+| `remote-enroll-fs-rename-failure-cleanup-untestable` | `writeAtomic` rename-failure cleanup is unreachable in the type system |
+| `route-token-usage-nan-params` | NaN-via-parseInt: numeric query params silently default to NaN |
+| `routes-agent-team-unreachable-branches` | routes/agent-team.ts: file path does not exist; coverage pin moved to web/agent-team.ts |
+| `routes-agent-terminal-literalkeys-nullish` | agent-terminal.ts: unreachable `literalKeys ?? ''` on the audit-preview line blocks 100% branch coverage |
+| `routes-agents-br-baseline-partial-coverage` | routes/agents.ts: remaining uncovered branches after baseline regression tests |
+| `routes-agents-parse-channel-provider-dead-branches` | routes/agents.ts: parseChannelProvider / matchChannelProvider else branches are dead code |
+| `routes-agents-parsechannelprovider-dead-branch` | routes/agents.ts: parseChannelProvider's `return null` branch is unreachable through the public API |
+| `routes-agents-skills-unreachable-stat-throw` | agents-skills.ts: unreachable `catch { return false }` on the extracted-skills filter |
+| `routes-background-tasks-delete-clobber` | routes/background-tasks.ts: DELETE clobbers an already finished task |
+| `routes-background-tasks-post-invalid-json` | routes/background-tasks.ts: malformed POST body returns 500 instead of 400 |
+| `routes-background-tasks-session-ended-status` | routes/background-tasks.ts: a dead session is `done` in the poller but `failed` in the sweeper |
+| `routes-background-tasks-sweep-timeout-reset` | routes/background-tasks.ts: restart grants every surviving task a fresh 30 minutes |
+| `routes-background-tasks-unused-imports` | routes/background-tasks.ts: unused imports (`execSync`, `markOrphanedTasksFailed`) |
+| `routes-channel-conflict-probe-selfinflicted-409` | channel-conflict-probe.ts: the diagnostic probe issues a competing `getUpdates` and can *cause* the 409 it exists to observe |
+| `routes-connectors-hu-config-nostring-token` | routes-connectors-hu-config-nostring-token |
+| `routes-dashboard-auth-nonexistent-sut` | routes/dashboard-auth.ts does not exist; task brief references the wrong path |
+| `routes-docs-basename-redundant` | routes/docs.ts: the `basename(name) !== name` check in /api/docs/<name> is unreachable |
+| `routes-docs-inner-catch-no-title-reset` | routes/docs.ts: inner per-file catch does not reset `title` despite the comment |
+| `routes-fleet-q-404-leaks-roster` | fleet-q.ts: PUT /api/agents/:name/capabilities -- 404 message leaks internal agent identity |
+| `routes-fleet-q-body-parse-uncaught` | fleet-q.ts: PUT /api/agents/:name/capabilities -- unguarded readBody + JSON.parse crash |
+| `routes-reauth-detect-missing-source-path` | routes/reauth-detect: task target path does not exist on disk |
+| `routes-reauth-healer-missing-file` | src/web/routes/reauth-healer.ts does not exist; the actual file lives at src/web/reauth-healer.ts |
+| `routes-remote-status-cache-path-mismatch` | routes/remote-status-cache: task path does not exist on disk |
+| `routes-skill-usage-jsonparse-throws` | skill-usage.ts: POST /api/skill-usage lets malformed JSON throw |
+| `routes-skills-dead-branches` | routes/skills.ts: defensive dead branches in sort, walker, and importer |
+| `routes-spans-nan-limit` | routes/spans -- NaN limit on GET /api/traces passed straight to listOtelTraces |
+| `routes-tool-log-uncaught-json-parse` | routes-tool-log-uncaught-json-parse |
+| `routes-update-checker-dead-catch-handlers` | Dead `.catch(() => {})` handlers in startUpdateChecker |
+| `routes-update-checker-path-mismatch` | Task prompt referenced a path that does not exist |
+| `routes-updates-release-lock-unreachable-defensive-branch` | routes/updates.ts: releaseLock's `if (!lockHeld) return` is structurally unreachable |
+| `routes-voice-runproc-stdin-dead` | src/web/routes/voice.ts: runProc has two unreachable defensive branches |
+| `schedule-mcp-precheck-subtree-cycle-defensive` | schedule-mcp-precheck.ts: collectSubtreeCmdlines cycle guard is only reachable through malformed ps output |
+| `schedule-runner-mcpmissingreason-cache-miss-unreachable` | schedule-runner: `mcpMissingReason` cache-miss branch is unreachable |
+| `schedules-expand-prompt-missing-answers` | Expand-prompt crashes when answers is omitted |
+| `skills-import-seg-truthy-guard` | skills.ts:409 -- `if (seg)` truthy guard is unreachable |
+| `skills-sort-comparator-falsy-arms` | skills.ts:157 -- `label || name` nullish fallback is unreachable |
+| `store-watcher-sensitive-unreachable` | store-watcher: isSensitive=1 branch unreachable (SENSITIVE_NAMES ⊆ SYSTEM_FILES) |
+| `stuck-input-watcher-give-up-inner-if-unreachable` | stuck-input-watcher.ts: the give-up `prev.attempts < maxAttempts` inner-if is unreachable |
+| `stuck-tool-call-watcher-respawn-ternary-null-unreachable` | stuck-tool-call-watcher: sinceRespawnMs ternary `:null` arm is unreachable |
+| `telegram-client-probehighwater-ignores-okfalse` | telegram-client.ts: `probeHighWater` ignores `ok: false` in the body and returns a fake `update_id` |
+| `updates-release-lock-unreachable` | updates.ts:198 -- releaseLock's `if (!lockHeld) return` early-exit is unreachable |
+| `vault-ssh-keys-import-newline-trim-bug` | vault-ssh-keys.ts: the import handler's `endsWith('
+')` branch is unreachable |
+| `voice-directive-json-quote-escape` | src/web/voice-directive.ts: only single quotes are escaped, so `"` / `\` in the state dir emits invalid JSON |
+| `web-agent-bundle-single-line-trycatch` | agent-bundle.ts: single-line try-catch and defensive-guard branches block 100% branch coverage |
+| `web-agent-scaffold-defensive-coverage` | web/agent-scaffold.ts: 18 defensive nullish-coalesce / guard branches cap branch coverage at 93.61% |
+| `web-agent-worker-runviaworker-coverage` | agent-worker: runViaWorker / runWorkerAttempt / ensureWorkerReady integration paths lack 100% unit-test coverage |
+| `web-command-task-persist-nullish-coalesce` | Dead branch in `persist()`: `healthMap ?? {}` fallback is unreachable |
+| `web-inbound-probe-cache-sticky` | Defect: ALLOWED_CHAT_ID cache never invalidated, breaking the "reset" branch |
+| `web-inbound-probe-respawn-grace` | Defect: stuck mod-scope cache blocks coverage of `shouldTriggerDeafnessRespawn` respawn branches |
+| `worker-liveness-defensive-nullish-fallback` | worker-liveness.ts: defensive `??` fallback in decideWorkerLiveness is unreachable |
