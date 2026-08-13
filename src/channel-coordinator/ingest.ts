@@ -26,7 +26,7 @@ let db: Database | null = null
 
 export function initIngestDb(dbPath = join(STORE_DIR, DB_FILENAME)): Database {
   if (db) return db
-  const handle = new Database(dbPath)
+  const handle = new Database(dbPath, { strict: true })
   // WAL is persistent per-DB (the dashboard already set it); re-assert is a
   // no-op but harmless. busy_timeout IS per-connection, so set it here.
   pragma(handle, 'journal_mode = WAL')

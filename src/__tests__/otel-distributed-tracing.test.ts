@@ -10,7 +10,7 @@
 // that can drift from the schema.
 
 import { describe, it, expect, beforeEach } from 'vitest'
-import Database from 'better-sqlite3'
+import { Database } from '../db/sqlite.js'
 
 // ---------------------------------------------------------------------------
 // Minimal in-process DB setup (mirrors initializeDatabase logic for the

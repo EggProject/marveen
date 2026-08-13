@@ -20,7 +20,7 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as fs from 'node:fs'
-import Database from 'better-sqlite3'
+import { Database } from '../db/sqlite.js'
 import { STORE_DIR, DB_FILENAME } from '../config.js'
 
 // SANDBOX STORE_DIR — without this, the migrateTaskRunsFromJson tests below

@@ -66,7 +66,7 @@ export function initDatabase(dbPathOverride?: string): void {
       }
     }
   }
-  db = new Database(dbPath)
+  db = new Database(dbPath, { strict: true })
   pragma(db, 'journal_mode = WAL')
   // Performance pragmas: safe with WAL, applied after journal_mode is set.
   // cache_size: negative value = kibibytes; -65536 → 64 MB page cache.
@@ -190,7 +190,7 @@ export function initDatabase(dbPathOverride?: string): void {
   // SQLite can't ALTER a CHECK constraint, so we recreate the table when the
   // current schema doesn't yet include 'testing'. Idempotent on fresh DBs.
   try {
-    const kcSchema = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='kanban_cards'").get() as { sql: string } | undefined
+    const kcSchema = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='kanban_cards'").get() ?? undefined as { sql: string } | undefined
     if (kcSchema?.sql && !kcSchema.sql.includes("'testing'")) {
       runScript(db, `
         CREATE TABLE kanban_cards_new (
@@ -273,7 +273,7 @@ export function initDatabase(dbPathOverride?: string): void {
   // canonical CHECK -- covers both the legacy ('user_pref'...) and the
   // post-refactor-no-check states, and is idempotent on fresh DBs.
   try {
-    const current = db.prepare("SELECT sql FROM sqlite_master WHERE name='memories'").get() as { sql: string } | undefined
+    const current = db.prepare("SELECT sql FROM sqlite_master WHERE name='memories'").get() ?? undefined as { sql: string } | undefined
     const hasCanonicalCheck = !!current?.sql?.match(/CHECK\s*\(\s*category\s+IN\s*\(\s*'hot'\s*,\s*'warm'\s*,\s*'cold'\s*,\s*'shared'\s*\)\s*\)/i)
     if (current?.sql && !hasCanonicalCheck) {
       // Preserve keywords if the column exists; older DBs rebuilt this table
@@ -997,7 +997,7 @@ export function setSession(chatId: string, sessionId: string, messageCount = 0):
 
 export function incrementSessionCount(chatId: string): number {
   db.prepare('UPDATE sessions SET message_count = message_count + 1 WHERE chat_id = ?').run(chatId)
-  const row = db.prepare('SELECT message_count FROM sessions WHERE chat_id = ?').get(chatId ?? undefined) as { message_count: number } | undefined
+  const row = db.prepare('SELECT message_count FROM sessions WHERE chat_id = ?').get(chatId ?? undefined) ?? undefined as { message_count: number } | undefined
   return row?.message_count ?? 0
 }
 
@@ -1536,7 +1536,7 @@ export function getBackgroundTasks(agentId?: string, includeFinished = false): B
 }
 
 export function getBackgroundTask(id: string): BackgroundTask | undefined {
-  return db.prepare('SELECT * FROM background_tasks WHERE id = ?').get(id ?? undefined) as BackgroundTask | undefined
+  return db.prepare('SELECT * FROM background_tasks WHERE id = ?').get(id ?? undefined) ?? undefined as BackgroundTask | undefined
 }
 
 export function countRunningBackgroundTasks(agentId: string): number {
@@ -1674,7 +1674,7 @@ export function listKanbanCardsSummary(): { status: string; title: string; assig
 }
 
 export function getKanbanCard(id: string): KanbanCard | undefined {
-  return db.prepare('SELECT rowid AS seq, * FROM kanban_cards WHERE id = ?').get(id ?? undefined) as KanbanCard | undefined
+  return db.prepare('SELECT rowid AS seq, * FROM kanban_cards WHERE id = ?').get(id ?? undefined) ?? undefined as KanbanCard | undefined
 }
 
 export function createKanbanCard(card: {
@@ -1724,7 +1724,7 @@ export function moveKanbanCard(id: string, status: KanbanCard['status'], sortOrd
   const now = Math.floor(Date.now() / 1000)
   // Read the previous status first so we only record an audit event on a real
   // status transition (not a pure sort_order reorder within the same column).
-  const prev = (db.prepare('SELECT status FROM kanban_cards WHERE id=?').get(id ?? undefined) as { status: string } | undefined)?.status
+  const prev = (db.prepare('SELECT status FROM kanban_cards WHERE id=?').get(id ?? undefined) ?? undefined as { status: string } | undefined)?.status
   const changed = db.prepare(
     'UPDATE kanban_cards SET status=?, sort_order=?, updated_at=? WHERE id=?'
   ).run(status, sortOrder, now, id).changes > 0
@@ -1864,7 +1864,7 @@ export function getKanbanSeqByIdPrefix(prefix: string): number | null {
 export function findActiveKanbanCardByTitle(title: string): KanbanCard | undefined {
   return db.prepare(
     'SELECT rowid AS seq, * FROM kanban_cards WHERE title = ? AND archived_at IS NULL LIMIT 1'
-  ).get(title ?? undefined) as KanbanCard | undefined
+  ).get(title ?? undefined) ?? undefined as KanbanCard | undefined
 }
 
 // Move the first active kanban card whose title equals `taskName` to the
@@ -1906,7 +1906,7 @@ export function listLabels(): Label[] {
 }
 
 export function getLabel(id: string): Label | undefined {
-  return db.prepare('SELECT * FROM labels WHERE id = ?').get(id ?? undefined) as Label | undefined
+  return db.prepare('SELECT * FROM labels WHERE id = ?').get(id ?? undefined) ?? undefined as Label | undefined
 }
 
 export function createLabel(label: { id: string; name: string; color: string }): Label {
@@ -2307,7 +2307,7 @@ export function countTaskRunsBetween(fromTs: number, toTs?: number): number {
 }
 
 export function getAgentMessage(id: number): AgentMessage | undefined {
-  return db.prepare('SELECT * FROM agent_messages WHERE id = ?').get(id ?? undefined) as AgentMessage | undefined
+  return db.prepare('SELECT * FROM agent_messages WHERE id = ?').get(id ?? undefined) ?? undefined as AgentMessage | undefined
 }
 
 export function getActiveScheduledTaskCount(): { count: number; nextRun: number | null } {
@@ -2401,7 +2401,7 @@ export function listPendingTaskRetries(): PendingTaskRetryRow[] {
 export function getPendingTaskRetry(taskName: string, agentName: string): PendingTaskRetryRow | undefined {
   return db
     .prepare('SELECT * FROM pending_task_retries WHERE task_name = ? AND agent_name = ?')
-    .get(taskName, agentName) as PendingTaskRetryRow | undefined ?? undefined
+    .get(taskName, agentName) ?? undefined as PendingTaskRetryRow | undefined ?? undefined
 }
 
 export function deletePendingTaskRetry(taskName: string, agentName: string): boolean {
@@ -2703,7 +2703,7 @@ export function getIdeaStatusLog(ideaId: string): IdeaStatusLogRow[] {
 // Revert a promoted idea back to 'reviewed' when its kanban card is deleted or archived.
 // Returns the idea id if a matching idea was found and reverted, null otherwise.
 export function revertIdeaFromKanban(kanbanId: string): string | null {
-  const idea = db.prepare("SELECT id, status FROM idea_box WHERE kanban_id = ? AND status = 'kanban'").get(kanbanId ?? undefined) as { id: string; status: string } | undefined
+  const idea = db.prepare("SELECT id, status FROM idea_box WHERE kanban_id = ? AND status = 'kanban'").get(kanbanId ?? undefined) ?? undefined as { id: string; status: string } | undefined
   if (!idea) return null
   const now = Math.floor(Date.now() / 1000)
   db.prepare("UPDATE idea_box SET status = 'reviewed', kanban_id = NULL, updated_at = ? WHERE id = ?").run(now, idea.id)
@@ -3077,7 +3077,7 @@ export function listVaultSshKeys(): VaultSshKey[] {
 }
 
 export function getVaultSshKey(id: string): VaultSshKey | undefined {
-  return db.prepare('SELECT * FROM vault_ssh_keys WHERE id = ?').get(id ?? undefined) as VaultSshKey | undefined
+  return db.prepare('SELECT * FROM vault_ssh_keys WHERE id = ?').get(id ?? undefined) ?? undefined as VaultSshKey | undefined
 }
 
 export function createVaultSshKey(key: Pick<VaultSshKey, 'id' | 'label' | 'username' | 'vault_key_id' | 'public_key' | 'fingerprint' | 'key_type'>): VaultSshKey {
@@ -3130,7 +3130,7 @@ export function listVaultSshServers(): VaultSshServer[] {
 }
 
 export function getVaultSshServer(id: string): VaultSshServer | undefined {
-  return db.prepare('SELECT * FROM vault_ssh_servers WHERE id = ?').get(id ?? undefined) as VaultSshServer | undefined
+  return db.prepare('SELECT * FROM vault_ssh_servers WHERE id = ?').get(id ?? undefined) ?? undefined as VaultSshServer | undefined
 }
 
 export function createVaultSshServer(server: Pick<VaultSshServer, 'id' | 'name' | 'host' | 'port' | 'username' | 'description'>): VaultSshServer {
@@ -3213,7 +3213,7 @@ export function createApproval(params: {
 }
 
 export function getApproval(id: string): Approval | undefined {
-  return db.prepare('SELECT * FROM approvals WHERE id = ?').get(id ?? undefined) as Approval | undefined
+  return db.prepare('SELECT * FROM approvals WHERE id = ?').get(id ?? undefined) ?? undefined as Approval | undefined
 }
 
 export function resolveApproval(id: string, status: 'approved' | 'rejected' | 'timeout', resolvedBy: string, telegramMessageId?: number | null): boolean {
