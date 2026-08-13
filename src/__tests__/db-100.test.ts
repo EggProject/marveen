@@ -316,7 +316,7 @@ describe('initDatabase', () => {
     const tmpDb = join(tmpDir, 'fresh.db')
     initDatabase(tmpDb)
     initDatabase(tmpDb)
-    expect(getDb().prepare("SELECT category FROM memories LIMIT 1").get()).toBeUndefined()
+    expect(getDb().prepare("SELECT category FROM memories LIMIT 1").get() ?? undefined).toBeUndefined()
   })
 
   it('initDatabase swallows ALTER errors during session migration', () => {
@@ -1238,17 +1238,18 @@ describe('branch coverage helpers', () => {
 
   it('initDatabase with no override reaches the useOverride=false branch (line 51)', () => {
     // The mkdirSync-on-no-override test throws BEFORE line 51. To hit line 51's
-    // false ternary branch, allow mkdirSync to no-op and mock Database.pragma
-    // to throw AFTER the ternary is evaluated. Clean up the prod-DB file we
-    // create in the process so a follow-up `initDatabase()` is not surprising.
-    const realPragma = Database.prototype.pragma
-    Database.prototype.pragma = function (): never { throw new Error('mock pragma fail') }
+    // false ternary branch, allow mkdirSync to no-op and mock Database.run
+    // (the method the adapter's pragma() helper calls) to throw AFTER the
+    // ternary is evaluated. Clean up the prod-DB file we create in the
+    // process so a follow-up `initDatabase()` is not surprising.
+    const realRun = Database.prototype.run
+    Database.prototype.run = function (): never { throw new Error('mock pragma fail') }
     const prodDbPath = join(STORE_DIR, DB_FILENAME)
     const prodExisted = existsSync(prodDbPath)
     try {
       expect(() => initDatabase()).toThrow('mock pragma fail')
     } finally {
-      Database.prototype.pragma = realPragma
+      Database.prototype.run = realRun
       if (!prodExisted) {
         // Best-effort cleanup; the suite MUST NOT leave a prod DB file behind.
         for (const ext of ['', '-wal', '-shm', '-journal']) {

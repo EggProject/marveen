@@ -1029,7 +1029,7 @@ export function createDashboardUser(username: string, passwordHash: string): Das
 export function getDashboardUser(username: string): DashboardUser | undefined {
   return db
     .prepare('SELECT * FROM dashboard_users WHERE username = ? COLLATE NOCASE')
-    .get(username) as DashboardUser | undefined
+    .get(username) ?? undefined as DashboardUser | undefined
 }
 
 export function listDashboardUsers(): DashboardUserPublic[] {
@@ -2401,7 +2401,7 @@ export function listPendingTaskRetries(): PendingTaskRetryRow[] {
 export function getPendingTaskRetry(taskName: string, agentName: string): PendingTaskRetryRow | undefined {
   return db
     .prepare('SELECT * FROM pending_task_retries WHERE task_name = ? AND agent_name = ?')
-    .get(taskName, agentName) ?? undefined as PendingTaskRetryRow | undefined ?? undefined
+    .get(taskName, agentName) ?? undefined as PendingTaskRetryRow | undefined
 }
 
 export function deletePendingTaskRetry(taskName: string, agentName: string): boolean {
