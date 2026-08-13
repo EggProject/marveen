@@ -21,7 +21,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as fs from 'node:fs'
 import { Database } from '../db/sqlite.js'
-import { STORE_DIR, DB_FILENAME } from '../config.js'
+import { STORE_DIR, DB_FILENAME, APP_TZ } from '../config.js'
 
 // SANDBOX STORE_DIR — without this, the migrateTaskRunsFromJson tests below
 // write task-run-history.json into the live checkout's ./store/ (config.ts:13
@@ -560,7 +560,13 @@ describe('daily logs', () => {
   it('append + get + dates', () => {
     appendDailyLog('agent-D', 'hello')
     appendDailyLog('agent-D', 'world')
-    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Budapest' })
+    // Must read the SAME zone appendDailyLog writes with (db.ts:1390 uses
+    // APP_TZ), not a hardcoded one. APP_TZ falls back to the SYSTEM timezone
+    // when SCHEDULER_TZ is unset, so a hardcoded 'Europe/Budapest' only agreed
+    // on a Budapest dev box. On a UTC CI runner the two zones name different
+    // calendar days between 22:00 and 24:00 UTC, and the query returned 0 rows
+    // -- a latent flake that happened to fire at 23:15 UTC.
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: APP_TZ })
     expect(getDailyLog('agent-D', today).length).toBe(2)
     expect(getDailyLogDates('agent-D').length).toBeGreaterThan(0)
   })

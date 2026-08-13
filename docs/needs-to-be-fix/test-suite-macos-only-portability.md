@@ -7,13 +7,16 @@
 ## What
 
 The baseline test suite passed 11088/11088 on macOS and failed **22 files / 50 tests** on the first Linux CI
-run (GitHub `ubuntu-latest`, PR #1, run 31746884125). Seven independent root causes, none of them related to
+run (GitHub `ubuntu-latest`, PR #1, run 31746884125). Eight independent root causes, none of them related to
 each other, all sharing one shape: **the test accepted an input from the host instead of controlling it.**
+
+The eighth surfaced only on the second CI run, once the first seven stopped masking it — and it is time-of-day
+dependent, so it would have hidden again on the next attempt.
 
 For a suite whose entire purpose is detecting regressions during a rewrite, "green" meant "green on the machine
 that wrote it". That is the defect being recorded here.
 
-## The seven root causes
+## The eight root causes
 
 ### 1. Import-time binary resolution (11 suites died before running a single test)
 
@@ -116,6 +119,20 @@ with the line number accepted as either of the statement's two lines and the ver
 
 **Verified both ways:** default `/bin/bash` (3.2) and `/opt/homebrew/bin/bash` (5.3) first on PATH.
 
+### 8. Hardcoded timezone vs `APP_TZ` (1 test, latent flake)
+
+`appendDailyLog` (`src/db.ts:1390`) stamps the calendar day with `timeZone: APP_TZ`. The test asked for the day
+in a hardcoded `'Europe/Budapest'`.
+
+`APP_TZ` falls back to the **system** timezone when `SCHEDULER_TZ` is unset, so the two only agreed on a
+Budapest dev box. On a UTC runner they name different calendar days between 22:00 and 24:00 UTC, the query
+matches nothing, and the assertion sees 0 rows instead of 2. The CI run that caught it started at 23:15 UTC —
+this would have passed on the same commit at almost any other hour, which makes it a latent flake rather than a
+deterministic failure.
+
+**Fix:** the test reads `APP_TZ`, the same source of truth the source writes with. Verified across `TZ=UTC`,
+`TZ=Pacific/Kiritimati` (UTC+14) and `TZ=Pacific/Midway` (UTC-11).
+
 ## Verification
 
 Full suite, twice, both green:
@@ -135,10 +152,25 @@ on the 11 changed source files are unchanged.
 
 ## Follow-up worth doing
 
-The three environment knobs that reproduce the Linux behaviour on macOS — `TMPDIR=/tmp`,
-`XDG_RUNTIME_DIR=/run/user/1001`, and a bash-5 PATH — are the cheapest available guard against this class of
-regression returning. Consider a second CI job (or a documented local command) that runs the suite under them,
+The four environment knobs that reproduce the Linux behaviour on macOS — `TMPDIR=/tmp`,
+`XDG_RUNTIME_DIR=/run/user/1001`, `TZ=UTC`, and a bash-5 PATH — are the cheapest available guard against this
+class of regression returning. Consider a second CI job (or a documented local command) that runs the suite under them,
 so a macOS-only assumption is caught before it reaches a Linux runner.
+
+## Observed flake (not a platform issue, not fixed here)
+
+`schedule-runner-full.test.ts > returns missing when session does not exist and startAgentProcess fails for
+non-already-running` timed out once at the default 5000ms during a full-suite run, with a stack pointing into a
+*different* test in the same file. It did not reproduce: 3/3 green in isolation and green on a full-suite
+re-run under identical env. Reads as contention against the 5s default timeout under parallel load rather than
+a defect. Recorded so the next sighting is a second data point instead of a first one — do not inflate the
+timeout without evidence, that would hide a genuine hang.
+
+## Also worth knowing
+
+`heartbeat-oauth-token.test.ts:96` carries a deliberate `it.skipIf(process.platform !== 'darwin')`. It is not a
+defect — the behaviour under test is macOS keychain specific — but it does mean that one path is exercised on a
+dev box and never on CI, and the CI summary reports it as "1 skipped".
 
 ## Unrelated observation
 
