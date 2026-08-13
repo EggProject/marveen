@@ -28,7 +28,7 @@ export default defineConfig({
     // install, so this is the second defensive line: any source file that
     // gets modified without a corresponding test now fails the build.
     coverage: {
-      provider: 'v8',
+      provider: 'istanbul',
       include: ['src/**/*.ts'],
       exclude: [
         'src/__tests__/**',
