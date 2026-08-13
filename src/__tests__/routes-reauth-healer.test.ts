@@ -94,6 +94,7 @@ vi.mock('../config.js', () => ({
 
 vi.mock('../platform.js', () => ({
   resolveFromPath: () => mocks.resolveFromPathReturn,
+  makeLazyBinResolver: () => () => mocks.resolveFromPathReturn,
 }))
 
 vi.mock('../web/agent-config.js', () => ({
@@ -172,7 +173,27 @@ function bashCalls(): Array<{ cmd: string; args: string[]; err: unknown }> {
   return mocks.execFileCalls.filter((c) => c.cmd === '/bin/bash')
 }
 
+// hostCanInteractiveLogin() is `process.platform === 'darwin' || DISPLAY ||
+// WAYLAND_DISPLAY`. Every send-keys assertion in this file needs that gate to
+// be TRUE, and it used to inherit the host's answer: true on a macOS dev box,
+// false on a headless Linux CI runner, where the gate silently skipped the
+// whole /login sequence and three tests saw zero tmux calls.
+//
+// Pinning it here makes the file host-independent. linux+DISPLAY is chosen
+// over darwin deliberately, so the non-darwin half of the gate is the one
+// under test.
+let savedPlatform: PropertyDescriptor | undefined
+let savedDisplay: string | undefined
+let savedWayland: string | undefined
+
 beforeEach(() => {
+  savedPlatform = Object.getOwnPropertyDescriptor(process, 'platform')
+  Object.defineProperty(process, 'platform', { value: 'linux', configurable: true })
+  savedDisplay = process.env['DISPLAY']
+  savedWayland = process.env['WAYLAND_DISPLAY']
+  process.env['DISPLAY'] = ':0'
+  delete process.env['WAYLAND_DISPLAY']
+
   sandbox = mkTempDir('marveen-routes-reauth-healer-')
   vi.clearAllMocks()
   mocks.quarantineFn.mockClear()
@@ -193,6 +214,11 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  if (savedPlatform) Object.defineProperty(process, 'platform', savedPlatform)
+  if (savedDisplay === undefined) delete process.env['DISPLAY']
+  else process.env['DISPLAY'] = savedDisplay
+  if (savedWayland === undefined) delete process.env['WAYLAND_DISPLAY']
+  else process.env['WAYLAND_DISPLAY'] = savedWayland
   vi.useRealTimers()
   rmTempDir(sandbox)
 })

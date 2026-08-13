@@ -226,6 +226,22 @@ describe('listAgentLocalSkills', () => {
     ])
   })
 
+  it('returns entries sorted by name regardless of directory creation order', () => {
+    // The returned list is hashed by summarySourceHash to decide whether an
+    // agent's LLM capability summary is stale, so its order must depend on the
+    // content and not on the host filesystem. readdirSync returns sorted order
+    // on macOS/APFS but hash order on ext4: without the explicit .sort() this
+    // assertion passes on a dev Mac and fails on a Linux CI runner.
+    //
+    // Deliberately NO defensive .sort() on the result here -- that is exactly
+    // what would hide the regression.
+    makeAgent('a')
+    for (const name of ['zulu', 'mike', 'alpha']) {
+      makeSkill('a', name, `---\ndescription: ${name} desc\n---`)
+    }
+    expect(lc.listAgentLocalSkills('a').map((s) => s.name)).toEqual(['alpha', 'mike', 'zulu'])
+  })
+
   it('skips stray files at the skills-root level (defensive statSync filter)', () => {
     makeAgent('a')
     makeSkill('a', 'real', '---\ndescription: r\n---')

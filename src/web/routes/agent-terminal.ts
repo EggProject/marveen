@@ -1,6 +1,6 @@
 import { execFile, execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { resolveFromPath } from '../../platform.js'
+import { makeLazyBinResolver } from '../../platform.js'
 import { logger } from '../../logger.js'
 import { readBody, json } from '../http-helpers.js'
 import { agentDir } from '../agent-config.js'
@@ -10,7 +10,7 @@ import { literalKeyArgs, specialKeyArgs, loginSequence, type LoginStep } from '.
 import { readTerminalInputEnabled, writeTerminalInputEnabled } from '../terminal-input-store.js'
 import type { RouteContext } from './types.js'
 
-const TMUX = resolveFromPath('tmux')
+const tmuxBin = makeLazyBinResolver('tmux')
 
 // Per-agent dashboard terminal: live pane stream (SSE), keystroke injection,
 // and the scripted /login flow. All gated by the dashboard token (the SSE
@@ -23,7 +23,7 @@ function sleep(ms: number): Promise<void> {
 
 function isTmuxSessionAlive(session: string): boolean {
   try {
-    execFileSync(TMUX, ['has-session', '-t', session], { timeout: 3000, stdio: 'ignore' })
+    execFileSync(tmuxBin(), ['has-session', '-t', session], { timeout: 3000, stdio: 'ignore' })
     return true
   } catch {
     return false
@@ -46,7 +46,7 @@ function resolveTarget(name: string): SessionTarget {
 // caller can surface a 500 rather than silently swallowing a tmux failure.
 function tmux(args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
-    execFile(TMUX, args, { timeout: 5000 }, (err) => {
+    execFile(tmuxBin(), args, { timeout: 5000 }, (err) => {
       if (err) reject(err)
       else resolve()
     })
@@ -142,7 +142,7 @@ export async function tryHandleAgentTerminal(ctx: RouteContext): Promise<boolean
       // the visible pane) so the frontend can offer scroll-back; the frontend
       // repaints the full snapshot (clear-scrollback + clear + home) each changed
       // frame and only when the user is at the bottom, so scrolling up is stable.
-      execFile(TMUX, ['capture-pane', '-t', session, '-S', '-2000', '-e', '-p'], { timeout: 3000, encoding: 'utf-8', maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
+      execFile(tmuxBin(), ['capture-pane', '-t', session, '-S', '-2000', '-e', '-p'], { timeout: 3000, encoding: 'utf-8', maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
         inFlight = false
         if (closed) return
         const pane = err ? '' : (stdout ?? '')

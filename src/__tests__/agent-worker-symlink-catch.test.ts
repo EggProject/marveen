@@ -76,7 +76,15 @@ vi.mock('../config.js', async (importOriginal) => {
 
 vi.mock('../platform.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../platform.js')>()
-  return { ...actual, resolveFromPath: H.resolveFromPath, tryResolveFromPath: H.tryResolveFromPath }
+  // makeLazyBinResolver must be mocked too, not taken from `actual`: the real
+  // one closes over the real resolveFromPath, so the mock above would not
+  // apply and the test would need tmux on the machine.
+  return {
+    ...actual,
+    resolveFromPath: H.resolveFromPath,
+    tryResolveFromPath: H.tryResolveFromPath,
+    makeLazyBinResolver: (name: string) => () => H.resolveFromPath(name),
+  }
 })
 
 vi.mock('../logger.js', () => ({

@@ -70,6 +70,7 @@ vi.mock('../logger.js', () => ({ logger: mocks.logger }))
 
 vi.mock('../platform.js', () => ({
   resolveFromPath: (name: string): string => `/usr/bin/${name}`,
+  makeLazyBinResolver: (name: string) => (): string => `/usr/bin/${name}`,
 }))
 
 vi.mock('../web/agent-process.js', () => ({

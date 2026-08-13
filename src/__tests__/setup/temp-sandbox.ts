@@ -118,3 +118,54 @@ export function snapshotEnv(): { restore: () => void } {
 export function rmTempDir(dir: string): void {
   rmSync(dir, { recursive: true, force: true })
 }
+
+// ---------------------------------------------------------------------------
+// Non-volatile sandbox
+// ---------------------------------------------------------------------------
+//
+// `os.tmpdir()` is `/tmp` on Linux and `/var/folders/.../T/...` on macOS. That
+// difference is invisible until a suite feeds its sandbox paths into
+// `isUnsafeHookCommand` (src/web/agent-scaffold.ts), which REJECTS any hook
+// command referencing a volatile tmpfs prefix -- a deliberate production guard
+// from the 2026-07-14 silent fleet-freeze incident, where a rebooted host lost
+// the /tmp script a shared hook pointed at and Claude Code then blocked every
+// prompt.
+//
+// On macOS the guard never fires for a tmpdir sandbox, so the agent-scaffold
+// suites passed locally for months. On the first Linux CI run they produced 30
+// failures with no obvious connection to the cause. Suites whose paths end up
+// inside hook commands must therefore allocate outside those prefixes.
+
+/** Kept in sync with `_TMP_PREFIXES` in src/web/agent-scaffold.ts. */
+const VOLATILE_PREFIXES = ['/tmp/', '/var/tmp/', '/private/tmp/', '/dev/shm/']
+
+/** True when `path` sits under a prefix `isUnsafeHookCommand` rejects. */
+export function isVolatilePath(path: string): boolean {
+  return VOLATILE_PREFIXES.some((p) => path.startsWith(p))
+}
+
+/**
+ * Create a fresh scratch dir that is guaranteed NOT to live under a volatile
+ * tmpfs prefix, so paths inside it survive `isUnsafeHookCommand`.
+ *
+ * Rooted at `$HOME` rather than `os.tmpdir()` because on Linux the latter IS
+ * `/tmp`. `$HOME` is read from the environment, not `os.homedir()`, because the
+ * suites that need this helper mock `node:os` to point `homedir()` back into
+ * their own sandbox.
+ *
+ * Throws rather than degrading if the resulting base is itself volatile: a loud
+ * failure here is worth far more than the 30 unexplained assertion failures
+ * this function exists to prevent.
+ */
+export function mkNonVolatileDir(prefix = 'marveen-test-'): string {
+  const home = process.env.HOME ?? process.env.USERPROFILE
+  if (!home) throw new Error('mkNonVolatileDir: neither HOME nor USERPROFILE is set')
+  const base = join(home, '.cache', 'marveen-test-sandboxes')
+  if (isVolatilePath(base)) {
+    throw new Error(
+      `mkNonVolatileDir: base ${base} is under a volatile prefix; hook-command tests would silently fail`,
+    )
+  }
+  mkdirSync(base, { recursive: true })
+  return mkdtempSync(join(base, prefix))
+}

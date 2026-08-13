@@ -21,14 +21,20 @@ import {
   mkdtempSync, writeFileSync, readFileSync, mkdirSync, existsSync,
   rmSync, statSync,
 } from 'node:fs'
-import { tmpdir, homedir as realHomedir } from 'node:os'
+import { homedir as realHomedir } from 'node:os'
 import { join } from 'node:path'
+import { mkNonVolatileDir } from './setup/temp-sandbox.js'
 
 // ---------------------------------------------------------------------------
-// Sandbox setup. We pick a fresh tmpdir per file (mkdtempSync is sync) so each
+// Sandbox setup. We pick a fresh dir per file (mkdtempSync is sync) so each
 // test's setup/teardown does not see state left over by a previous test.
+//
+// NOT os.tmpdir(): that is /tmp on Linux, and isUnsafeHookCommand rejects every
+// hook command referencing a volatile tmpfs prefix, so all the gate injectors
+// would silently no-op and 20 tests here would fail on Linux only. See
+// mkNonVolatileDir for the full story.
 // ---------------------------------------------------------------------------
-const SANDBOX = mkdtempSync(join(tmpdir(), 'scaffold-full-'))
+const SANDBOX = mkNonVolatileDir('scaffold-full-')
 const HOME = join(SANDBOX, 'home')
 mkdirSync(HOME, { recursive: true })
 

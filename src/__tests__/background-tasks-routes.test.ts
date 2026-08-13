@@ -73,6 +73,7 @@ vi.mock('node:crypto', async (orig) => {
 
 vi.mock('../platform.js', () => ({
   resolveFromPath: (name: string) => (name === 'tmux' ? H.tmuxPath : H.claudePath),
+  makeLazyBinResolver: (name: string) => () => (name === 'tmux' ? H.tmuxPath : H.claudePath),
 }))
 
 vi.mock('../db.js', () => ({

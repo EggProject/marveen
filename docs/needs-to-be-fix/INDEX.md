@@ -1,6 +1,6 @@
 # needs-to-be-fix index
 
-Every bug MD filed in this session. Total count: 167
+Every bug MD filed in this session. Total count: 168
 (`find docs/needs-to-be-fix -name '*.md' | wc -l`).
 
 The original 50 entries below were filed during the first coverage pass.
@@ -49,6 +49,7 @@ dead code, doc issue).
 | `routes-memories-put-tier-precedence` | `src/web/routes/memories.ts:242` | `PUT` resolves `tier \|\| category` while `POST` resolves `category \|\| tier`, so the deprecated field wins on edit and a round-trip silently reclassifies the row | `src/__tests__/memories-routes.test.ts` |
 | `channel-poller-reap-botpid-killed-without-identity-check` | `src/web/channel-poller-reap.ts:76-88,202-230` | `reapChannelOrphans` SIGTERM+SIGKILLs the `bot.pid` pid with no identity check (only `> 1`); nothing ever deletes `bot.pid`, so a stale file plus pid reuse kills an unrelated process while logging "orphans killed" | `src/__tests__/channel-poller-reap.test.ts` |
 | `syntax-check-executes-web-bundle` | `package.json:18` | `bun --check` is not a Bun flag, so `syntax-check` executes `web/app.js` in a server runtime and always exits 1 on `window is not defined`; the gate has never checked syntax (added as a CI gate in `a61ff74`) | none yet -- add one asserting exit 0 on clean files, non-zero on a syntax error |
+| `test-suite-macos-only-portability` | 7 causes across `src/web/agent-scaffold.ts:129`, `src/web/ssh-tmux.ts:32`, `src/web/routes/docs.ts:53`, `src/web/reauth-healer.ts:142`, `src/web/federation/local-catalog.ts:47`, 10 module-level `resolveFromPath` call sites | the baseline suite passed only on macOS: 22 files / 50 tests failed on the first Linux CI run, because the tests inherited tmpdir, XDG_RUNTIME_DIR, birthtime, readdir order, bash version and installed binaries from the host instead of controlling them (**fixed**) | `src/__tests__/platform-no-import-time-bin-resolve.test.ts` + `federation-local-catalog.test.ts` |
 
 ## Low
 

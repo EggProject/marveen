@@ -140,6 +140,7 @@ vi.mock('node:os', async (orig) => {
 
 vi.mock('../platform.js', () => ({
   resolveFromPath: () => mocks.claudePath,
+  makeLazyBinResolver: () => () => mocks.claudePath,
 }))
 
 vi.mock('../logger.js', () => ({

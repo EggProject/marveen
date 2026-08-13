@@ -327,13 +327,36 @@ describe('GET /api/docs', () => {
     expect(docs[0]?.created).toMatch(/^\d{4}-\d{2}-\d{2}$/)
   })
 
+  // docs.ts sorts on `birthtimeMs` (falling back to mtimeMs only when the
+  // filesystem reports 0), so a test must control BIRTHTIME, not mtime.
+  //
+  // utimesSync only sets atime/mtime. On macOS/APFS the kernel additionally
+  // drags birthtime backwards to keep it <= mtime, so setting mtime happened to
+  // set birthtime too and these tests passed. ext4 does no such thing: birthtime
+  // stayed at "now" for all three files and the sort fell through to the name
+  // tie-break, which is exactly how both tests failed on the first Linux CI run.
+  //
+  // Overriding statSync makes the intended ordering explicit and filesystem
+  // independent. The real stat object is reused so isFile() still works.
+  function stubTimes(msByName: Record<string, number>): void {
+    hoisted.fsState.statSyncOverride = (p: string) => {
+      const stat = hoisted.realFs.statSync(p)
+      const ms = msByName[p.slice(p.lastIndexOf('/') + 1)]
+      if (ms !== undefined) {
+        stat.birthtimeMs = ms
+        stat.mtimeMs = ms
+      }
+      return stat
+    }
+  }
+
   it('sorts newest-first by ms, tie-breaking by name ascending', async () => {
-    writeFileSync(join(DOCS_DIR, 'a.md'), '# A')
-    utimesSync(join(DOCS_DIR, 'a.md'), new Date('2024-01-01'), new Date('2024-01-01'))
-    writeFileSync(join(DOCS_DIR, 'b.md'), '# B')
-    utimesSync(join(DOCS_DIR, 'b.md'), new Date('2024-01-02'), new Date('2024-01-02'))
-    writeFileSync(join(DOCS_DIR, 'c.md'), '# C')
-    utimesSync(join(DOCS_DIR, 'c.md'), new Date('2024-01-03'), new Date('2024-01-03'))
+    for (const f of ['a.md', 'b.md', 'c.md']) writeFileSync(join(DOCS_DIR, f), `# ${f}`)
+    stubTimes({
+      'a.md': Date.parse('2024-01-01T00:00:00Z'),
+      'b.md': Date.parse('2024-01-02T00:00:00Z'),
+      'c.md': Date.parse('2024-01-03T00:00:00Z'),
+    })
     const { res, json } = await call('GET', '/api/docs')
     expect(res.statusCode).toBe(200)
     const docs = json() as Array<{ name: string }>
@@ -341,11 +364,9 @@ describe('GET /api/docs', () => {
   })
 
   it('tie-breaks by name ascending when mtimes are equal', async () => {
-    const same = new Date('2024-06-15T12:00:00Z')
-    for (const f of ['b.md', 'a.md', 'c.md']) {
-      writeFileSync(join(DOCS_DIR, f), `# ${f}`)
-      utimesSync(join(DOCS_DIR, f), same, same)
-    }
+    const same = Date.parse('2024-06-15T12:00:00Z')
+    for (const f of ['b.md', 'a.md', 'c.md']) writeFileSync(join(DOCS_DIR, f), `# ${f}`)
+    stubTimes({ 'a.md': same, 'b.md': same, 'c.md': same })
     const { res, json } = await call('GET', '/api/docs')
     expect(res.statusCode).toBe(200)
     const docs = json() as Array<{ name: string }>

@@ -157,9 +157,13 @@ vi.mock('node:child_process', () => ({
 
 vi.mock('../platform.js', async (orig) => {
   const actual = await orig<typeof import('../platform.js')>()
+  // makeLazyBinResolver must be mocked too, not taken from `actual`: the real
+  // one closes over the real resolveFromPath, so the mock above would not
+  // apply and the test would need tmux/claude on the machine.
   return {
     ...actual,
     resolveFromPath: m.resolveFromPath,
+    makeLazyBinResolver: (name: string) => () => m.resolveFromPath(name),
   }
 })
 

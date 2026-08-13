@@ -81,7 +81,12 @@ async function installMocks(): Promise<void> {
     }
   })
   vi.doMock('node:os', () => ({ homedir: m.homedir }))
-  vi.doMock(join(SRC_DIR, '..', 'platform.js'), () => ({ resolveFromPath: m.resolveFromPath }))
+  vi.doMock(join(SRC_DIR, '..', 'platform.js'), () => ({
+    resolveFromPath: m.resolveFromPath,
+    // liveness.ts only ever resolves tmux, and the mock above ignores the name,
+    // so the lazy resolver just delegates to it.
+    makeLazyBinResolver: () => () => m.resolveFromPath(),
+  }))
   vi.doMock(join(SRC_DIR, '..', 'logger.js'), () => ({
     logger: {
       debug: m.loggerDebug,

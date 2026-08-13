@@ -14,6 +14,26 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { join } from 'node:path'
 
+// CONTROL_PATH is a module-level const: ssh-tmux.ts computes it from
+// controlDir() once, at import. The beforeEach below deletes XDG_RUNTIME_DIR,
+// so every LATER controlDir() call takes the /tmp/marveen-ssh-<uid> branch --
+// and on a host where XDG_RUNTIME_DIR is set in the ambient environment the two
+// disagree, because the const was frozen with the XDG branch already taken.
+//
+// macOS never sets XDG_RUNTIME_DIR, so this was invisible locally. A GitHub
+// ubuntu-latest runner sets XDG_RUNTIME_DIR=/run/user/1001 and the two
+// CONTROL_PATH assertions failed there.
+//
+// vi.hoisted runs before the static imports are evaluated, so clearing the var
+// here makes module-load time and every later call agree on the same branch,
+// on every host. The env-var branch coverage further down still sets and
+// restores the var per test; controlDir() re-reads it on every call.
+//
+// Regression check: XDG_RUNTIME_DIR=/run/user/1001 bun --bun vitest run src/__tests__/ssh-tmux.test.ts
+vi.hoisted(() => {
+  delete process.env.XDG_RUNTIME_DIR
+})
+
 // ---------------------------------------------------------------------------
 // Mocks -- vi.hoisted so the spy fns exist before the hoisted vi.mock factories.
 // ---------------------------------------------------------------------------

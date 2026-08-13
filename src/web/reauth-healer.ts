@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process'
 import { join } from 'node:path'
 import { logger } from '../logger.js'
 import { MAIN_AGENT_ID, PROJECT_ROOT, RESPAWN_ENABLED, APP_TZ } from '../config.js'
-import { resolveFromPath } from '../platform.js'
+import { makeLazyBinResolver } from '../platform.js'
 import { listAgentNames } from './agent-config.js'
 import { isAgentRunning, capturePane, startAgentProcess } from './agent-process.js'
 import { quarantineFleetTokenIfDead } from './claude-credentials-guard.js'
@@ -29,7 +29,7 @@ import { loginSequence, literalKeyArgs, specialKeyArgs } from './tmux-keys.js'
 // do not inject /login into a live conversation autonomously. Production-host
 // only (RESPAWN_ENABLED), like the other recovery loops.
 
-const TMUX = resolveFromPath('tmux')
+const tmuxBin = makeLazyBinResolver('tmux')
 const NOTIFY_SCRIPT = join(PROJECT_ROOT, 'scripts', 'notify.sh')
 
 const PROBE_INTERVAL_MS = 3 * 60 * 1000 // 3 min
@@ -155,7 +155,7 @@ async function sendBestEffortLogin(session: string): Promise<void> {
     const args = step.kind === 'literal' ? literalKeyArgs(session, step.text) : specialKeyArgs(session, step.key)
     if (args) {
       await new Promise<void>((resolve) => {
-        execFile(TMUX, args, { timeout: 5000 }, () => resolve())
+        execFile(tmuxBin(), args, { timeout: 5000 }, () => resolve())
       })
     }
     if (step.delayMs > 0) await sleep(step.delayMs)
@@ -343,7 +343,7 @@ function checkSession(label: string, session: string, isMain: boolean, quiet: bo
 // starts, so the relaunch comes up past the gate.
 async function restartFirstRunGatedAgent(name: string, session: string): Promise<void> {
   await new Promise<void>((resolve) => {
-    execFile(TMUX, ['kill-session', '-t', session], { timeout: 5000 }, () => resolve())
+    execFile(tmuxBin(), ['kill-session', '-t', session], { timeout: 5000 }, () => resolve())
   })
   await sleep(1000)
   try {

@@ -55,6 +55,7 @@ const H = vi.hoisted(() => ({
 
 vi.mock('../platform.js', () => ({
   resolveFromPath: (name: string) => H.tmuxPath,
+  makeLazyBinResolver: (name: string) => () => H.tmuxPath,
 }))
 
 vi.mock('../web/agent-config.js', () => ({

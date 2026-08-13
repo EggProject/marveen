@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir, homedir } from 'node:os'
 import { execFile } from 'node:child_process'
-import { resolveFromPath } from '../platform.js'
+import { makeLazyBinResolver } from '../platform.js'
 import { logger } from '../logger.js'
 import {
   applyRefreshOutcome,
@@ -10,7 +10,7 @@ import {
   type McpListEntry,
 } from '../mcp-list-parser.js'
 
-const CLAUDE = resolveFromPath('claude')
+const claudeBin = makeLazyBinResolver('claude')
 
 function scrubPaths(msg: string): string {
   return scrubPathsBase(msg, homedir())
@@ -95,7 +95,7 @@ export function refreshMcpListCache(): Promise<McpListCache> {
         stderr: string
         execError: Error | null
       }>((resolve, reject) => {
-        execFile(CLAUDE, ['mcp', 'list'], {
+        execFile(claudeBin(), ['mcp', 'list'], {
           cwd: getMcpListWorkingDir(),
           timeout: 30_000,
           encoding: 'utf-8',

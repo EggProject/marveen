@@ -27,6 +27,7 @@ vi.mock('node:child_process', () => ({
 
 vi.mock('../platform.js', () => ({
   resolveFromPath: (name: string) => `/usr/local/bin/${name}`,
+  makeLazyBinResolver: (name: string) => () => `/usr/local/bin/${name}`,
 }))
 
 vi.mock('../logger.js', () => ({

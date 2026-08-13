@@ -109,6 +109,7 @@ vi.mock('../config.js', () => ({
 
 vi.mock('../platform.js', () => ({
   resolveFromPath: () => mocks.resolveFromPathReturn,
+  makeLazyBinResolver: () => () => mocks.resolveFromPathReturn,
 }))
 
 vi.mock('../web/agent-config.js', () => ({
@@ -202,6 +203,25 @@ function unpinHeadless(): void {
   else process.env['DISPLAY'] = savedDisplay
   if (savedWayland === undefined) delete process.env['WAYLAND_DISPLAY']
   else process.env['WAYLAND_DISPLAY'] = savedWayland
+}
+
+/** The mirror of pinHeadless: a host where hostCanInteractiveLogin() returns
+ *  true, so the best-effort /login send-keys actually fires.
+ *
+ *  hostCanInteractiveLogin() is `process.platform === 'darwin' || DISPLAY ||
+ *  WAYLAND_DISPLAY`. Tests that assert send-keys happened used to inherit the
+ *  host's answer: true on a macOS dev box, FALSE on a headless Linux CI runner,
+ *  where the gate silently skipped the whole sequence and the assertions saw
+ *  zero tmux calls. Pinning linux+DISPLAY exercises the same branch on every
+ *  host, and deliberately picks linux rather than darwin so the non-darwin half
+ *  of the gate is the one under test. */
+function pinInteractive(): void {
+  savedPlatform = Object.getOwnPropertyDescriptor(process, 'platform')
+  Object.defineProperty(process, 'platform', { value: 'linux', configurable: true })
+  savedDisplay = process.env['DISPLAY']
+  savedWayland = process.env['WAYLAND_DISPLAY']
+  process.env['DISPLAY'] = ':0'
+  delete process.env['WAYLAND_DISPLAY']
 }
 
 beforeEach(() => {
@@ -318,6 +338,7 @@ describe('sweep: per-agent iteration', () => {
 
 describe('checkSession: sendKeys branch (sub-agent, dead token, canInteractiveLogin)', () => {
   it('runs the scripted /login keystroke sequence against the tmux session', async () => {
+    pinInteractive()
     mocks.listAgentNames.mockReturnValue(['scout'])
     mocks.capturePane.mockReturnValue(DEAD_PANE)
     const mod = await loadModule()
@@ -337,6 +358,7 @@ describe('checkSession: sendKeys branch (sub-agent, dead token, canInteractiveLo
   })
 
   it('handles a zero-delay loginSequence step without sleeping (the step.delayMs <= 0 branch)', async () => {
+    pinInteractive()
     // Mock tmux-keys so loginSequence returns one step with delayMs=0; this
     // hits the `if (step.delayMs > 0)` false branch inside sendBestEffortLogin.
     const tmuxKeys = await import('../web/tmux-keys.js')
