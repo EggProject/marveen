@@ -60,8 +60,11 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
-      - name: Syntax-check prebuilt web assets
-        run: bun run syntax-check
+      # `bun run syntax-check` is deliberately NOT wired in: `bun --check` is
+      # not a real Bun flag, so the script executes web/app.js in a server
+      # runtime and always dies on `window is not defined`. It is a broken gate,
+      # not a passing one. See
+      # docs/needs-to-be-fix/syntax-check-executes-web-bundle.md.
 
       - name: ESLint
         run: bun run lint
