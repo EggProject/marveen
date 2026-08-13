@@ -45,7 +45,10 @@ export default defineConfig({
         statements: 100,
         perFile: true,
       },
-      reporter: ['text', 'html', 'json-summary'],
+      // json-summary + json are both required by the CI coverage PR comment
+      // (davelosert/vitest-coverage-report-action): the summary drives the
+      // totals table, the full json drives the per-file breakdown.
+      reporter: ['text', 'html', 'json-summary', 'json'],
     },
   },
 })

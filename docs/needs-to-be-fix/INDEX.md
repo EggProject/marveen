@@ -1,6 +1,6 @@
 # needs-to-be-fix index
 
-Every bug MD filed in this session. Total count: 165
+Every bug MD filed in this session. Total count: 166
 (`find docs/needs-to-be-fix -name '*.md' | wc -l`).
 
 The original 50 entries below were filed during the first coverage pass.
@@ -53,6 +53,7 @@ dead code, doc issue).
 
 | Bug ID | File:Line | Title | Pinning test path |
 | --- | --- | --- | --- |
+| `ci-eslint-typecheck-baseline` | `eslint.config.js`, `tsconfig.json` | strict ESLint landed with 9933 pre-existing violations, plus 1703 pre-existing `tsc --noEmit` errors; CI `lint` job is red by design | n/a (tooling debt, no runtime defect) |
 | `vault-readvault-missing-entries-fatal` | `src/web/vault.ts:93-96` | `readVault` returns parsed JSON as-is, so any shape that lacks `entries` is fatal on every public call | `src/__tests__/vault.test.ts` |
 | `graph-mail-stat-not-isdir` | `src/graph-mail.ts:105-119` | stat-successful / read-failing `CREDS_PATH` produces an opaque error | `src/__tests__/graph-mail.test.ts` |
 | `prompt-safety-origin-note-tab-strip` | `src/prompt-safety.ts:96-103` | `sanitizeOriginNote` strips tab/newline/NBSP instead of collapsing them | `src/__tests__/prompt-safety.test.ts` |
