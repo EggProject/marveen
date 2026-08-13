@@ -20,6 +20,7 @@ import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from 'vites
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { getPragma } from '../db/sqlite.js'
 
 // --- Sandbox setup -------------------------------------------------------
 
@@ -97,7 +98,7 @@ describe('initIngestDb', () => {
     // meaningful semantics for a private heap-backed store. Use the default
     // path (which lands inside the sandbox) so we can observe the WAL.
     const db = initIngestDb()
-    expect(db.pragma('journal_mode', { simple: true })).toBe('wal')
+    expect(getPragma(db, 'journal_mode')).toBe('wal')
   })
 
   it('creates the incoming_events, agent_messages, poll_offset tables and the two indexes', () => {

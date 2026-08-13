@@ -35,6 +35,18 @@ export function pragma(db: Database, source: string): unknown {
   return db.run(`PRAGMA ${source}`)
 }
 
+// getPragma(...) — read the current value of a PRAGMA. better-sqlite3 had
+// `.pragma(source, { simple: true })` which returned the value directly;
+// bun:sqlite has no equivalent, so we prepare + .get() and read the first
+// column. Used by the test suite to assert on WAL mode / cache size etc.
+export function getPragma(db: Database, source: string): unknown {
+  const row = db.prepare(`PRAGMA ${source}`).get() as Record<string, unknown> | null
+  if (!row) return null
+  // PRAGMA rows use the pragma name as the column key (e.g. `journal_mode`).
+  const value = Object.values(row)[0]
+  return value
+}
+
 // Multi-statement DDL runner. bun:sqlite's `.run()` accepts multi-statement
 // SQL (per the bun docs, including CREATE TRIGGER blocks whose BEGIN bodies
 // contain internal semicolons). We pass the whole block through unchanged.
