@@ -6,6 +6,10 @@ import { defineConfig, configDefaults } from 'vitest/config'
 // defaults; only carve out the e2e directory.
 export default defineConfig({
   test: {
+    // `vi` is referenced in setupFiles without an explicit import (see
+    // test-sandbox-setup.ts). Node-vitest injects it as a global; bun-vitest
+    // does NOT, so we enable globals for cross-runtime compatibility.
+    globals: true,
     exclude: [...configDefaults.exclude, 'tests/smoke/**'],
     // Hard gate: refuse to run inside a live install (see the setup file header
     // for the 2026-07-27 incident this prevents). Runs in every worker before

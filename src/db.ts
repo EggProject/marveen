@@ -1,4 +1,5 @@
-import Database from 'better-sqlite3'
+import { Database, pragma, runScript } from './db/sqlite.js'
+import type { SQLQueryBindings } from './db/sqlite.js'
 import { join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, renameSync, chmodSync, openSync, closeSync } from 'node:fs'
 import { STORE_DIR, DB_FILENAME, ALLOWED_CHAT_ID, OLLAMA_URL, APP_TZ } from './config.js'
@@ -6,18 +7,18 @@ import { getEffectiveSettingValue } from './settings-store.js'
 import { logger } from './logger.js'
 import { TOOL_TIMEOUTS } from './tool-timeouts.js'
 
-let db: Database.Database
+let db: Database
 
 // Lock the DB file and its sidecars (WAL, SHM, rollback journal) down to
-// owner-only. better-sqlite3 opens the main file with the process umask
+// owner-only. bun:sqlite opens the main file with the process umask
 // (typically 0o644), which leaves a TOCTOU window where any other local
-// process -- malicious npm postinstall, rogue shell script, unrelated
+// process -- malicious postinstall, rogue shell script, unrelated
 // tool running under the operator's UID -- can open() it for read BEFORE
 // we narrow the mode. The narrowed chmod would not revoke an already-
 // opened fd. Defense in depth:
-//   (1) Pre-create the main DB file via openSync('wx', 0o600) so better-
-//       sqlite3 inherits the tight mode on fresh installs and the race
-//       window is closed entirely.
+//   (1) Pre-create the main DB file via openSync('wx', 0o600) so the
+//       sqlite handle inherits the tight mode on fresh installs and the
+//       race window is closed entirely.
 //   (2) After Database() + PRAGMA wal, chmod the sidecars (WAL/SHM/
 //       journal) -- they were created during the pragma call at umask.
 //       This path also fixes older installs whose files sit at 0o644.
@@ -44,14 +45,14 @@ export function initDatabase(dbPathOverride?: string): void {
   if (!useOverride) mkdirSync(STORE_DIR, { recursive: true })
   // Idempotent re-init: close a previous handle before opening a new one
   // so repeated calls (tests, hot-reload, recovery paths) do not leak
-  // the old better-sqlite3 fd.
+  // the old sqlite fd.
   if (db) {
     try { db.close() } catch { /* already closed */ }
   }
   const dbPath = useOverride ? dbPathOverride! : join(STORE_DIR, DB_FILENAME)
   // Step 1: close the TOCTOU window on fresh installs. openSync with 'wx'
   // + 0o600 creates the file ONLY if it doesn't exist and sets the strict
-  // mode atomically. better-sqlite3 then opens the existing file rather
+  // mode atomically. The sqlite handle then opens the existing file rather
   // than creating one at the default umask. Skipped only for ':memory:'.
   if (!isMemory && !existsSync(dbPath)) {
     try {
@@ -66,17 +67,17 @@ export function initDatabase(dbPathOverride?: string): void {
     }
   }
   db = new Database(dbPath)
-  db.pragma('journal_mode = WAL')
+  pragma(db, 'journal_mode = WAL')
   // Performance pragmas: safe with WAL, applied after journal_mode is set.
   // cache_size: negative value = kibibytes; -65536 → 64 MB page cache.
   // mmap_size: memory-mapped I/O in bytes; 256 MB. Skipped for :memory: (no file to map).
   // synchronous = NORMAL: safe under WAL (only full-fsync skipped, not the WAL checkpoint).
-  db.pragma('cache_size = -65536')
-  if (!isMemory) db.pragma('mmap_size = 268435456')
-  db.pragma('synchronous = NORMAL')
+  pragma(db, 'cache_size = -65536')
+  if (!isMemory) pragma(db, 'mmap_size = 268435456')
+  pragma(db, 'synchronous = NORMAL')
   if (!isMemory) tightenDbPermissions(dbPath)
 
-  db.exec(`
+  runScript(db, `
     CREATE TABLE IF NOT EXISTS sessions (
       chat_id TEXT PRIMARY KEY,
       session_id TEXT NOT NULL,
@@ -87,12 +88,12 @@ export function initDatabase(dbPathOverride?: string): void {
 
   // Migráció: message_count oszlop hozzáadása meglévő DB-hez
   try {
-    db.exec('ALTER TABLE sessions ADD COLUMN message_count INTEGER NOT NULL DEFAULT 0')
+    runScript(db, 'ALTER TABLE sessions ADD COLUMN message_count INTEGER NOT NULL DEFAULT 0')
   } catch {
     // már létezik, rendben
   }
 
-  db.exec(`
+  runScript(db, `
     CREATE TABLE IF NOT EXISTS memories (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       chat_id TEXT NOT NULL,
@@ -105,7 +106,7 @@ export function initDatabase(dbPathOverride?: string): void {
     )
   `)
 
-  db.exec(`
+  runScript(db, `
     CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
       content,
       content='memories',
@@ -113,24 +114,24 @@ export function initDatabase(dbPathOverride?: string): void {
     )
   `)
 
-  db.exec(`
+  runScript(db, `
     CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
       INSERT INTO memories_fts(rowid, content) VALUES (new.id, new.content);
     END
   `)
-  db.exec(`
+  runScript(db, `
     CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
       INSERT INTO memories_fts(memories_fts, rowid, content) VALUES('delete', old.id, old.content);
     END
   `)
-  db.exec(`
+  runScript(db, `
     CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
       INSERT INTO memories_fts(memories_fts, rowid, content) VALUES('delete', old.id, old.content);
       INSERT INTO memories_fts(rowid, content) VALUES (new.id, new.content);
     END
   `)
 
-  db.exec(`
+  runScript(db, `
     CREATE TABLE IF NOT EXISTS scheduled_tasks (
       id TEXT PRIMARY KEY,
       chat_id TEXT NOT NULL,
@@ -143,10 +144,10 @@ export function initDatabase(dbPathOverride?: string): void {
       created_at INTEGER NOT NULL
     )
   `)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_status_next ON scheduled_tasks(status, next_run)`)
+  runScript(db, `CREATE INDEX IF NOT EXISTS idx_tasks_status_next ON scheduled_tasks(status, next_run)`)
 
   // --- Kanban ---
-  db.exec(`
+  runScript(db, `
     CREATE TABLE IF NOT EXISTS kanban_cards (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
@@ -168,20 +169,20 @@ export function initDatabase(dbPathOverride?: string): void {
   // and updateKanbanCard fail with `table kanban_cards has no column
   // named project` and no card can be saved.
   try {
-    db.exec('ALTER TABLE kanban_cards ADD COLUMN project TEXT')
+    runScript(db, 'ALTER TABLE kanban_cards ADD COLUMN project TEXT')
   } catch {
     // column already exists
   }
   try {
-    db.exec('ALTER TABLE kanban_cards ADD COLUMN parent_id TEXT REFERENCES kanban_cards(id)')
+    runScript(db, 'ALTER TABLE kanban_cards ADD COLUMN parent_id TEXT REFERENCES kanban_cards(id)')
   } catch {
     // column already exists
   }
-  db.exec('CREATE INDEX IF NOT EXISTS idx_kanban_parent ON kanban_cards(parent_id)')
+  runScript(db, 'CREATE INDEX IF NOT EXISTS idx_kanban_parent ON kanban_cards(parent_id)')
   // Migration: add dispatched_at to kanban_cards (kanban -> agent dispatch
   // once-only guard). Older installs created the table without it.
   try {
-    db.exec('ALTER TABLE kanban_cards ADD COLUMN dispatched_at INTEGER')
+    runScript(db, 'ALTER TABLE kanban_cards ADD COLUMN dispatched_at INTEGER')
   } catch {
     // column already exists
   }
@@ -191,7 +192,7 @@ export function initDatabase(dbPathOverride?: string): void {
   try {
     const kcSchema = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='kanban_cards'").get() as { sql: string } | undefined
     if (kcSchema?.sql && !kcSchema.sql.includes("'testing'")) {
-      db.exec(`
+      runScript(db, `
         CREATE TABLE kanban_cards_new (
           id TEXT PRIMARY KEY,
           title TEXT NOT NULL,
@@ -215,30 +216,30 @@ export function initDatabase(dbPathOverride?: string): void {
         DROP TABLE kanban_cards;
         ALTER TABLE kanban_cards_new RENAME TO kanban_cards;
       `)
-      db.exec(`CREATE INDEX IF NOT EXISTS idx_kanban_parent ON kanban_cards(parent_id)`)
-      db.exec(`CREATE INDEX IF NOT EXISTS idx_kanban_status ON kanban_cards(status, archived_at)`)
+      runScript(db, `CREATE INDEX IF NOT EXISTS idx_kanban_parent ON kanban_cards(parent_id)`)
+      runScript(db, `CREATE INDEX IF NOT EXISTS idx_kanban_status ON kanban_cards(status, archived_at)`)
     }
   } catch (err) {
     logger.warn({ err }, 'kanban_cards testing-status migration failed -- continuing')
   }
   // Migration: add agent_id, category, auto_generated columns to memories
   try {
-    db.exec("ALTER TABLE memories ADD COLUMN agent_id TEXT NOT NULL DEFAULT 'marveen'")
+    runScript(db, "ALTER TABLE memories ADD COLUMN agent_id TEXT NOT NULL DEFAULT 'marveen'")
   } catch {
     // column already exists
   }
   try {
-    db.exec("ALTER TABLE memories ADD COLUMN category TEXT NOT NULL DEFAULT 'general' CHECK(category IN ('user_pref','project','feedback','learning','shared','general'))")
+    runScript(db, "ALTER TABLE memories ADD COLUMN category TEXT NOT NULL DEFAULT 'general' CHECK(category IN ('user_pref','project','feedback','learning','shared','general'))")
   } catch {
     // column already exists
   }
   try {
-    db.exec('ALTER TABLE memories ADD COLUMN auto_generated INTEGER NOT NULL DEFAULT 0')
+    runScript(db, 'ALTER TABLE memories ADD COLUMN auto_generated INTEGER NOT NULL DEFAULT 0')
   } catch {
     // column already exists
   }
 
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_memories_agent ON memories(agent_id, category)`)
+  runScript(db, `CREATE INDEX IF NOT EXISTS idx_memories_agent ON memories(agent_id, category)`)
 
   // --- Conversation-continuity ledger (deterministic; P0 2026-06-02) ---
   // A durable ROLLING TRANSCRIPT of every channel turn -- inbound user messages
@@ -252,7 +253,7 @@ export function initDatabase(dbPathOverride?: string): void {
   // chat. Written by the settings.json hooks (UserPromptSubmit capture +
   // PostToolUse outbound). UNIQUE(...) makes inbound capture idempotent; outbound
   // rows carry message_id=NULL so they are never deduped against each other.
-  db.exec(`
+  runScript(db, `
     CREATE TABLE IF NOT EXISTS conversation_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       agent_id TEXT NOT NULL,
@@ -265,7 +266,7 @@ export function initDatabase(dbPathOverride?: string): void {
       UNIQUE(agent_id, chat_id, direction, message_id)
     )
   `)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_convlog_agent ON conversation_log(agent_id, created_at)`)
+  runScript(db, `CREATE INDEX IF NOT EXISTS idx_convlog_agent ON conversation_log(agent_id, created_at)`)
 
   // Migration: hot/warm/cold/shared tier system with an enforced CHECK.
   // Rebuilds the table whenever its current schema doesn't include the
@@ -279,7 +280,7 @@ export function initDatabase(dbPathOverride?: string): void {
       // before the keywords ADD COLUMN ran, so NULL out in that case.
       const cols = db.prepare("PRAGMA table_info(memories)").all() as { name: string }[]
       const keywordsExpr = cols.some(c => c.name === 'keywords') ? 'keywords' : 'NULL'
-      db.exec(`
+      runScript(db, `
         CREATE TABLE memories_new (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           chat_id TEXT NOT NULL,
@@ -314,16 +315,16 @@ export function initDatabase(dbPathOverride?: string): void {
         ALTER TABLE memories_new RENAME TO memories;
       `)
       // Recreate FTS and triggers for new schema (now includes keywords)
-      db.exec(`DROP TABLE IF EXISTS memories_fts`)
-      db.exec(`CREATE VIRTUAL TABLE memories_fts USING fts5(content, keywords, content='memories', content_rowid='id')`)
-      db.exec(`DROP TRIGGER IF EXISTS memories_ai`)
-      db.exec(`DROP TRIGGER IF EXISTS memories_ad`)
-      db.exec(`DROP TRIGGER IF EXISTS memories_au`)
-      db.exec(`CREATE TRIGGER memories_ai AFTER INSERT ON memories BEGIN INSERT INTO memories_fts(rowid, content, keywords) VALUES (new.id, new.content, new.keywords); END`)
-      db.exec(`CREATE TRIGGER memories_ad AFTER DELETE ON memories BEGIN INSERT INTO memories_fts(memories_fts, rowid, content, keywords) VALUES('delete', old.id, old.content, old.keywords); END`)
-      db.exec(`CREATE TRIGGER memories_au AFTER UPDATE ON memories BEGIN INSERT INTO memories_fts(memories_fts, rowid, content, keywords) VALUES('delete', old.id, old.content, old.keywords); INSERT INTO memories_fts(rowid, content, keywords) VALUES (new.id, new.content, new.keywords); END`)
-      db.exec(`INSERT INTO memories_fts(memories_fts) VALUES('rebuild')`)
-      db.exec(`CREATE INDEX IF NOT EXISTS idx_memories_agent ON memories(agent_id, category)`)
+      runScript(db, `DROP TABLE IF EXISTS memories_fts`)
+      runScript(db, `CREATE VIRTUAL TABLE memories_fts USING fts5(content, keywords, content='memories', content_rowid='id')`)
+      runScript(db, `DROP TRIGGER IF EXISTS memories_ai`)
+      runScript(db, `DROP TRIGGER IF EXISTS memories_ad`)
+      runScript(db, `DROP TRIGGER IF EXISTS memories_au`)
+      runScript(db, `CREATE TRIGGER memories_ai AFTER INSERT ON memories BEGIN INSERT INTO memories_fts(rowid, content, keywords) VALUES (new.id, new.content, new.keywords); END`)
+      runScript(db, `CREATE TRIGGER memories_ad AFTER DELETE ON memories BEGIN INSERT INTO memories_fts(memories_fts, rowid, content, keywords) VALUES('delete', old.id, old.content, old.keywords); END`)
+      runScript(db, `CREATE TRIGGER memories_au AFTER UPDATE ON memories BEGIN INSERT INTO memories_fts(memories_fts, rowid, content, keywords) VALUES('delete', old.id, old.content, old.keywords); INSERT INTO memories_fts(rowid, content, keywords) VALUES (new.id, new.content, new.keywords); END`)
+      runScript(db, `INSERT INTO memories_fts(memories_fts) VALUES('rebuild')`)
+      runScript(db, `CREATE INDEX IF NOT EXISTS idx_memories_agent ON memories(agent_id, category)`)
     }
   } catch (err) {
     // Previously this silently swallowed every error which masked the
@@ -337,20 +338,20 @@ export function initDatabase(dbPathOverride?: string): void {
 
   // If the table already has the new schema but no keywords column (edge case)
   try {
-    db.exec('ALTER TABLE memories ADD COLUMN keywords TEXT')
+    runScript(db, 'ALTER TABLE memories ADD COLUMN keywords TEXT')
   } catch {
     // column already exists
   }
 
   // Migration: embedding column for vector search
   try {
-    db.exec('ALTER TABLE memories ADD COLUMN embedding TEXT')
+    runScript(db, 'ALTER TABLE memories ADD COLUMN embedding TEXT')
   } catch {
     // column already exists
   }
 
   // Daily logs table
-  db.exec(`
+  runScript(db, `
     CREATE TABLE IF NOT EXISTS daily_logs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       agent_id TEXT NOT NULL,
@@ -359,11 +360,11 @@ export function initDatabase(dbPathOverride?: string): void {
       created_at INTEGER NOT NULL
     )
   `)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_daily_logs_date ON daily_logs(agent_id, date)`)
+  runScript(db, `CREATE INDEX IF NOT EXISTS idx_daily_logs_date ON daily_logs(agent_id, date)`)
 
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_kanban_status ON kanban_cards(status, archived_at)`)
+  runScript(db, `CREATE INDEX IF NOT EXISTS idx_kanban_status ON kanban_cards(status, archived_at)`)
 
-  db.exec(`
+  runScript(db, `
     CREATE TABLE IF NOT EXISTS kanban_comments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       card_id TEXT NOT NULL,
@@ -372,12 +373,12 @@ export function initDatabase(dbPathOverride?: string): void {
       created_at INTEGER NOT NULL
     )
   `)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_kanban_comments_card ON kanban_comments(card_id)`)
+  runScript(db, `CREATE INDEX IF NOT EXISTS idx_kanban_comments_card ON kanban_comments(card_id)`)
 
   // Status-change audit trail: one row per real status transition so the board
   // can answer "who moved this card, when, from/to status". Written by
   // moveKanbanCard only when the status actually changes.
-  db.exec(`
+  runScript(db, `
     CREATE TABLE IF NOT EXISTS kanban_card_events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       card_id TEXT NOT NULL,
@@ -387,14 +388,14 @@ export function initDatabase(dbPathOverride?: string): void {
       created_at INTEGER NOT NULL
     )
   `)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_kanban_events_card ON kanban_card_events(card_id, created_at)`)
+  runScript(db, `CREATE INDEX IF NOT EXISTS idx_kanban_events_card ON kanban_card_events(card_id, created_at)`)
 
   // --- Kanban labels (tags) -----------------------------------------------
   // Labels are a separate registry (not hardcoded per-card strings) so the
   // same label can be reused across many cards and recolored in one place.
   // The colour itself is validated against the configured palette
   // (KANBAN_LABEL_COLORS) at the route layer, not hardcoded here.
-  db.exec(`
+  runScript(db, `
     CREATE TABLE IF NOT EXISTS labels (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -402,7 +403,7 @@ export function initDatabase(dbPathOverride?: string): void {
       created_at INTEGER NOT NULL
     )
   `)
-  db.exec(`
+  runScript(db, `
     CREATE TABLE IF NOT EXISTS kanban_card_labels (
       card_id TEXT NOT NULL,
       label_id TEXT NOT NULL,
@@ -410,10 +411,10 @@ export function initDatabase(dbPathOverride?: string): void {
       PRIMARY KEY (card_id, label_id)
     )
   `)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_card_labels_label ON kanban_card_labels(label_id)`)
+  runScript(db, `CREATE INDEX IF NOT EXISTS idx_card_labels_label ON kanban_card_labels(label_id)`)
 
   // --- Agent Messages ---
-  db.exec(`
+  runScript(db, `
     CREATE TABLE IF NOT EXISTS agent_messages (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       from_agent TEXT NOT NULL,
@@ -426,10 +427,10 @@ export function initDatabase(dbPathOverride?: string): void {
       completed_at INTEGER
     )
   `)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_agent_messages_status ON agent_messages(status, to_agent)`)
+  runScript(db, `CREATE INDEX IF NOT EXISTS idx_agent_messages_status ON agent_messages(status, to_agent)`)
   // Composite index for thread-listing queries that filter on (from_agent, to_agent) without a status
   // predicate -- the status index above does not cover these and causes full table scans at scale.
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_agent_messages_thread ON agent_messages(from_agent, to_agent, created_at)`)
+  runScript(db, `CREATE INDEX IF NOT EXISTS idx_agent_messages_thread ON agent_messages(from_agent, to_agent, created_at)`)
   // Card 06f062e4: the bus has no sender authentication -- from_agent is
   // self-declared and every sub-agent spawned under a parent shares that
   // parent's from_agent string, invisibly to the parent session and its
@@ -444,7 +445,7 @@ export function initDatabase(dbPathOverride?: string): void {
   // to go on. Self-declared, so it's an attributability aid, not a trust
   // boundary -- do not treat a present origin_note as proof of anything.
   try {
-    db.exec('ALTER TABLE agent_messages ADD COLUMN origin_note TEXT')
+    runScript(db, 'ALTER TABLE agent_messages ADD COLUMN origin_note TEXT')
   } catch {
     // column already exists
   }
@@ -452,9 +453,9 @@ export function initDatabase(dbPathOverride?: string): void {
   // trace_id: root trace identifier spanning an entire agent chain (e.g. morning-chain).
   // span_id: this message's own span identifier (nanoid).
   // parent_span_id: sender's span_id -- links child back to parent in the waterfall.
-  try { db.exec('ALTER TABLE agent_messages ADD COLUMN trace_id TEXT') } catch { /* exists */ }
-  try { db.exec('ALTER TABLE agent_messages ADD COLUMN span_id TEXT') } catch { /* exists */ }
-  try { db.exec('ALTER TABLE agent_messages ADD COLUMN parent_span_id TEXT') } catch { /* exists */ }
+  try { runScript(db, 'ALTER TABLE agent_messages ADD COLUMN trace_id TEXT') } catch { /* exists */ }
+  try { runScript(db, 'ALTER TABLE agent_messages ADD COLUMN span_id TEXT') } catch { /* exists */ }
+  try { runScript(db, 'ALTER TABLE agent_messages ADD COLUMN parent_span_id TEXT') } catch { /* exists */ }
 
   // INVARIANT: a row that says 'delivered' must carry a delivered_at.
   //
@@ -474,7 +475,7 @@ export function initDatabase(dbPathOverride?: string): void {
   // The row gets a timestamp AND -- if nothing else explains it -- a marker
   // saying it was closed without ever being delivered, so the distinction
   // survives in the data instead of in someone's memory.
-  db.exec(`
+  runScript(db, `
     CREATE TRIGGER IF NOT EXISTS agent_messages_delivered_needs_ts
     AFTER UPDATE OF status ON agent_messages
     FOR EACH ROW WHEN NEW.status = 'delivered' AND NEW.delivered_at IS NULL
@@ -495,13 +496,13 @@ export function initDatabase(dbPathOverride?: string): void {
   // segment keeps its case -- it is the peer's namespace). Idempotent: an
   // already-lowercase prefix compares equal and is skipped, so this is a
   // safe no-op after the first run and on fresh installs.
-  db.exec(`
+  runScript(db, `
     UPDATE agent_messages
        SET from_agent = lower(substr(from_agent, 1, instr(from_agent, '/') - 1)) || substr(from_agent, instr(from_agent, '/'))
      WHERE instr(from_agent, '/') > 0
        AND substr(from_agent, 1, instr(from_agent, '/') - 1) <> lower(substr(from_agent, 1, instr(from_agent, '/') - 1))
   `)
-  db.exec(`
+  runScript(db, `
     UPDATE agent_messages
        SET to_agent = lower(substr(to_agent, 1, instr(to_agent, '/') - 1)) || substr(to_agent, instr(to_agent, '/'))
      WHERE instr(to_agent, '/') > 0
@@ -509,7 +510,7 @@ export function initDatabase(dbPathOverride?: string): void {
   `)
 
   // --- Pending Channel Requests (Slack channel opt-in workflow) ---
-  db.exec(`
+  runScript(db, `
     CREATE TABLE IF NOT EXISTS pending_channel_requests (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       agent TEXT NOT NULL,
@@ -521,14 +522,14 @@ export function initDatabase(dbPathOverride?: string): void {
       status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','denied'))
     )
   `)
-  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_pcr_agent_channel ON pending_channel_requests(agent, channel_id) WHERE status = 'pending'`)
-  try { db.exec('ALTER TABLE pending_channel_requests ADD COLUMN resolved_at INTEGER') } catch { /* already exists */ }
+  runScript(db, `CREATE UNIQUE INDEX IF NOT EXISTS idx_pcr_agent_channel ON pending_channel_requests(agent, channel_id) WHERE status = 'pending'`)
+  try { runScript(db, 'ALTER TABLE pending_channel_requests ADD COLUMN resolved_at INTEGER') } catch { /* already exists */ }
 
   // --- Task Run History ---
   // Log every scheduled-task firing so the dashboard overview's "tasksToday"
   // survives dashboard restarts. Replaces the old store/task-run-history.json
   // which had a plain read-modify-write race under concurrent/restart.
-  db.exec(`
+  runScript(db, `
     CREATE TABLE IF NOT EXISTS task_runs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
@@ -536,9 +537,9 @@ export function initDatabase(dbPathOverride?: string): void {
       ts INTEGER NOT NULL
     )
   `)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_task_runs_ts ON task_runs(ts)`)
+  runScript(db, `CREATE INDEX IF NOT EXISTS idx_task_runs_ts ON task_runs(ts)`)
   // Migration: add status column to task_runs (introduced 2026-06-13)
-  try { db.exec(`ALTER TABLE task_runs ADD COLUMN status TEXT NOT NULL DEFAULT 'fired'`) } catch { /* already present */ }
+  try { runScript(db, `ALTER TABLE task_runs ADD COLUMN status TEXT NOT NULL DEFAULT 'fired'`) } catch { /* already present */ }
 
   // --- Pending Scheduled Task Retries ---
   // Busy-skipped scheduled tasks used to live in an in-memory Map. On a
@@ -551,7 +552,7 @@ export function initDatabase(dbPathOverride?: string): void {
   // alerting on concurrent ticks. The scheduler itself never abandons:
   // it keeps retrying until the session frees up or the operator
   // cancels from the UI.
-  db.exec(`
+  runScript(db, `
     CREATE TABLE IF NOT EXISTS pending_task_retries (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       task_name TEXT NOT NULL,
@@ -564,9 +565,9 @@ export function initDatabase(dbPathOverride?: string): void {
       UNIQUE(task_name, agent_name)
     )
   `)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_pending_retries_first_attempt ON pending_task_retries(first_attempt)`)
+  runScript(db, `CREATE INDEX IF NOT EXISTS idx_pending_retries_first_attempt ON pending_task_retries(first_attempt)`)
 
-  db.exec(`
+  runScript(db, `
     CREATE TABLE IF NOT EXISTS background_tasks (
       id TEXT PRIMARY KEY,
       agent_id TEXT NOT NULL,
@@ -578,10 +579,10 @@ export function initDatabase(dbPathOverride?: string): void {
       output TEXT
     )
   `)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_bg_tasks_agent ON background_tasks(agent_id, status)`)
+  runScript(db, `CREATE INDEX IF NOT EXISTS idx_bg_tasks_agent ON background_tasks(agent_id, status)`)
 
   // --- Token Usage Monitoring ---
-  db.exec(`
+  runScript(db, `
     CREATE TABLE IF NOT EXISTS token_usage (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       agent TEXT NOT NULL,
@@ -599,27 +600,27 @@ export function initDatabase(dbPathOverride?: string): void {
       project TEXT
     )
   `)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_token_usage_agent ON token_usage(agent)`)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_token_usage_ts ON token_usage(timestamp)`)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_token_usage_agent_ts ON token_usage(agent, timestamp)`)
+  runScript(db, `CREATE INDEX IF NOT EXISTS idx_token_usage_agent ON token_usage(agent)`)
+  runScript(db, `CREATE INDEX IF NOT EXISTS idx_token_usage_ts ON token_usage(timestamp)`)
+  runScript(db, `CREATE INDEX IF NOT EXISTS idx_token_usage_agent_ts ON token_usage(agent, timestamp)`)
   // Migrations for columns added after initial release
-  try { db.exec('ALTER TABLE token_usage ADD COLUMN thinking_tokens INTEGER NOT NULL DEFAULT 0') } catch { /* already exists */ }
-  try { db.exec('ALTER TABLE token_usage ADD COLUMN model TEXT') } catch { /* already exists */ }
+  try { runScript(db, 'ALTER TABLE token_usage ADD COLUMN thinking_tokens INTEGER NOT NULL DEFAULT 0') } catch { /* already exists */ }
+  try { runScript(db, 'ALTER TABLE token_usage ADD COLUMN model TEXT') } catch { /* already exists */ }
 
   // Deduplicate existing rows before creating unique index
   try {
-    db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_token_usage_dedup ON token_usage(agent, session_id, timestamp, input_tokens, output_tokens)`)
+    runScript(db, `CREATE UNIQUE INDEX IF NOT EXISTS idx_token_usage_dedup ON token_usage(agent, session_id, timestamp, input_tokens, output_tokens)`)
   } catch {
-    db.exec(`
+    runScript(db, `
       DELETE FROM token_usage WHERE id NOT IN (
         SELECT MIN(id) FROM token_usage
         GROUP BY agent, session_id, timestamp, input_tokens, output_tokens
       )
     `)
-    db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_token_usage_dedup ON token_usage(agent, session_id, timestamp, input_tokens, output_tokens)`)
+    runScript(db, `CREATE UNIQUE INDEX IF NOT EXISTS idx_token_usage_dedup ON token_usage(agent, session_id, timestamp, input_tokens, output_tokens)`)
   }
 
-  db.exec(`
+  runScript(db, `
     CREATE TABLE IF NOT EXISTS token_usage_cursors (
       file_path TEXT PRIMARY KEY,
       last_line INTEGER NOT NULL DEFAULT 0,
@@ -628,7 +629,7 @@ export function initDatabase(dbPathOverride?: string): void {
   `)
 
   // --- Idea Box ---
-  db.exec(`
+  runScript(db, `
     CREATE TABLE IF NOT EXISTS idea_box (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
@@ -641,14 +642,14 @@ export function initDatabase(dbPathOverride?: string): void {
       updated_at INTEGER NOT NULL
     )
   `)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_idea_box_status ON idea_box(status)`)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_idea_box_category ON idea_box(category)`)
+  runScript(db, `CREATE INDEX IF NOT EXISTS idx_idea_box_status ON idea_box(status)`)
+  runScript(db, `CREATE INDEX IF NOT EXISTS idx_idea_box_category ON idea_box(category)`)
   // impact/effort scoring -- added after initial release; safe ALTER on existing DBs
-  try { db.exec('ALTER TABLE idea_box ADD COLUMN impact INTEGER') } catch { /* already exists */ }
-  try { db.exec('ALTER TABLE idea_box ADD COLUMN effort INTEGER') } catch { /* already exists */ }
+  try { runScript(db, 'ALTER TABLE idea_box ADD COLUMN impact INTEGER') } catch { /* already exists */ }
+  try { runScript(db, 'ALTER TABLE idea_box ADD COLUMN effort INTEGER') } catch { /* already exists */ }
 
   // --- Idea Comments ---
-  db.exec(`
+  runScript(db, `
     CREATE TABLE IF NOT EXISTS idea_comments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       idea_id TEXT NOT NULL,
@@ -657,10 +658,10 @@ export function initDatabase(dbPathOverride?: string): void {
       created_at INTEGER NOT NULL
     )
   `)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_idea_comments_idea ON idea_comments(idea_id)`)
+  runScript(db, `CREATE INDEX IF NOT EXISTS idx_idea_comments_idea ON idea_comments(idea_id)`)
 
   // --- Idea Status Log ---
-  db.exec(`
+  runScript(db, `
     CREATE TABLE IF NOT EXISTS idea_status_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       idea_id TEXT NOT NULL,
@@ -671,10 +672,10 @@ export function initDatabase(dbPathOverride?: string): void {
       created_at INTEGER NOT NULL
     )
   `)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_idea_status_log_idea ON idea_status_log(idea_id, created_at)`)
+  runScript(db, `CREATE INDEX IF NOT EXISTS idx_idea_status_log_idea ON idea_status_log(idea_id, created_at)`)
 
   // --- Tool Call Log (auto-recorder) ---
-  db.exec(`
+  runScript(db, `
     CREATE TABLE IF NOT EXISTS tool_call_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       session_id TEXT NOT NULL,
@@ -684,16 +685,16 @@ export function initDatabase(dbPathOverride?: string): void {
       created_at INTEGER NOT NULL
     )
   `)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_tool_log_session ON tool_call_log(session_id, created_at)`)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_tool_log_ts ON tool_call_log(created_at)`)
+  runScript(db, `CREATE INDEX IF NOT EXISTS idx_tool_log_session ON tool_call_log(session_id, created_at)`)
+  runScript(db, `CREATE INDEX IF NOT EXISTS idx_tool_log_ts ON tool_call_log(created_at)`)
   // Idempotent column additions -- guard with PRAGMA so second run does not error.
   const toolLogCols = (db.prepare('PRAGMA table_info(tool_call_log)').all() as { name: string }[]).map(r => r.name)
-  if (!toolLogCols.includes('agent_id'))    db.exec('ALTER TABLE tool_call_log ADD COLUMN agent_id TEXT')
-  if (!toolLogCols.includes('trace_id'))    db.exec('ALTER TABLE tool_call_log ADD COLUMN trace_id TEXT')
-  if (!toolLogCols.includes('duration_ms')) db.exec('ALTER TABLE tool_call_log ADD COLUMN duration_ms INTEGER')
+  if (!toolLogCols.includes('agent_id'))    runScript(db, 'ALTER TABLE tool_call_log ADD COLUMN agent_id TEXT')
+  if (!toolLogCols.includes('trace_id'))    runScript(db, 'ALTER TABLE tool_call_log ADD COLUMN trace_id TEXT')
+  if (!toolLogCols.includes('duration_ms')) runScript(db, 'ALTER TABLE tool_call_log ADD COLUMN duration_ms INTEGER')
 
   // --- Skill Usage Log (persistent, no prune -- feeds dream-engine skill health) ---
-  db.exec(`
+  runScript(db, `
     CREATE TABLE IF NOT EXISTS skill_usage (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       agent_id TEXT NOT NULL,
@@ -703,14 +704,14 @@ export function initDatabase(dbPathOverride?: string): void {
       created_at INTEGER NOT NULL
     )
   `)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_skill_usage_agent ON skill_usage(agent_id, created_at)`)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_skill_usage_skill ON skill_usage(skill_name, created_at)`)
+  runScript(db, `CREATE INDEX IF NOT EXISTS idx_skill_usage_agent ON skill_usage(agent_id, created_at)`)
+  runScript(db, `CREATE INDEX IF NOT EXISTS idx_skill_usage_skill ON skill_usage(skill_name, created_at)`)
 
   // --- Config Change Log (audit trail for /api/settings writes) ---
   // Background-only: no UI surfaces this table yet (product decision). For
   // secret settings, callers must pass null for old_value/new_value -- this
   // table only ever holds plaintext for non-secret registry entries.
-  db.exec(`
+  runScript(db, `
     CREATE TABLE IF NOT EXISTS config_change_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       key TEXT NOT NULL,
@@ -720,14 +721,14 @@ export function initDatabase(dbPathOverride?: string): void {
       created_at INTEGER NOT NULL
     )
   `)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_config_change_log_key ON config_change_log(key, created_at)`)
+  runScript(db, `CREATE INDEX IF NOT EXISTS idx_config_change_log_key ON config_change_log(key, created_at)`)
 
   // --- Store File Audit (fs-watch events on store/) ---
   // Records every write/rename in the store/ directory. Content is NEVER
   // stored -- only path, event type and file size. Sensitive files
   // (.dashboard-token, vault.json, .vault-key) are flagged so the UI can
   // render them without leaking values.
-  db.exec(`
+  runScript(db, `
     CREATE TABLE IF NOT EXISTS store_file_audit (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       rel_path TEXT NOT NULL,
@@ -738,9 +739,9 @@ export function initDatabase(dbPathOverride?: string): void {
       created_at INTEGER NOT NULL
     )
   `)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_store_file_audit_ts ON store_file_audit(created_at)`)
+  runScript(db, `CREATE INDEX IF NOT EXISTS idx_store_file_audit_ts ON store_file_audit(created_at)`)
   // Migration: add agent column to installs that created the table before this column existed.
-  try { db.exec(`ALTER TABLE store_file_audit ADD COLUMN agent TEXT`) } catch { /* column already exists */ }
+  try { runScript(db, `ALTER TABLE store_file_audit ADD COLUMN agent TEXT`) } catch { /* column already exists */ }
 
   // --- CostOps (local cost ledger) ---
   // Read-mostly, FOCUS-inspired. cost_sources = provider/subscription origin,
@@ -752,7 +753,7 @@ export function initDatabase(dbPathOverride?: string): void {
   // a dead, unused second source of truth. Removed rather than wired up, since the
   // config file already covers this fully and a DB table would just be a sync burden
   // for no benefit.
-  db.exec(`
+  runScript(db, `
     CREATE TABLE IF NOT EXISTS cost_sources (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -766,7 +767,7 @@ export function initDatabase(dbPathOverride?: string): void {
       updated_at INTEGER NOT NULL
     )
   `)
-  db.exec(`
+  runScript(db, `
     CREATE TABLE IF NOT EXISTS cost_line_items (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       source_id TEXT NOT NULL REFERENCES cost_sources(id),
@@ -787,11 +788,11 @@ export function initDatabase(dbPathOverride?: string): void {
       created_at INTEGER NOT NULL
     )
   `)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_cost_line_items_period ON cost_line_items(charge_period_start, charge_period_end)`)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_cost_line_items_source ON cost_line_items(source_id)`)
+  runScript(db, `CREATE INDEX IF NOT EXISTS idx_cost_line_items_period ON cost_line_items(charge_period_start, charge_period_end)`)
+  runScript(db, `CREATE INDEX IF NOT EXISTS idx_cost_line_items_source ON cost_line_items(source_id)`)
 
   // --- Vault SSH Keys (shared pool) ---
-  db.exec(`
+  runScript(db, `
     CREATE TABLE IF NOT EXISTS vault_ssh_keys (
       id TEXT PRIMARY KEY,
       label TEXT NOT NULL,
@@ -803,10 +804,10 @@ export function initDatabase(dbPathOverride?: string): void {
       created_at INTEGER NOT NULL
     )
   `)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_vault_ssh_keys_label ON vault_ssh_keys(label)`)
+  runScript(db, `CREATE INDEX IF NOT EXISTS idx_vault_ssh_keys_label ON vault_ssh_keys(label)`)
 
   // --- Vault SSH Servers ---
-  db.exec(`
+  runScript(db, `
     CREATE TABLE IF NOT EXISTS vault_ssh_servers (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -819,7 +820,7 @@ export function initDatabase(dbPathOverride?: string): void {
       updated_at INTEGER NOT NULL
     )
   `)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_vault_ssh_servers_name ON vault_ssh_servers(name)`)
+  runScript(db, `CREATE INDEX IF NOT EXISTS idx_vault_ssh_servers_name ON vault_ssh_servers(name)`)
   // Migrations for installs that ran earlier schema versions. MUST run before
   // the ssh_key_id index below: on an install where vault_ssh_servers already
   // existed (pre-dating this column), CREATE TABLE IF NOT EXISTS above is a
@@ -829,15 +830,15 @@ export function initDatabase(dbPathOverride?: string): void {
   // Drop legacy per-server key columns that are no longer written or read.
   // On older installs these were added via ALTER TABLE; fresh installs never had them.
   // SQLite 3.35+ is required; try-catch makes this a no-op on either scenario.
-  try { db.exec('ALTER TABLE vault_ssh_servers DROP COLUMN key_type') } catch { /* column absent or SQLite pre-3.35 */ }
-  try { db.exec('ALTER TABLE vault_ssh_servers DROP COLUMN fingerprint') } catch { /* column absent or SQLite pre-3.35 */ }
-  try { db.exec('ALTER TABLE vault_ssh_servers DROP COLUMN vault_key_id') } catch { /* column absent or SQLite pre-3.35 */ }
-  try { db.exec('ALTER TABLE vault_ssh_servers DROP COLUMN key_expires_at') } catch { /* column absent or SQLite pre-3.35 */ }
-  try { db.exec('ALTER TABLE vault_ssh_servers ADD COLUMN ssh_key_id TEXT REFERENCES vault_ssh_keys(id)') } catch { /* already exists */ }
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_vault_ssh_servers_key ON vault_ssh_servers(ssh_key_id)`)
+  try { runScript(db, 'ALTER TABLE vault_ssh_servers DROP COLUMN key_type') } catch { /* column absent or SQLite pre-3.35 */ }
+  try { runScript(db, 'ALTER TABLE vault_ssh_servers DROP COLUMN fingerprint') } catch { /* column absent or SQLite pre-3.35 */ }
+  try { runScript(db, 'ALTER TABLE vault_ssh_servers DROP COLUMN vault_key_id') } catch { /* column absent or SQLite pre-3.35 */ }
+  try { runScript(db, 'ALTER TABLE vault_ssh_servers DROP COLUMN key_expires_at') } catch { /* column absent or SQLite pre-3.35 */ }
+  try { runScript(db, 'ALTER TABLE vault_ssh_servers ADD COLUMN ssh_key_id TEXT REFERENCES vault_ssh_keys(id)') } catch { /* already exists */ }
+  runScript(db, `CREATE INDEX IF NOT EXISTS idx_vault_ssh_servers_key ON vault_ssh_servers(ssh_key_id)`)
 
   // --- Approvals (HITL) ---
-  db.exec(`
+  runScript(db, `
     CREATE TABLE IF NOT EXISTS approvals (
       id TEXT PRIMARY KEY,
       agent_id TEXT NOT NULL,
@@ -853,8 +854,8 @@ export function initDatabase(dbPathOverride?: string): void {
       resolved_by TEXT
     )
   `)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status, requested_at)`)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_approvals_agent ON approvals(agent_id, requested_at)`)
+  runScript(db, `CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status, requested_at)`)
+  runScript(db, `CREATE INDEX IF NOT EXISTS idx_approvals_agent ON approvals(agent_id, requested_at)`)
 
   // --- Dashboard browser login (OPTIONAL; the bearer token stays primary) ---
   // Zero rows here = exactly the token-only behavior. A row is created only when
@@ -862,7 +863,7 @@ export function initDatabase(dbPathOverride?: string): void {
   // credentials -- the byte-copy-fresh-install rule forbids any default user.
   // password_hash is a PHC string (see web/password-hash.ts). username is
   // UNIQUE COLLATE NOCASE so logins are case-insensitive.
-  db.exec(`
+  runScript(db, `
     CREATE TABLE IF NOT EXISTS dashboard_users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       username TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -876,7 +877,7 @@ export function initDatabase(dbPathOverride?: string): void {
   // Telegram chats to Claude session ids. Only sha256(session_id) is stored, so
   // a DB leak does not hand out live sessions. Rows survive dashboard restarts;
   // the in-memory cache in web/auth-sessions.ts rehydrates from here lazily.
-  db.exec(`
+  runScript(db, `
     CREATE TABLE IF NOT EXISTS auth_sessions (
       id_hash TEXT PRIMARY KEY,
       user_id INTEGER NOT NULL,
@@ -887,7 +888,7 @@ export function initDatabase(dbPathOverride?: string): void {
       remote_note TEXT
     )
   `)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id)`)
+  runScript(db, `CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id)`)
 
   // Per-device dashboard keys (AUTHPLAN1 #1). One row per enrolled device
   // (Bridge install, phone) so a single device can be revoked without rotating
@@ -895,7 +896,7 @@ export function initDatabase(dbPathOverride?: string): void {
   // shown once at mint time. expires_at is OPT-IN (null = lives until revoked;
   // a rarely used phone must not die silently). Zero rows = feature off; the
   // auth gate falls through exactly as before, so fresh installs see no change.
-  db.exec(`
+  runScript(db, `
     CREATE TABLE IF NOT EXISTS device_keys (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       key_hash TEXT NOT NULL UNIQUE,
@@ -909,7 +910,7 @@ export function initDatabase(dbPathOverride?: string): void {
   // Bridge pairing (AUTHPLAN1 #2): links a device key to the SSH enrollment's
   // marveen-remote:<uuid> so revoking the key can drop the authorized_keys
   // line in the same step. Null for keys minted outside the pairing flow.
-  try { db.exec(`ALTER TABLE device_keys ADD COLUMN install_id TEXT`) } catch { /* column already exists */ }
+  try { runScript(db, `ALTER TABLE device_keys ADD COLUMN install_id TEXT`) } catch { /* column already exists */ }
 
   // --- OTel Distributed Tracing (card def5a189) ---
   // SQLite-native span store. No external OTel SDK: spans are written via
@@ -923,7 +924,7 @@ export function initDatabase(dbPathOverride?: string): void {
   // native tool_use_id (per-call span) -- a DIFFERENT, narrower concept. The
   // waterfall UI joins otel_spans (inter-agent latency) with tool_call_log
   // (intra-agent tool timing) via agent_id + time overlap.
-  db.exec(`
+  runScript(db, `
     CREATE TABLE IF NOT EXISTS otel_spans (
       trace_id        TEXT NOT NULL,
       span_id         TEXT NOT NULL,
@@ -937,8 +938,8 @@ export function initDatabase(dbPathOverride?: string): void {
       PRIMARY KEY (trace_id, span_id)
     )
   `)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_otel_spans_trace ON otel_spans(trace_id, start_ms)`)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_otel_spans_agent ON otel_spans(agent_id, start_ms)`)
+  runScript(db, `CREATE INDEX IF NOT EXISTS idx_otel_spans_trace ON otel_spans(trace_id, start_ms)`)
+  runScript(db, `CREATE INDEX IF NOT EXISTS idx_otel_spans_agent ON otel_spans(agent_id, start_ms)`)
 
   // One-shot migration from the old JSON file (which had a read-modify-write
   // race). Import rows if they exist, then rename the file so we don't keep
@@ -974,7 +975,7 @@ function migrateTaskRunsFromJson(): void {
   } catch { /* corrupt file, skip */ }
 }
 
-export function getDb(): Database.Database {
+export function getDb(): Database {
   return db
 }
 
@@ -996,7 +997,7 @@ export function setSession(chatId: string, sessionId: string, messageCount = 0):
 
 export function incrementSessionCount(chatId: string): number {
   db.prepare('UPDATE sessions SET message_count = message_count + 1 WHERE chat_id = ?').run(chatId)
-  const row = db.prepare('SELECT message_count FROM sessions WHERE chat_id = ?').get(chatId) as { message_count: number } | undefined
+  const row = db.prepare('SELECT message_count FROM sessions WHERE chat_id = ?').get(chatId ?? undefined) as { message_count: number } | undefined
   return row?.message_count ?? 0
 }
 
@@ -1360,7 +1361,7 @@ export function updateMemory(id: number, content: string, category?: string, age
   const before = db.prepare('SELECT agent_id, category FROM memories WHERE id = ?').get(id) as
     { agent_id: string | null; category: string | null } | undefined
   const sets: string[] = ['content = ?', 'accessed_at = ?']
-  const params: unknown[] = [content, now]
+  const params: SQLQueryBindings[] = [content, now]
   if (category) { sets.push('category = ?'); params.push(category) }
   if (agentId) { sets.push('agent_id = ?'); params.push(agentId) }
   if (keywords !== undefined) { sets.push('keywords = ?'); params.push(keywords) }
@@ -1535,7 +1536,7 @@ export function getBackgroundTasks(agentId?: string, includeFinished = false): B
 }
 
 export function getBackgroundTask(id: string): BackgroundTask | undefined {
-  return db.prepare('SELECT * FROM background_tasks WHERE id = ?').get(id) as BackgroundTask | undefined
+  return db.prepare('SELECT * FROM background_tasks WHERE id = ?').get(id ?? undefined) as BackgroundTask | undefined
 }
 
 export function countRunningBackgroundTasks(agentId: string): number {
@@ -1673,7 +1674,7 @@ export function listKanbanCardsSummary(): { status: string; title: string; assig
 }
 
 export function getKanbanCard(id: string): KanbanCard | undefined {
-  return db.prepare('SELECT rowid AS seq, * FROM kanban_cards WHERE id = ?').get(id) as KanbanCard | undefined
+  return db.prepare('SELECT rowid AS seq, * FROM kanban_cards WHERE id = ?').get(id ?? undefined) as KanbanCard | undefined
 }
 
 export function createKanbanCard(card: {
@@ -1723,7 +1724,7 @@ export function moveKanbanCard(id: string, status: KanbanCard['status'], sortOrd
   const now = Math.floor(Date.now() / 1000)
   // Read the previous status first so we only record an audit event on a real
   // status transition (not a pure sort_order reorder within the same column).
-  const prev = (db.prepare('SELECT status FROM kanban_cards WHERE id=?').get(id) as { status: string } | undefined)?.status
+  const prev = (db.prepare('SELECT status FROM kanban_cards WHERE id=?').get(id ?? undefined) as { status: string } | undefined)?.status
   const changed = db.prepare(
     'UPDATE kanban_cards SET status=?, sort_order=?, updated_at=? WHERE id=?'
   ).run(status, sortOrder, now, id).changes > 0
@@ -1776,7 +1777,7 @@ export function listArchivedKanbanCards(opts: {
     SELECT DISTINCT kc.id, kc.title, kc.status, kc.project, kc.priority, kc.assignee, kc.archived_at, kc.updated_at
     FROM kanban_cards kc
   `
-  const params: unknown[] = []
+  const params: SQLQueryBindings[] = []
   if (label) {
     sql += `
       JOIN kanban_card_labels kcl ON kcl.card_id = kc.id
@@ -1815,7 +1816,7 @@ export function deleteKanbanCard(id: string): boolean {
   //      (FK: kanban_cards.parent_id). Setting parent_id = NULL keeps the
   //      children alive as root-level cards rather than leaving them with a
   //      dangling reference. FK enforcement is currently OFF by default
-  //      (better-sqlite3 default), but the dangling parent_id is still a
+  //      (bun:sqlite default), but the dangling parent_id is still a
   //      data bug -- orphaned children do not appear under any parent and
   //      are invisible in hierarchy views.
   //   4. Delete the card itself.
@@ -1863,7 +1864,7 @@ export function getKanbanSeqByIdPrefix(prefix: string): number | null {
 export function findActiveKanbanCardByTitle(title: string): KanbanCard | undefined {
   return db.prepare(
     'SELECT rowid AS seq, * FROM kanban_cards WHERE title = ? AND archived_at IS NULL LIMIT 1'
-  ).get(title) as KanbanCard | undefined
+  ).get(title ?? undefined) as KanbanCard | undefined
 }
 
 // Move the first active kanban card whose title equals `taskName` to the
@@ -1905,7 +1906,7 @@ export function listLabels(): Label[] {
 }
 
 export function getLabel(id: string): Label | undefined {
-  return db.prepare('SELECT * FROM labels WHERE id = ?').get(id) as Label | undefined
+  return db.prepare('SELECT * FROM labels WHERE id = ?').get(id ?? undefined) as Label | undefined
 }
 
 export function createLabel(label: { id: string; name: string; color: string }): Label {
@@ -2306,7 +2307,7 @@ export function countTaskRunsBetween(fromTs: number, toTs?: number): number {
 }
 
 export function getAgentMessage(id: number): AgentMessage | undefined {
-  return db.prepare('SELECT * FROM agent_messages WHERE id = ?').get(id) as AgentMessage | undefined
+  return db.prepare('SELECT * FROM agent_messages WHERE id = ?').get(id ?? undefined) as AgentMessage | undefined
 }
 
 export function getActiveScheduledTaskCount(): { count: number; nextRun: number | null } {
@@ -2400,7 +2401,7 @@ export function listPendingTaskRetries(): PendingTaskRetryRow[] {
 export function getPendingTaskRetry(taskName: string, agentName: string): PendingTaskRetryRow | undefined {
   return db
     .prepare('SELECT * FROM pending_task_retries WHERE task_name = ? AND agent_name = ?')
-    .get(taskName, agentName) as PendingTaskRetryRow | undefined
+    .get(taskName, agentName) as PendingTaskRetryRow | undefined ?? undefined
 }
 
 export function deletePendingTaskRetry(taskName: string, agentName: string): boolean {
@@ -2627,7 +2628,7 @@ export function createIdea(idea: Omit<IdeaBoxRow, 'created_at' | 'updated_at'>):
 export function updateIdea(id: string, patch: Partial<Pick<IdeaBoxRow, 'title' | 'description' | 'category' | 'status' | 'kanban_id' | 'impact' | 'effort'>>): boolean {
   const now = Math.floor(Date.now() / 1000)
   const sets: string[] = ['updated_at = ?']
-  const params: unknown[] = [now]
+  const params: SQLQueryBindings[] = [now]
   if (patch.title !== undefined) { sets.push('title = ?'); params.push(patch.title) }
   if (patch.description !== undefined) { sets.push('description = ?'); params.push(patch.description) }
   if (patch.category !== undefined) { sets.push('category = ?'); params.push(patch.category) }
@@ -2702,7 +2703,7 @@ export function getIdeaStatusLog(ideaId: string): IdeaStatusLogRow[] {
 // Revert a promoted idea back to 'reviewed' when its kanban card is deleted or archived.
 // Returns the idea id if a matching idea was found and reverted, null otherwise.
 export function revertIdeaFromKanban(kanbanId: string): string | null {
-  const idea = db.prepare("SELECT id, status FROM idea_box WHERE kanban_id = ? AND status = 'kanban'").get(kanbanId) as { id: string; status: string } | undefined
+  const idea = db.prepare("SELECT id, status FROM idea_box WHERE kanban_id = ? AND status = 'kanban'").get(kanbanId ?? undefined) as { id: string; status: string } | undefined
   if (!idea) return null
   const now = Math.floor(Date.now() / 1000)
   db.prepare("UPDATE idea_box SET status = 'reviewed', kanban_id = NULL, updated_at = ? WHERE id = ?").run(now, idea.id)
@@ -2839,7 +2840,7 @@ export function getSkillUsageRows(opts: {
   const { since, agentId, skillName, limit = 500 } = opts
   const cutoff = since ? Math.floor(Date.now() / 1000) - since : 0
   const conditions: string[] = ['created_at >= ?']
-  const params: unknown[] = [cutoff]
+  const params: SQLQueryBindings[] = [cutoff]
   if (agentId) { conditions.push('agent_id = ?'); params.push(agentId) }
   if (skillName) { conditions.push('skill_name = ?'); params.push(skillName) }
   params.push(limit)
@@ -2972,7 +2973,7 @@ export function queryAuditLog(opts: {
 
   if (active.includes('config')) {
     let sql = 'SELECT id, key, old_value, new_value, actor, created_at FROM config_change_log WHERE 1=1'
-    const params: unknown[] = []
+    const params: SQLQueryBindings[] = []
     if (from) { sql += ' AND created_at >= ?'; params.push(from) }
     if (to)   { sql += ' AND created_at <= ?'; params.push(to) }
     if (q)    { sql += ' AND (key LIKE ? OR old_value LIKE ? OR new_value LIKE ? OR actor LIKE ?)'; const p = `%${q}%`; params.push(p, p, p, p) }
@@ -2983,7 +2984,7 @@ export function queryAuditLog(opts: {
 
   if (active.includes('idea')) {
     let sql = 'SELECT id, idea_id, from_status, to_status, actor, note, created_at FROM idea_status_log WHERE 1=1'
-    const params: unknown[] = []
+    const params: SQLQueryBindings[] = []
     if (from) { sql += ' AND created_at >= ?'; params.push(from) }
     if (to)   { sql += ' AND created_at <= ?'; params.push(to) }
     if (q)    { sql += ' AND (idea_id LIKE ? OR to_status LIKE ? OR note LIKE ? OR actor LIKE ?)'; const p = `%${q}%`; params.push(p, p, p, p) }
@@ -2994,7 +2995,7 @@ export function queryAuditLog(opts: {
 
   if (active.includes('store')) {
     let sql = 'SELECT id, rel_path, event_type, is_sensitive, file_size, agent, created_at FROM store_file_audit WHERE 1=1'
-    const params: unknown[] = []
+    const params: SQLQueryBindings[] = []
     if (from) { sql += ' AND created_at >= ?'; params.push(from) }
     if (to)   { sql += ' AND created_at <= ?'; params.push(to) }
     if (agent) { sql += ' AND agent = ?'; params.push(agent) }
@@ -3007,7 +3008,7 @@ export function queryAuditLog(opts: {
   if (active.includes('diary')) {
     // daily_logs
     let logSql = 'SELECT id, agent_id, content, created_at FROM daily_logs WHERE 1=1'
-    const logParams: unknown[] = []
+    const logParams: SQLQueryBindings[] = []
     if (from)  { logSql += ' AND created_at >= ?'; logParams.push(from) }
     if (to)    { logSql += ' AND created_at <= ?'; logParams.push(to) }
     if (agent) { logSql += ' AND agent_id = ?'; logParams.push(agent) }
@@ -3018,7 +3019,7 @@ export function queryAuditLog(opts: {
 
     // memories
     let memSql = 'SELECT id, agent_id, content, category, keywords, created_at FROM memories WHERE 1=1'
-    const memParams: unknown[] = []
+    const memParams: SQLQueryBindings[] = []
     if (from)  { memSql += ' AND created_at >= ?'; memParams.push(from) }
     if (to)    { memSql += ' AND created_at <= ?'; memParams.push(to) }
     if (agent) { memSql += ' AND agent_id = ?'; memParams.push(agent) }
@@ -3076,7 +3077,7 @@ export function listVaultSshKeys(): VaultSshKey[] {
 }
 
 export function getVaultSshKey(id: string): VaultSshKey | undefined {
-  return db.prepare('SELECT * FROM vault_ssh_keys WHERE id = ?').get(id) as VaultSshKey | undefined
+  return db.prepare('SELECT * FROM vault_ssh_keys WHERE id = ?').get(id ?? undefined) as VaultSshKey | undefined
 }
 
 export function createVaultSshKey(key: Pick<VaultSshKey, 'id' | 'label' | 'username' | 'vault_key_id' | 'public_key' | 'fingerprint' | 'key_type'>): VaultSshKey {
@@ -3129,7 +3130,7 @@ export function listVaultSshServers(): VaultSshServer[] {
 }
 
 export function getVaultSshServer(id: string): VaultSshServer | undefined {
-  return db.prepare('SELECT * FROM vault_ssh_servers WHERE id = ?').get(id) as VaultSshServer | undefined
+  return db.prepare('SELECT * FROM vault_ssh_servers WHERE id = ?').get(id ?? undefined) as VaultSshServer | undefined
 }
 
 export function createVaultSshServer(server: Pick<VaultSshServer, 'id' | 'name' | 'host' | 'port' | 'username' | 'description'>): VaultSshServer {
@@ -3144,7 +3145,7 @@ export function createVaultSshServer(server: Pick<VaultSshServer, 'id' | 'name' 
 export function updateVaultSshServer(id: string, patch: Partial<Pick<VaultSshServer, 'name' | 'host' | 'port' | 'username' | 'ssh_key_id' | 'description'>>): boolean {
   const now = Math.floor(Date.now() / 1000)
   const sets: string[] = ['updated_at = ?']
-  const params: unknown[] = [now]
+  const params: SQLQueryBindings[] = [now]
   if (patch.name !== undefined)        { sets.push('name = ?');        params.push(patch.name) }
   if (patch.host !== undefined)        { sets.push('host = ?');        params.push(patch.host) }
   if (patch.port !== undefined)        { sets.push('port = ?');        params.push(patch.port) }
@@ -3212,7 +3213,7 @@ export function createApproval(params: {
 }
 
 export function getApproval(id: string): Approval | undefined {
-  return db.prepare('SELECT * FROM approvals WHERE id = ?').get(id) as Approval | undefined
+  return db.prepare('SELECT * FROM approvals WHERE id = ?').get(id ?? undefined) as Approval | undefined
 }
 
 export function resolveApproval(id: string, status: 'approved' | 'rejected' | 'timeout', resolvedBy: string, telegramMessageId?: number | null): boolean {
@@ -3232,7 +3233,7 @@ export function listApprovals(opts: {
   limit?: number
 }): Approval[] {
   const conditions: string[] = []
-  const params: unknown[] = []
+  const params: SQLQueryBindings[] = []
   if (opts.agent_id) { conditions.push('agent_id = ?'); params.push(opts.agent_id) }
   if (opts.category) { conditions.push('category = ?'); params.push(opts.category) }
   if (opts.status) { conditions.push('status = ?'); params.push(opts.status) }

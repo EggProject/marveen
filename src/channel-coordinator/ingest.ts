@@ -1,7 +1,7 @@
 // DB layer for the channel-coordinator.
 //
 // The coordinator is a SEPARATE process from the dashboard, so it cannot share
-// the dashboard's better-sqlite3 singleton (src/db.ts). It opens its OWN handle
+// the dashboard's sqlite singleton (src/db.ts). It opens its OWN handle
 // to the same store/claudeclaw.db file. That is safe because the DB runs in WAL
 // mode (a writer never blocks readers, and two processes can write to a WAL DB
 // as long as each sets busy_timeout). We assert busy_timeout=5000 on our handle
@@ -16,23 +16,23 @@
 // message-router (5s tick, tmux injection, wrapUntrusted) -- we just INSERT a
 // pending row from 'telegram-coordinator' to the main agent.
 
-import Database from 'better-sqlite3'
+import { Database, pragma, runScript } from '../db/sqlite.js'
 import { join } from 'node:path'
 import { STORE_DIR, DB_FILENAME, MAIN_AGENT_ID } from '../config.js'
 
 export const COORDINATOR_AGENT_ID = 'telegram-coordinator'
 
-let db: Database.Database | null = null
+let db: Database | null = null
 
-export function initIngestDb(dbPath = join(STORE_DIR, DB_FILENAME)): Database.Database {
+export function initIngestDb(dbPath = join(STORE_DIR, DB_FILENAME)): Database {
   if (db) return db
   const handle = new Database(dbPath)
   // WAL is persistent per-DB (the dashboard already set it); re-assert is a
   // no-op but harmless. busy_timeout IS per-connection, so set it here.
-  handle.pragma('journal_mode = WAL')
-  handle.pragma('busy_timeout = 5000')
+  pragma(handle, 'journal_mode = WAL')
+  pragma(handle, 'busy_timeout = 5000')
 
-  handle.exec(`
+  runScript(handle, `
     CREATE TABLE IF NOT EXISTS incoming_events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       source TEXT NOT NULL DEFAULT 'telegram',
@@ -55,10 +55,10 @@ export function initIngestDb(dbPath = join(STORE_DIR, DB_FILENAME)): Database.Da
   `)
   // Idempotency: an at-least-once handler (crash between handoff and offset
   // persist) must never create a duplicate event for the same update.
-  handle.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_incoming_events_source_update ON incoming_events(source, update_id)`)
-  handle.exec(`CREATE INDEX IF NOT EXISTS idx_incoming_events_status ON incoming_events(status, created_at)`)
+  runScript(handle, `CREATE UNIQUE INDEX IF NOT EXISTS idx_incoming_events_source_update ON incoming_events(source, update_id)`)
+  runScript(handle, `CREATE INDEX IF NOT EXISTS idx_incoming_events_status ON incoming_events(status, created_at)`)
 
-  handle.exec(`
+  runScript(handle, `
     CREATE TABLE IF NOT EXISTS poll_offset (
       source TEXT PRIMARY KEY,
       last_update_id INTEGER NOT NULL DEFAULT 0,
@@ -72,7 +72,7 @@ export function initIngestDb(dbPath = join(STORE_DIR, DB_FILENAME)): Database.Da
   // runs, the INSERT would fail. CREATE IF NOT EXISTS with the identical schema
   // (db.ts) is a no-op when the dashboard already made it, and prevents the
   // boot-race failure otherwise.
-  handle.exec(`
+  runScript(handle, `
     CREATE TABLE IF NOT EXISTS agent_messages (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       from_agent TEXT NOT NULL,
@@ -90,7 +90,7 @@ export function initIngestDb(dbPath = join(STORE_DIR, DB_FILENAME)): Database.Da
   return db
 }
 
-function requireDb(): Database.Database {
+function requireDb(): Database {
   if (!db) throw new Error('ingest db not initialized -- call initIngestDb() first')
   return db
 }

@@ -83,7 +83,7 @@ export function classifyTelegramSendError(errMessage: string): 'transient' | 'pe
 /**
  * Shape of a pending retry used by the UI + the alert layer. A small
  * subset of the DB row, decoupled from the DB type so tests don't need
- * better-sqlite3.
+ * the sqlite adapter.
  */
 export interface PendingRetryView {
   id: number
