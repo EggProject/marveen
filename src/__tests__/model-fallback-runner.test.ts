@@ -380,7 +380,16 @@ describe('main agent: non-object settings.json (pins a known defect)', () => {
     expect(mocks.warn.mock.calls[0]![1]).toBe('model-fallback: switch failed')
     // ...but the write side throws on `cfg.model = model`.
     expect(failure.err).toBeInstanceOf(TypeError)
-    expect(failure.err.message).toContain('Cannot set properties of null')
+    // V8/Node and Bun JSC report the same TypeError with different wording:
+    // node: "Cannot set properties of null"
+    // bun:  "null is not an object (evaluating 'cfg.model = model')"
+    // Both signal "tried to assign a property on null"; we assert one of the
+    // two so the test passes on both runtimes.
+    const msg = failure.err.message
+    expect(
+      msg.includes('Cannot set properties of null') ||
+        msg.includes("null is not an object (evaluating 'cfg.model = model')"),
+    ).toBe(true)
     expect(failure.name).toBe(MAIN_ID)
 
     // Nothing was restarted and the file is untouched: main stays on the
