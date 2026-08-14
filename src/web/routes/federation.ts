@@ -89,8 +89,7 @@ const seenRefs = new Map<string, number>() // "<callerPeer>:<ref>" -> local mess
 
 function rememberRef(key: string, localId: number): void {
   if (seenRefs.size >= DEDUP_CAP) {
-    const oldest = seenRefs.keys().next().value
-    if (oldest !== undefined) seenRefs.delete(oldest)
+    seenRefs.delete(seenRefs.keys().next().value!)
   }
   seenRefs.set(key, localId)
 }

@@ -941,53 +941,6 @@ describe('importFleet: validateSchema rejects missing required fields', () => {
 })
 
 // ===========================================================================
-// 18. assertSafeName dead code (lines 48-53)
-// ---------------------------------------------------------------------------
-// A `assertSafeName` modul-privát, soha nem hívják -- ez a teszt
-// dokumentálja a HELYZETET (a függvény DEAD CODE), és a lefedettségi
-// hiányt a docs/needs-to-be-fix/fleet-transfer-assertsafename-dead-code.md
-// bug MD magyarázza.
-// ===========================================================================
-
-describe('assertSafeName: dead code, never reachable via public API', () => {
-  it('function is declared but never referenced anywhere in the module', async () => {
-    // Közvetett bizonyíték: próbáljunk meg a nyilvános API-n keresztül
-    // produkálni egy 'Érvénytelen ... érték' hibaüzenetet (a dead helper
-    // formátuma). Ha egyetlen elérhető úton sem jelenik meg, a dead helper
-    // valóban halott.
-    const { importFleet } = await import('../web/fleet-transfer.js')
-
-    // A legkülönfélébb rossz neveket próbáljuk meg mindenütt, ahol a
-    // validateNames fut.
-    const evilNames = [
-      'UPPERCASE', 'has space', 'has.dot', '../traversal',
-      '$pecial', 'unicode-ékezetes',
-    ]
-    const errorMessages: string[] = []
-    for (const bad of evilNames) {
-      const candidates = [
-        { agents: [{ name: bad, config: {}, claudeMd: '', soulMd: '', mcp: {}, settings: {}, channelsAccess: {}, agentSkills: [] }] },
-        { skills: [{ name: bad, skillMd: '' }] },
-        { scheduledTasks: [{ dirName: bad, skillMd: '', config: {} }] },
-      ]
-      for (const piece of candidates) {
-        const body = JSON.stringify(makeFleet(piece))
-        const result = importFleet(body, { apply: false }) as any
-        if (result.errors) errorMessages.push(...result.errors)
-      }
-    }
-    // A validateNames által generált hibaüzenetek NEM tartalmazzák a
-    // dead helper megkülönböztető formátumát ('csak [a-z0-9_-] megengedett.').
-    for (const err of errorMessages) {
-      expect(err).not.toMatch(/csak \[a-z0-9_-\] megengedett\./)
-    }
-    // Ha lennének egyáltalán hibák (validáció lefutott), akkor a dead helper
-    // formátuma nem jelenik meg -- ez a pin.
-    expect(errorMessages.length).toBeGreaterThan(0)
-  })
-})
-
-// ===========================================================================
 // 19. listSkillsInDir: SKILL.md missing (else branch)
 // ---------------------------------------------------------------------------
 // A `if (!existsSync(dir)) return []` else-ága akkor fut, amikor a dir

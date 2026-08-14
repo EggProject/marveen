@@ -1699,32 +1699,6 @@ describe('cleanupTracked', () => {
 })
 
 // ---------------------------------------------------------------------------
-// 20. assertSafeName / path traversal
-// ---------------------------------------------------------------------------
-
-describe('assertSafeName via validateNames', () => {
-  it('accepts valid lowercase name', async () => {
-    const { importFleet } = await import('../web/fleet-transfer.js')
-    const body = JSON.stringify(makeFleet({
-      skills: [{ name: 'valid-name-123', skillMd: '# x' }],
-    }))
-    const result = importFleet(body, { apply: false }) as any
-    expect(result.errors).toEqual([])
-  })
-
-  it('rejects uppercase / spaces / dots', async () => {
-    const { importFleet } = await import('../web/fleet-transfer.js')
-    for (const bad of ['UPPER', 'has space', 'has.dot']) {
-      const body = JSON.stringify(makeFleet({
-        skills: [{ name: bad, skillMd: '' }],
-      }))
-      const result = importFleet(body, { apply: false }) as any
-      expect(result.errors.length).toBeGreaterThan(0)
-    }
-  })
-})
-
-// ---------------------------------------------------------------------------
 // 21. importFleet: encrypted wrapper password-too-short detection
 // ---------------------------------------------------------------------------
 

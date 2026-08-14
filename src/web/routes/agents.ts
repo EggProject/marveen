@@ -137,8 +137,6 @@ import { suggestForAgent, type AgentSignals } from '../model-suggest.js'
 import { getTokenSummary } from '../token-usage.js'
 import { listScheduledTasks } from '../scheduled-tasks-io.js'
 
-const VALID_PROVIDERS = new Set<ChannelProviderType>(['telegram', 'slack', 'discord', 'googlechat', 'teams'])
-
 // Dropped into the agent dir when personality generation failed and the agent was
 // kept on a template instead of being deleted. Its presence means "this agent
 // works, but its CLAUDE.md/SOUL.md are placeholders".
@@ -227,6 +225,8 @@ export function validateDiscordChannelId(cid: string | undefined): { ok: boolean
   return { ok: true }
 }
 
+const VALID_PROVIDERS = new Set<ChannelProviderType>(['telegram', 'slack', 'discord', 'googlechat', 'teams'])
+
 function parseChannelProvider(raw: string): ChannelProviderType | null {
   if (VALID_PROVIDERS.has(raw as ChannelProviderType)) return raw as ChannelProviderType
   return null
@@ -238,8 +238,9 @@ function matchChannelRoute(path: string, suffix: string): [string, ChannelProvid
   const newPattern = new RegExp(`^/api/agents/([^/]+)/channels/(telegram|slack|discord|googlechat|teams)${suffix}$`)
   const newMatch = path.match(newPattern)
   if (newMatch) {
+    const name = decodeURIComponent(newMatch[1])
     const provider = parseChannelProvider(newMatch[2])
-    if (provider) return [decodeURIComponent(newMatch[1]), provider]
+    if (provider) return [name, provider]
   }
   const legacyPattern = new RegExp(`^/api/agents/([^/]+)/telegram${suffix}$`)
   const legacyMatch = path.match(legacyPattern)

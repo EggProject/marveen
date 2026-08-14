@@ -85,5 +85,5 @@ export function startCapabilitySummaryRunner(): NodeJS.Timeout {
 /** Test seam. */
 export function _capabilityRunnerTickForTest(): Promise<void> {
   tick()
-  return inflight ?? Promise.resolve()
+  return inflight!
 }

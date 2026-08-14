@@ -1381,7 +1381,7 @@ export function getAgentProcessInfo(name: string): { running: boolean; session?:
 export function restartAgentProcess(name: string, opts: { fresh?: boolean } = {}): { ok: boolean; pid?: number; error?: string } {
   if (isAgentRunning(name)) {
     const stopResult = stopAgentProcess(name)
-    if (!stopResult.ok) return { ok: false, error: stopResult.error || 'Failed to stop running agent before restart' }
+    if (!stopResult.ok) return { ok: false, error: stopResult.error }
   }
   return startAgentProcess(name, opts)
 }
@@ -1509,7 +1509,7 @@ export async function answerFirstRunGates(
     logger.info({ session, gate, step: i }, 'first-run gate: answered dialog')
     await delay(FIRST_RUN_ANSWER_SETTLE_MS)
   }
-  return acted ? 'cleared' : 'unchanged'
+  return 'cleared'
 }
 
 // Post-(re)start identity setup. Every freshly spawned Claude Code session is

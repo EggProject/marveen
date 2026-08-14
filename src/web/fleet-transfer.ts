@@ -45,13 +45,6 @@ export class UserFacingError extends Error {
 // ---------------------------------------------------------------------------
 const SAFE_NAME_RE = /^[a-z0-9][a-z0-9_-]*$/
 
-function assertSafeName(value: unknown, field: string): string {
-  if (typeof value !== 'string' || !SAFE_NAME_RE.test(value)) {
-    throw new Error(`Érvénytelen ${field} érték: "${String(value).slice(0, 60)}" -- csak [a-z0-9_-] megengedett.`)
-  }
-  return value
-}
-
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------

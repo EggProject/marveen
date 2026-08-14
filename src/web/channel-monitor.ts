@@ -1420,8 +1420,8 @@ export function startChannelPluginMonitor(): NodeJS.Timeout | null {
     // does not reset the cap and restart agents that have already been given up on.
     ensureAgentRestartFailuresInitialized()
 
-    type Target = { session: string; isMarveen: boolean; agentName?: string; provider: ChannelProviderType }
-    const targets: Target[] = [{ session: MAIN_CHANNELS_SESSION, isMarveen: true, provider: mainProvider }]
+    type Target = { session: string; isMarveen: boolean; agentName: string; provider: ChannelProviderType }
+    const targets: Target[] = [{ session: MAIN_CHANNELS_SESSION, isMarveen: true, agentName: MAIN_AGENT_ID, provider: mainProvider }]
     for (const a of listAgentNames()) {
       if (isAgentRunning(a) && agentHasChannel(a)) {
         targets.push({
@@ -1452,7 +1452,7 @@ export function startChannelPluginMonitor(): NodeJS.Timeout | null {
         paneErrorState.set(t.session, decision.next)
       }
       if (decision.alert) {
-        const label = t.isMarveen ? BOT_NAME : (t.agentName ?? t.session)
+        const label = t.isMarveen ? BOT_NAME : t.agentName
         logger.error({ session: t.session, agent: label }, 'Agent wedged on thinking-block API error -- manual reset needed')
         sendAlert(`🚨 A(z) ${label} agens elakadt egy thinking-block API hibaban (a session-history korrupt, minden uj prompt ugyanazt a 400-at adja). Kezi reset kell: allitsd le es inditsd ujra, friss session indul. Reszletek: tmux attach -t ${t.session}`)
       }
@@ -1491,7 +1491,7 @@ export function startChannelPluginMonitor(): NodeJS.Timeout | null {
         paneMenuState.set(t.session, decision.next)
       }
       if (decision.alert) {
-        const label = t.isMarveen ? BOT_NAME : (t.agentName ?? t.session)
+        const label = t.isMarveen ? BOT_NAME : t.agentName
         if (firstRunGate === 'login') {
           logger.warn({ session: t.session, agent: label }, 'Session parked on the Claude Code login picker -- operator login needed, alerting (no keystrokes sent)')
           sendAlert(`🔑 A(z) ${label} agentnek Claude-belépés kell (első indítás, "Select login method" képernyő). Lépj be: tmux attach -t ${t.session}, majd válaszd ki a belépési módot. Addig az ütemezett feladatai és üzenetei várakoznak, belépés után maguktól kézbesítődnek.`)
