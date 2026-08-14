@@ -1,8 +1,8 @@
 import { randomBytes } from 'node:crypto'
-import { execSync, execFileSync } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 import {
   createBackgroundTaskAtomic, finishBackgroundTask, getBackgroundTasks,
-  getBackgroundTask, getRunningBackgroundTasks, markOrphanedTasksFailed,
+  getBackgroundTask, getRunningBackgroundTasks,
   type BackgroundTask,
 } from '../../db.js'
 import { makeLazyBinResolver } from '../../platform.js'

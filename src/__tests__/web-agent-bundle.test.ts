@@ -237,27 +237,6 @@ describe('stageAgentDirForExport', () => {
     expect(existsSync_check(join(stage, 'CLAUDE.md'))).toBe(true)
   })
 
-  it('exercises copyEntryInto\'s inner existsSync defensive guard (dead branch)', () => {
-    // The inner `if (!existsSync(src)) return` in copyEntryInto is structurally
-    // unreachable (the caller has already checked the same path). We force the
-    // second existsSync call on a specific path to return false via the
-    // fsState.existsSecondFalse flag to expose the branch.
-    const src = join(PROJECT, 'agents', 'defensive')
-    mkdirSync(src, { recursive: true })
-    writeFileSync(join(src, 'CLAUDE.md'), 'defensive-guard blocks the copy')
-    const stage = join(PROJECT, 'stage-defensive')
-    fsState.existsSecondFalse = 'CLAUDE.md'
-    try {
-      ab.stageAgentDirForExport(src, stage, false)
-    } finally {
-      fsState.existsSecondFalse = null
-    }
-    // The early-return inside copyEntryInto fires before cpSync runs, so
-    // CLAUDE.md should NOT be staged. The point of this test is branch
-    // coverage of the defensive guard, not functional behaviour.
-    expect(existsSync_check(join(stage, 'CLAUDE.md'))).toBe(false)
-  })
-
   it('stages nothing channel-secret-related when includeSecrets=true but .claude/channels is absent', () => {
     const src = join(PROJECT, 'agents', 'nochans')
     mkdirSync(src, { recursive: true })

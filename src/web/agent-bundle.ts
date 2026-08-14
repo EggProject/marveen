@@ -91,7 +91,6 @@ function makeTempDir(prefix: string): string {
 // lack SOUL.md, an avatar, skills, etc. -- absence is normal, not an error).
 function copyEntryInto(srcRoot: string, dstRoot: string, rel: string): void {
   const src = join(srcRoot, rel)
-  if (!existsSync(src)) return
   const dst = join(dstRoot, rel)
   mkdirSync(join(dst, '..'), { recursive: true })
   cpSync(src, dst, { recursive: true })
