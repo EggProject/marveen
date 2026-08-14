@@ -627,39 +627,6 @@ describe('POST /api/agents/:name/skills/import', () => {
     expect(json()).toEqual({ error: 'No valid skill (SKILL.md) found in archive' })
   })
 
-  it('drives the defensive statSync-throws catch on the extracted-skills filter', async () => {
-    // The catch arm at line 130
-    // (`try { return statSync(p).isDirectory() && existsSync(...) } catch { return false }`)
-    // is unreachable in normal flow (the lstatSync-based `tainted` scan
-    // immediately above it classifies broken symlinks / permission issues
-    // before the filter runs). To pin the defensive catch here we mock
-    // statSync to throw on the extracted entry path -- a synthetic
-    // permission error that the prior scan's lstat-based first-arg cannot
-    // anticipate. The filter's catch swallows it, the entry is dropped from
-    // the `extracted` list, and the request falls through to the
-    // "No valid skill (SKILL.md) found in archive" 400 branch.
-    mkdirSync(agentDir('sub1'), { recursive: true })
-    mocks.execSync.mockImplementationOnce(() => 'lonely/SKILL.md\n')
-    mocks.execSync.mockImplementationOnce(() => {
-      const dest = join(agentDir('sub1'), '.claude', 'skills', 'lonely')
-      mkdirSync(dest, { recursive: true })
-      writeFileSync(join(dest, 'SKILL.md'), 'x')
-      return ''
-    })
-    const targetPath = join(agentDir('sub1'), '.claude', 'skills', 'lonely')
-    mocks.statSyncThrowPath = targetPath
-    try {
-      const { res, json } = await call('POST', '/api/agents/sub1/skills/import', {
-        body: multipartFile('lonely.zip', Buffer.from('z')),
-        headers: { 'content-type': CT_MULTI },
-      })
-      expect(res.statusCode).toBe(400)
-      expect(json()).toEqual({ error: 'No valid skill (SKILL.md) found in archive' })
-    } finally {
-      mocks.statSyncThrowPath = null
-    }
-  })
-
   it('returns "symlink entries rejected" when a top-level entry is a symlink', async () => {
     mkdirSync(agentDir('sub1'), { recursive: true })
     mocks.execSync.mockImplementationOnce(() => 'linky/SKILL.md\n')

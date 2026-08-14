@@ -105,7 +105,7 @@ function getSessionClaudePid(session: string): number | null {
       timeout: 3000,
       encoding: 'utf-8',
     }).trim().split('\n')[0]
-    const pid = parseInt(raw ?? '', 10)
+    const pid = parseInt(raw, 10)
     return Number.isFinite(pid) && pid > 1 ? pid : null
   } catch (err) {
     logger.warn({ err, session }, 'channel-plugin-unlock: failed to read session claude pid')

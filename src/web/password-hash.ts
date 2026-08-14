@@ -94,12 +94,8 @@ async function verifyScrypt(pw: string, phc: string): Promise<boolean> {
   if (!params) return false
   let salt: Buffer
   let expected: Buffer
-  try {
-    salt = Buffer.from(parts[3], 'base64')
-    expected = Buffer.from(parts[4], 'base64')
-  } catch {
-    return false
-  }
+  salt = Buffer.from(parts[3], 'base64')
+  expected = Buffer.from(parts[4], 'base64')
   if (salt.length === 0 || expected.length === 0) return false
   let derived: Buffer
   try {
@@ -109,7 +105,6 @@ async function verifyScrypt(pw: string, phc: string): Promise<boolean> {
   } catch {
     return false
   }
-  if (derived.length !== expected.length) return false
   return timingSafeEqual(derived, expected)
 }
 

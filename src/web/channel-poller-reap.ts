@@ -265,8 +265,8 @@ export interface ProcRow { pid: number; ppid: number; command: string }
 // argv[0] basename === 'claude' (the binary), so the tmux server row whose argv
 // merely *contains* the claude command string is excluded.
 function isClaudeBinary(command: string): boolean {
-  const argv0 = command.trim().split(/\s+/, 1)[0] ?? ''
-  const base = argv0.split('/').pop() ?? ''
+  const argv0 = command.trim().split(/\s+/, 1)[0]
+  const base = argv0.split('/').pop()
   return base === 'claude'
 }
 

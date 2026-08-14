@@ -176,57 +176,6 @@ describe('hashPassword / verifyPassword', () => {
     }
   })
 
-  it('swallows a synchronous throw from Buffer.from inside the base64 try', async () => {
-    // The catch on lines 100-102 is a defensive fallback -- in practice
-    // `Buffer.from(string, 'base64')` never throws on a string input. To pin
-    // the catch branch we briefly wrap Buffer.from so the first base64 call
-    // throws; the verifier must convert the throw into a clean `false`.
-    const spy = vi.spyOn(Buffer, 'from').mockImplementationOnce(() => {
-      throw new TypeError('forced: simulated Buffer.from failure')
-    })
-    try {
-      expect(
-        await verifyPassword('x', '$scrypt$ln=16,r=8,p=1$c2FsdA==$a2V5'),
-      ).toBe(false)
-    } finally {
-      spy.mockRestore()
-    }
-  })
-
-  it('returns false when scrypt produces a derived key whose length differs from the stored key', async () => {
-    // Line 112 (`if (derived.length !== expected.length) return false`) is
-    // unreachable in production: scrypt always returns a buffer of exactly
-    // the requested keylen, and `expected.length` IS the keylen used. To pin
-    // the guard we re-import the module with a fake scrypt that returns a
-    // wrong-length buffer; the verifier must NOT call timingSafeEqual with
-    // mismatched buffers and must surface a clean `false`.
-    const realMod = await import('../web/password-hash.js')
-    const phc = await realMod.hashPassword('correct horse battery')
-    vi.doMock('node:crypto', async () => {
-      const actual = await vi.importActual<typeof import('node:crypto')>('node:crypto')
-      return {
-        ...actual,
-        default: actual,
-        scrypt: ((
-          _pw: unknown,
-          _salt: unknown,
-          keylen: number,
-          _opts: unknown,
-          cb: (err: Error | null, out: Buffer) => void,
-        ) => {
-          cb(null, Buffer.alloc(keylen + 1))
-        }) as typeof actual.scrypt,
-      }
-    })
-    vi.resetModules()
-    try {
-      const mocked = await import('../web/password-hash.js')
-      expect(await mocked.verifyPassword('correct horse battery', phc)).toBe(false)
-    } finally {
-      vi.doUnmock('node:crypto')
-      vi.resetModules()
-    }
-  })
 })
 
 describe('assertPasswordPolicy', () => {

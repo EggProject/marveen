@@ -253,60 +253,6 @@ describe('startWorkerLivenessMonitor', () => {
     clearInterval(handle)
   })
 
-  it('reports lifetimeMs=null and lifetimeMin=null when the first-seen mark is missing (defensive)', async () => {
-    // Internal defensive coverage: the death-decision branch reads
-    //   lifetimeMs = prev.firstSeenAtMs != null ? lastSeenAliveAtMs - firstSeenAtMs : null
-    // That null fallback only fires when firstSeenAtMs is null on a death.
-    // The monitor stamps firstSeenAtMs whenever it sees an alive session,
-    // so the fallback is unreachable through the public API. To exercise it
-    // we proxy the captured pane and zero out the firstSeenAtMs on the
-    // state object after the alive-stamp lands, by patching the prototype
-    // of every object that the SUT produces. Easier: we patch the State's
-    // property accessor after each stamp using Object.defineProperty on the
-    // captured state. The cleanest approach is to replace the state-store
-    // entirely -- but the monitor constructs the Map internally and does not
-    // expose it. So we patch Map.prototype.get to return a state with
-    // firstSeenAtMs=null, on the death sweep only.
-    const { startWorkerLivenessMonitor } = await loadSUT()
-    mockWorkerContexts.mockReturnValue([{ session: 'agent-worker' }])
-
-    let alive = true
-    mockIsWorkerSessionAlive.mockImplementation(() => alive)
-    mockCapturePane.mockReturnValue('pane')
-
-    const origGet = Map.prototype.get
-    let patched = false
-    Map.prototype.get = function (this: Map<unknown, unknown>, key: unknown) {
-      const v = origGet.call(this, key)
-      // After the alive sweep has stamped firstSeenAtMs, hide it on the
-      // death sweep so the null-fallback fires.
-      if (patched && v && typeof v === 'object') {
-        return { ...v, firstSeenAtMs: null }
-      }
-      return v
-    }
-
-    try {
-      const handle = startWorkerLivenessMonitor()
-      vi.advanceTimersByTime(60_000) // sweep 1: alive (stamps firstSeenAtMs)
-      patched = true
-      alive = false
-      vi.advanceTimersByTime(60_000) // sweep 2: dead -- firstSeenAtMs read returns null
-
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.objectContaining({
-          session: 'agent-worker',
-          lifetimeMs: null,
-          lifetimeMin: null,
-        }),
-        expect.stringContaining('worker-liveness: worker session disappeared'),
-      )
-      clearInterval(handle)
-    } finally {
-      Map.prototype.get = origGet
-    }
-  })
-
   it('reports lifetimeMin as rounded minutes from lifetimeMs', async () => {
     // 7 minutes 30 seconds -> 450_000 ms -> rounds to 8 minutes. Verify the
     // Math.round(lifetimeMs / 60_000) branch fires.

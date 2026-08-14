@@ -128,8 +128,7 @@ export function decideWorkerLiveness(
   }
 
   // Absent after having been alive: the one transition worth a log line.
-  const lifetimeMs =
-    prev.firstSeenAtMs != null ? prev.lastSeenAliveAtMs - prev.firstSeenAtMs : null
+  const lifetimeMs = prev.lastSeenAliveAtMs - prev.firstSeenAtMs!
   return {
     logDeath: true,
     lifetimeMs,

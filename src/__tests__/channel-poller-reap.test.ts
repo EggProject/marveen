@@ -742,26 +742,6 @@ describe('findOrphanChannelClaudes', () => {
     rows.push({ pid: 73010, ppid: 76621, command: 'sh -c claude' })
     expect(findOrphanChannelClaudes(rows, LIVE_PANES)).toContain(73000)
   })
-
-  // isClaudeBinary's two `?? ''` fallbacks (channel-poller-reap.ts:267-268) are
-  // required by noUncheckedIndexedAccess but unreachable at runtime:
-  // `split(sep, 1)` always yields >= 1 element (even for ''), and `pop()` on a
-  // >= 1-element array never returns undefined. Patching String.prototype.split
-  // to return [] is the only test-side lever, mirroring the Map.prototype.get
-  // patch in auto-restart-runner.test.ts:867. Filed as
-  // docs/needs-to-be-fix/channel-poller-reap-isclaudebinary-unreachable-fallbacks.md.
-  it("forces both `?? ''` fallbacks in isClaudeBinary by patching String.prototype.split", () => {
-    const rows: ProcRow[] = [{ pid: 74000, ppid: 1, command: `${CLAUDE} --channels plugin:telegram@x` }]
-    const originalSplit = String.prototype.split
-    String.prototype.split = function (): string[] { return [] }
-    try {
-      // argv0 falls back to '' and base falls back to '' -> not the claude
-      // binary -> the row is skipped instead of throwing.
-      expect(findOrphanChannelClaudes(rows, LIVE_PANES)).toEqual([])
-    } finally {
-      String.prototype.split = originalSplit
-    }
-  })
 })
 
 // ===========================================================================

@@ -346,35 +346,6 @@ describe('getSessionClaudePid branches (indirect)', () => {
     }
   })
 
-  it('treats a list-panes payload that yields an undefined raw as NaN (falls back to "")', async () => {
-    // The SUT defends against a nullish raw via `raw ?? ''`. That branch
-    // is structurally unreachable through real execFileSync output (split
-    // always returns a non-empty array), so we hand-craft a return shape
-    // that makes `.trim().split('\n')[0]` evaluate to undefined. This
-    // drives the false branch of `raw ?? ''` for branch coverage.
-    setDefaultTmux({
-      pgrep: '',
-      readyPane: 'bypass permissions on\n',
-      postMcpPane: 'google-workspace\nspotify\n',
-    })
-    mockExecFileSync.mockImplementationOnce((cmd: string, args: unknown[]) => {
-      if (cmd === FAKE_TMUX && Array.isArray(args) && args[0] === 'list-panes') {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        return { trim: () => ({ split: () => [] }) } as any
-      }
-      return ''
-    })
-    vi.useFakeTimers()
-    try {
-      schedulePluginUnlockAfterRespawn(SESSION, 'telegram')
-      await vi.runAllTimersAsync()
-      const warnCalls = mockLogger.warn.mock.calls.map((c) => String(c[1]))
-      expect(warnCalls).toContain('channel-plugin-unlock: no claude pid; skipping unlock probe')
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
   it('accepts the first line of a multi-line list-panes payload', async () => {
     // Multiple panes exist; we only want the first one's pid. With pid in
     // place and the rest of the response scripted as default, we expect the

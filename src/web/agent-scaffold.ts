@@ -275,7 +275,7 @@ export function ensureAgentHooks(name: string): boolean {
       const safeEntries = (entries as HookEntry[]).map((entry) => ({
         ...entry,
         hooks: (entry.hooks ?? []).filter((h) => !h.command || !isUnsafeHookCommand(h.command)),
-      })).filter((entry) => (entry.hooks?.length ?? 0) > 0)
+      })).filter((entry) => entry.hooks.length > 0)
       if (safeEntries.length > 0) safeHooks[event] = safeEntries
     }
     existing.hooks = safeHooks
@@ -571,14 +571,14 @@ export function renderQuarantineReader(template: string, domains: string[]): str
   // there. Raised in review on #797.
   const headingRx = /^##\s+Domain restriction\s*$/m
   const heading = headingRx.exec(stripped)
-  const sectionStart = heading ? (heading.index ?? 0) + heading[0].length : 0
+  const sectionStart = heading ? heading.index + heading[0].length : 0
   const nextHeading = /^##\s+/m.exec(stripped.slice(sectionStart))
-  const sectionEnd = nextHeading ? sectionStart + (nextHeading.index ?? 0) : stripped.length
+  const sectionEnd = nextHeading ? sectionStart + nextHeading.index : stripped.length
   const section = stripped.slice(sectionStart, sectionEnd)
   const bullets = [...section.matchAll(/^- `[^`]+`.*$/gm)]
   if (!bullets.length) return stripped
   const last = bullets[bullets.length - 1]
-  const at = sectionStart + (last.index ?? 0) + last[0].length
+  const at = sectionStart + last.index + last[0].length
   return `${stripped.slice(0, at)}\n${block}${stripped.slice(at)}`
 }
 

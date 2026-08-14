@@ -127,7 +127,7 @@ export async function tryHandleAgentsSkills(ctx: RouteContext): Promise<boolean>
 
       const extracted = after.filter(f => {
         const p = join(skillsDir, f)
-        try { return statSync(p).isDirectory() && existsSync(join(p, 'SKILL.md')) } catch { return false }
+        return statSync(p).isDirectory() && existsSync(join(p, 'SKILL.md'))
       })
       if (extracted.length === 0) {
         for (const f of after) {

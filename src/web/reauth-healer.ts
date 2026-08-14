@@ -388,11 +388,11 @@ export function startReauthHealer(): NodeJS.Timeout | null {
     // The summary counts as the alert, so the 30-min cadence restarts from it.
     flushQuietSummary(
       quiet,
-      (session) => watchState.get(session)?.consecutiveDead ?? 0,
+      (session) => watchState.get(session)?.consecutiveDead!,
       sendNotify,
       (session) => {
         const st = watchState.get(session)
-        if (st) watchState.set(session, { ...st, lastActionAtMs: Date.now() })
+        watchState.set(session, { ...st!, lastActionAtMs: Date.now() })
       },
     )
   }

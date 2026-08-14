@@ -154,7 +154,7 @@ export async function tryHandleSkills(ctx: RouteContext): Promise<boolean> {
 
     skills.sort((a, b) => {
       if (a.source !== b.source) return a.source === 'user' ? -1 : 1
-      return (a.label || a.name).localeCompare(b.label || b.name)
+      return a.label.localeCompare(b.label)
     })
     json(res, skills)
     return true
@@ -406,7 +406,7 @@ export async function tryHandleSkills(ctx: RouteContext): Promise<boolean> {
       const topLevel = new Set<string>()
       for (const entry of entries) {
         const seg = entry.split('/')[0]
-        if (seg) topLevel.add(seg)
+        topLevel.add(seg)
       }
       for (const td of topLevel) {
         if (before.has(td)) {

@@ -65,20 +65,18 @@ function isVoiceInstalled(): boolean {
 function runProc(
   cmd: string,
   args: string[],
-  opts: { stdinData?: string; timeoutMs?: number } = {},
+  opts: { stdinData: string; timeoutMs: number },
 ): Promise<{ stdout: string; stderr: string; code: number }> {
   return new Promise((resolve) => {
     const proc = spawn(cmd, args, { shell: false })
     let stdout = ''
     let stderr = ''
-    const timer = opts.timeoutMs
-      ? setTimeout(() => { proc.kill('SIGKILL') }, opts.timeoutMs)
-      : null
+    const timer = setTimeout(() => { proc.kill('SIGKILL') }, opts.timeoutMs)
     proc.stdout.on('data', (d: Buffer) => { stdout += d.toString() })
     proc.stderr.on('data', (d: Buffer) => { stderr += d.toString() })
-    if (opts.stdinData != null) { proc.stdin.write(opts.stdinData, 'utf-8'); proc.stdin.end() }
+    proc.stdin.write(opts.stdinData, 'utf-8'); proc.stdin.end()
     proc.on('close', (code) => {
-      if (timer) clearTimeout(timer)
+      clearTimeout(timer)
       resolve({ stdout, stderr, code: code ?? 1 })
     })
   })
@@ -100,7 +98,7 @@ export async function transcribeVoiceFile(fileId: string, stateDir: string): Pro
   if (!isVoiceInstalled()) return null
   if (!SAFE_FILE_ID_RE.test(fileId)) return null
   if (!isSafeStateDir(stateDir)) return null
-  const result = await runProc(VENV_PY, [VTOOLS_PY, 'transcribe', fileId, stateDir], { timeoutMs: 60_000 })
+  const result = await runProc(VENV_PY, [VTOOLS_PY, 'transcribe', fileId, stateDir], { stdinData: '', timeoutMs: 60_000 })
   if (result.code !== 0) {
     logger.warn({ fileId, stderr: result.stderr.slice(0, 200) }, 'transcribeVoiceFile: whisper failed')
     return null
@@ -143,7 +141,7 @@ export async function tryHandleVoice(ctx: RouteContext): Promise<boolean> {
 
     let transcript: string | null = null
     if (inboundWasAudio && isVoiceInstalled()) {
-      const sttResult = await runProc(VENV_PY, [VTOOLS_PY, 'transcribe', fileParam, stateDir], { timeoutMs: 60_000 })
+      const sttResult = await runProc(VENV_PY, [VTOOLS_PY, 'transcribe', fileParam, stateDir], { stdinData: '', timeoutMs: 60_000 })
       if (sttResult.code === 0) {
         transcript = sttResult.stdout.trim() || null
       } else {
@@ -244,7 +242,7 @@ export async function tryHandleVoice(ctx: RouteContext): Promise<boolean> {
     const result = await runProc(
       VENV_PY,
       [VTOOLS_PY, 'speak', onnxPath, stateDir, chatId, text],
-      { timeoutMs: 90_000 },
+      { stdinData: '', timeoutMs: 90_000 },
     )
     if (result.code !== 0) {
       logger.warn({ voiceModel, chatId, stderr: result.stderr }, '/api/voice/tts: piper/sendVoice failed')
@@ -278,7 +276,7 @@ export async function tryHandleVoice(ctx: RouteContext): Promise<boolean> {
       ' && ffmpeg -encoders 2>&1 | grep -q libopus' +
       ' && python3 -m venv --help >/dev/null 2>&1' +
       ' && echo OK || echo MISSING',
-    ], { timeoutMs: 8000 })
+    ], { stdinData: '', timeoutMs: 8000 })
     const depsMissing = !depCheck.stdout.trim().endsWith('OK')
 
     if (depsMissing) {

@@ -48,7 +48,7 @@ function computeDueAt(cfg: AutoRestartConfig, name: string, nowMs: number): numb
     return dailyDueAtMs(localMidnightMs(nowMs), mins)
   }
   if (cfg.intervalHours) {
-    const base = lastRestart.get(name) ?? nowMs
+    const base = lastRestart.get(name)!
     return base + cfg.intervalHours * 3_600_000
   }
   return null
@@ -128,7 +128,7 @@ function checkAgent(name: string, nowMs: number): void {
 
   const dueAt = computeDueAt(cfg, name, nowMs)
   if (dueAt === null) return
-  if (!restartDue(lastRestart.get(name) ?? null, nowMs, dueAt)) return
+  if (!restartDue(lastRestart.get(name)!, nowMs, dueAt)) return
 
   const session = sessionFor(name)
   const host = name === MAIN_AGENT_ID ? null : readAgentRemoteHost(name)

@@ -1644,7 +1644,7 @@ export function startChannelPluginMonitor(): NodeJS.Timeout | null {
         const maxRestartAttempts = absentConfirmed
           ? PLUGIN_ABSENT_MAX_RESTART_ATTEMPTS
           : AGENT_MAX_RESTART_ATTEMPTS
-        const msDown = Date.now() - (agentDownSince.get(t.session) ?? Date.now())
+        const msDown = Date.now() - agentDownSince.get(t.session)!
         // Busy-guard input: a pane that is generating must not be hard-restarted
         // out from under its own work. An unreadable pane reads 'unknown', which
         // is NOT busy -- we only defer on positive evidence of work in flight.

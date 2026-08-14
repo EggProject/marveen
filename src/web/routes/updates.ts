@@ -195,7 +195,6 @@ export async function tryHandleUpdates(ctx: RouteContext): Promise<boolean> {
       }
     }
     const releaseLock = () => {
-      if (!lockHeld) return
       try { unlinkSync(UPDATE_PIDFILE) } catch { /* already gone */ }
       lockHeld = false
     }
