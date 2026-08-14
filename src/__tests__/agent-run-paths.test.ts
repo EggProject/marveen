@@ -467,32 +467,7 @@ describe('runAgent -- typing refresh interval', () => {
   })
 })
 
-  it('covers detectLinuxLibc\'s internal platform check (line 73) via a process.platform getter', async () => {
-    // Defect coverage: detectLinuxLibc checks `process.platform !== 'linux'`
-    // inside the function, but its only caller (resolveClaudeCodeBin) already
-    // gated on linux+x64. The branch is unreachable in production; this test
-    // simulates the scenario via a getter that flips the value between reads.
-    process.env.MARVEEN_AGENT_BACKEND = 'sdk'
-    let readCount = 0
-    Object.defineProperty(process, 'platform', {
-      get: () => {
-        readCount++
-        // 1st read = resolveClaudeCodeBin's outer guard: linux
-        // 2nd read = detectLinuxLibc's inner guard: non-linux -> returns 'unknown'
-        return readCount === 1 ? 'linux' : 'darwin'
-      },
-      configurable: true,
-    })
-    Object.defineProperty(process, 'arch', { value: 'x64', configurable: true })
-    mockExecSync.mockReturnValue('')
-    mockExistsSync.mockReturnValue(true)
-    mockQuery.mockReturnValue(iter([]))
-    const { runAgent } = await importAgent()
-    await runAgent('x')
-    expect(mockQuery.mock.calls[0][0].options.pathToClaudeCodeExecutable).toBeUndefined()
-  })
-
-// =============================================================================
+  // =============================================================================
 // resolveClaudeCodeBin -- platform + libc variant selection
 //
 // All these tests route through the SDK backend so we observe the resolved bin

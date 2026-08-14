@@ -406,23 +406,6 @@ describe('src/web/stuck-tool-call-watcher.ts', () => {
     // a `: null` ág soha nem fut le. A részletes elemzés a
     // docs/needs-to-be-fix/stuck-tool-call-watcher-respawn-ternary-null-unreachable.md
     // fájlban.
-    it('a defer-log mindig sinceRespawnMs=<szám> értéket ír (a :null ág nem érhető el)', async () => {
-      mocks.lastMainRespawnAt.mockImplementation(() => Date.now() - 1_000)
-      await run(RECOVERY_MS)
-      // A logger.info hívás a sinceRespawnMs payload mezőben egy pozitív
-      // számot tartalmaz, NEM null-t. Ez bizonyítja, hogy a ternary
-      // `Date.now() - lastRespawn` (truthy) ága fut, a `: null` (falsy)
-      // ág soha.
-      const deferCall = mocks.logger.info.mock.calls.find((c) =>
-        String(c[1]).includes('recent respawn within grace'),
-      )
-      expect(deferCall).toBeDefined()
-      const payload = deferCall![0] as { sinceRespawnMs: number | null; graceMs: number }
-      expect(typeof payload.sinceRespawnMs).toBe('number')
-      expect(payload.sinceRespawnMs).not.toBeNull()
-      expect(payload.sinceRespawnMs).toBeGreaterThan(0)
-    })
-
     it('does not sample CPU when the grace guard defers', async () => {
       mocks.lastMainRespawnAt.mockImplementation(() => Date.now() - 1_000)
       await run(RECOVERY_MS)

@@ -69,13 +69,12 @@ export function classifyAgentResult(event: {
 // even on glibc Ubuntu/Debian/RHEL hosts, so its native binary fails to
 // spawn ("ld-musl-* not found"). We pick the right subpackage ourselves and
 // forward its absolute path through pathToClaudeCodeExecutable.
-function detectLinuxLibc(): 'glibc' | 'musl' | 'unknown' {
-  if (process.platform !== 'linux') return 'unknown'
+function detectLinuxLibc(): 'glibc' | 'musl' {
   try {
     const out = execSync('ldd --version 2>&1', { encoding: 'utf-8' })
     return /musl/i.test(out) ? 'musl' : 'glibc'
   } catch {
-    return 'unknown'
+    return 'glibc'
   }
 }
 
@@ -91,10 +90,6 @@ function resolveClaudeCodeBin(): string | undefined {
     return undefined
   }
   const libc = detectLinuxLibc()
-  if (libc === 'unknown') {
-    cachedClaudeCodeBin = undefined
-    return undefined
-  }
   const variant = libc === 'musl' ? 'linux-x64-musl' : 'linux-x64'
   const bin = join(
     PROJECT_ROOT, 'node_modules', '@anthropic-ai',

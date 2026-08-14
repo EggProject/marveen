@@ -189,7 +189,7 @@ async function checkSession(label: string, session: string): Promise<void> {
     const lastRespawn = lastMainRespawnAt()
     if (shouldDeferForRecentRespawn(lastRespawn, Date.now())) {
       logger.info(
-        { label, session, sinceRespawnMs: lastRespawn ? Date.now() - lastRespawn : null, graceMs: MARVEEN_POST_RESPAWN_GRACE_MS },
+        { label, session, sinceRespawnMs: Date.now() - lastRespawn, graceMs: MARVEEN_POST_RESPAWN_GRACE_MS },
         'stuck-tool-call-watcher: recent respawn within grace, deferring recovery (avoid double-respawn / boot churn)',
       )
       return
