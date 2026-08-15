@@ -108,3 +108,31 @@ function load(): HealthMap {
 Per task rule "NEVER modify src/web/command-task.ts" the source edits
 are blocked until the user overrides; the test suite documents the
 gap and pins every reachable sibling branch.
+
+## Resolution
+
+Fixed in commit `af4c087` (2026-08-15). `persist()`'s body is now
+`try { atomicWriteFileSync(HEALTH_PATH, JSON.stringify(load(), null, 2)) }`.
+`load()` always returns a `HealthMap` (either the cached value or a
+non-null assignment from `JSON.parse` / `{}`), so the previous
+`healthMap ?? {}` right arm is gone. Calling `load()` here is a no-op
+when the cache is warm — the same expression already runs inside
+`runCommandTask` just before `persist()` is invoked.
+
+Pinning test added:
+`src/__tests__/web-command-task.test.ts` → `describe('load + persist')`
+→ `'persist() writes the cached map: entries not touched this run still
+survive'`. Seeds two entries on disk (`untouched`, `to-touch`), runs
+`to-touch` via `runCommandTask`, and asserts the persisted JSON still
+carries the full `untouched` entry with its original `fails: 5,
+alerted: true, lastStatus: 'fail', lastRun: 100`. Mutation check:
+replacing the atomic-write argument with a literal `{}` makes
+`parsed.untouched` undefined and the test fails on the `toMatchObject`.
+
+The doc's larger preferred refactor (typing `healthMap` as non-nullable
+and initializing it to `{}` at module scope, removing the `healthMap = null`
+shape entirely) was intentionally NOT done — it would also require an
+explicit `loaded` flag on `load()` so the cache-miss read-from-disk path
+is still testable independently, which is more code, not less. The
+one-line `load()` swap achieves the same unreachable-branch removal
+without adding the second flag.
