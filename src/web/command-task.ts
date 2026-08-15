@@ -31,7 +31,7 @@ function load(): HealthMap {
   return healthMap
 }
 function persist(): void {
-  try { atomicWriteFileSync(HEALTH_PATH, JSON.stringify(healthMap ?? {}, null, 2)) }
+  try { atomicWriteFileSync(HEALTH_PATH, JSON.stringify(load(), null, 2)) }
   catch (err) { logger.warn({ err }, "command-task: failed to persist health map") }
 }
 

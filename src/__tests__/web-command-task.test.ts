@@ -284,6 +284,42 @@ describe('load + persist', () => {
     expect(call).toBeDefined()
     expect(call![0]).toBeDefined() // ensure the { err } arg is non-undefined
   })
+
+  it('persist() writes the cached map: entries not touched this run still survive', () => {
+    // Pinning contract: persist() must serialize the CACHED healthMap, not a
+    // fresh empty object. Seed two entries on disk: 'untouched' is not run
+    // this invocation, 'to-touch' is. After running 'to-touch', the persisted
+    // JSON must still carry the full 'untouched' entry. If persist() is ever
+    // changed to write `{}` instead of `load()`, 'untouched' disappears and
+    // this assertion catches it.
+    writeFileSync(HEALTH_PATH, JSON.stringify({
+      'untouched': { fails: 5, alerted: true, lastStatus: 'fail', lastRun: 100 },
+      'to-touch': { fails: 1, alerted: false, lastStatus: 'fail', lastRun: 100 },
+    }))
+    mockState.spawnSyncResult = { status: 0, stdout: '', stderr: '' }
+    sut.runCommandTask(baseTask({ name: 'to-touch' }), 2000)
+    expect(mockState.atomicWriteCalls).toHaveLength(1)
+    const data = mockState.atomicWriteCalls[0].data
+    // mockState.atomicWriteCalls.data is typed string | Buffer; the SUT passes
+    // a JSON.stringify result (a string). Narrow without `as` / `!`.
+    if (typeof data !== 'string') throw new TypeError('expected string payload from atomicWrite')
+    const parsed: unknown = JSON.parse(data)
+    const isRecord = (v: unknown): v is Record<string, unknown> =>
+      typeof v === 'object' && v !== null
+    if (!isRecord(parsed)) throw new TypeError('expected JSON object payload')
+    expect(parsed.untouched).toMatchObject({
+      fails: 5,
+      alerted: true,
+      lastStatus: 'fail',
+      lastRun: 100,
+    })
+    expect(parsed['to-touch']).toMatchObject({
+      fails: 0,
+      alerted: false,
+      lastStatus: 'ok',
+      lastRun: 2000,
+    })
+  })
 })
 
 // ---------------------------------------------------------------------------
