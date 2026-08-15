@@ -185,7 +185,7 @@ export const MIN_PROMOTABLE_LIFETIME_MS = 90 * 24 * 60 * 60 * 1000
 export function isPromotableSetupCredential(
   cred: { accessToken?: string; expiresAt?: number },
   nowMs: number,
-): boolean {
+): cred is { accessToken: string; expiresAt: number } {
   if (!looksLikeSetupToken((cred.accessToken ?? '').trim())) return false
   if (typeof cred.expiresAt !== 'number') return false
   return cred.expiresAt - nowMs >= MIN_PROMOTABLE_LIFETIME_MS
@@ -221,7 +221,7 @@ export async function syncFleetTokenFromSharedCredentials(claudeBin?: string): P
       cred = parsed?.claudeAiOauth ?? {}
     } catch { return 'no-credentials' }
     if (!isPromotableSetupCredential(cred, Date.now())) return 'not-setup-token'
-    const accessToken = (cred.accessToken ?? '').trim()
+    const accessToken = cred.accessToken.trim()
     logger.info('credentials-guard: found a long-lived terminal-pasted setup-token in ~/.claude/.credentials.json with no fleet token file; live-probing before promoting it')
     if ((await liveProbeAuth({ CLAUDE_CODE_OAUTH_TOKEN: accessToken }, claudeBin)) !== 'ok') {
       logger.warn('credentials-guard: setup-token in credentials.json did not pass the live probe; not promoted')

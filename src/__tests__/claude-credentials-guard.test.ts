@@ -824,6 +824,26 @@ describe('syncFleetTokenFromSharedCredentials', () => {
     expect(m.files.has(P.VERIFIED_STAMP_PATH)).toBe(true)
   })
 
+  it('pins: trims surrounding whitespace from accessToken before writing the fleet token file', async () => {
+    // Pinning: the .trim() on the accessToken write is what guarantees the
+    // fleet token file holds a clean token even when the credentials.json
+    // value is padded (e.g. pasted with a trailing newline from the
+    // terminal). Now that the `?? ''` fallback is gone, a future careless
+    // edit could drop the .trim() and a still-valid padded token would
+    // slip through into the fleet file as a malformed `--bearer-token`.
+    const padded = '   ' + oat + '\n'
+    const json = JSON.stringify({
+      claudeAiOauth: { accessToken: padded, expiresAt: Date.now() + 365 * DAY },
+    })
+    setCredFile(json)
+    m.execFileCallback = () => ({ error: null, stdout: 'OK', stderr: '' })
+
+    const { syncFleetTokenFromSharedCredentials } = await loadSUT()
+    expect(await syncFleetTokenFromSharedCredentials()).toBe('synced')
+    expect(m.files.get(P.FLEET_TOKEN_PATH)).toBe(oat)
+    expect(m.files.has(P.VERIFIED_STAMP_PATH)).toBe(true)
+  })
+
   it('returns "not-setup-token" when JSON parses to {} (no claudeAiOauth key)', async () => {
     setCredFile('{}')
     const { syncFleetTokenFromSharedCredentials } = await loadSUT()
