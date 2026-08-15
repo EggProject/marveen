@@ -82,3 +82,46 @@ After the fix, the v8 branch counter drops by one and coverage reaches
 documents the early-return contract); the "does NOT propagate" test
 should be deleted once the source change is in (it documents a workaround
 that no longer applies).
+
+## Resolution (2026-08-15, commit cd1bc00)
+
+Closed in `refactor: drop dead \`?? ''\` arm in claude-credentials-guard.ts:224`
+(cd1bc00).
+
+What changed:
+
+- `src/web/claude-credentials-guard.ts:185` -- `isPromotableSetupCredential`
+  now returns `cred is { accessToken: string; expiresAt: number }` (a real
+  TypeScript type predicate). The function already enforced both
+  invariants inline; the predicate just surfaces them to the caller.
+- `src/web/claude-credentials-guard.ts:224` -- `accessToken` is now read
+  as `cred.accessToken.trim()` with no `?? ''` fallback. The type
+  predicate proves `accessToken` is a non-empty `string` by the time
+  control reaches that line, and the `.trim()` is still there to strip
+  surrounding whitespace from terminal-pasted setup-tokens.
+
+Upstream-validation argument:
+
+The original bug MD observed that `isPromotableSetupCredential` already
+runs `(cred.accessToken ?? '').trim()` through `looksLikeSetupToken` two
+lines earlier, and `looksLikeSetupToken('')` returns `false`. The
+refactor commits to that argument by making it part of the function's
+type contract: the function's return type now proves both `accessToken`
+and `expiresAt` are present and well-typed at every successful exit, so
+no defensive fallback is needed at the call site.
+
+Pinning test (`pins: trims surrounding whitespace from accessToken before
+writing the fleet token file`): a credentials.json with a
+whitespace-padded `oat` token asserts the fleet token file ends up
+holding the clean `oat`. A mutation check confirmed the assertion fails
+when `.trim()` is dropped from line 224 (the padded token slips through
+to the fleet file as a malformed `--bearer-token`).
+
+The synthetic test at `src/__tests__/claude-credentials-guard.test.ts`
+lines 1085-1125 (`line 224 unreachable branch investigation` describe
+block, `does NOT propagate the isPromotableSetupCredential override into
+syncFleetTokenFromSharedCredentials`) was deliberately KEPT -- it still
+passes against the new code (the `vi.doMock` override still does not
+propagate into the SUT's internal binding) and it documents a
+non-obvious test-harness invariant that future contributors would
+otherwise have to rediscover the hard way.

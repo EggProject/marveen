@@ -117,7 +117,7 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `channel-monitor-unreachable-defensive-branches` | channel-monitor.ts: seven unreachable defensive branches block 100% branch coverage | — |
 | `channel-plugin-unlock-unreachable-raw-nullish-fallback` | channel-plugin-unlock.ts: `raw ?? ''` nullish fallback is structurally unreachable | 2026-08-14 c2b4ea2 |
 | `channel-request-watcher-unreachable-provider-check` | channel-request-watcher.ts: lookupChannelName's `if (provider !== 'slack') return` is unreachable | — |
-| `claude-credentials-guard-line-224-dead-code` | claude-credentials-guard.ts: line 224 `?? ''` fallback is dead code | — |
+| `claude-credentials-guard-line-224-dead-code` | claude-credentials-guard.ts: line 224 `?? ''` fallback is dead code | 2026-08-15 cd1bc00 |
 | `command-task-persist-healthmap-empty-fallback-unreachable` | command-task.ts: `persist()` `healthMap ?? {}` empty-fallback arm is unreachable | 2026-08-15 af4c087 |
 | `context-guard-runner-dead-code-branches` | context-guard-runner.ts: four branches in the restart/request-handoff switch are unreachable | — |
 | `federation-capability-runner-unreachable-promise-resolve` | federation/capability-runner.ts: the `?? Promise.resolve()` right branch is structurally unreachable defensive code | 2026-08-14 08d7508 |
