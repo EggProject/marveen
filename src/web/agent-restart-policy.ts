@@ -32,7 +32,7 @@ export interface AgentRestartDecisionInput {
   // the fixed grace forever -- which restarts the WHOLE agent every few minutes
   // and renders it unusable. Reset to 0 by the caller once the plugin recovers.
   // 0 / omitted preserves the original fixed-grace behaviour.
-  consecutiveFailures?: number
+  consecutiveFailures?: number | null
   // Upper bound on the backed-off restart grace, so the watchdog still retries a
   // long-down plugin occasionally (it may recover after an external fix) rather
   // than backing off unboundedly. Omitted = no cap beyond the exponent.
