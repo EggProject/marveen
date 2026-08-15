@@ -91,3 +91,12 @@ Per task rule "NEVER modify src/web/routes/docs.ts" the source edit is
 blocked until the user overrides; the test suite documents the gap
 and the mocked-basename pinning test stays in place alongside whichever
 fix is chosen.
+
+## Why this stays
+
+basename(name) !== name is a defence-in-depth check against path
+traversal. While the open bug profiles-traversal-id (High severity) of the same class is
+unfixed, removing this guard would delete a layer for stylistic reasons. NAME_RE excludes
+slashes/backslashes by construction, so the check is provably redundant at runtime today, but
+the project prefers belt-and-braces on a route that resolves files under DOCS_DIR. Revisit
+after profiles-traversal-id is resolved.

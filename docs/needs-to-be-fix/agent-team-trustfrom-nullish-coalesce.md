@@ -168,3 +168,11 @@ still gate, and remain at 100%).
 Per task rule "NEVER modify src/web/agent-team.ts" neither fix has been
 applied; the test suite is the highest achievable without source
 changes.
+
+## Why not just drop the ??
+
+TeamConfig.trustFrom is declared optional at agent-team.ts:23. With tsconfig strict:true,
+the proposed drop (team.trustFrom.filter(...)) fails with TS18048. The two ?? [] arms are
+NOT dead code; the type forces them. The correct fix is to make trustFrom required; that
+refactor is tracked under agent-team-trustfrom-required-type-narrow-deferred.md and is
+intentionally deferred.

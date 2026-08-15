@@ -1,6 +1,6 @@
 # needs-to-be-fix index
 
-Every bug MD filed in this session. Total count: 168
+Every bug MD filed in this session. Total count: 175
 (`find docs/needs-to-be-fix -name '*.md' | wc -l`).
 
 The original 50 entries below were filed during the first coverage pass.
@@ -79,7 +79,6 @@ dead code, doc issue).
 | `fleet-transfer-assertsafename-dead` | `src/web/fleet-transfer.ts:48-52` | `assertSafeName` is defined but never called from anywhere (validateNames inlines `SAFE_NAME_RE.test`); caps line coverage at 99.35% on fleet-transfer.ts | `src/__tests__/fleet-transfer-routes.test.ts` | 2026-08-14 08d7508 |
 | `test-suite-llm-api-audit-clean` | audit doc (not a bug) | the suite never makes a real LLM call, never reaches a real HTTP endpoint, and never spawns a real child process; every layer is mocked (`globalThis.fetch = vi.fn`, `vi.mock('../agent.js')`, `vi.mock('@anthropic-ai/claude-agent-sdk')`, `vi.mock('node:child_process')`). The user's "LLM call during tests" concern is unfounded; only side effect is the `./store/` pollution | n/a (audit record) | — |
 | `overview-routes-yesterday-timestamp-flake` | `src/__tests__/overview-routes.test.ts:534` (was `now - 25h`) | the "yesterday" timestamp is computed as `now - 25 * 60 * 60 * 1000`, which only falls in the `[yesterday, startTs)` bin when `now >= 01:00 LOCAL`. Tests run just past midnight (00:00-01:00) flake-fail because the line lands in the day-before-yesterday bin | `src/__tests__/overview-routes.test.ts` | — |
-| `channel-monitor-importwith-existsoverride-leaks-live-store` | `src/__tests__/channel-monitor.test.ts:739` `importWithExistsOverride` | `vi.resetModules()` drops the suite-level `vi.mock('../config.js', ...)`; the function only re-mocks `node:fs`, so the re-imported SUT computes `RESPAWN_STAMP_FILE` against the live `PROJECT_ROOT`. `writeRespawnStamp()` during these tests lands in the live `./store/.channel-last-respawn`, tripping the live-install guard on parallel suite runs | `src/__tests__/channel-monitor.test.ts` | — |
 | `channel-poller-reap-isclaudebinary-unreachable-fallbacks` | `src/web/channel-poller-reap.ts:267,268` | `isClaudeBinary`'s two `?? ''` arms are unreachable (`split(sep, 1)` always yields >= 1 element, `pop()` on it never returns `undefined`); reached in the suite only by patching `String.prototype.split` | `src/__tests__/channel-poller-reap.test.ts` | 2026-08-14 c2b4ea2 |
 
 ## Baseline unreachable addenda (2026-08-09 to 2026-08-13)
@@ -191,3 +190,36 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `web-inbound-probe-cache-sticky` | Defect: ALLOWED_CHAT_ID cache never invalidated, breaking the "reset" branch | — |
 | `web-inbound-probe-respawn-grace` | Defect: stuck mod-scope cache blocks coverage of `shouldTriggerDeafnessRespawn` respawn branches | — |
 | `worker-liveness-defensive-nullish-fallback` | worker-liveness.ts: defensive `??` fallback in decideWorkerLiveness is unreachable | 2026-08-14 c2b4ea2 |
+
+## Orphan addenda (2026-08-15 reconcile v3)
+
+MD files filed during the closure pass that were never added to the index. Each row
+is the MD heading's File:Line and title; pinning test path is `-` where the MD does
+not document one. File:Line points at the line where the bug code actually lives at
+HEAD (corrected from the MD heading if off-by-one). Resolved is `<YYYY-MM-DD> <sha>`
+when a commit on `test/baseline` already deleted the buggy defensive guard, `-` otherwise.
+
+| Bug ID | File:Line | Title | Pinning test path | Resolved |
+| --- | --- | --- | --- | --- |
+| `agent-process-777-ts-strict-blocks-delete` | `src/web/agent-process.ts:777` | runTmux timeout required-delete blocked | - | - |
+| `agent-team-trustfrom-required-type-narrow-deferred` | `src/web/agent-team.ts:191,192` | trustFrom type-narrow deferred | - | - |
+| `agent-terminal-218-ts-strict-blocks-delete` | `src/web/routes/agent-terminal.ts:218` | TS strict blocks the safe-delete | - | - |
+| `agent-terminal-keys-preview-literalKeys-fallback` | `src/web/routes/agent-terminal.ts:218` | literalKeys ?? '' fallback is unreachable | - | - |
+| `agents-parseChannelProvider-return-null` | `src/web/routes/agents.ts:231` | parseChannelProvider's null return is unreachable | - | - |
+| `channel-coordinator-setOffset-null-maxUpdateId` | `src/channel-coordinator.ts:401` | maxUpdateId != null setOffset FALSE branch is unreachable | `src/__tests__/channel-coordinator-process-batch.test.ts` | - |
+| `channel-invites-108-ts-strict-blocks-delete` | `src/web/channel-invites.ts:108` | TS strict blocks the safe-delete | - | - |
+| `channel-invites-236-ts-strict-blocks-delete` | `src/web/channel-invites.ts:236` | TS strict blocks the safe-delete | - | - |
+| `channel-monitor-agentDownSince-fallback` | `src/web/channel-monitor.ts:1647` | agentDownSince.get() ?? Date.now() fallback is unreachable | - | 2026-08-14 c2b4ea2 |
+| `channel-monitor-agentName-fallbacks` | `src/web/channel-monitor.ts:1455,1494` | t.agentName ?? t.session fallback is unreachable | - | 2026-08-14 08d7508 |
+| `federation-inbox-fedPeer-null-fallback` | `src/web/routes/federation.ts:329` | ctx.fedPeer ?? null fallback is unreachable (MD heading off-by-one: line 330 in MD, actual code at line 329) | - | - |
+| `federation-rememberRef-oldest-undefined` | `src/web/routes/federation.ts:93` | rememberRef's if (oldest !== undefined) falsy arm is unreachable | - | 2026-08-14 08d7508 |
+| `federation-routes-fedpeer-required-type-narrow-deferred` | `src/web/routes/federation.ts:298,329` | fedPeer type-narrow deferred | - | - |
+| `index-stopHeartbeat-throw` | `src/index.ts:382` | stopHeartbeat-throws-during-shutdown catch is unreachable | `src/__tests__/index.test.ts` | - |
+| `mcp-list-warn-execError-dead-branch` | `src/web/mcp-list.ts:135` | warn() payload's execError ? truthy arm is unreachable | `src/__tests__/mcp-list.test.ts` | - |
+| `recall-dayOfWeekBudapest-fallback` | `src/web/routes/recall.ts:25` | dayOfWeekBudapest's weekday-map fallback is unreachable | - | - |
+| `recall-weekIdx-fallback` | `src/web/routes/recall.ts:153` | weekIdx ?? 0 fallback is unreachable | - | - |
+| `routes-agents-parseChannelProvider-dead-code` | `src/web/routes/agents.ts:232` | parseChannelProvider `return null` branch is unreachable | `src/__tests__/agents-routes.test.ts` | - |
+| `routes-recall-153-ts-strict-blocks-delete` | `src/web/routes/recall.ts:153` | TS strict blocks the safe-delete | - | - |
+| `routes-recall-25-ts-strict-blocks-delete` | `src/web/routes/recall.ts:25` | TS strict blocks the safe-delete | - | - |
+| `vault-ssh-keys-endsWith-newline` | `src/web/routes/vault-ssh-keys.ts:126` | privateKey.endsWith('\n') IF branch is unreachable | `src/__tests__/routes-vault-ssh-keys.test.ts` | - |
+| `voice-timer-stdinData-fallbacks` | `src/web/routes/voice.ts:74,79` | runProc timer and stdinData fallbacks are unreachable | - | 2026-08-14 c2b4ea2 |

@@ -87,3 +87,14 @@ via a `readProviderMock.mockImplementation` that flips between calls
 (see the test listed above). That makes the coverage tool happy, but
 the test asserts ONLY on the slack-side side-effects (no fetch, no
 update) -- not on the synthetic provider flip.
+
+## DO NOT RAW-DELETE (TOKEN LEAK)
+
+resolveAgentProvider (channel-request-watcher.ts:10-14) re-reads agent-config.json on every
+call (no cache). Both call sites of lookupChannelName (:46 and :105) sit under the outer
+slack-guard at :99, but that guard and the inner read at :66 are not atomic. After a mid-tick
+flip to telegram, removing the :67 guard would read readChannelToken(telegram, ...) returning
+a real TELEGRAM_BOT_TOKEN, then call slack.com/api/conversations.info with
+Authorization: Bearer TELEGRAM_BOT_TOKEN. That is a real leak to a wrong vendor. The correct
+future fix is to hoist provider as a parameter typed slack so the wrong-provider path is
+structurally impossible.
