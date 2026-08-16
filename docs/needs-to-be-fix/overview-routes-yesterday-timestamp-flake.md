@@ -95,3 +95,7 @@ A javitas megtortent: `now - 25h` → `startTs - 1h`. A hasonlo mintat minden ol
 Hosszabb tavon: a teszt harness hasznalhatna `vi.useFakeTimers()` + `vi.setSystemTime(...)` egy ismert LOCAL idore (pl. 2026-06-15 14:30 LOCAL), es minden `Date.now()` / `new Date()` hivas ezt az idot adna vissza. Ez kikuszobolne az osszes time-of-day flaket.
 
 Meg egy megfontolas: a `countUserTurns` `fromMs`/`toMs` parameterei abszolut idok (ms epoch-ban), de a `--bin--` filozofiajuk tegnap/ma. Ha a parameter inteface megvaltozna `bins: { yesterday: [from, to]; today: [from, to] }`-ra, akkor a teszt parameterezheto lenne, es a wall-clock-aramlas megszunne.
+
+## Applied
+
+Applied: 2026-08-17 9be7a59 — test code already updated; INDEX.md row closed.
