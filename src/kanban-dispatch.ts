@@ -31,7 +31,7 @@ export function resolveKanbanDispatchTarget(
   const lower = a.toLowerCase()
 
   // Human owner never triggers an agent.
-  if (a === opts.ownerName) return null
+  if (lower === opts.ownerName.toLowerCase()) return null
 
   // Bot / main agent (matched by display name or canonical id) -> main session.
   if (lower === opts.botName.toLowerCase() || lower === opts.mainAgentId.toLowerCase()) {

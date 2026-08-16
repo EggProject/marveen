@@ -129,30 +129,34 @@ describe('resolveKanbanDispatchTarget -- degenerate config', () => {
   })
 })
 
-// BUG PIN -- docs/needs-to-be-fix/kanban-dispatch-owner-case.md
-// The owner guard (kanban-dispatch.ts:34) is the ONLY case-sensitive
+// BUG PIN (resolved) -- docs/needs-to-be-fix/kanban-dispatch-owner-case.md
+// The owner guard (kanban-dispatch.ts:34) used to be the ONLY case-sensitive
 // comparison in the function; the bot, main-id and sub-agent matches all
-// lowercase both sides. These tests pin CURRENT behaviour, not desired
-// behaviour -- flip them when the guard is fixed.
-describe('resolveKanbanDispatchTarget -- owner guard casing (pinned defect)', () => {
-  it('does not recognise the owner when the casing differs', () => {
-    // Harmless in isolation: falls through to "unknown" and still returns null.
+// lowercased both sides. The guard now matches case-insensitively too --
+// the three scenarios below exercise the previously-bypassed branches.
+describe('resolveKanbanDispatchTarget -- owner guard casing', () => {
+  it('recognises the owner case-insensitively even when no agent matches', () => {
+    // The owner guard fires for 'gábor' and 'GÁBOR' before the agent scan
+    // runs. The result is still null (today the same outcome fell through
+    // because no agent matched), but the reason is now the owner guard.
     expect(resolveKanbanDispatchTarget('gábor', base)).toBeNull()
     expect(resolveKanbanDispatchTarget('GÁBOR', base)).toBeNull()
   })
 
-  it('dispatches a HUMAN card to an agent when the owner name collides case-insensitively', () => {
+  it('the owner guard wins over a case-insensitive collision with a running sub-agent', () => {
     // Operator has both OWNER_NAME=Gábor and a personal agent dir "gábor".
-    // Same person, two casings, two different outcomes -- the module header
-    // promises "humans never get a prompt".
+    // Before the fix the lowercase assignee fell through to the agent; now
+    // the owner guard swallows it (humans never get a prompt).
     const opts = { ...base, agentNames: ['gábor'], isRunning: () => true }
     expect(resolveKanbanDispatchTarget('Gábor', opts)).toBeNull()
-    expect(resolveKanbanDispatchTarget('gábor', opts)).toBe('gábor')
+    expect(resolveKanbanDispatchTarget('gábor', opts)).toBeNull()
   })
 
-  it('routes a mis-cased owner to the main session when OWNER_NAME equals BOT_NAME', () => {
+  it('a mis-cased owner name no longer leaks to the main session', () => {
+    // OWNER_NAME and BOT_NAME both equal 'GorcsevIvan'; the mis-cased
+    // 'gorcsevivan' used to slip past the owner guard and route to main.
     const opts = { ...base, ownerName: 'GorcsevIvan' }
     expect(resolveKanbanDispatchTarget('GorcsevIvan', opts)).toBeNull()
-    expect(resolveKanbanDispatchTarget('gorcsevivan', opts)).toBe('gorcsevivan')
+    expect(resolveKanbanDispatchTarget('gorcsevivan', opts)).toBeNull()
   })
 })
