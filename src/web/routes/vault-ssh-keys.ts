@@ -123,7 +123,9 @@ export async function tryHandleVaultSshKeys(ctx: RouteContext): Promise<boolean>
       const keyPath = join(tmpDir, 'key')
       let publicKey: string
       try {
-        const keyContent = privateKey.endsWith('\n') ? privateKey : privateKey + '\n'
+        // privateKey is already trimmed (see above), so it can never end in a
+        // newline. ssh-keygen -y -f needs exactly one, hence the unconditional append.
+        const keyContent = privateKey + '\n'
         writeFileSync(keyPath, keyContent, { mode: 0o600 })
         chmodSync(keyPath, 0o600)
         publicKey = execFileSync('ssh-keygen', ['-y', '-f', keyPath], { stdio: 'pipe' }).toString().trim()

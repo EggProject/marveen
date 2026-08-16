@@ -585,18 +585,17 @@ describe('POST /api/vault/ssh-keys/import', () => {
     expect(writtenKeyContent).toBe('no-trailing-newline\n')
   })
 
-  // PINNING TEST for the IF-branch bug filed in
-  // docs/needs-to-be-fix/vault-ssh-keys-import-newline-trim-bug.md.
+  // PINNING TEST for docs/needs-to-be-fix/vault-ssh-keys-endsWith-newline.md.
   //
-  // Today the SUT trims privateKey BEFORE the endsWith('\n') check, so
-  // the IF branch (no-appending) is structurally unreachable and the
-  // ELSE branch always runs. With two trailing newlines, the buggy ELSE
-  // produces 'one\n' (trimmed then appended), not the 'one\n\n' a
-  // correct IF branch would preserve. This test pins the CURRENT
-  // behaviour; the companion bug MD notes the assertion that should
-  // replace the current line once the fix lands:
-  // `expect(writtenKeyContent).toBe('one\n\n')`.
-  it('PIN: buggy trim-before-endsWith collapses multiple trailing newlines to one (defect: should preserve)', async () => {
+  // The handler trims privateKey before writing the temp key file, so the
+  // written content is always exactly the trimmed key plus ONE newline,
+  // whatever trailing whitespace the caller sent. That single newline is
+  // what `ssh-keygen -y -f` needs; more than one buys nothing, and the temp
+  // file is rmSync'd in the finally block, so nothing about the caller's
+  // trailing whitespace is persisted anywhere (the vault stores the trimmed
+  // key via setSecret). Mutation check: dropping the `+ '\n'` from the SUT
+  // makes this assertion fail.
+  it('normalises any number of trailing newlines to exactly one on the temp key file', async () => {
     H.execFileSync.mockImplementation(() => Buffer.from('ssh-ed25519 AAAA user@host'))
     let writtenKeyContent: string | undefined
     const origWrite = H.fileBytes.set.bind(H.fileBytes)
@@ -608,9 +607,6 @@ describe('POST /api/vault/ssh-keys/import', () => {
       body: { label: 'l', username: 'u', privateKey: 'one\n\n' },
     })
     expect(res.statusCode).toBe(201)
-    // CURRENT (buggy) behaviour: trim strips both '\n' chars, then the
-    // ELSE branch appends one. POST-FIX this should be
-    // `expect(writtenKeyContent).toBe('one\n\n')`.
     expect(writtenKeyContent).toBe('one\n')
   })
 
