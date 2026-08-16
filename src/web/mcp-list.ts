@@ -132,7 +132,7 @@ export function refreshMcpListCache(): Promise<McpListCache> {
         logger.warn({
           previousCount,
           stderr: scrubPaths(stderrTrimmed.slice(0, 500)),
-          execError: execError ? scrubPaths(execError.message) : null,
+          execError: null,
         }, 'MCP list cache refresh returned 0 entries after non-empty cache')
       }
       mcpListCache = {
