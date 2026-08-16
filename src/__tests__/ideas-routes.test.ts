@@ -726,17 +726,16 @@ describe('POST /api/ideas/:id/breakdown', () => {
     )
   })
 
-  // PINNED DEFECT: routes-ideas-breakdown-nonerror
-  it('returns an empty 500 body when a non-Error value is thrown', async () => {
+  it('returns a useful 500 body when a non-Error value is thrown', async () => {
     seedIdea({ id: 'idea-1' })
     vi.mocked(generateBreakdown).mockRejectedValue('csak egy string')
 
     const r = await call('POST', '/api/ideas/idea-1/breakdown')
 
     expect(r.status).toBe(500)
-    // `(err as Error).message` is undefined -> the key is dropped by
-    // JSON.stringify and the client gets no reason at all.
-    expect(r.body).toEqual({})
+    // type-guard on the caught `unknown`: when the throw is not an Error, fall
+    // back to String(err) so the client gets the actual reason instead of `{}`.
+    expect(r.body).toEqual({ error: 'csak egy string' })
   })
 
   it('decodes a percent-encoded id', async () => {
