@@ -292,21 +292,25 @@ describe('keychainDelete - delete-generic-password', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Known deviations (pinning). The remaining entries lock in current behavior
-// and MUST fail once their docs/needs-to-be-fix/ entry is fixed; the
-// keychain-store-insecure-acl row was resolved and the test below asserts
-// the resolved state instead.
+// Known deviations (pinning). These lock in current behavior and MUST fail
+// once the corresponding docs/needs-to-be-fix/ entry is fixed.
 // ---------------------------------------------------------------------------
 describe('keychain.ts - known deviations (pinning)', () => {
-  // docs/needs-to-be-fix/keychain-store-insecure-acl.md (resolved)
-  it('does NOT pass -A (the flag security(1) calls insecure)', () => {
+  // docs/needs-to-be-fix/keychain-store-insecure-acl.md
+  it('passes -A, the flag security(1) itself calls insecure', () => {
     // security(1): "-A  Allow any application to access this item without
-    // warning (insecure, not recommended!)". Dropping -A still leaves the
-    // item readable by any app in the user session -- see the bug MD for
-    // why this is a partial fix, not a complete one.
+    // warning (insecure, not recommended!)". -A leaves the item's ACL empty,
+    // so the vault master key is readable through the SecKeychain API
+    // directly -- not only by way of an exec of /usr/bin/security. The MD
+    // prescribes removing -A, but in the current install -A is what keeps
+    // the background process able to access the keychain without a UI
+    // prompt. A prompt would be silently swallowed as null by
+    // keychainRetrieve, triggering vault re-key (vault.ts:44-49). Until
+    // keychain-retrieve-swallows-locked-keychain is fixed first, -A must
+    // stay so the background flow continues to work.
     mocks.execFileSync.mockReturnValue('')
     keychainStore('master')
-    expect(onlyCall().args).not.toContain('-A')
+    expect(onlyCall().args).toContain('-A')
   })
 
   // docs/needs-to-be-fix/keychain-retrieve-swallows-locked-keychain.md
