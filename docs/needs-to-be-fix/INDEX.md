@@ -94,8 +94,8 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | --- | --- | --- |
 | `agent-conversation-fractional-limit` | Fractional conversation limits can exceed the requested page size | — |
 | `agent-conversation-malformed-name-uri` | Malformed encoded agent names escape conversation route handling | — |
-| `agent-process-answerfirstrungates-acted-unchanged-unreachable` | agent-process.ts: `answerFirstRunGates` final-return `'unchanged'` arm is unreachable | — |
-| `agent-process-restartagentprocess-stop-error-default-unreachable` | agent-process.ts: `restartAgentProcess` `||` default error string is unreachable | — |
+| `agent-process-answerfirstrungates-acted-unchanged-unreachable` | agent-process.ts: `answerFirstRunGates` final-return `'unchanged'` arm is unreachable | Resolved: 2026-08-14 08d7508 |
+| `agent-process-restartagentprocess-stop-error-default-unreachable` | agent-process.ts: `restartAgentProcess` `||` default error string is unreachable | Resolved: 2026-08-14 08d7508 |
 | `agent-process-runtmux-host-truthy-cond-unreachable` | agent-process.ts: `runTmux` `(host ? 8000 : 3000)` truthy arm is unreachable | — |
 | `agent-restart-policy-consecutivefailures-nullish-coalesce` | agent-restart-policy.ts: `consecutiveFailures ?? 0` nullish-coalesce left arm is unreachable | Resolved: 2026-08-16 410ca1655 |
 | `agent-scaffold-unreachable-defensive-branches` | agent-scaffold.ts: four unreachable defensive branches block 100% branch coverage | 2026-08-14 c2b4ea2 |
