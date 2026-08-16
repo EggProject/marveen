@@ -774,7 +774,7 @@ function runTmux(host: string | null, tmuxArgs: string[], opts: { timeout?: numb
   // makes tmux emit `can't find session: agent-X` / `no server running`; without
   // this those leaked as ~450 bare (non-pino) lines into store/dashboard.log.
   // Callers that care read err.stderr via logger.warn({ err }).
-  execFileSync(inv.file, inv.args, { timeout: opts.timeout ?? (host ? 8000 : 3000), stdio: ['ignore', 'ignore', 'pipe'] })
+  execFileSync(inv.file, inv.args, { timeout: opts.timeout ?? 3000, stdio: ['ignore', 'ignore', 'pipe'] })
 }
 
 function captureTmux(host: string | null, tmuxArgs: string[], opts: { timeout?: number } = {}): string {
@@ -975,7 +975,7 @@ export function startAgentProcess(name: string, opts: { fresh?: boolean } = {}):
 
   try {
     try {
-      runTmux(null, ['kill-session', '-t', session])
+      runTmux(null, ['kill-session', '-t', session], { timeout: 5000 })
       execSync('sleep 3', { timeout: 5000 })
     } catch { /* ok */ }
 
