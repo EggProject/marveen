@@ -951,10 +951,10 @@ describe('PUT /api/memories/:id', () => {
     expect(H.updateMemory).toHaveBeenCalledWith(42, 'new text', 'cold', 'agent-b', 'k')
   })
 
-  it('prefers the deprecated tier field over category when both are sent', async () => {
+  it('prefers category over the deprecated tier field when both are sent', async () => {
     await call('PUT', '/api/memories/42', { content: 'x', category: 'cold', tier: 'hot' })
 
-    expect(H.updateMemory).toHaveBeenCalledWith(42, 'x', 'hot', undefined, undefined)
+    expect(H.updateMemory).toHaveBeenCalledWith(42, 'x', 'cold', undefined, undefined)
   })
 
   it('passes undefined category when neither field is sent', async () => {
