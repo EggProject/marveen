@@ -358,15 +358,27 @@ describe('sanitizeOriginNote', () => {
     expect(sanitizeOriginNote('agent_role-1')).toBe('agent_role-1')
   })
 
-  it('strips characters that could break the framing line (quotes, brackets, colons, newlines)', () => {
-    expect(sanitizeOriginNote('a"b[c]d:e\nf')).toBe('abcdef')
+  it('strips characters that could break the framing line (quotes, brackets, colons); collapses embedded newlines to a single space', () => {
+    expect(sanitizeOriginNote('a"b[c]d:e\nf')).toBe('abcde f')
   })
 
   it('collapses internal whitespace runs to a single space', () => {
     // REGRESSION PIN: see docs/needs-to-be-fix/prompt-safety-origin-note-tab-strip.md
-    // The first regex whitelist does not include `\t`, so tabs are stripped
-    // instead of collapsed. Output is "a bc" today; fix should make it "a b c".
-    expect(sanitizeOriginNote('a    b\tc')).toBe('a bc')
+    // Tabs/newlines/NBSP are now whitelisted by `\s` so the /\s+/g collapse
+    // step turns runs of mixed whitespace into a single space.
+    expect(sanitizeOriginNote('a    b\tc')).toBe('a b c')
+  })
+
+  it('collapses newline to a single space (regression: pin)', () => {
+    expect(sanitizeOriginNote('a\nb')).toBe('a b')
+  })
+
+  it('collapses carriage return to a single space (regression: pin)', () => {
+    expect(sanitizeOriginNote('a\rb')).toBe('a b')
+  })
+
+  it('collapses NBSP to a single space (regression: pin)', () => {
+    expect(sanitizeOriginNote('a b')).toBe('a b')
   })
 
   it('trims leading/trailing whitespace', () => {
