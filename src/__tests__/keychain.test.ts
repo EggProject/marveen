@@ -292,20 +292,21 @@ describe('keychainDelete - delete-generic-password', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Known deviations (pinning). These lock in current behavior and MUST fail
-// once the corresponding docs/needs-to-be-fix/ entry is fixed.
+// Known deviations (pinning). The remaining entries lock in current behavior
+// and MUST fail once their docs/needs-to-be-fix/ entry is fixed; the
+// keychain-store-insecure-acl row was resolved and the test below asserts
+// the resolved state instead.
 // ---------------------------------------------------------------------------
 describe('keychain.ts - known deviations (pinning)', () => {
-  // docs/needs-to-be-fix/keychain-store-insecure-acl.md
-  it('passes -A, the flag security(1) itself calls insecure', () => {
+  // docs/needs-to-be-fix/keychain-store-insecure-acl.md (resolved)
+  it('does NOT pass -A (the flag security(1) calls insecure)', () => {
     // security(1): "-A  Allow any application to access this item without
-    // warning (insecure, not recommended!)". -A leaves the item's ACL empty,
-    // so the vault master key is readable through the SecKeychain API
-    // directly -- not only by way of an exec of /usr/bin/security. See the
-    // bug MD for why dropping -A alone does not close the exposure.
+    // warning (insecure, not recommended!)". Dropping -A still leaves the
+    // item readable by any app in the user session -- see the bug MD for
+    // why this is a partial fix, not a complete one.
     mocks.execFileSync.mockReturnValue('')
     keychainStore('master')
-    expect(onlyCall().args).toContain('-A')
+    expect(onlyCall().args).not.toContain('-A')
   })
 
   // docs/needs-to-be-fix/keychain-retrieve-swallows-locked-keychain.md
