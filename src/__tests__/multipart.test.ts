@@ -304,11 +304,11 @@ describe('parseMultipart - ismert eltresek (pinning)', () => {
     expect(Buffer.from(name ?? '', 'binary').toString('utf8')).toBe(filename)
   })
 
-  it('a Content-Disposition header nevet kis-nagybetu erzekenyen szuri', () => {
-    // A HTTP header nevek RFC 9110 szerint case-insensitive-ek, de a
-    // `part.includes('Content-Disposition')` szo szerinti egyezest var.
+  it('a Content-Disposition header nevet case-insensitive modon fogadja el (RFC 9110)', () => {
+    // A HTTP header nevek RFC 9110 szerint case-insensitive-ek, es a parser
+    // a `part.toLowerCase().includes('content-disposition')` mintat koveti.
     const body = buildBody(['content-disposition: form-data; name="a"\r\n\r\n1'])
-    expect(parseMultipart(body, CT).fields).toEqual({})
+    expect(parseMultipart(body, CT).fields).toEqual({ a: '1' })
   })
 
   it('forditott sorrendu filename/name eseten a fajlnevbol lesz a mezonev', () => {
