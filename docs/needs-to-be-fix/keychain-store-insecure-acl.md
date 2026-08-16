@@ -109,15 +109,26 @@ unresolved in `974f46a`.
 ## Path to a real fix
 
 The MD's "Suggested direction" step 1 can be applied **only after**
-`docs/needs-to-be-fix/keychain-retrieve-swallows-locked-keychain.md` is fixed:
+`docs/needs-to-be-fix/keychain-retrieve-swillows-locked-keychain.md` is fixed:
 
 1. Fix `keychainRetrieve` to surface prompts as actionable errors (exit 36 →
    specific error class) instead of returning `null`. After this fix, a
    missing key and a locked keychain are distinguishable.
+   — **Done (2026-08-17, commit `6e5bdd7`).** `keychainRetrieve` now
+   discriminates exit 44 (genuine absence → `null`) from any other exit /
+   ENOENT / non-Error throw, and raises a new `KeychainUnavailableError`
+   in the latter case. `vault.getMasterKey` catches the throw, marks the
+   call as failed, and refuses to mint a replacement whenever the vault
+     already holds secrets. First-run (vault empty + unreachable keychain)
+     still mints, per the MD's "worth pairing with" note. The
+   `keychain-retrieve-swallows-locked-keychain.md` row is closed.
 2. Then replace `-A` with `-T, SECURITY` (explicit trusted application list
    limited to `/usr/bin/security` itself). Verify on a real host that reads
    still complete without a prompt in a non-interactive session. A prompt at
-   this stage must surface as a real error, not as a vault re-key.
+   this stage must surface as a real error, not as a vault re-key. This is
+   now unblocked: removing `-A` after step 1 cannot trigger a vault re-key,
+   because the keychain prompt (if any) raises `KeychainUnavailableError`,
+   which `getMasterKey` treats as fatal when the vault is non-empty.
 3. Optionally tighten further with `SecAccessControl` / native binding, but
    that is a much larger change and a separate decision.
 
