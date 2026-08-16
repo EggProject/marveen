@@ -1,7 +1,9 @@
 # needs-to-be-fix index
 
-Every bug MD filed in this session. Total count: 175
-(`find docs/needs-to-be-fix -name '*.md' | wc -l`).
+Every bug MD filed in this session. Total count: 176
+(`find docs/needs-to-be-fix -name '*.md' ! -name 'INDEX.md' | wc -l`;
+the unfiltered command returns 177 because it counts this index too).
+The index has one table row per MD, so the two counts must stay equal.
 
 The original 50 entries below were filed during the first coverage pass.
 The 115 additional entries were filed during the unreachable/branches closure
@@ -136,6 +138,7 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `platform-xdg-session-type-tty-bug` | platform.ts: XDG_SESSION_TYPE=tty is misclassified as `linux-gui` | — |
 | `reauth-healer-stampalert-if-st-dead-code` | reauth-healer.ts: stampAlert `if (st)` false branch is dead code | 2026-08-14 c2b4ea2 |
 | `reauth-healer-sweep-callsite-dead-arms` | reauth-healer.ts: two structurally unreachable arms at lines 391 and 395 | 2026-08-14 c2b4ea2 |
+| `recall-dayofweek-noon-utc-far-east-skew` | routes/recall.ts: dayOfWeekBudapest anchors at noon UTC but reads the weekday in APP_TZ, so every week-range is off by a day for install zones at UTC+12 and beyond | — |
 | `recall-unreachable-defensive-fallbacks` | recall.ts: two unreachable defensive `?? 0` fallbacks block 100% branch coverage | Resolved: 2026-08-16 3bec823 |
 | `remote-enroll-core-merge-trailing-newline-skip` | `mergeAuthorizedKeys` has a single-input trailing newline guard that is only reachable when the input has multiple trailing newlines | — |
 | `remote-enroll-fs-lock-vanish-spin` | `acquireLock` spins forever when statSync throws but the lock file is still there | — |
@@ -144,8 +147,8 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `routes-agent-team-unreachable-branches` | routes/agent-team.ts: file path does not exist; coverage pin moved to web/agent-team.ts | — |
 | `routes-agent-terminal-literalkeys-nullish` | agent-terminal.ts: unreachable `literalKeys ?? ''` on the audit-preview line blocks 100% branch coverage | 2026-08-14 c2b4ea2 |
 | `routes-agents-br-baseline-partial-coverage` | routes/agents.ts: remaining uncovered branches after baseline regression tests | — |
-| `routes-agents-parse-channel-provider-dead-branches` | routes/agents.ts: parseChannelProvider / matchChannelProvider else branches are dead code | — |
-| `routes-agents-parsechannelprovider-dead-branch` | routes/agents.ts: parseChannelProvider's `return null` branch is unreachable through the public API | — |
+| `routes-agents-parse-channel-provider-dead-branches` | routes/agents.ts: parseChannelProvider / matchChannelProvider else branches are dead code | Resolved: 2026-08-16 3e1dd3f |
+| `routes-agents-parsechannelprovider-dead-branch` | routes/agents.ts: parseChannelProvider's `return null` branch is unreachable through the public API | Resolved: 2026-08-16 3e1dd3f |
 | `routes-agents-skills-unreachable-stat-throw` | agents-skills.ts: unreachable `catch { return false }` on the extracted-skills filter | 2026-08-14 c2b4ea2 |
 | `routes-background-tasks-delete-clobber` | routes/background-tasks.ts: DELETE clobbers an already finished task | — |
 | `routes-background-tasks-post-invalid-json` | routes/background-tasks.ts: malformed POST body returns 500 instead of 400 | — |
@@ -217,7 +220,7 @@ when a commit on `test/baseline` already deleted the buggy defensive guard, `-` 
 | `mcp-list-warn-execError-dead-branch` | `src/web/mcp-list.ts:135` | warn() payload's execError ? truthy arm is unreachable | `src/__tests__/mcp-list.test.ts` | Resolved: 2026-08-16 c1ee774 |
 | `recall-dayOfWeekBudapest-fallback` | `src/web/routes/recall.ts:25` | dayOfWeekBudapest's weekday-map fallback is unreachable | - | Resolved: 2026-08-16 3bec823 |
 | `recall-weekIdx-fallback` | `src/web/routes/recall.ts:153` | weekIdx ?? 0 fallback is unreachable | - | Resolved: 2026-08-16 3bec823 |
-| `routes-agents-parseChannelProvider-dead-code` | `src/web/routes/agents.ts:232` | parseChannelProvider `return null` branch is unreachable | `src/__tests__/agents-routes.test.ts` | - |
+| `routes-agents-parseChannelProvider-dead-code` | `src/web/routes/agents.ts:232` | parseChannelProvider `return null` branch is unreachable | `src/__tests__/agents-routes.test.ts` | Resolved: 2026-08-16 3e1dd3f |
 | `routes-recall-153-ts-strict-blocks-delete` | `src/web/routes/recall.ts:153` | TS strict blocks the safe-delete | - | Resolved: 2026-08-16 3bec823 |
 | `routes-recall-25-ts-strict-blocks-delete` | `src/web/routes/recall.ts:25` | TS strict blocks the safe-delete | - | Resolved: 2026-08-16 3bec823 |
 | `vault-ssh-keys-endsWith-newline` | `src/web/routes/vault-ssh-keys.ts:126` | privateKey.endsWith('\n') IF branch is unreachable | `src/__tests__/routes-vault-ssh-keys.test.ts` | Resolved: 2026-08-16 9aa71e5 |

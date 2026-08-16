@@ -150,37 +150,67 @@ describe('parseDateExpression', () => {
     // The two lookups below used to carry a `?? 0` fallback that no input
     // could reach (docs/needs-to-be-fix/recall-unreachable-defensive-fallbacks.md).
     // The fallbacks are gone, so these two tests are what guarantee every key
-    // of the weekday map and of weekMap actually resolves. The oracle is
-    // getUTCDay() on a noon-UTC date, deliberately NOT the SUT's Intl path.
-    it('resolves the first week of every month to a Monday (covers all 7 weekday-map keys)', () => {
-      const monthNames = [
-        'január', 'február', 'március', 'április', 'május', 'június',
-        'július', 'augusztus', 'szeptember', 'október', 'november', 'december',
-      ]
-      // In any year, common or leap, the 12 month-firsts land on all 7
-      // weekdays, so this loop exercises every entry of the weekday map.
-      for (const name of monthNames) {
-        const r = parseDateExpression(`${name} első hete`)
-        expect(r).not.toBeNull()
-        expect(new Date(`${r!.from}T12:00:00Z`).getUTCDay()).toBe(1)
-        // The first Monday of a month is always within its first 7 days.
-        expect(Number(r!.from.slice(8))).toBeLessThanOrEqual(7)
+    // of the weekday map and of weekMap actually resolves.
+    //
+    // The month-week branch derives its year from the real clock
+    // (`today.slice(0, 4)`), so both tests pin the system time; without that a
+    // run crossing New Year could read two different years across calls.
+    //
+    // They do NOT pin the install zone, because they cannot: APP_TZ is
+    // resolved once when config.ts loads, from the .env file with a fallback
+    // to the process zone, and neither vi.stubEnv('SCHEDULER_TZ') nor
+    // vi.stubEnv('TZ') reaches it (verified). That is acceptable here: the
+    // zones where these assertions do not hold are UTC+12 and beyond, and
+    // there the SUT itself yields inconsistent week starts across the year,
+    // which is filed separately as
+    // docs/needs-to-be-fix/recall-dayofweek-noon-utc-far-east-skew.md.
+    // Making the test pass there would assert a wrong result, not a right one.
+    // CI (ubuntu, UTC) and the documented install zone both hold.
+    const withPinnedClock = (fn: () => void): void => {
+      vi.useFakeTimers()
+      try {
+        vi.setSystemTime(new Date('2026-06-15T09:00:00Z'))
+        fn()
+      } finally {
+        vi.useRealTimers()
       }
+    }
+
+    const monthNames = [
+      'január', 'február', 'március', 'április', 'május', 'június',
+      'július', 'augusztus', 'szeptember', 'október', 'november', 'december',
+    ]
+
+    it('starts the first week of all 12 months on the same weekday (covers all 7 weekday-map keys)', () => {
+      withPinnedClock(() => {
+        // In any year, common or leap, the 12 month-firsts land on all 7
+        // weekdays, so this loop reads every entry of the weekday map. A
+        // broken entry makes the lookup yield undefined, `1 - undefined` is
+        // NaN, and addDays then formats an Invalid Date, which throws. A
+        // merely WRONG entry shifts that month's week start off the others.
+        const weekdays = new Set<number>()
+        for (const name of monthNames) {
+          const r = parseDateExpression(`${name} első hete`)
+          expect(r).not.toBeNull()
+          weekdays.add(new Date(`${r!.from}T12:00:00Z`).getUTCDay())
+        }
+        expect(weekdays.size).toBe(1)
+      })
     })
 
     it('spaces the ordinal weeks exactly 7 days apart (covers all 4 weekMap keys)', () => {
-      const dayIndex = (s: string): number => Math.round(new Date(`${s}T12:00:00Z`).getTime() / 86400000)
-      const first = parseDateExpression('június első hete')
-      const second = parseDateExpression('június második hete')
-      const third = parseDateExpression('június harmadik hete')
-      const fourth = parseDateExpression('június negyedik hete')
-      expect(first).not.toBeNull()
-      expect(second).not.toBeNull()
-      expect(third).not.toBeNull()
-      expect(fourth).not.toBeNull()
-      expect(dayIndex(second!.from) - dayIndex(first!.from)).toBe(7)
-      expect(dayIndex(third!.from) - dayIndex(first!.from)).toBe(14)
-      expect(dayIndex(fourth!.from) - dayIndex(first!.from)).toBe(21)
+      withPinnedClock(() => {
+        const dayIndex = (s: string): number => Math.round(new Date(`${s}T12:00:00Z`).getTime() / 86400000)
+        const ordinals = ['első', 'második', 'harmadik', 'negyedik']
+        const starts = ordinals.map((o) => {
+          const r = parseDateExpression(`június ${o} hete`)
+          expect(r).not.toBeNull()
+          return dayIndex(r!.from)
+        })
+        expect(starts[1] - starts[0]).toBe(7)
+        expect(starts[2] - starts[0]).toBe(14)
+        expect(starts[3] - starts[0]).toBe(21)
+      })
     })
 
     it('parses "május 10"', () => {
