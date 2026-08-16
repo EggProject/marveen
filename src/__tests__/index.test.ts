@@ -1134,26 +1134,17 @@ describe('shutdown() signal-handler paths', () => {
     )
   })
 
-  it('does NOT call stopHeartbeat when heartbeatStarted is false', async () => {
+  // Regression pin for docs/needs-to-be-fix/index-stopHeartbeat-throw.md.
+  // The legacy native scheduler was retired: index.ts no longer imports
+  // heartbeat.js at all, so shutdown() can never reach stopHeartbeat().
+  // If someone re-wires initHeartbeat/stopHeartbeat into index.ts without
+  // also re-adding a started-flag guard, this assertion catches it.
+  it('never calls stopHeartbeat on shutdown (native scheduler is retired)', async () => {
     mockStartWebServer.mockReturnValue(null)
     await loadIndexFresh()
     emitShutdownSignal('SIGTERM')
     expect(mockStopHeartbeat).not.toHaveBeenCalled()
-  })
-
-  it('calls stopHeartbeat when heartbeatStarted is true (initHeartbeat was called)', async () => {
-    mockStartWebServer.mockReturnValue(null)
-    await loadIndexFresh()
-    // Manually flip the module-level flag via the spy trick: we can't reach
-    // the closure, but we CAN trigger the `heartbeatStarted` branch by
-    // making initHeartbeat succeed (it does by default in the mock). However
-    // main() does NOT call initHeartbeat -- it was retired. The only way to
-    // flip heartbeatStarted is via the import-time path, which is gone.
-    // The defensive `if (heartbeatStarted)` branch is therefore reachable
-    // only when a test has explicitly stubbed initHeartbeat via a prior
-    // version of this file. Skipping the affirmative assertion here --
-    // covered via the "does NOT call" test above.
-    expect(true).toBe(true)
+    expect(mockInitHeartbeat).not.toHaveBeenCalled()
   })
 })
 
@@ -2100,18 +2091,13 @@ describe('scheduleDailyDigest internal timers', () => {
   })
 })
 
-describe('shutdown clears all timers when heartbeatStarted is true', () => {
-  // The heartbeatStarted flag is module-scoped in index.ts. main() does NOT
-  // call initHeartbeat() anymore (it was retired -- the heartbeat agent is
-  // channel-less). So heartbeatStarted stays false through normal init.
+describe('shutdown clears all timers', () => {
   // To exercise the "clearInterval(decayInterval)" + "clearTimeout(digestTimer)"
   // + "clearInterval(digestInterval)" branches, we need decayInterval,
   // digestTimer, and digestInterval to be non-null. They are set by main().
   //
   // After loadIndexFresh, decayInterval and digestTimer are set by main().
   // The mock for setInterval captures the callback into __capturedIntervals.
-  // We don't need heartbeatStarted=true for the clearInterval paths on
-  // decayInterval and digestInterval; we just need shutdown to be called.
   it('clears decayInterval and digestInterval on shutdown', async () => {
     // The global beforeEach stubs globalThis.setInterval/clearInterval to
     // capture callbacks. They return 0 as the timer handle -- which is
@@ -2155,27 +2141,6 @@ describe('shutdown clears all timers when heartbeatStarted is true', () => {
       ;(globalThis as unknown as { setInterval: typeof setInterval }).setInterval = origSetInterval
       ;(globalThis as unknown as { setTimeout: typeof setTimeout }).setTimeout = origSetTimeout
     }
-  })
-
-  it('handles stopHeartbeat throwing (heartbeatStarted true branch)', async () => {
-    // Manually stub initHeartbeat to flip heartbeatStarted=true via the
-    // process spy approach: we override mockStartWebServer to return null
-    // and ensure stopHeartbeat throws. But heartbeatStarted is module-scoped
-    // and only set via initHeartbeat() being called -- which main() does NOT
-    // do. So the `if (heartbeatStarted)` branch is unreachable in current
-    // code. We exercise the related catch block via mockStopHeartbeat that
-    // never gets called (the `if` is false).
-    //
-    // To still exercise the catch block, we use a different angle: directly
-    // call shutdown via a SIGTERM, where stopHeartbeat WOULD throw if
-    // heartbeatStarted were true. We can't make it true from tests, so this
-    // test documents the unreachable branch via a focused assertion that
-    // the catch wrapper does not run.
-    mockStartWebServer.mockReturnValue(null)
-    await loadIndexFresh()
-    // stopHeartbeat should NOT be called because heartbeatStarted is false
-    emitShutdownSignal('SIGTERM')
-    expect(mockStopHeartbeat).not.toHaveBeenCalled()
   })
 })
 
