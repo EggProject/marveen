@@ -117,3 +117,33 @@ Once fixed, the pinning test passes and the branch-0 coverage on
 line 126 is restored. The coverage suite at
 `src/__tests__/routes-vault-ssh-keys.test.ts` will then report 100%
 across every metric.
+## Resolution (2026-08-16, 9aa71e5)
+
+Resolved as an unreachable-branch removal (see the file title), NOT via the
+"Suggested direction" fix (a) above. `src/web/routes/vault-ssh-keys.ts:126` is
+now the unconditional `const keyContent = privateKey + '\n'`.
+
+Fix (a) as written in this MD is incorrect and was deliberately rejected:
+
+```ts
+const keyContent = rawPrivateKey.endsWith('\n') ? privateKey : privateKey + '\n'
+```
+
+For the MD's own reproducer input `'one\n\n'` this takes the IF arm and emits
+`privateKey`, which is the TRIMMED value `'one'` with no trailing newline at
+all. That is the opposite of the stated goal ("preserve multiple trailing
+newlines") and strips the single newline `ssh-keygen -y -f` expects. The MD's
+pinning-test expectation (`'one\n\n'`) is therefore unreachable through fix (a).
+
+The "Effects of the bug" item 3 is also factually wrong about persistence.
+`keyContent` is written only to a `mkdtempSync` directory that the handler's
+`finally` block removes with `rmSync(tmpDir, { recursive: true, force: true })`.
+What the vault stores is the trimmed key, via `setSecret(vaultKeyId, ...,
+privateKey)` on line 147, and that is unaffected by the ternary. So no caller
+whitespace was ever retained "forever" either way, and exactly one trailing
+newline is the canonical on-disk form for an SSH private key.
+
+Pinning test: `src/__tests__/routes-vault-ssh-keys.test.ts`, "normalises any
+number of trailing newlines to exactly one on the temp key file" (retitled from
+the old "PIN: buggy trim-before-endsWith ..." wording, same input and same
+assertion). Mutation check performed: removing `+ '\n'` makes it fail.

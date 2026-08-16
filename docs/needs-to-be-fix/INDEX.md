@@ -61,7 +61,7 @@ dead code, doc issue).
 | `prompt-safety-origin-note-tab-strip` | `src/prompt-safety.ts:96-103` | `sanitizeOriginNote` strips tab/newline/NBSP instead of collapsing them | `src/__tests__/prompt-safety.test.ts` | — |
 | `pane-state-defensive-branches` | `src/pane-state.ts:1064,1066,1104,1136,1161,1165,1489` | unreachable defensive branches block 100% branch coverage | `src/__tests__/pane-state.test.ts` | — |
 | `store-watcher-sensitive-names-unreachable` | `src/store-watcher.ts:142` | `SENSITIVE_NAMES` branch is dead code (`is_sensitive` can never be 1) | `src/__tests__/store-watcher.test.ts` | — |
-| `index-unreachable-coverage` | `src/index.ts:174,283,382` | three functions are unreachable from the test harness | `src/__tests__/index.test.ts` | — |
+| `index-unreachable-coverage` | `src/index.ts:174,283` (was `174,283,382`) | two functions are unreachable from the test harness; the third site (382, the `heartbeatStarted` shutdown guard) was deleted as dead code in 221d5c8 | `src/__tests__/index.test.ts` | — |
 | `channel-invites-unreachable-defensive-branches` | `src/web/channel-invites.ts:108,236` | two defensive `if` guards are unreachable through public API; callers gate on the same property | `src/__tests__/channel-invites.test.ts` | — |
 | `web-worker-warmup-ignores-close` | `src/web.ts:339-364` (warm-up) vs `544` (close override) | agent-worker warm-up import has no `close()` cancel flag, unlike the liveness monitor | `src/__tests__/web-server.test.ts` | — |
 | `auto-restart-parsehhmm-integer-guard` | `src/auto-restart.ts:63` | `parseHHMM`'s `Number.isInteger` guard is dead code | `src/__tests__/auto-restart.test.ts` | 2026-08-14 014f1de |
@@ -69,7 +69,7 @@ dead code, doc issue).
 | `channel-coordinator-internals-untestable` | `src/channel-coordinator.ts:117-441` | internal state-machine functions are not unit-testable | `src/__tests__/channel-coordinator.test.ts` | — |
 | `heartbeat-brief-rundiceaysweep-not-applicable` | `src/heartbeat.ts` (no symbol) | task brief mentions `runDecaySweep` integration but the integration does not exist | `src/__tests__/heartbeat-cov.test.ts` | — |
 | `http-helpers-gzip-memo-evict-guard` | `src/web/http-helpers.ts:122` | gzip memo eviction guard is dead code (`oldest` can never be `undefined`) | `src/__tests__/http-helpers.test.ts` | Resolved: 2026-08-16 5a2a3a7 |
-| `stuck-tool-call-watcher-dead-ternary` | `src/web/stuck-tool-call-watcher.ts:192` | `sinceRespawnMs` ternary has a dead `null` arm (blocks 100% branch coverage) | `src/__tests__/stuck-tool-call-watcher.test.ts` | — |
+| `stuck-tool-call-watcher-dead-ternary` | `src/web/stuck-tool-call-watcher.ts:192` | `sinceRespawnMs` ternary has a dead `null` arm (blocks 100% branch coverage) | `src/__tests__/stuck-tool-call-watcher.test.ts` | 2026-08-14 014f1de |
 | `keychain-store-insecure-acl` | `src/web/keychain.ts:19` | the master key is written with `-A`, the flag `security(1)` labels "insecure, not recommended" (empty ACL); low because the key is readable without `-A` too | `src/__tests__/keychain.test.ts` | — |
 | `vault-bindings-unreachable-coverage` | `src/web/vault-bindings.ts:163,236` | `maskValue`'s `<= 6` branch and `serverHasVaultRefs`'s `!env` branch are unreachable from any caller (`looksLikeSensitiveValue`'s 8-char gate and the `if (!serverCfg.env) continue` guard filter both inputs) | `src/__tests__/vault-bindings.test.ts` | — |
 | `agent-process-unreachable-defensive-branches` | `src/web/agent-process.ts:777,1384,1512` | three unreachable defensive branches (`runTmux` remote default timeout, `restartAgentProcess` `||` error fallback, `answerFirstRunGates` loop-exhaustion `'unchanged'` arm) cap branch coverage at 99.38% | `src/__tests__/agent-process.test.ts` | 2026-08-14 08d7508 |
@@ -134,9 +134,9 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `openrouter-models-tier1-auto-empty-fallback` | openrouter-models.ts: `??` misses the empty-string tier1.auto fallback | — |
 | `password-hash-defensive-branches` | password-hash.ts: two defensive branches unreachable through real inputs | 2026-08-14 c2b4ea2 |
 | `platform-xdg-session-type-tty-bug` | platform.ts: XDG_SESSION_TYPE=tty is misclassified as `linux-gui` | — |
-| `reauth-healer-stampalert-if-st-dead-code` | reauth-healer.ts: stampAlert `if (st)` false branch is dead code | — |
+| `reauth-healer-stampalert-if-st-dead-code` | reauth-healer.ts: stampAlert `if (st)` false branch is dead code | 2026-08-14 c2b4ea2 |
 | `reauth-healer-sweep-callsite-dead-arms` | reauth-healer.ts: two structurally unreachable arms at lines 391 and 395 | 2026-08-14 c2b4ea2 |
-| `recall-unreachable-defensive-fallbacks` | recall.ts: two unreachable defensive `?? 0` fallbacks block 100% branch coverage | — |
+| `recall-unreachable-defensive-fallbacks` | recall.ts: two unreachable defensive `?? 0` fallbacks block 100% branch coverage | Resolved: 2026-08-16 3bec823 |
 | `remote-enroll-core-merge-trailing-newline-skip` | `mergeAuthorizedKeys` has a single-input trailing newline guard that is only reachable when the input has multiple trailing newlines | — |
 | `remote-enroll-fs-lock-vanish-spin` | `acquireLock` spins forever when statSync throws but the lock file is still there | — |
 | `remote-enroll-fs-rename-failure-cleanup-untestable` | `writeAtomic` rename-failure cleanup is unreachable in the type system | — |
@@ -173,15 +173,14 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `schedule-mcp-precheck-subtree-cycle-defensive` | schedule-mcp-precheck.ts: collectSubtreeCmdlines cycle guard is only reachable through malformed ps output | — |
 | `schedule-runner-mcpmissingreason-cache-miss-unreachable` | schedule-runner: `mcpMissingReason` cache-miss branch is unreachable | — |
 | `schedules-expand-prompt-missing-answers` | Expand-prompt crashes when answers is omitted | — |
-| `skills-import-seg-truthy-guard` | skills.ts:409 -- `if (seg)` truthy guard is unreachable | — |
-| `skills-sort-comparator-falsy-arms` | skills.ts:157 -- `label || name` nullish fallback is unreachable | — |
+| `skills-import-seg-truthy-guard` | skills.ts:409 -- `if (seg)` truthy guard is unreachable | 2026-08-14 c2b4ea2 |
+| `skills-sort-comparator-falsy-arms` | skills.ts:157 -- `label || name` nullish fallback is unreachable | 2026-08-14 c2b4ea2 |
 | `store-watcher-sensitive-unreachable` | store-watcher: isSensitive=1 branch unreachable (SENSITIVE_NAMES ⊆ SYSTEM_FILES) | — |
 | `stuck-input-watcher-give-up-inner-if-unreachable` | stuck-input-watcher.ts: the give-up `prev.attempts < maxAttempts` inner-if is unreachable | — |
 | `stuck-tool-call-watcher-respawn-ternary-null-unreachable` | stuck-tool-call-watcher: sinceRespawnMs ternary `:null` arm is unreachable | 2026-08-14 014f1de |
 | `telegram-client-probehighwater-ignores-okfalse` | telegram-client.ts: `probeHighWater` ignores `ok: false` in the body and returns a fake `update_id` | — |
-| `updates-release-lock-unreachable` | updates.ts:198 -- releaseLock's `if (!lockHeld) return` early-exit is unreachable | — |
-| `vault-ssh-keys-import-newline-trim-bug` | vault-ssh-keys.ts: the import handler's `endsWith('
-')` branch is unreachable | — |
+| `updates-release-lock-unreachable` | updates.ts:198 -- releaseLock's `if (!lockHeld) return` early-exit is unreachable | 2026-08-14 c2b4ea2 |
+| `vault-ssh-keys-import-newline-trim-bug` | vault-ssh-keys.ts: the import handler's `endsWith('\n')` branch is unreachable | Resolved: 2026-08-16 9aa71e5 |
 | `voice-directive-json-quote-escape` | src/web/voice-directive.ts: only single quotes are escaped, so `"` / `\` in the state dir emits invalid JSON | — |
 | `web-agent-bundle-single-line-trycatch` | agent-bundle.ts: single-line try-catch and defensive-guard branches block 100% branch coverage | 2026-08-14 68b94fe |
 | `web-agent-scaffold-defensive-coverage` | web/agent-scaffold.ts: 18 defensive nullish-coalesce / guard branches cap branch coverage at 93.61% | — |
@@ -214,12 +213,12 @@ when a commit on `test/baseline` already deleted the buggy defensive guard, `-` 
 | `federation-inbox-fedPeer-null-fallback` | `src/web/routes/federation.ts:329` | ctx.fedPeer ?? null fallback is unreachable (MD heading off-by-one: line 330 in MD, actual code at line 329) | - | - |
 | `federation-rememberRef-oldest-undefined` | `src/web/routes/federation.ts:93` | rememberRef's if (oldest !== undefined) falsy arm is unreachable | - | 2026-08-14 08d7508 |
 | `federation-routes-fedpeer-required-type-narrow-deferred` | `src/web/routes/federation.ts:298,329` | fedPeer type-narrow deferred | - | - |
-| `index-stopHeartbeat-throw` | `src/index.ts:382` | stopHeartbeat-throws-during-shutdown catch is unreachable | `src/__tests__/index.test.ts` | - |
+| `index-stopHeartbeat-throw` | `src/index.ts:382` | stopHeartbeat-throws-during-shutdown catch is unreachable | `src/__tests__/index.test.ts` | Resolved: 2026-08-16 221d5c8 |
 | `mcp-list-warn-execError-dead-branch` | `src/web/mcp-list.ts:135` | warn() payload's execError ? truthy arm is unreachable | `src/__tests__/mcp-list.test.ts` | Resolved: 2026-08-16 c1ee774 |
-| `recall-dayOfWeekBudapest-fallback` | `src/web/routes/recall.ts:25` | dayOfWeekBudapest's weekday-map fallback is unreachable | - | - |
-| `recall-weekIdx-fallback` | `src/web/routes/recall.ts:153` | weekIdx ?? 0 fallback is unreachable | - | - |
+| `recall-dayOfWeekBudapest-fallback` | `src/web/routes/recall.ts:25` | dayOfWeekBudapest's weekday-map fallback is unreachable | - | Resolved: 2026-08-16 3bec823 |
+| `recall-weekIdx-fallback` | `src/web/routes/recall.ts:153` | weekIdx ?? 0 fallback is unreachable | - | Resolved: 2026-08-16 3bec823 |
 | `routes-agents-parseChannelProvider-dead-code` | `src/web/routes/agents.ts:232` | parseChannelProvider `return null` branch is unreachable | `src/__tests__/agents-routes.test.ts` | - |
-| `routes-recall-153-ts-strict-blocks-delete` | `src/web/routes/recall.ts:153` | TS strict blocks the safe-delete | - | - |
-| `routes-recall-25-ts-strict-blocks-delete` | `src/web/routes/recall.ts:25` | TS strict blocks the safe-delete | - | - |
-| `vault-ssh-keys-endsWith-newline` | `src/web/routes/vault-ssh-keys.ts:126` | privateKey.endsWith('\n') IF branch is unreachable | `src/__tests__/routes-vault-ssh-keys.test.ts` | - |
+| `routes-recall-153-ts-strict-blocks-delete` | `src/web/routes/recall.ts:153` | TS strict blocks the safe-delete | - | Resolved: 2026-08-16 3bec823 |
+| `routes-recall-25-ts-strict-blocks-delete` | `src/web/routes/recall.ts:25` | TS strict blocks the safe-delete | - | Resolved: 2026-08-16 3bec823 |
+| `vault-ssh-keys-endsWith-newline` | `src/web/routes/vault-ssh-keys.ts:126` | privateKey.endsWith('\n') IF branch is unreachable | `src/__tests__/routes-vault-ssh-keys.test.ts` | Resolved: 2026-08-16 9aa71e5 |
 | `voice-timer-stdinData-fallbacks` | `src/web/routes/voice.ts:74,79` | runProc timer and stdinData fallbacks are unreachable | - | 2026-08-14 c2b4ea2 |

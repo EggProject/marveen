@@ -89,3 +89,37 @@ the block can be re-added with the corresponding flip.
 
 Per task rule "NEVER modify src/index.ts" this requires an explicit
 override from the user.
+
+## Resolution (2026-08-16, 221d5c8)
+
+Deleted as dead code. `src/index.ts` no longer has the `heartbeatStarted`
+flag, the `if (heartbeatStarted)` block in `shutdown()`, or the
+`import { initHeartbeat, stopHeartbeat } from './heartbeat.js'` line.
+
+Unreachability argument, verified against HEAD: `heartbeatStarted` was
+declared `false` and never assigned anywhere in `src/`, `scripts/` or
+`tests/`; `initHeartbeat` was imported but never called. The native scheduler
+was retired in favour of the heartbeat agent, so the guard could not be true.
+
+Import-removal safety, checked explicitly:
+
+- `src/index.ts:16` was the only non-test importer of `heartbeat.js`.
+- `src/heartbeat.ts` has zero top-level executable statements (constants,
+  interfaces and function declarations only).
+- Of heartbeat.ts's own imports, `google-api.js` was the only one with no
+  other non-test importer, and it likewise has no top-level side effects.
+- `settings-store.js` is the one dependency that does run work at module scope
+  (`cache = loadFromDisk()` at line 32); it still loads because `db.ts` imports
+  it and `index.ts` imports `db.js` directly.
+- `heartbeat.ts` keeps its coverage through `heartbeat-cov.test.ts`: 99.13%
+  branches, 100% lines / statements / functions, unchanged before and after.
+
+Tests: `src/__tests__/index.test.ts` keeps "never calls stopHeartbeat on
+shutdown (native scheduler is retired)" as the regression pin, widened to also
+assert `initHeartbeat` is never called. Two tests were deleted because they had
+degenerated into no-ops documenting the unreachability: one whose body was
+`expect(true).toBe(true)`, and one that duplicated the kept assertion.
+
+src/index.ts: lines 99.55% -> 100%, statements 98.51% -> 99.62%, branches
+98.09% -> 99.02%. The remaining gap belongs to `index-unreachable-coverage`
+(sites 174 and 283), whose INDEX row was updated to drop site 382.

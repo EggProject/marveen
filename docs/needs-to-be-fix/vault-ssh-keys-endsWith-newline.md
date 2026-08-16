@@ -97,3 +97,27 @@ PINNING test for the bug would then assert the corrected behavior
 
 Per task rule "NEVER modify src/web/routes/vault-ssh-keys.ts" this
 requires an explicit override from the user.
+## Resolution (2026-08-16, 9aa71e5)
+
+The dead IF arm is gone. `src/web/routes/vault-ssh-keys.ts:126` is now
+
+```ts
+// privateKey is already trimmed (see above), so it can never end in a
+// newline. ssh-keygen -y -f needs exactly one, hence the unconditional append.
+const keyContent = privateKey + '\n'
+```
+
+Unreachability argument, verified against HEAD: `privateKey` is bound once at
+line 114 to `data.privateKey.trim()` and never reassigned before line 126.
+`String.prototype.trim()` strips the union of WhiteSpace and LineTerminator,
+and U+000A is a LineTerminator, so the trimmed value cannot end in `'\n'`.
+Characters that `trim()` does NOT strip (U+0085 NEL, other Cc controls) are by
+definition not U+000A, so no input string can flip the branch.
+
+Output is bit-identical for every input, so no behaviour changed.
+
+Pinning test: `src/__tests__/routes-vault-ssh-keys.test.ts`, "normalises any
+number of trailing newlines to exactly one on the temp key file". Mutation
+check performed: removing `+ '\n'` from the SUT makes the test fail.
+
+Branch coverage on the file: 98.48% (65/66) -> 100% (64/64).
