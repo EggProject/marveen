@@ -593,8 +593,8 @@ describe('POST /api/vault/ssh-keys/import', () => {
   // what `ssh-keygen -y -f` needs; more than one buys nothing, and the temp
   // file is rmSync'd in the finally block, so nothing about the caller's
   // trailing whitespace is persisted anywhere (the vault stores the trimmed
-  // key via setSecret). Mutation check: dropping the `+ '\n'` from the SUT
-  // makes this assertion fail.
+  // key via setSecret). Mutation check: dropping the `\n` from the SUT's
+  // template literal makes this assertion fail.
   it('normalises any number of trailing newlines to exactly one on the temp key file', async () => {
     H.execFileSync.mockImplementation(() => Buffer.from('ssh-ed25519 AAAA user@host'))
     let writtenKeyContent: string | undefined
