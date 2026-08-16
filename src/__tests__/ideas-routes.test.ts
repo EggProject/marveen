@@ -1005,14 +1005,14 @@ describe('pinned defects', () => {
   // routes-ideas-title-validation
   it('creates an idea whose title is only whitespace', async () => {
     const r = await call('POST', '/api/ideas', JSON.stringify({ title: '   ' }))
-    expect(r.status).toBe(200)
-    expect(db.createIdea).toHaveBeenCalledWith(expect.objectContaining({ title: '   ' }))
+    expect(r.status).toBe(400)
+    expect(db.createIdea).not.toHaveBeenCalled()
   })
 
   it('creates an idea whose title is not a string', async () => {
     const r = await call('POST', '/api/ideas', JSON.stringify({ title: { hu: 'objektum' } }))
-    expect(r.status).toBe(200)
-    expect(db.createIdea).toHaveBeenCalledWith(expect.objectContaining({ title: { hu: 'objektum' } }))
+    expect(r.status).toBe(400)
+    expect(db.createIdea).not.toHaveBeenCalled()
   })
 
   // routes-ideas-body-parse-500
