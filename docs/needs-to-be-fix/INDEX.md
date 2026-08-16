@@ -68,7 +68,7 @@ dead code, doc issue).
 | `agent-detect-linux-libc-redundant-guard` | `src/agent.ts:72-80` (line 73) | `detectLinuxLibc`'s platform check is unreachable in production | `src/__tests__/agent-run-paths.test.ts` | 2026-08-14 014f1de |
 | `channel-coordinator-internals-untestable` | `src/channel-coordinator.ts:117-441` | internal state-machine functions are not unit-testable | `src/__tests__/channel-coordinator.test.ts` | — |
 | `heartbeat-brief-rundiceaysweep-not-applicable` | `src/heartbeat.ts` (no symbol) | task brief mentions `runDecaySweep` integration but the integration does not exist | `src/__tests__/heartbeat-cov.test.ts` | — |
-| `http-helpers-gzip-memo-evict-guard` | `src/web/http-helpers.ts:122` | gzip memo eviction guard is dead code (`oldest` can never be `undefined`) | `src/__tests__/http-helpers.test.ts` | — |
+| `http-helpers-gzip-memo-evict-guard` | `src/web/http-helpers.ts:122` | gzip memo eviction guard is dead code (`oldest` can never be `undefined`) | `src/__tests__/http-helpers.test.ts` | Resolved: 2026-08-16 5a2a3a7 |
 | `stuck-tool-call-watcher-dead-ternary` | `src/web/stuck-tool-call-watcher.ts:192` | `sinceRespawnMs` ternary has a dead `null` arm (blocks 100% branch coverage) | `src/__tests__/stuck-tool-call-watcher.test.ts` | — |
 | `keychain-store-insecure-acl` | `src/web/keychain.ts:19` | the master key is written with `-A`, the flag `security(1)` labels "insecure, not recommended" (empty ACL); low because the key is readable without `-A` too | `src/__tests__/keychain.test.ts` | — |
 | `vault-bindings-unreachable-coverage` | `src/web/vault-bindings.ts:163,236` | `maskValue`'s `<= 6` branch and `serverHasVaultRefs`'s `!env` branch are unreachable from any caller (`looksLikeSensitiveValue`'s 8-char gate and the `if (!serverCfg.env) continue` guard filter both inputs) | `src/__tests__/vault-bindings.test.ts` | — |
@@ -106,7 +106,7 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `agent-worker-selfheal-catch-unreachable` | agent-worker.ts: ensureWorkerReady's self-heal catch arm is unreachable | — |
 | `agent-worker-settings-symlink-preserve` | agent-worker.ts: ensureWorkerCwd drops the shared settings.json content when the link is replaced | — |
 | `agent-worker-symlink-catch` | agent-worker.ts: ensureWorkerCwd's symlinkSync catch is unreachable from tests | — |
-| `approvals-raw-resolved-by-in-log` | approvals PATCH logger receives untrimmed resolved_by | — |
+| `approvals-raw-resolved-by-in-log` | approvals PATCH logger receives untrimmed resolved_by | Resolved: 2026-08-16 9173b54 |
 | `auto-restart-runner-unreachable-defensive-fallbacks` | auto-restart-runner.ts: two `??` fallbacks are unreachable defensive code | 2026-08-14 c2b4ea2 |
 | `channel-coordinator-coverage-limits` | channel-coordinator.ts: unreachable branches block 100% branch coverage | — |
 | `channel-health-monitor-spawndetach-inflight-redundant-guard` | channel-health-monitor.ts: spawnDetachedReconnect's in-flight guard is unreachable through public API | — |
@@ -205,7 +205,7 @@ when a commit on `test/baseline` already deleted the buggy defensive guard, `-` 
 | `agent-team-trustfrom-required-type-narrow-deferred` | `src/web/agent-team.ts:191,192` | trustFrom type-narrow deferred | - | - |
 | `agent-terminal-218-ts-strict-blocks-delete` | `src/web/routes/agent-terminal.ts:218` | TS strict blocks the safe-delete | - | - |
 | `agent-terminal-keys-preview-literalKeys-fallback` | `src/web/routes/agent-terminal.ts:218` | literalKeys ?? '' fallback is unreachable | - | - |
-| `agents-parseChannelProvider-return-null` | `src/web/routes/agents.ts:231` | parseChannelProvider's null return is unreachable | - | - |
+| `agents-parseChannelProvider-return-null` | `src/web/routes/agents.ts:231` | parseChannelProvider's null return is unreachable | - | Resolved: 2026-08-16 3e1dd3f |
 | `channel-coordinator-setOffset-null-maxUpdateId` | `src/channel-coordinator.ts:401` | maxUpdateId != null setOffset FALSE branch is unreachable | `src/__tests__/channel-coordinator-process-batch.test.ts` | - |
 | `channel-invites-108-ts-strict-blocks-delete` | `src/web/channel-invites.ts:108` | TS strict blocks the safe-delete | - | - |
 | `channel-invites-236-ts-strict-blocks-delete` | `src/web/channel-invites.ts:236` | TS strict blocks the safe-delete | - | - |
@@ -215,7 +215,7 @@ when a commit on `test/baseline` already deleted the buggy defensive guard, `-` 
 | `federation-rememberRef-oldest-undefined` | `src/web/routes/federation.ts:93` | rememberRef's if (oldest !== undefined) falsy arm is unreachable | - | 2026-08-14 08d7508 |
 | `federation-routes-fedpeer-required-type-narrow-deferred` | `src/web/routes/federation.ts:298,329` | fedPeer type-narrow deferred | - | - |
 | `index-stopHeartbeat-throw` | `src/index.ts:382` | stopHeartbeat-throws-during-shutdown catch is unreachable | `src/__tests__/index.test.ts` | - |
-| `mcp-list-warn-execError-dead-branch` | `src/web/mcp-list.ts:135` | warn() payload's execError ? truthy arm is unreachable | `src/__tests__/mcp-list.test.ts` | - |
+| `mcp-list-warn-execError-dead-branch` | `src/web/mcp-list.ts:135` | warn() payload's execError ? truthy arm is unreachable | `src/__tests__/mcp-list.test.ts` | Resolved: 2026-08-16 c1ee774 |
 | `recall-dayOfWeekBudapest-fallback` | `src/web/routes/recall.ts:25` | dayOfWeekBudapest's weekday-map fallback is unreachable | - | - |
 | `recall-weekIdx-fallback` | `src/web/routes/recall.ts:153` | weekIdx ?? 0 fallback is unreachable | - | - |
 | `routes-agents-parseChannelProvider-dead-code` | `src/web/routes/agents.ts:232` | parseChannelProvider `return null` branch is unreachable | `src/__tests__/agents-routes.test.ts` | - |
