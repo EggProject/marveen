@@ -49,7 +49,7 @@ vi.mock('node:os', async (importOriginal) => {
   return { ...actual, platform: mocks.platform }
 })
 
-const { isKeychainAvailable, keychainStore, keychainRetrieve, keychainDelete } =
+const { isKeychainAvailable, keychainStore, keychainRetrieve, keychainDelete, KeychainUnavailableError } =
   await import('../web/keychain.js')
 
 const envSnapshot = snapshotEnv()
@@ -239,14 +239,16 @@ describe('keychainRetrieve - find-generic-password', () => {
     expect(keychainRetrieve()).toBeNull()
   })
 
-  it('returns null when /usr/bin/security is missing (non-darwin host)', () => {
+  it('throws KeychainUnavailableError when /usr/bin/security is missing (non-darwin host)', () => {
     // Nothing gates the exec on isKeychainAvailable(), so a Linux caller that
-    // skips the gate lands in the catch rather than crashing.
+    // skips the gate lands in the catch rather than crashing. ENOENT carries
+    // no `status` so it falls through the exit-44 short-circuit and surfaces
+    // as the actionable error the vault module refuses to swallow.
     mocks.platform.mockReturnValue('linux')
     mocks.execFileSync.mockImplementation(() => {
       throw Object.assign(new Error('spawnSync /usr/bin/security ENOENT'), { code: 'ENOENT' })
     })
-    expect(keychainRetrieve()).toBeNull()
+    expect(() => keychainRetrieve()).toThrow(KeychainUnavailableError)
   })
 })
 
@@ -313,16 +315,18 @@ describe('keychain.ts - known deviations (pinning)', () => {
     expect(onlyCall().args).toContain('-A')
   })
 
-  // docs/needs-to-be-fix/keychain-retrieve-swallows-locked-keychain.md
-  it('reports a LOCKED keychain identically to a MISSING item (both null)', () => {
+  // docs/needs-to-be-fix/keychain-retrieve-swallows-locked-keychain.md (resolved)
+  it('throws KeychainUnavailableError on a locked keychain (status 36) but stays null for missing items (status 44)', () => {
     // errSecInteractionNotAllowed (-25308) surfaces from security(1) as exit
     // 36 / "User interaction is not allowed." -- the normal state for a login
-    // keychain over non-interactive SSH or right after a reboot. The bare
-    // catch maps it to null, which vault.ts:44-49 reads as "no key yet" and
-    // answers by minting + storing (with -U) a REPLACEMENT master key.
+    // keychain over non-interactive SSH or right after a reboot. The previous
+    // behaviour mapped exit 36 to null, which vault.ts:44-49 read as "no key
+    // yet" and answered by minting + storing (with -U) a REPLACEMENT master
+    // key, destroying every existing secret. The fix throws instead; the
+    // vault module catches and refuses to re-key when the vault is non-empty.
     const locked = Object.assign(new Error('User interaction is not allowed.'), { status: 36 })
     mocks.execFileSync.mockImplementation(() => { throw locked })
-    expect(keychainRetrieve()).toBeNull()
+    expect(() => keychainRetrieve()).toThrow(KeychainUnavailableError)
 
     mocks.execFileSync.mockReset()
     mocks.execFileSync.mockImplementation(() => {

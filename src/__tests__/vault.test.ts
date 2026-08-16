@@ -121,17 +121,23 @@ vi.mock('../logger.js', async (orig) => {
   return { logger: stub }
 })
 
-vi.mock('../web/keychain.js', () => ({
-  isKeychainAvailable: () => state.keychainAvailable,
-  keychainStore: (value: string) => {
-    if (state.keychainStoreThrows) throw new Error('mock keychain store failure')
-    state.keychainStored = value
-  },
-  keychainRetrieve: () => {
-    if (state.keychainRetrieveThrows) throw new Error('mock keychain retrieve failure')
-    return state.keychainRetrieveReturn
-  },
-}))
+vi.mock('../web/keychain.js', () => {
+  // Mirror the real module's export shape so vault.ts can throw and
+  // catch KeychainUnavailableError without the mock short-circuiting it.
+  class KeychainUnavailableError extends Error {}
+  return {
+    KeychainUnavailableError,
+    isKeychainAvailable: () => state.keychainAvailable,
+    keychainStore: (value: string) => {
+      if (state.keychainStoreThrows) throw new Error('mock keychain store failure')
+      state.keychainStored = value
+    },
+    keychainRetrieve: () => {
+      if (state.keychainRetrieveThrows) throw new KeychainUnavailableError('mock keychain retrieve failure')
+      return state.keychainRetrieveReturn
+    },
+  }
+})
 
 // Crypto mock: deterministic and round-trippable.
 //   randomBytes returns a fixed byte pattern so re-runs are reproducible.
@@ -180,6 +186,7 @@ vi.mock('node:crypto', async (orig) => {
 // ---------------------------------------------------------------------------
 const vault = await import('../web/vault.js')
 const { listSecrets, setSecret, getSecret, deleteSecret, getSecretsForEnv } = vault
+const { KeychainUnavailableError } = await import('../web/keychain.js')
 
 // ---------------------------------------------------------------------------
 // Lifecycle
@@ -334,6 +341,50 @@ describe('getMasterKey via setSecret/getSecret round-trip', () => {
     // File was not overwritten (we'd lose the existing-key round-trip if it was).
     expect(readFileSync(vaultKeyPath(), 'utf-8').trim()).toBe(existingKey)
     expect(getSecret('id7')).toBe('plaintext-value-7')
+  })
+
+  // (8) keychainRetrieve throws AND vault is non-empty -> refuse to re-key.
+  // Pins docs/needs-to-be-fix/keychain-retrieve-swallows-locked-keychain.md:
+  // the bare catch in keychainRetrieve previously mapped "locked" and
+  // "missing" to the same null, so vault.getMasterKey minted a replacement
+  // master key and silently overwrote (-U) the original -- every secret
+  // encrypted under the old key became undecryptable. The fix throws
+  // KeychainUnavailableError for any non-44 exit; vault.getMasterKey now
+  // catches it, sees that the vault already has entries, and refuses.
+  it('refuses to mint a new master key when keychainRetrieve throws AND vault has entries', () => {
+    state.platform = 'darwin'
+    state.keychainAvailable = true
+    state.keychainRetrieveThrows = true
+    seedVaultFile({
+      entries: [{
+        id: 'existing', label: 'l', encrypted: 'ZW5jcnlwdGVk',
+        createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+      }],
+    })
+
+    expect(() => setSecret('any', 'any', 'any')).toThrow(KeychainUnavailableError)
+    expect(state.keychainStored).toBeNull()  // keychainStore was never reached
+  })
+
+  // (9) keychainRetrieve throws AND vault is empty -> first-run fallback.
+  // Pins the MD's "worth pairing with" note: first-run with an
+  // unreachable keychain is the one edge case where re-keying is
+  // unavoidable, because there is no prior master key to lose. The vault
+  // entries guard deliberately allows this through. We assert only that
+  // the initial mint happened; the cipher mock is round-trip-agnostic
+  // about master keys, and a follow-up getSecret would re-enter
+  // getMasterKey with vault entries present, triggering the (9a) branch
+  // again -- which is a different scenario and is already pinned by the
+  // (8) test.
+  it('mints a new master key when keychainRetrieve throws AND vault is empty', () => {
+    state.platform = 'darwin'
+    state.keychainAvailable = true
+    state.keychainRetrieveThrows = true
+    // No seedVaultFile -> readVault() returns { entries: [] } (vault.ts:93-96).
+    state.keychainStored = null
+
+    setSecret('first', 'first', 'plaintext-value-9')
+    expect(state.keychainStored).not.toBeNull()  // a fresh key was stored
   })
 
 })
