@@ -69,7 +69,10 @@ export async function tryHandleMemories(ctx: RouteContext): Promise<boolean> {
     }
     const agentId = url.searchParams.get('agent') || agentIdAlias || ''
     const tier = url.searchParams.get('tier') || url.searchParams.get('category') || ''
-    const limit = Math.min(parseInt(url.searchParams.get('limit') || '50', 10), 200)
+    const rawLimit = parseInt(url.searchParams.get('limit') || '50', 10)
+    const limit = Number.isFinite(rawLimit) && rawLimit >= 1
+      ? Math.min(rawLimit, 200)
+      : 50
     const mode = url.searchParams.get('mode') || 'fts'
 
     let results: Memory[]

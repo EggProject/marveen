@@ -446,6 +446,16 @@ describe('GET /api/memories', () => {
     expect(H.getMemoriesForChat).toHaveBeenCalledWith(H.ALLOWED_CHAT_ID, 200)
   })
 
+  it('falls back to the default limit when the query value is not a positive integer', async () => {
+    await call('GET', '/api/memories?limit=abc')
+    expect(H.getMemoriesForChat).toHaveBeenCalledWith(H.ALLOWED_CHAT_ID, 50)
+  })
+
+  it('falls back to the default limit when the query value is negative', async () => {
+    await call('GET', '/api/memories?limit=-1')
+    expect(H.getMemoriesForChat).toHaveBeenCalledWith(H.ALLOWED_CHAT_ID, 50)
+  })
+
   it('lists one agent, pushing the category into the query', async () => {
     H.getAgentMemories.mockReturnValue([mem(3)])
     const r = await call('GET', '/api/memories?agent=agent-b&tier=warm')
