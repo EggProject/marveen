@@ -147,6 +147,42 @@ describe('parseDateExpression', () => {
       expect(r!.to.includes('-12-3')).toBe(true)
     })
 
+    // The two lookups below used to carry a `?? 0` fallback that no input
+    // could reach (docs/needs-to-be-fix/recall-unreachable-defensive-fallbacks.md).
+    // The fallbacks are gone, so these two tests are what guarantee every key
+    // of the weekday map and of weekMap actually resolves. The oracle is
+    // getUTCDay() on a noon-UTC date, deliberately NOT the SUT's Intl path.
+    it('resolves the first week of every month to a Monday (covers all 7 weekday-map keys)', () => {
+      const monthNames = [
+        'január', 'február', 'március', 'április', 'május', 'június',
+        'július', 'augusztus', 'szeptember', 'október', 'november', 'december',
+      ]
+      // In any year, common or leap, the 12 month-firsts land on all 7
+      // weekdays, so this loop exercises every entry of the weekday map.
+      for (const name of monthNames) {
+        const r = parseDateExpression(`${name} első hete`)
+        expect(r).not.toBeNull()
+        expect(new Date(`${r!.from}T12:00:00Z`).getUTCDay()).toBe(1)
+        // The first Monday of a month is always within its first 7 days.
+        expect(Number(r!.from.slice(8))).toBeLessThanOrEqual(7)
+      }
+    })
+
+    it('spaces the ordinal weeks exactly 7 days apart (covers all 4 weekMap keys)', () => {
+      const dayIndex = (s: string): number => Math.round(new Date(`${s}T12:00:00Z`).getTime() / 86400000)
+      const first = parseDateExpression('június első hete')
+      const second = parseDateExpression('június második hete')
+      const third = parseDateExpression('június harmadik hete')
+      const fourth = parseDateExpression('június negyedik hete')
+      expect(first).not.toBeNull()
+      expect(second).not.toBeNull()
+      expect(third).not.toBeNull()
+      expect(fourth).not.toBeNull()
+      expect(dayIndex(second!.from) - dayIndex(first!.from)).toBe(7)
+      expect(dayIndex(third!.from) - dayIndex(first!.from)).toBe(14)
+      expect(dayIndex(fourth!.from) - dayIndex(first!.from)).toBe(21)
+    })
+
     it('parses "május 10"', () => {
       const r = parseDateExpression('május 10')
       expect(r).not.toBeNull()

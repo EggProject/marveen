@@ -22,7 +22,7 @@ function dayOfWeekBudapest(dateStr: string): number {
   const d = new Date(`${dateStr}T12:00:00Z`)
   const weekday = new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'short' }).format(d)
   const map: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
-  return map[weekday] ?? 0
+  return map[weekday]
 }
 
 function startOfWeek(dateStr: string): string {
@@ -150,7 +150,7 @@ export function parseDateExpression(input: string): DateRange | null {
         const from = addDays(to, -6)
         return { from, to }
       }
-      const weekIdx = weekMap[weekMatch[1]] ?? 0
+      const weekIdx = weekMap[weekMatch[1]]
       let weekStart = startOfWeek(monthStart)
       if (weekStart < monthStart) weekStart = addDays(weekStart, 7)
       const from = addDays(weekStart, weekIdx * 7)
