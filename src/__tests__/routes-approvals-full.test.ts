@@ -388,7 +388,7 @@ describe('PATCH /api/approvals/:id', () => {
     // call #2: final approval after resolve
     H.getApproval.mockReturnValueOnce({ id: 'ap-1', agent_id: 'agent-b', status: 'approved' })
     H.resolveApproval.mockReturnValue(true)
-    const res = await call('PATCH', '/api/approvals/ap-1', { status: 'approved', resolved_by: 'owner' })
+    const res = await call('PATCH', '/api/approvals/ap-1', { status: 'approved', resolved_by: '  owner  ' })
     expect(res.statusCode).toBe(200)
     expect(H.resolveApproval).toHaveBeenCalledWith('ap-1', 'approved', 'owner', null)
     // Pin CURRENT behaviour: logger receives the raw `resolved_by` from the
