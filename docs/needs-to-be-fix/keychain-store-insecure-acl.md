@@ -76,6 +76,53 @@ Without `-A` step 3 requires spawning `/usr/bin/security`, which still
 succeeds -- hence "low". The delta is purely the loss of the exec chokepoint
 and the vendor-flagged ACL.
 
+## Attempted fix in Cycle 16 and reason for revert
+
+The fix in commit `0c81522` (2026-08-16) removed `-A` from the args array and
+inverted the pinning test (asserted `not.toContain('-A')`). Local vitest passed
+because the test mocks `execFileSync` — it does not exercise real keychain
+behavior.
+
+In a headless install (Marveen runs as a background daemon; the operator
+authorised it once and it has no UI), removing `-A` causes the macOS keychain
+to **prompt for access** the first time the app reads the master key. The
+prompt is invisible in headless mode. `keychainRetrieve` swallows the
+resulting error as `null` (`src/web/keychain.ts:32-34`), which `vault.ts:44-49`
+reads as "no key yet" and answers by minting + storing a **replacement master
+key** (with `-U`). The vault is effectively re-keyed, and every previously
+stored secret becomes undecryptable.
+
+This is exactly the cascade the MD's own "Suggested direction" calls out:
+> "Note the interaction with `keychain-retrieve-swallows-locked-keychain`:
+> until that is fixed, a prompt introduced here would be silently swallowed
+> as null and would trigger a vault re-key. **Fix that one first.**"
+
+The MD's hypothesis was that `-A` is redundant — that the prompt should not
+occur without it because `/usr/bin/security` is already in the default ACL.
+In this install the hypothesis does not hold: a real prompt is raised on
+first access, and `-A` is the only thing suppressing it.
+
+The fix was reverted in `725b1a1`. The pinning test was restored to its
+original `toContain('-A')` assertion, and the INDEX row was re-marked as
+unresolved in `974f46a`.
+
+## Path to a real fix
+
+The MD's "Suggested direction" step 1 can be applied **only after**
+`docs/needs-to-be-fix/keychain-retrieve-swallows-locked-keychain.md` is fixed:
+
+1. Fix `keychainRetrieve` to surface prompts as actionable errors (exit 36 →
+   specific error class) instead of returning `null`. After this fix, a
+   missing key and a locked keychain are distinguishable.
+2. Then replace `-A` with `-T, SECURITY` (explicit trusted application list
+   limited to `/usr/bin/security` itself). Verify on a real host that reads
+   still complete without a prompt in a non-interactive session. A prompt at
+   this stage must surface as a real error, not as a vault re-key.
+3. Optionally tighten further with `SecAccessControl` / native binding, but
+   that is a much larger change and a separate decision.
+
+Until step 1 lands, `-A` must stay and the row remains open.
+
 ## Pinning test
 
 `src/__tests__/keychain.test.ts`, describe block
