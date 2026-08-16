@@ -60,11 +60,12 @@ describe('resolveKanbanDispatchTarget -- trimming', () => {
     expect(resolveKanbanDispatchTarget('  Gábor  ', base)).toBeNull()
   })
 
-  it('does NOT trim the configured names -- a padded BOT_NAME stops matching', () => {
+  it('trims the configured names -- a padded BOT_NAME still matches (resolved trim asymmetry)', () => {
     // .env values are trimmed by readEnvFile, but a QUOTED value keeps its
-    // padding ("Marveen " -> Marveen<space>). The main agent then never wakes.
+    // padding ("Marveen " -> Marveen<space>). The norm() helper closes this
+    // gap so the main agent still wakes even when .env quotes leak padding.
     const padded = { ...base, botName: 'GorcsevIvan ', mainAgentId: 'gorcsevivan ' }
-    expect(resolveKanbanDispatchTarget('GorcsevIvan', padded)).toBeNull()
+    expect(resolveKanbanDispatchTarget('GorcsevIvan', padded)).toBe('gorcsevivan')
   })
 })
 
