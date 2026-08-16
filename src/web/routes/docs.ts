@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
-import { join, basename } from 'node:path'
+import { join } from 'node:path'
 import { PROJECT_ROOT } from '../../config.js'
 import { json } from '../http-helpers.js'
 import type { RouteContext } from './types.js'
@@ -59,7 +59,7 @@ export async function tryHandleDocs(ctx: RouteContext): Promise<boolean> {
   const match = path.match(/^\/api\/docs\/([^/]+)$/)
   if (match && method === 'GET') {
     const name = decodeURIComponent(match[1])
-    if (!NAME_RE.test(name) || basename(name) !== name) {
+    if (!NAME_RE.test(name)) {
       json(res, { error: 'Invalid doc name' }, 400)
       return true
     }
