@@ -138,7 +138,8 @@ export function shouldDeferForRecentRespawn(
   nowMs: number,
   graceMs = MARVEEN_POST_RESPAWN_GRACE_MS,
 ): boolean {
-  return lastRespawnMs > 0 && nowMs - lastRespawnMs < graceMs
+  const age = nowMs - lastRespawnMs
+  return lastRespawnMs > 0 && age >= 0 && age < graceMs
 }
 
 async function checkSession(label: string, session: string): Promise<void> {

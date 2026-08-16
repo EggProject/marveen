@@ -227,15 +227,13 @@ describe('src/web/stuck-tool-call-watcher.ts', () => {
       expect(watcher.shouldDeferForRecentRespawn(1_000_000, 1_000_000 + GRACE_MS)).toBe(false)
     })
 
-    // Pins CURRENT behaviour, not desired behaviour: the comparison is a bare
-    // `nowMs - lastRespawnMs < graceMs`, so a future-dated stamp (forward clock
-    // step after a respawn, or a backwards step of the system clock) yields a
-    // negative age that is trivially < graceMs and defers for as long as the
-    // skew lasts -- not just for the grace window. Filed as
-    // docs/needs-to-be-fix/stuck-tool-call-watcher-skew-defer.md.
-    it('defers indefinitely on a future-dated respawn stamp (clock skew)', () => {
-      expect(watcher.shouldDeferForRecentRespawn(2_000_000, 1_000_000)).toBe(true)
-      expect(watcher.shouldDeferForRecentRespawn(Number.MAX_SAFE_INTEGER, 1_000_000)).toBe(true)
+    // A future-dated stamp (forward clock step after a respawn, or a
+    // backwards step of the system clock) used to defer indefinitely; the
+    // guard now clamps the age at 0 so a skew falls through to recovery
+    // (fail-open, matching the sibling posture in decideStuckToolCallRecovery).
+    it('does not defer on a future-dated respawn stamp (clock skew clamp)', () => {
+      expect(watcher.shouldDeferForRecentRespawn(2_000_000, 1_000_000)).toBe(false)
+      expect(watcher.shouldDeferForRecentRespawn(Number.MAX_SAFE_INTEGER, 1_000_000)).toBe(false)
     })
   })
 
