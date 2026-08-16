@@ -398,7 +398,7 @@ async function runLoop(token: string): Promise<void> {
 
     const maxUpdateId = processBatch(updates)
     // Persist offset ONLY after the batch is durable + handed off.
-    if (maxUpdateId != null) setOffset(SOURCE, maxUpdateId)
+    setOffset(SOURCE, maxUpdateId)
   }
 }
 
