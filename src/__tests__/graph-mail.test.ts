@@ -140,7 +140,7 @@ describe('loadCredentials + getToken (cache, mtime, errors)', () => {
     rmSync(credsPath, { force: true })
     process.env.MARVEEN_MAIL_CREDS = tmp // tmp IS the directory, not the file inside it
     const { listMessages } = await import('../graph-mail.js')
-    await expect(listMessages()).rejects.toThrowError(/EISDIR/)
+    await expect(listMessages()).rejects.toThrowError(/credentials file not readable at .*EISDIR/)
   })
 
   it('mints a token via the client-credentials endpoint', async () => {

@@ -59,7 +59,7 @@ dead code, doc issue).
 | --- | --- | --- | --- | --- |
 | `ci-eslint-typecheck-baseline` | `eslint.config.js`, `tsconfig.json` | strict ESLint landed with 9933 pre-existing violations, plus 1703 pre-existing `tsc --noEmit` errors; CI `lint` job is red by design | n/a (tooling debt, no runtime defect) | — |
 | `vault-readvault-missing-entries-fatal` | `src/web/vault.ts:93-96` | `readVault` returns parsed JSON as-is, so any shape that lacks `entries` is fatal on every public call | `src/__tests__/vault.test.ts` | — |
-| `graph-mail-stat-not-isdir` | `src/graph-mail.ts:105-119` | stat-successful / read-failing `CREDS_PATH` produces an opaque error | `src/__tests__/graph-mail.test.ts` | — |
+| `graph-mail-stat-not-isdir` | `src/graph-mail.ts:105-119` | stat-successful / read-failing `CREDS_PATH` produces an opaque error | `src/__tests__/graph-mail.test.ts` | Resolved: 2026-08-17 482585f |
 | `prompt-safety-origin-note-tab-strip` | `src/prompt-safety.ts:96-103` | `sanitizeOriginNote` strips tab/newline/NBSP instead of collapsing them | `src/__tests__/prompt-safety.test.ts` | Resolved: 2026-08-17 cdb771f |
 | `pane-state-defensive-branches` | `src/pane-state.ts:1064,1066,1104,1136,1161,1165,1489` | unreachable defensive branches block 100% branch coverage | `src/__tests__/pane-state.test.ts` | — |
 | `store-watcher-sensitive-names-unreachable` | `src/store-watcher.ts:142` | `SENSITIVE_NAMES` branch is dead code (`is_sensitive` can never be 1) | `src/__tests__/store-watcher.test.ts` | — |
