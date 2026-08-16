@@ -91,9 +91,8 @@ describe('heartbeat OAuth bridge from Keychain to .credentials.json (#250 follow
 // `claudeAiOauth` key. We do NOT log the JSON content; we only inspect
 // keys/permissions.
 describe('ensureHeartbeatWorkerCwd materialises Keychain JSON (live, darwin only)', () => {
-  const skip = process.platform !== 'darwin'
 
-  it.skipIf(skip)('writes .credentials.json with mode 0600 + claudeAiOauth key', async () => {
+  it('writes .credentials.json with mode 0600 + claudeAiOauth key', async () => {
     // The function uses fixed PROJECT_ROOT-derived paths, so we can't
     // sandbox it cleanly without invoking the real module. Instead,
     // observe the file the production code path produces on the next
