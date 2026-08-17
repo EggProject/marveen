@@ -207,7 +207,7 @@ describe('updateEnvFile', () => {
     expect(readEnvFile()['TOKEN']).toBe('regi')
   })
 
-  it('PINNED BUG env-update-mode-downgrade: a 0600 .env 0644-re romlik', async () => {
+  it('preserves 0600 across updateEnvFile (closes env-update-mode-downgrade)', async () => {
     const { envPath, updateEnvFile } = await loadEnv('SECRET=a\n')
     chmodSync(envPath, 0o600)
     expect(statSync(envPath).mode & 0o777).toBe(0o600)
@@ -221,10 +221,10 @@ describe('updateEnvFile', () => {
       process.umask(previousUmask)
     }
 
-    // atomicWriteFileSync mode opcio nelkul hivodik (src/env.ts:87): uj tmp
-    // fajl keszul default umask-kal, majd rename-el a helyere -- a 0600 igy
-    // elveszik. Ez a 2026-07-27-i incidens hibaosztalya.
-    expect(statSync(envPath).mode & 0o777).toBe(0o644)
+    // atomicWriteFileSync { mode: 0o600 } opcioval hivodik (src/env.ts:87): a
+    // tmp fajl a write utan chmod 0o600-zal jon letre, majd rename. A 0600
+    // jogosultsag a frissites utan is megmarad.
+    expect(statSync(envPath).mode & 0o777).toBe(0o600)
   })
 })
 
