@@ -121,7 +121,12 @@ describe('notifyChannel', () => {
   it('re-sends the failing chunk (not the full outbound head) on each fallback attempt', async () => {
     const long = `${'x'.repeat(4096)}TAIL`
     markIfTestRun.mockReturnValue(long)
-    providerMock.splitMessage.mockReturnValue(['chunk-1', 'chunk-2', 'chunk-3-TAIL'])
+    // splitMessage is called twice: once for the 4100-char initial formatted
+    // text (returns the 3 specific chunks), and once per small chunk inside
+    // the catch fallback (chunks under 4096 chars come back as-is).
+    providerMock.splitMessage.mockImplementation((text: string) =>
+      text.length > 4096 ? ['chunk-1', 'chunk-2', 'chunk-3-TAIL'] : [text]
+    )
     providerMock.sendMessage.mockImplementation(async (_t, _c, _text, parseMode) => {
       if (parseMode === 'HTML') throw new Error('parse error')
     })
@@ -137,20 +142,23 @@ describe('notifyChannel', () => {
     expect(fallbacks[0]?.[2]).not.toContain('TAIL')
   })
 
-  // Pinned defect -- docs/needs-to-be-fix/notify-fallback-hardcodes-telegram-limit.md
-  it('truncates the fallback at the telegram limit even on discord (pinned defect)', async () => {
+  // PINNING (resolved 2026-08-17) -- notify-fallback-hardcodes-telegram-limit
+  it('uses provider splitMessage for the fallback chunk (resolved 2026-08-17)', async () => {
     state.provider = 'discord'
     const long = 'y'.repeat(3000)
     markIfTestRun.mockReturnValue(long)
-    providerMock.splitMessage.mockReturnValue([long])
+    // Discord's splitMessage respects the 2000-char limit; encode that here
+    // so the fallback truncation matches the provider's own bound.
+    providerMock.splitMessage.mockImplementation((text: string) => [text.slice(0, 2000)])
     providerMock.sendMessage
       .mockRejectedValueOnce(new Error('rejected'))
       .mockResolvedValueOnce(undefined)
 
     await notifyChannel(long)
 
-    // Discord rejects anything over 2000 chars; the fallback still sends 3000.
-    expect(providerMock.sendMessage.mock.calls[1]?.[2]).toHaveLength(3000)
+    // Discord rejects anything over 2000 chars; the fallback now uses the
+    // provider's own splitMessage, which truncates to 2000.
+    expect(providerMock.sendMessage.mock.calls[1]?.[2]).toHaveLength(2000)
   })
 })
 
