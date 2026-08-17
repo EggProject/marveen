@@ -372,6 +372,30 @@ describe('POST /api/schedules/expand-prompt', () => {
     expect(H.runAgent).not.toHaveBeenCalled()
   })
 
+  it('rejects malformed JSON with 400 and skips agent', async () => {
+    const result = await call('POST', '/api/schedules/expand-prompt', { raw: 'not json' })
+    expect(result.status).toBe(400)
+    expect(result.body).toEqual({ error: 'Invalid JSON' })
+    expect(H.runAgent).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    { label: 'null item', answers: [null] },
+    { label: 'string item', answers: ['str'] },
+    { label: 'number item', answers: [42] },
+    { label: 'missing question', answers: [{ answer: 'A' }] },
+    { label: 'missing answer', answers: [{ question: 'Q' }] },
+    { label: 'non-string question', answers: [{ question: 42, answer: 'A' }] },
+    { label: 'non-string answer', answers: [{ question: 'Q', answer: 42 }] },
+  ])('rejects $label with 400 and skips agent', async ({ answers }) => {
+    const result = await call('POST', '/api/schedules/expand-prompt', {
+      body: { prompt: 'Brief', answers },
+    })
+    expect(result.status).toBe(400)
+    expect(result.body).toEqual({ error: 'Answers must contain question and answer strings' })
+    expect(H.runAgent).not.toHaveBeenCalled()
+  })
+
   it('accepts an empty answers array and expands without Kerdes blocks', async () => {
     H.runAgent.mockResolvedValue({ text: 'Expanded result' })
     const result = await call('POST', '/api/schedules/expand-prompt', {
