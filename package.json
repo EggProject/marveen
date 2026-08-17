@@ -17,7 +17,7 @@
     "lint": "NODE_OPTIONS=--max-old-space-size=8192 eslint . --max-warnings 0",
     "lint:fix": "NODE_OPTIONS=--max-old-space-size=8192 eslint . --fix",
     "typecheck": "bun tsc --noEmit",
-    "syntax-check": "bun --check web/app.js web/sw.js",
+    "syntax-check": "node --check web/app.js && node --check web/sw.js",
     "smoke": "bun playwright test --config=playwright.config.ts"
   },
   "engines": {
