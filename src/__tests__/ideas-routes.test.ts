@@ -665,20 +665,18 @@ describe('POST /api/ideas/:id/promote', () => {
     expect(r.status).toBe(200)
   })
 
-  // PINNED DEFECT: routes-ideas-promote-double
-  it('re-promotes an already-promoted idea and orphans the first card', async () => {
+  // PINNED DEFECT (resolved 2026-08-17) -- routes-ideas-promote-double
+  it('returns 409 with the existing kanban_id when re-promoting a kanban idea', async () => {
     seedIdea({ id: 'idea-1', status: 'kanban', kanban_id: 'regi-kartya' })
 
     const r = await call('POST', '/api/ideas/idea-1/promote', JSON.stringify({}))
 
-    expect(r.status).toBe(200)
-    // No guard on the current status: a second card is created and the
-    // pointer to the first one is overwritten with no trace.
-    expect(db.createKanbanCard).toHaveBeenCalledTimes(1)
-    expect(db.updateIdea).toHaveBeenCalledWith('idea-1', { status: 'kanban', kanban_id: idOf(1) })
-    expect(db.logIdeaStatusChange).toHaveBeenCalledWith(
-      'idea-1', 'kanban', 'kanban', 'main-agent', 'promote:detail',
-    )
+    expect(r.status).toBe(409)
+    expect(r.body).toMatchObject({ kanban_id: 'regi-kartya' })
+    // A guard a card/idea write-ok ELOTT rovidre zar -- az eredeti card megmarad.
+    expect(db.createKanbanCard).not.toHaveBeenCalled()
+    expect(db.updateIdea).not.toHaveBeenCalled()
+    expect(db.logIdeaStatusChange).not.toHaveBeenCalled()
   })
 })
 
@@ -754,6 +752,21 @@ describe('POST /api/ideas/:id/promote-breakdown', () => {
     const r = await call('POST', '/api/ideas/nincs/promote-breakdown', JSON.stringify({ subtasks: [] }))
     expect(r.status).toBe(404)
     expect(r.body).toEqual({ error: 'Ötlet nem található' })
+  })
+
+  // PINNED DEFECT (resolved 2026-08-17) -- routes-ideas-promote-double (sibling)
+  it('returns 409 with the existing kanban_id when re-promoting a kanban idea via breakdown', async () => {
+    seedIdea({ id: 'idea-1', status: 'kanban', kanban_id: 'regi-kartya' })
+
+    const r = await call('POST', '/api/ideas/idea-1/promote-breakdown', JSON.stringify({
+      subtasks: [{ title: 'A' }],
+    }))
+
+    expect(r.status).toBe(409)
+    expect(r.body).toMatchObject({ kanban_id: 'regi-kartya' })
+    expect(db.createKanbanCard).not.toHaveBeenCalled()
+    expect(db.updateIdea).not.toHaveBeenCalled()
+    expect(db.logIdeaStatusChange).not.toHaveBeenCalled()
   })
 
   it('rejects a non-array subtasks field', async () => {
@@ -1012,16 +1025,20 @@ describe('pinned defects', () => {
     expect(db.createIdea).not.toHaveBeenCalled()
   })
 
-  // routes-ideas-body-parse-500
+  // routes-ideas-body-parse-500 (resolved 2026-08-17)
   it.each([
     ['POST', '/api/ideas'],
     ['PUT', '/api/ideas/idea-1'],
     ['POST', '/api/ideas/idea-1/comments'],
     ['POST', '/api/ideas/idea-1/promote'],
     ['POST', '/api/ideas/idea-1/promote-breakdown'],
-  ])('throws out of the handler on a malformed body (%s %s)', async (method, path) => {
+  ])('returns 400 Invalid JSON on a malformed body (%s %s)', async (method, path) => {
     seedIdea({ id: 'idea-1' })
-    await expect(call(method, path, 'nem json')).rejects.toThrow(SyntaxError)
+    const r = await call(method, path, 'nem json')
+    expect(r.status).toBe(400)
+    expect(r.body).toEqual({ error: 'Invalid JSON' })
+    expect(db.createIdea).not.toHaveBeenCalled()
+    expect(db.updateIdea).not.toHaveBeenCalled()
   })
 
   it.each([
@@ -1030,12 +1047,18 @@ describe('pinned defects', () => {
     ['POST', '/api/ideas/idea-1/comments'],
     ['POST', '/api/ideas/idea-1/promote'],
     ['POST', '/api/ideas/idea-1/promote-breakdown'],
-  ])('throws out of the handler on a literal null body (%s %s)', async (method, path) => {
+  ])('returns 400 Invalid JSON on a literal null body (%s %s)', async (method, path) => {
     seedIdea({ id: 'idea-1' })
-    await expect(call(method, path, 'null')).rejects.toThrow(TypeError)
+    const r = await call(method, path, 'null')
+    expect(r.status).toBe(400)
+    expect(r.body).toEqual({ error: 'Invalid JSON' })
+    expect(db.createIdea).not.toHaveBeenCalled()
+    expect(db.updateIdea).not.toHaveBeenCalled()
   })
 
-  it('throws out of the handler on an empty body', async () => {
-    await expect(call('POST', '/api/ideas', '')).rejects.toThrow(SyntaxError)
+  it('returns 400 Invalid JSON on an empty body', async () => {
+    const r = await call('POST', '/api/ideas', '')
+    expect(r.status).toBe(400)
+    expect(r.body).toEqual({ error: 'Invalid JSON' })
   })
 })
