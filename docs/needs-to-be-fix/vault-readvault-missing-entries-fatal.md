@@ -105,3 +105,32 @@ Two minimal fixes (either is sufficient):
 Approach (1) is the right minimum: it keeps the public API stable (every
 existing call still returns `VaultStore`), it preserves the malformed-JSON
 behaviour (catch stays), and it adds the missing schema check.
+
+## Resolution (2026-08-17, 07f3267)
+
+The fix landed as a near-variant of approach (1): `readVault` now returns
+`{ entries: [] }` for any parseable-but-shape-invalid file, gated by a
+real `isVaultStore` typeguard (no `as` cast, no `any`).
+
+The naive readVault-only fix was deliberately rejected. With the original
+getMasterKey guard reading `readVault().entries.length > 0`, a parseable-
+but-invalid vault crashed on `.entries.length` with a TypeError that
+incidentally aborted the mint. After the shape-validating readVault
+returns `{ entries: [] }`, that TypeError branch is gone -- naive
+readVault-only would let the mint through, and any prior encrypted
+secrets held under the original master key would be re-encrypted under
+the fresh key, destroying decryptability.
+
+The fix therefore extends the getMasterKey guard with a dedicated
+`vaultHasContent()` probe (not the public `readVault()`) that returns
+`true` for any parseable-but-shape-invalid file: "this file might hold
+encrypted secrets, refuse to mint". `vaultHasContent()` is only called
+from the getMasterKey guard, never from the public API.
+
+Behaviour contract pinned by `src/__tests__/vault.test.ts`:
+- missing/unreadable + keychain unreachable -> mint proceeds (existing test passes)
+- unparseable JSON + keychain unreachable -> mint proceeds (readVaultRaw returns undefined -> vaultHasContent returns false)
+- valid empty store + keychain unreachable -> mint proceeds (existing test passes)
+- valid non-empty store + keychain unreachable -> KeychainUnavailableError (existing test passes)
+- parseable invalid shape + keychain unreachable -> KeychainUnavailableError, on-disk file unchanged (new test)
+- parseable invalid shape + keychain reachable -> empty store, calls succeed, setSecret rewrites file (new tests)
