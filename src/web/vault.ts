@@ -62,7 +62,7 @@ function getMasterKey(): Buffer {
     // safe to mint, even if the vault already has entries from a prior
     // process (round-trip pattern in tests, or a process that lost its
     // keychain between runs but kept the encrypted vault file).
-    if (keychainFailed && readVault().entries.length > 0) {
+    if (keychainFailed && vaultHasContent()) {
       throw new KeychainUnavailableError(
         'Vault already contains secrets but the macOS Keychain master key is unreachable. ' +
         'Refusing to mint a replacement to avoid destroying the vault. ' +
@@ -117,8 +117,27 @@ function decrypt(packed: string): string {
 }
 
 function readVault(): VaultStore {
+  const raw = readVaultRaw()
+  return isVaultStore(raw) ? raw : { entries: [] }
+}
+
+function readVaultRaw(): unknown | undefined {
   try { return JSON.parse(readFileSync(VAULT_PATH, 'utf-8')) }
-  catch { return { entries: [] } }
+  catch { return undefined }
+}
+
+function isVaultStore(v: unknown): v is VaultStore {
+  if (typeof v !== 'object' || v === null) return false
+  if (!('entries' in v)) return false
+  return Array.isArray(v.entries)
+}
+
+// A parseable-but-invalid vault may still hold encrypted secrets, so it
+// counts as content and must block minting.
+function vaultHasContent(): boolean {
+  const raw = readVaultRaw()
+  if (raw === undefined) return false
+  return isVaultStore(raw) ? raw.entries.length > 0 : true
 }
 
 function writeVault(store: VaultStore): void {

@@ -387,6 +387,65 @@ describe('getMasterKey via setSecret/getSecret round-trip', () => {
     expect(state.keychainStored).not.toBeNull()  // a fresh key was stored
   })
 
+  // (10) keychainRetrieve throws AND vault file is parseable but invalid shape.
+  // The previous readVault() did `parsed.entries.length` on the raw object
+  // and crashed with a TypeError, which incidentally aborted the mint. The
+  // shape-validating readVault() would return { entries: [] } and let the
+  // mint through, so a dedicated vaultHasContent() probe must still detect
+  // "this file might hold encrypted secrets" and refuse to mint. Assert the
+  // error is KeychainUnavailableError (NOT TypeError), and that the on-disk
+  // file was not rewritten with a fresh master key.
+  it('refuses to mint when keychainRetrieve throws AND the vault file has parseable-but-invalid shape', () => {
+    state.platform = 'darwin'
+    state.keychainAvailable = true
+    state.keychainRetrieveThrows = true
+    seedVaultFile({ entries: 'notarray' })
+
+    let caught: unknown = null
+    try {
+      setSecret('any', 'any', 'any')
+    } catch (err) {
+      caught = err
+    }
+    expect(caught).toBeInstanceOf(KeychainUnavailableError)
+    expect(String(caught)).toMatch(/Refusing to mint a replacement/)
+    // keychainStore was never reached.
+    expect(state.keychainStored).toBeNull()
+    // The on-disk file was not rewritten into a healthy store.
+    expect(readVaultFileRaw()).toBe(JSON.stringify({ entries: 'notarray' }))
+  })
+
+  // (11) unchanged row: missing vault file + keychain unreachable still mints.
+  it('mints when keychainRetrieve throws AND the vault file is missing', () => {
+    state.platform = 'darwin'
+    state.keychainAvailable = true
+    state.keychainRetrieveThrows = true
+    // No seedVaultFile call.
+    state.keychainStored = null
+
+    setSecret('first', 'first', 'plaintext-value-11')
+    expect(state.keychainStored).not.toBeNull()
+  })
+
+  // (12) unchanged row: valid store with >=1 entry + keychain unreachable
+  // still throws KeychainUnavailableError (the original guard's reason for
+  // existing). The vaultHasContent() probe must agree with the old
+  // readVault().entries.length > 0 check on this branch.
+  it('refuses to mint when keychainRetrieve throws AND the vault file holds a valid non-empty store', () => {
+    state.platform = 'darwin'
+    state.keychainAvailable = true
+    state.keychainRetrieveThrows = true
+    seedVaultFile({
+      entries: [{
+        id: 'existing', label: 'l', encrypted: 'ZW5jcnlwdGVk',
+        createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+      }],
+    })
+
+    expect(() => setSecret('any', 'any', 'any')).toThrow(KeychainUnavailableError)
+    expect(state.keychainStored).toBeNull()
+  })
+
 })
 
 // ---------------------------------------------------------------------------
@@ -414,17 +473,49 @@ describe('readVault', () => {
     ])
   })
 
-  // PIN: a valid JSON document without an `entries` field makes readVault
-  // return the parsed object as-is, so the next caller crashes on
-  // `.entries.find/findIndex/filter/length`. The catch around JSON.parse
-  // does not extend to schema validation. See
-  // docs/needs-to-be-fix/vault-readvault-missing-entries-fatal.md.
-  it('PIN: throws on a valid JSON document without an entries field', () => {
+  // Recovery contract: a parseable-but-invalid-shape vault is treated as an
+  // empty store. listSecrets / getSecret / deleteSecret must not throw, and
+  // a subsequent setSecret must rewrite the file into a healthy store and
+  // round-trip via getSecret.
+  it('returns an empty store for a parseable but shape-invalid vault file', () => {
     seedVaultFile({ unrelated: 'shape' })
-    expect(() => listSecrets()).toThrow()
-    expect(() => getSecret('any')).toThrow()
-    expect(() => deleteSecret('any')).toThrow()
-    expect(() => setSecret('any', 'lbl', 'val')).toThrow()
+    expect(listSecrets()).toEqual([])
+    expect(getSecret('any')).toBeNull()
+    expect(deleteSecret('any')).toBe(false)
+  })
+
+  it('returns an empty store when the top-level value is a JSON array', () => {
+    writeFileSync(vaultPath(), JSON.stringify([]))
+    expect(listSecrets()).toEqual([])
+  })
+
+  it('returns an empty store when the top-level value is a JSON string', () => {
+    writeFileSync(vaultPath(), JSON.stringify('str'))
+    expect(listSecrets()).toEqual([])
+  })
+
+  it('returns an empty store when the top-level value is JSON null', () => {
+    writeFileSync(vaultPath(), JSON.stringify(null))
+    expect(listSecrets()).toEqual([])
+  })
+
+  it('returns an empty store when entries is present but not an array', () => {
+    seedVaultFile({ entries: 'notarray' })
+    expect(listSecrets()).toEqual([])
+  })
+
+  it('rewrites a parseable-but-invalid vault into a healthy store on setSecret', () => {
+    seedVaultFile({ entries: 'notarray' })
+    state.platform = 'linux'
+    state.keychainAvailable = false
+
+    setSecret('recovered', 'recovered-label', 'recovered-value')
+
+    const onDisk = JSON.parse(readVaultFileRaw())
+    expect(Array.isArray(onDisk.entries)).toBe(true)
+    expect(onDisk.entries).toHaveLength(1)
+    expect(onDisk.entries[0]).toMatchObject({ id: 'recovered', label: 'recovered-label' })
+    expect(getSecret('recovered')).toBe('recovered-value')
   })
 })
 
