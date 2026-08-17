@@ -208,7 +208,6 @@ function seedWorkerCredentials(ctx: WorkerCtx): boolean {
   if (process.platform === 'darwin') clearWorkerKeychainEntry(ctx)
   const credentialsJson = readClaudeCodeOauthJson()
   if (!credentialsJson) return false
-  if (!existsSync(ctx.configDir)) mkdirSync(ctx.configDir, { recursive: true })
   writeFileSync(join(ctx.configDir, '.credentials.json'), credentialsJson, { mode: 0o600 })
   return true
 }
