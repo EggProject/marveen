@@ -18,7 +18,7 @@ dead code, doc issue).
 
 | Bug ID | File:Line | Title | Pinning test path | Resolved |
 | --- | --- | --- | --- | --- |
-| `env-update-mode-downgrade` | `src/env.ts:87` | `updateEnvFile` rewrites `.env` from 0600 to 0644 (silent secret leak) | `src/__tests__/env.test.ts` | — |
+| `env-update-mode-downgrade` | `src/env.ts:87` | `updateEnvFile` rewrites `.env` from 0600 to 0644 (silent secret leak) | `src/__tests__/env.test.ts` | Resolved: 2026-08-17 d9fb8beb8d1a2e0f6a1a6ee358135f3b3c9ffe6e |
 | `config-empty-env-blanks-identity` | `src/config.ts:129,135,143,200,209` | an empty `.env` line blanks the whole install identity | `src/__tests__/config.test.ts` | — |
 | `db-missing-telegram-history-table` | `src/db.ts:2563,2588` (no `CREATE TABLE` in `initDatabase`) | `telegram_history` table is referenced but never created (silent data loss) | `src/__tests__/db.test.ts` | — |
 | `google-api-refresh-race` | `src/google-api.ts:108-142` | `refreshAccessToken` has no in-flight de-duplication (race overwrites tokens) | `src/__tests__/google-api.test.ts` | — |
