@@ -38,7 +38,7 @@ dead code, doc issue).
 | `web-port-reclaim-failure-leaves-unbound` | `src/web.ts:225-280` | a failing port-reclaim leaves the process alive with no listener and no retry | `src/__tests__/web-server.test.ts` | — |
 | `env-update-duplicate-key-lost` | `src/env.ts:68-80` | duplicate-key update of `updateEnvFile` is silently lost (reader uses last-occurrence) | `src/__tests__/env.test.ts` | — |
 | `kanban-dispatch-owner-case` | `src/kanban-dispatch.ts:34` | owner-guard is the only case-sensitive comparison (mismatched casing misroutes cards) | `src/__tests__/kanban-dispatch.test.ts` | Resolved: 2026-08-16 92612c5 |
-| `notify-fallback-hardcodes-telegram-limit` | `src/notify.ts:25` | fallback hardcodes Telegram 4096 limit for every provider | `src/__tests__/notify.test.ts` | — |
+| `notify-fallback-hardcodes-telegram-limit` | `src/notify.ts:25` | fallback hardcodes Telegram 4096 limit for every provider | `src/__tests__/notify.test.ts` | Resolved: 2026-08-17 be8f505 |
 | `notify-fallback-repeats-head` | `src/notify.ts:19-28` | per-chunk fallback re-sends the same first 4096 chars, dropping the tail | `src/__tests__/notify.test.ts` | Resolved: 2026-08-17 ff22286 |
 | `memory-digest-empty-trim` | `src/memory.ts:200-206` | `runDailyDigest` saves an empty digest when `runAgent` returns whitespace-only text | `src/__tests__/memory.test.ts` | — |
 | `multipart-case-sensitive-disposition` | `src/web/multipart.ts:17` | case-sensitive `Content-Disposition` filter silently drops conforming parts | `src/__tests__/multipart.test.ts` | Resolved: 2026-08-16 b5baca3 |
@@ -50,7 +50,7 @@ dead code, doc issue).
 | `routes-memories-nan-limit` | `src/web/routes/memories.ts:72` | `limit` is clamped only from above, so `?limit=abc` binds `NaN` (SqliteError -> 500) and `?limit=-1` returns every row (SQLite treats a negative LIMIT as unlimited) | `src/__tests__/memories-routes.test.ts` | Resolved: 2026-08-17 22f68f8 |
 | `routes-memories-put-tier-precedence` | `src/web/routes/memories.ts:242` | `PUT` resolves `tier \|\| category` while `POST` resolves `category \|\| tier`, so the deprecated field wins on edit and a round-trip silently reclassifies the row | `src/__tests__/memories-routes.test.ts` | Resolved: 2026-08-16 c4b4b9a |
 | `channel-poller-reap-botpid-killed-without-identity-check` | `src/web/channel-poller-reap.ts:76-88,202-230` | `reapChannelOrphans` SIGTERM+SIGKILLs the `bot.pid` pid with no identity check (only `> 1`); nothing ever deletes `bot.pid`, so a stale file plus pid reuse kills an unrelated process while logging "orphans killed" | `src/__tests__/channel-poller-reap.test.ts` | — |
-| `syntax-check-executes-web-bundle` | `package.json:18` | `bun --check` is not a Bun flag, so `syntax-check` executes `web/app.js` in a server runtime and always exits 1 on `window is not defined`; the gate has never checked syntax (added as a CI gate in `a61ff74`) | none yet -- add one asserting exit 0 on clean files, non-zero on a syntax error | — |
+| `syntax-check-executes-web-bundle` | `package.json:18` | `bun --check` is not a Bun flag, so `syntax-check` executes `web/app.js` in a server runtime and always exits 1 on `window is not defined`; the gate has never checked syntax (added as a CI gate in `a61ff74`) | none yet -- add one asserting exit 0 on clean files, non-zero on a syntax error | Resolved: 2026-08-17 45bb024 |
 | `test-suite-macos-only-portability` | 7 causes across `src/web/agent-scaffold.ts:129`, `src/web/ssh-tmux.ts:32`, `src/web/routes/docs.ts:53`, `src/web/reauth-healer.ts:142`, `src/web/federation/local-catalog.ts:47`, 10 module-level `resolveFromPath` call sites | the baseline suite passed only on macOS: 22 files / 50 tests failed on the first Linux CI run, because the tests inherited tmpdir, XDG_RUNTIME_DIR, birthtime, readdir order, bash version and installed binaries from the host instead of controlling them (**fixed**) | `src/__tests__/platform-no-import-time-bin-resolve.test.ts` + `federation-local-catalog.test.ts` | — |
 
 ## Low
@@ -159,7 +159,7 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `routes-connectors-hu-config-nostring-token` | routes-connectors-hu-config-nostring-token | Resolved: 2026-08-17 5a348eadbfd7d4a9ef65e6d22e783a4e9473ff4b |
 | `routes-dashboard-auth-nonexistent-sut` | routes/dashboard-auth.ts does not exist; task brief references the wrong path | — |
 | `routes-docs-basename-redundant` | routes/docs.ts: the `basename(name) !== name` check in /api/docs/<name> is unreachable | — |
-| `routes-docs-inner-catch-no-title-reset` | routes/docs.ts: inner per-file catch does not reset `title` despite the comment | — |
+| `routes-docs-inner-catch-no-title-reset` | routes/docs.ts: inner per-file catch does not reset `title` despite the comment | Resolved: 2026-08-17 16949d9 |
 | `routes-fleet-q-404-leaks-roster` | fleet-q.ts: PUT /api/agents/:name/capabilities -- 404 message leaks internal agent identity | — |
 | `routes-fleet-q-body-parse-uncaught` | fleet-q.ts: PUT /api/agents/:name/capabilities -- unguarded readBody + JSON.parse crash | — |
 | `routes-reauth-detect-missing-source-path` | routes/reauth-detect: task target path does not exist on disk | — |
