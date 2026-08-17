@@ -223,6 +223,16 @@ describe('GET /api/token-usage/timeline', () => {
     await call('GET', '/api/token-usage/timeline?from=50')
     expect(H.getTokenTimeline).toHaveBeenCalledWith(60, 50, undefined, undefined)
   })
+
+  it('falls back bucket to 60 when bucket is unparseable', async () => {
+    await call('GET', '/api/token-usage/timeline?bucket=abc')
+    expect(H.getTokenTimeline).toHaveBeenCalledWith(60, undefined, undefined, undefined)
+  })
+
+  it('falls back bucket to 60 when bucket is below the minimum (0)', async () => {
+    await call('GET', '/api/token-usage/timeline?bucket=0')
+    expect(H.getTokenTimeline).toHaveBeenCalledWith(60, undefined, undefined, undefined)
+  })
 })
 
 // ===========================================================================
@@ -337,6 +347,36 @@ describe('GET /api/token-usage', () => {
     H.getTokenDetails.mockReset().mockReturnValue([{ id: 99 }])
     const { json } = await call('GET', '/api/token-usage')
     expect(json()).toEqual([{ id: 99 }])
+  })
+
+  it('falls back limit to 100 when limit is unparseable', async () => {
+    await call('GET', '/api/token-usage?limit=abc')
+    expect(H.getTokenDetails).toHaveBeenCalledWith(expect.objectContaining({ limit: 100 }))
+  })
+
+  it('falls back limit to 100 when limit is below the minimum (-1)', async () => {
+    await call('GET', '/api/token-usage?limit=-1')
+    expect(H.getTokenDetails).toHaveBeenCalledWith(expect.objectContaining({ limit: 100 }))
+  })
+
+  it('falls back limit to 100 for an empty-string limit param', async () => {
+    await call('GET', '/api/token-usage?limit=')
+    expect(H.getTokenDetails).toHaveBeenCalledWith(expect.objectContaining({ limit: 100 }))
+  })
+
+  it('falls back offset to 0 when offset is unparseable', async () => {
+    await call('GET', '/api/token-usage?offset=abc')
+    expect(H.getTokenDetails).toHaveBeenCalledWith(expect.objectContaining({ offset: 0 }))
+  })
+
+  it('falls back offset to 0 when offset is below the minimum (-1)', async () => {
+    await call('GET', '/api/token-usage?offset=-1')
+    expect(H.getTokenDetails).toHaveBeenCalledWith(expect.objectContaining({ offset: 0 }))
+  })
+
+  it('accepts offset=0 verbatim (boundary case)', async () => {
+    await call('GET', '/api/token-usage?offset=0')
+    expect(H.getTokenDetails).toHaveBeenCalledWith(expect.objectContaining({ offset: 0 }))
   })
 })
 
