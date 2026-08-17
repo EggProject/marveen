@@ -600,7 +600,7 @@ async function ensureWorkerReady(ctx: WorkerCtx): Promise<boolean> {
     if (await isSessionReadyForPrompt(ctx.session)) return true
     if (!healed && Date.now() - start > WORKER_SELF_HEAL_GRACE_MS) {
       healed = true
-      try { selfHealWorkerOnce(ctx) } catch (err) { logger.warn({ err }, 'agent-worker: self-heal pass failed') }
+      selfHealWorkerOnce(ctx)
     }
     await sleepMs(2000)
   }
