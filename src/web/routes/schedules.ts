@@ -83,6 +83,7 @@ Valaszolj KIZAROLAG JSON formatumban, semmi mas:
     const body = await readBody(req)
     const { prompt, answers } = JSON.parse(body.toString()) as { prompt: string; answers: { question: string; answer: string }[] }
     if (!prompt?.trim()) { json(res, { error: 'Prompt is required' }, 400); return true }
+    if (!Array.isArray(answers)) { json(res, { error: 'Answers array is required' }, 400); return true }
 
     const answersText = answers.map((a: { question: string; answer: string }) => `Kerdes: ${a.question}\nValasz: ${a.answer}`).join('\n\n')
 

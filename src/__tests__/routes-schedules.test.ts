@@ -360,13 +360,26 @@ describe('POST /api/schedules/expand-prompt', () => {
     )
   })
 
-  it('pins the missing answers array failure', async () => {
-    await expect(call('POST', '/api/schedules/expand-prompt', {
-      body: { prompt: 'Brief' },
-    })).rejects.toThrow(TypeError)
-
+  it.each([
+    { label: 'omitted answers', body: { prompt: 'Brief' } },
+    { label: 'string answers', body: { prompt: 'Brief', answers: 'oops' } },
+    { label: 'object answers', body: { prompt: 'Brief', answers: { foo: 'bar' } } },
+    { label: 'null answers', body: { prompt: 'Brief', answers: null } },
+  ])('rejects $label with 400 and skips agent', async ({ body }) => {
+    const result = await call('POST', '/api/schedules/expand-prompt', { body })
+    expect(result.status).toBe(400)
+    expect(result.body).toEqual({ error: 'Answers array is required' })
     expect(H.runAgent).not.toHaveBeenCalled()
-    expect(H.json).not.toHaveBeenCalled()
+  })
+
+  it('accepts an empty answers array and expands without Kerdes blocks', async () => {
+    H.runAgent.mockResolvedValue({ text: 'Expanded result' })
+    const result = await call('POST', '/api/schedules/expand-prompt', {
+      body: { prompt: 'Brief', answers: [] },
+    })
+    expect(result.status).toBe(200)
+    expect(result.body).toEqual({ prompt: 'Expanded result' })
+    expect(H.runAgent).toHaveBeenCalledWith(expect.not.stringContaining('Kerdes:'))
   })
 })
 
