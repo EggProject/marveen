@@ -150,7 +150,7 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `routes-agents-parse-channel-provider-dead-branches` | routes/agents.ts: parseChannelProvider / matchChannelProvider else branches are dead code | Resolved: 2026-08-16 3e1dd3f |
 | `routes-agents-parsechannelprovider-dead-branch` | routes/agents.ts: parseChannelProvider's `return null` branch is unreachable through the public API | Resolved: 2026-08-16 3e1dd3f |
 | `routes-agents-skills-unreachable-stat-throw` | agents-skills.ts: unreachable `catch { return false }` on the extracted-skills filter | 2026-08-14 c2b4ea2 |
-| `routes-background-tasks-delete-clobber` | routes/background-tasks.ts: DELETE clobbers an already finished task | — |
+| `routes-background-tasks-delete-clobber` | routes/background-tasks.ts: DELETE clobbers an already finished task | Resolved: 2026-08-17 231eb21a4c5852a1a7fe5f1f450b5cef6a93881e |
 | `routes-background-tasks-post-invalid-json` | routes/background-tasks.ts: malformed POST body returns 500 instead of 400 | Resolved: 2026-08-17 780f126a0a433a8c68bc6297b54edfee8cb7094b |
 | `routes-background-tasks-session-ended-status` | routes/background-tasks.ts: a dead session is `done` in the poller but `failed` in the sweeper | — |
 | `routes-background-tasks-sweep-timeout-reset` | routes/background-tasks.ts: restart grants every surviving task a fresh 30 minutes | — |
