@@ -145,7 +145,8 @@ export async function tryHandleBackgroundTasks(ctx: RouteContext): Promise<boole
 
   if (path === '/api/background-tasks' && method === 'POST') {
     const body = await readBody(req)
-    const data = JSON.parse(body.toString()) as { agent_id: string; prompt: string }
+    let data: { agent_id: string; prompt: string }
+    try { data = JSON.parse(body.toString()) } catch { json(res, { error: 'Invalid JSON' }, 400); return true }
     if (!data.prompt?.trim()) {
       json(res, { error: 'Prompt megadása kötelező' }, 400)
       return true

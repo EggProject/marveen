@@ -664,10 +664,11 @@ describe('POST /api/background-tasks', () => {
     expect(H.createBackgroundTaskAtomic).toHaveBeenCalledWith(TASK_ID, 'agent-9', 'do it', SESSION, 3)
   })
 
-  it('propagates a malformed JSON body to the dispatcher (documented in docs/needs-to-be-fix)', async () => {
-    await expect(
-      call('POST', '/api/background-tasks', { body: 'not json' }),
-    ).rejects.toThrow(SyntaxError)
+  it('returns 400 with { error: "Invalid JSON" } when the body is not parseable (pinned defect)', async () => {
+    const { res, json } = await call('POST', '/api/background-tasks', { body: 'not-json{' })
+    expect(res.statusCode).toBe(400)
+    expect(json()).toEqual({ error: 'Invalid JSON' })
+    expect(H.createBackgroundTaskAtomic).not.toHaveBeenCalled()
   })
 })
 
