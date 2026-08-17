@@ -410,16 +410,18 @@ describe('GET /api/traces', () => {
     expect(H.listOtelTraces).toHaveBeenCalledWith(200)
   })
 
-  it('passes NaN to listOtelTraces when the limit query param is not a number (defect -- see docs/needs-to-be-fix/routes-spans-nan-limit.md)', async () => {
+  it('falls back to the default limit when the query value is not a positive integer', async () => {
     H.listOtelTraces.mockReturnValue([])
     const { res } = await call('GET', '/api/traces', { query: 'limit=notanumber' })
     expect(res.statusCode).toBe(200)
-    // The current dispatcher computes Math.min(parseInt('notanumber'), 200)
-    // which is NaN; that NaN is forwarded to listOtelTraces(NaN), which
-    // better-sqlite3 rejects at the LIMIT clause. The mock here absorbs
-    // the call so the dispatcher still returns 200; the underlying bug is
-    // documented separately.
-    expect(H.listOtelTraces).toHaveBeenCalledWith(NaN)
+    expect(H.listOtelTraces).toHaveBeenCalledWith(50)
+  })
+
+  it('falls back to the default limit when the query value is negative', async () => {
+    H.listOtelTraces.mockReturnValue([])
+    const { res } = await call('GET', '/api/traces', { query: 'limit=-1' })
+    expect(res.statusCode).toBe(200)
+    expect(H.listOtelTraces).toHaveBeenCalledWith(50)
   })
 })
 
