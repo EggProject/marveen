@@ -816,12 +816,11 @@ describe('DELETE /api/background-tasks/:id', () => {
     H.getBackgroundTask.mockReturnValue(mkTask({ status: 'done', output: 'result' }))
     programTmux({ sessions: [], panes: {} })
 
-    await call('DELETE', `/api/background-tasks/${TASK_ID}`)
+    const { json } = await call('DELETE', `/api/background-tasks/${TASK_ID}`)
 
     expect(callsOf('kill-session')).toHaveLength(0)
-    // Overwrites the completed result -- see
-    // docs/needs-to-be-fix/routes-background-tasks-delete-clobber.md
-    expect(H.finishBackgroundTask).toHaveBeenCalledWith(TASK_ID, 'failed', '(cancelled)')
+    expect(H.finishBackgroundTask).not.toHaveBeenCalled()
+    expect(json()).toEqual({ ok: true, already: 'done' })
   })
 })
 
