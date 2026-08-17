@@ -1,5 +1,9 @@
 # Malformed encoded agent names escape conversation route handling
 
+## Status
+
+Resolved (2026-08-17, aa2650b)
+
 ## Location
 `src/web/routes/agent-conversation.ts`, `tryHandleAgentConversation`, at the agent-name decode immediately after the route match.
 

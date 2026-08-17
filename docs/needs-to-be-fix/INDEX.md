@@ -93,7 +93,7 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | Bug ID | Title | Resolved |
 | --- | --- | --- |
 | `agent-conversation-fractional-limit` | Fractional conversation limits can exceed the requested page size | Resolved: 2026-08-17 7e64fa8 |
-| `agent-conversation-malformed-name-uri` | Malformed encoded agent names escape conversation route handling | — |
+| `agent-conversation-malformed-name-uri` | Malformed encoded agent names escape conversation route handling | Resolved: 2026-08-17 aa2650b |
 | `agent-process-answerfirstrungates-acted-unchanged-unreachable` | agent-process.ts: `answerFirstRunGates` final-return `'unchanged'` arm is unreachable | Resolved: 2026-08-14 08d7508 |
 | `agent-process-restartagentprocess-stop-error-default-unreachable` | agent-process.ts: `restartAgentProcess` `||` default error string is unreachable | Resolved: 2026-08-14 08d7508 |
 | `agent-process-runtmux-host-truthy-cond-unreachable` | agent-process.ts: `runTmux` `(host ? 8000 : 3000)` truthy arm is unreachable | — |
