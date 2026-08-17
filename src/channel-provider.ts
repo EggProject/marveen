@@ -15,7 +15,6 @@ export interface ChannelProvider {
   readonly envKeys: string[]
   readonly stateDir: string
   readonly chatIdFormat: string
-  readonly maxMessageLength: number
   sendMessage(token: string, chatId: string, text: string, parseMode?: string): Promise<void>
   sendPhoto(token: string, chatId: string, photoPath: string, caption: string): Promise<void>
   validateToken(token: string): Promise<{ ok: boolean; botName?: string; error?: string }>
@@ -58,7 +57,6 @@ const telegramProvider: ChannelProvider = {
   envKeys: ['TELEGRAM_BOT_TOKEN'],
   stateDir: 'telegram',
   chatIdFormat: 'numeric (e.g. 1268077055)',
-  maxMessageLength: 4096,
 
   async sendMessage(token, chatId, text, parseMode) {
     const payload: Record<string, string> = { chat_id: chatId, text }
@@ -140,7 +138,6 @@ const slackProvider: ChannelProvider = {
   envKeys: ['SLACK_BOT_TOKEN', 'SLACK_APP_TOKEN'],
   stateDir: 'slack',
   chatIdFormat: 'Slack channel/DM ID (e.g. C01234ABCDE)',
-  maxMessageLength: SLACK_MAX_MESSAGE_LENGTH,
 
   async sendMessage(token, chatId, text) {
     const resp = await fetch('https://slack.com/api/chat.postMessage', {
@@ -250,7 +247,6 @@ const discordProvider: ChannelProvider = {
   envKeys: ['DISCORD_BOT_TOKEN'],
   stateDir: 'discord',
   chatIdFormat: 'Discord channel ID (e.g. 1234567890123456789)',
-  maxMessageLength: DISCORD_MAX_MESSAGE_LENGTH,
 
   async sendMessage(token, chatId, text) {
     const resp = await fetch(`https://discord.com/api/v10/channels/${chatId}/messages`, {
@@ -332,7 +328,6 @@ const googlechatProvider: ChannelProvider = {
   envKeys: ['GOOGLE_APPLICATION_CREDENTIALS', 'GOOGLECHAT_PROJECT_ID', 'GOOGLECHAT_SUBSCRIPTION'],
   stateDir: 'googlechat',
   chatIdFormat: 'space resource name (e.g. spaces/AAAA)',
-  maxMessageLength: GOOGLECHAT_MAX_MESSAGE_LENGTH,
 
   async sendMessage() {
     // Direct dashboard send is not supported for Google Chat; the agent
@@ -373,7 +368,6 @@ const teamsProvider: ChannelProvider = {
   envKeys: ['TEAMS_BOT_APP_ID', 'TEAMS_BOT_APP_PASSWORD', 'TEAMS_BOT_TENANT_ID'],
   stateDir: 'teams',
   chatIdFormat: 'Teams conversation id (managed by the plugin per pairing)',
-  maxMessageLength: TEAMS_MAX_MESSAGE_LENGTH,
 
   async sendMessage() {
     // Direct dashboard send is not supported for Teams; the agent delivers via

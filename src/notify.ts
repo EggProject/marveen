@@ -22,7 +22,7 @@ export async function notifyChannel(text: string): Promise<void> {
       await provider.sendMessage(CHANNEL_TOKEN, CHANNEL_CHAT_ID, chunk, parseMode)
     } catch {
       try {
-        await provider.sendMessage(CHANNEL_TOKEN, CHANNEL_CHAT_ID, chunk.slice(0, provider.maxMessageLength))
+        await provider.sendMessage(CHANNEL_TOKEN, CHANNEL_CHAT_ID, chunk.slice(0, 4096))
       } catch { /* last resort, give up */ }
     }
   }

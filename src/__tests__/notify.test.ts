@@ -19,7 +19,6 @@ const providerMock = vi.hoisted(() => ({
   sendMessage: vi.fn<(token: string, chatId: string, text: string, parseMode?: string) => Promise<void>>(),
   formatMessage: vi.fn<(text: string) => string>(),
   splitMessage: vi.fn<(text: string) => string[]>(),
-  maxMessageLength: 4096,
 }))
 const getProvider = vi.hoisted(() => vi.fn(() => providerMock))
 
@@ -43,7 +42,6 @@ describe('notifyChannel', () => {
     providerMock.sendMessage.mockReset().mockResolvedValue(undefined)
     providerMock.formatMessage.mockReset().mockImplementation((text: string) => `fmt:${text}`)
     providerMock.splitMessage.mockReset().mockImplementation((text: string) => [text])
-    providerMock.maxMessageLength = 4096
   })
 
   it('marks, formats, splits and sends every chunk with HTML parse mode on telegram', async () => {
@@ -139,27 +137,20 @@ describe('notifyChannel', () => {
     expect(fallbacks[0]?.[2]).not.toContain('TAIL')
   })
 
-  // PINNING (resolved 2026-08-17) -- notify-fallback-hardcodes-telegram-limit
-  it('respects the provider limit when truncating the fallback (resolved 2026-08-17)', async () => {
+  // Pinned defect -- docs/needs-to-be-fix/notify-fallback-hardcodes-telegram-limit.md
+  it('truncates the fallback at the telegram limit even on discord (pinned defect)', async () => {
     state.provider = 'discord'
     const long = 'y'.repeat(3000)
     markIfTestRun.mockReturnValue(long)
-    // Discord's splitMessage respects the 2000-char limit; encode that here
-    // so the fallback truncation matches the provider's own bound.
-    providerMock.splitMessage.mockImplementation((text: string) => {
-      const limit = 2000
-      return text.length <= limit ? [text] : [text.slice(0, limit), text.slice(limit)]
-    })
-    providerMock.maxMessageLength = 2000
+    providerMock.splitMessage.mockReturnValue([long])
     providerMock.sendMessage
       .mockRejectedValueOnce(new Error('rejected'))
       .mockResolvedValueOnce(undefined)
 
     await notifyChannel(long)
 
-    // Discord rejects anything over 2000 chars; the fallback now truncates to
-    // the provider's own 2000-char limit instead of the hardcoded telegram 4096.
-    expect(providerMock.sendMessage.mock.calls[1]?.[2]).toHaveLength(2000)
+    // Discord rejects anything over 2000 chars; the fallback still sends 3000.
+    expect(providerMock.sendMessage.mock.calls[1]?.[2]).toHaveLength(3000)
   })
 })
 
@@ -174,7 +165,6 @@ describe('notifySecurityEvent', () => {
     providerMock.sendMessage.mockReset().mockResolvedValue(undefined)
     providerMock.formatMessage.mockReset().mockImplementation((text: string) => `fmt:${text}`)
     providerMock.splitMessage.mockReset().mockImplementation((text: string) => [text])
-    providerMock.maxMessageLength = 4096
   })
 
   it('delivers the event through notifyChannel when the channel is configured', async () => {
