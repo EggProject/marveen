@@ -747,6 +747,9 @@ export async function runViaWorker(
       logger.error({ session: ctx.session }, 'agent-worker: auth failure persists after recovery -> signalling SDK fallback (authFailed)')
       return { text: null, error: 'worker auth failed (401/login) after recovery', authFailed: true }
     }
-    return { text: null, error: 'worker auth failed', authFailed: true }
+    // Every iteration of the for loop above returns from inside it; reaching this
+    // point is structurally impossible. Kept as an explicit marker so the function's
+    // return type is satisfied without an implicit undefined.
+    return { text: null, error: 'unreachable', authFailed: true }
   })
 }
