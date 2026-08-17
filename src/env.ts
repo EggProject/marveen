@@ -84,5 +84,5 @@ export function updateEnvFile(updates: Record<string, string>): void {
     out.push(`${key}=${val}`)
   }
 
-  atomicWriteFileSync(envPath, out.join('\n'))
+  atomicWriteFileSync(envPath, out.join('\n'), { mode: 0o600 })
 }
