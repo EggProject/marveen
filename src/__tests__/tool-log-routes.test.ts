@@ -223,6 +223,13 @@ describe('POST /api/tool-log', () => {
     expect(json()).toEqual({ error: 'session_id and tool_name required' })
     expect(mocks.logToolCall).not.toHaveBeenCalled()
   })
+
+  it('returns 400 with { error: "Invalid JSON" } when the body is not parseable (pinned defect)', async () => {
+    const { res, json } = await call('POST', '/api/tool-log', { body: 'not-json{' })
+    expect(res.statusCode).toBe(400)
+    expect(json()).toEqual({ error: 'Invalid JSON' })
+    expect(mocks.logToolCall).not.toHaveBeenCalled()
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -367,5 +374,12 @@ describe('POST /api/tool-log/prune', () => {
     })
     expect(res.statusCode).toBe(200)
     expect(json()).toEqual({ ok: true })
+  })
+
+  it('returns 400 with { error: "Invalid JSON" } when the body is not parseable (pinned defect)', async () => {
+    const { res, json } = await call('POST', '/api/tool-log/prune', { body: 'not-json{' })
+    expect(res.statusCode).toBe(400)
+    expect(json()).toEqual({ error: 'Invalid JSON' })
+    expect(mocks.pruneToolCallLog).not.toHaveBeenCalled()
   })
 })
