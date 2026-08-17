@@ -102,7 +102,7 @@ describe('notifyChannel', () => {
 
     expect(providerMock.sendMessage.mock.calls).toEqual([
       ['tok', 'chat', 'chunk', 'HTML'],
-      ['tok', 'chat', long.slice(0, 4096)],
+      ['tok', 'chat', 'chunk'],
     ])
   })
 
@@ -117,11 +117,11 @@ describe('notifyChannel', () => {
     expect(notifyTelegram).toBe(notifyChannel)
   })
 
-  // Pinned defect -- docs/needs-to-be-fix/notify-fallback-repeats-head.md
-  it('re-sends the same first 4096 chars for every failing chunk, dropping the tail (pinned defect)', async () => {
-    const long = 'x'.repeat(4096) + 'TAIL'
+  // Pinned defect (resolved 2026-08-17) -- notify-fallback-repeats-head
+  it('re-sends the failing chunk (not the full outbound head) on each fallback attempt', async () => {
+    const long = `${'x'.repeat(4096)}TAIL`
     markIfTestRun.mockReturnValue(long)
-    providerMock.splitMessage.mockReturnValue(['chunk-1', 'chunk-2', 'chunk-3'])
+    providerMock.splitMessage.mockReturnValue(['chunk-1', 'chunk-2', 'chunk-3-TAIL'])
     providerMock.sendMessage.mockImplementation(async (_t, _c, _text, parseMode) => {
       if (parseMode === 'HTML') throw new Error('parse error')
     })
@@ -130,7 +130,10 @@ describe('notifyChannel', () => {
 
     const fallbacks = providerMock.sendMessage.mock.calls.filter((call) => call[3] === undefined)
     expect(fallbacks).toHaveLength(3)
-    expect(new Set(fallbacks.map((call) => call[2])).size).toBe(1)
+    // Minden fallback a SAJAT chunkjet kuldi, nem az outbound elso 4096 karakteret.
+    expect(fallbacks.map((call) => call[2])).toEqual(['chunk-1', 'chunk-2', 'chunk-3-TAIL'])
+    // Az outbound TAIL resze a chunk-3-ban utazik -- a bug eldobta.
+    expect(fallbacks[2]?.[2]).toContain('TAIL')
     expect(fallbacks[0]?.[2]).not.toContain('TAIL')
   })
 
@@ -139,7 +142,7 @@ describe('notifyChannel', () => {
     state.provider = 'discord'
     const long = 'y'.repeat(3000)
     markIfTestRun.mockReturnValue(long)
-    providerMock.splitMessage.mockReturnValue(['chunk'])
+    providerMock.splitMessage.mockReturnValue([long])
     providerMock.sendMessage
       .mockRejectedValueOnce(new Error('rejected'))
       .mockResolvedValueOnce(undefined)
