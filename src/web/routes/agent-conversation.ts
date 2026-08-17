@@ -146,7 +146,7 @@ export async function tryHandleAgentConversation(ctx: RouteContext): Promise<boo
   // (offset += limit) to load older history beyond the on-screen window -- and
   // beyond the old fixed cap, since the whole transcript is now reachable.
   const limitRaw = Number(url.searchParams.get('limit'))
-  const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 2000) : DEFAULT_LIMIT
+  const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(Math.floor(limitRaw), 2000) : DEFAULT_LIMIT
   const offsetRaw = Number(url.searchParams.get('offset'))
   const offset = Number.isFinite(offsetRaw) && offsetRaw > 0 ? Math.floor(offsetRaw) : 0
 

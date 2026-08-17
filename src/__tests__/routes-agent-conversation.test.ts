@@ -365,10 +365,13 @@ describe('pagination', () => {
     expect(result.body).toMatchObject({ total: 5, offset: 0, count: 5, hasOlder: false })
   })
 
-  it('pins the fractional limit returning more entries than requested', async () => {
+  it('returns floored limit entries for a fractional request', async () => {
     const result = await call('GET', '/api/agents/a/conversation?limit=2.5')
 
-    expect(result.body).toMatchObject({ total: 5, count: 3 })
+    expect(result.body).toMatchObject({ total: 5, count: 2, entries: [
+      expect.objectContaining({ text: 'four' }),
+      expect.objectContaining({ text: 'five' }),
+    ] })
   })
 
   it('covers the defensive null session id fallback', async () => {
