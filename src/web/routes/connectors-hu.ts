@@ -79,7 +79,7 @@ export async function tryHandleConnectorsHu(ctx: RouteContext): Promise<boolean>
     try {
       const body = await readBody(req)
       const { token } = JSON.parse(body.toString()) as { token: string }
-      if (!token?.trim()) {
+      if (typeof token !== 'string' || !token.trim()) {
         json(res, { ok: false, configured: false, syncOutput: 'Token is required' }, 400)
         return true
       }

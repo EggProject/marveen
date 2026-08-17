@@ -670,6 +670,22 @@ describe('POST /api/connectors-hu/configure', () => {
     expect(H.mockSetSecret).not.toHaveBeenCalled()
   })
 
+  it('returns 400 when the token is a number', async () => {
+    const { res, json, handled } = call('POST', '/api/connectors-hu/configure', Buffer.from('{"token":0}'))
+    expect(await handled).toBe(true)
+    expect(res.statusCode).toBe(400)
+    expect(json()).toEqual({ ok: false, configured: false, syncOutput: 'Token is required' })
+    expect(H.mockSetSecret).not.toHaveBeenCalled()
+  })
+
+  it('returns 400 when the token is an array', async () => {
+    const { res, json, handled } = call('POST', '/api/connectors-hu/configure', Buffer.from('{"token":[]}'))
+    expect(await handled).toBe(true)
+    expect(res.statusCode).toBe(400)
+    expect(json()).toEqual({ ok: false, configured: false, syncOutput: 'Token is required' })
+    expect(H.mockSetSecret).not.toHaveBeenCalled()
+  })
+
   it('returns 500 with String(err) and logs logger.error when readBody throws', async () => {
     H.mockReadBody.mockRejectedValueOnce(new Error('body-read-boom'))
     const { res, json, handled } = call('POST', '/api/connectors-hu/configure')
