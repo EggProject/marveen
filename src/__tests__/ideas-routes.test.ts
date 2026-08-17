@@ -34,7 +34,6 @@
 // second line of defence rather than the primary one.
 //
 // Pinned defects (documented in docs/needs-to-be-fix/, NOT fixed here):
-//   * routes-ideas-comment-orphan       -- POST comments never checks the idea exists
 //   * routes-ideas-promote-double       -- re-promoting orphans the first kanban card
 //   * routes-ideas-body-parse-500       -- malformed/`null` JSON body throws out of the handler
 //   * routes-ideas-breakdown-nonerror   -- non-Error throw yields a 500 with an empty body
@@ -562,6 +561,7 @@ describe('/api/ideas/:id/comments', () => {
   })
 
   it('POST stores a trimmed comment with a trimmed author', async () => {
+    seedIdea({ id: 'idea-1' })
     const stored = { id: 7, idea_id: 'idea-1', author: 'Gabor', content: 'megjegyzés', created_at: NOW_S }
     vi.mocked(db.addIdeaComment).mockReturnValue(stored)
 
@@ -575,6 +575,7 @@ describe('/api/ideas/:id/comments', () => {
   })
 
   it('POST falls back to MAIN_AGENT_ID when the author is absent', async () => {
+    seedIdea({ id: 'idea-1' })
     vi.mocked(db.addIdeaComment).mockReturnValue(
       { id: 1, idea_id: 'idea-1', author: 'main-agent', content: 'c', created_at: NOW_S },
     )
@@ -583,6 +584,7 @@ describe('/api/ideas/:id/comments', () => {
   })
 
   it('POST falls back to MAIN_AGENT_ID when the author is blank', async () => {
+    seedIdea({ id: 'idea-1' })
     vi.mocked(db.addIdeaComment).mockReturnValue(
       { id: 1, idea_id: 'idea-1', author: 'main-agent', content: 'c', created_at: NOW_S },
     )
@@ -989,17 +991,12 @@ describe('GET /api/ideas/:id/status-log', () => {
 // Pinned defects -- these assert the CURRENT behaviour, not the desired one.
 // =======================================================================
 describe('pinned defects', () => {
-  // routes-ideas-comment-orphan
-  it('accepts a comment for an idea that does not exist', async () => {
-    vi.mocked(db.addIdeaComment).mockReturnValue(
-      { id: 1, idea_id: 'nincs-ilyen', author: 'main-agent', content: 'c', created_at: NOW_S },
-    )
-
+  it('rejects a comment for a non-existent idea with 404', async () => {
     const r = await call('POST', '/api/ideas/nincs-ilyen/comments', JSON.stringify({ content: 'c' }))
 
-    // Every other :id sub-route 404s first; this one writes an orphan row.
-    expect(r.status).toBe(200)
-    expect(db.addIdeaComment).toHaveBeenCalledWith('nincs-ilyen', 'main-agent', 'c')
+    expect(r.status).toBe(404)
+    expect(r.body).toEqual({ error: 'Ötlet nem található' })
+    expect(db.addIdeaComment).not.toHaveBeenCalled()
   })
 
   // routes-ideas-title-validation

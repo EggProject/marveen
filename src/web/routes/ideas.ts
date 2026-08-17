@@ -145,6 +145,7 @@ export async function tryHandleIdeas(ctx: RouteContext): Promise<boolean> {
     if (!content || typeof content !== 'string' || !content.trim()) {
       json(res, { error: 'content required' }, 400); return true
     }
+    if (!getIdea(ideaId)) { json(res, { error: 'Ötlet nem található' }, 404); return true }
     const comment = addIdeaComment(ideaId, author?.trim() || MAIN_AGENT_ID, content.trim())
     json(res, { ok: true, comment })
     return true
