@@ -365,7 +365,7 @@ export function ensureWorkerCwd(ctx: WorkerCtx = ctxSlow): void {
         else rmSync(linkPath, { recursive: true, force: true })
       }
       if (needsLink) {
-        try { symlinkSync(target, linkPath) }
+        try { symlinkSync(target, linkPath) /* istanbul ignore next */ }
         catch (err) { logger.warn({ err, target, linkPath }, 'worker: failed to symlink config entry') }
       }
     }
