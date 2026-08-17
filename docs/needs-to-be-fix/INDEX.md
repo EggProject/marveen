@@ -143,7 +143,7 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `remote-enroll-core-merge-trailing-newline-skip` | `mergeAuthorizedKeys` has a single-input trailing newline guard that is only reachable when the input has multiple trailing newlines | — |
 | `remote-enroll-fs-lock-vanish-spin` | `acquireLock` spins forever when statSync throws but the lock file is still there | — |
 | `remote-enroll-fs-rename-failure-cleanup-untestable` | `writeAtomic` rename-failure cleanup is unreachable in the type system | — |
-| `route-token-usage-nan-params` | NaN-via-parseInt: numeric query params silently default to NaN | — |
+| `route-token-usage-nan-params` | NaN-via-parseInt: numeric query params silently default to NaN | Resolved: 2026-08-17 46e97a9ba973c094bd7f5c67cbd65a19254b66a3 |
 | `routes-agent-team-unreachable-branches` | routes/agent-team.ts: file path does not exist; coverage pin moved to web/agent-team.ts | — |
 | `routes-agent-terminal-literalkeys-nullish` | agent-terminal.ts: unreachable `literalKeys ?? ''` on the audit-preview line blocks 100% branch coverage | 2026-08-14 c2b4ea2 |
 | `routes-agents-br-baseline-partial-coverage` | routes/agents.ts: remaining uncovered branches after baseline regression tests | — |
@@ -151,12 +151,12 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `routes-agents-parsechannelprovider-dead-branch` | routes/agents.ts: parseChannelProvider's `return null` branch is unreachable through the public API | Resolved: 2026-08-16 3e1dd3f |
 | `routes-agents-skills-unreachable-stat-throw` | agents-skills.ts: unreachable `catch { return false }` on the extracted-skills filter | 2026-08-14 c2b4ea2 |
 | `routes-background-tasks-delete-clobber` | routes/background-tasks.ts: DELETE clobbers an already finished task | — |
-| `routes-background-tasks-post-invalid-json` | routes/background-tasks.ts: malformed POST body returns 500 instead of 400 | — |
+| `routes-background-tasks-post-invalid-json` | routes/background-tasks.ts: malformed POST body returns 500 instead of 400 | Resolved: 2026-08-17 780f126a0a433a8c68bc6297b54edfee8cb7094b |
 | `routes-background-tasks-session-ended-status` | routes/background-tasks.ts: a dead session is `done` in the poller but `failed` in the sweeper | — |
 | `routes-background-tasks-sweep-timeout-reset` | routes/background-tasks.ts: restart grants every surviving task a fresh 30 minutes | — |
 | `routes-background-tasks-unused-imports` | routes/background-tasks.ts: unused imports (`execSync`, `markOrphanedTasksFailed`) | 2026-08-14 68b94fe |
 | `routes-channel-conflict-probe-selfinflicted-409` | channel-conflict-probe.ts: the diagnostic probe issues a competing `getUpdates` and can *cause* the 409 it exists to observe | — |
-| `routes-connectors-hu-config-nostring-token` | routes-connectors-hu-config-nostring-token | — |
+| `routes-connectors-hu-config-nostring-token` | routes-connectors-hu-config-nostring-token | Resolved: 2026-08-17 5a348eadbfd7d4a9ef65e6d22e783a4e9473ff4b |
 | `routes-dashboard-auth-nonexistent-sut` | routes/dashboard-auth.ts does not exist; task brief references the wrong path | — |
 | `routes-docs-basename-redundant` | routes/docs.ts: the `basename(name) !== name` check in /api/docs/<name> is unreachable | — |
 | `routes-docs-inner-catch-no-title-reset` | routes/docs.ts: inner per-file catch does not reset `title` despite the comment | — |
@@ -167,7 +167,7 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `routes-remote-status-cache-path-mismatch` | routes/remote-status-cache: task path does not exist on disk | — |
 | `routes-skill-usage-jsonparse-throws` | skill-usage.ts: POST /api/skill-usage lets malformed JSON throw | Resolved: 2026-08-17 08a64603de2ef2f069fce05a44d0652815ef2070 |
 | `routes-skills-dead-branches` | routes/skills.ts: defensive dead branches in sort, walker, and importer | 2026-08-14 c2b4ea2 |
-| `routes-spans-nan-limit` | routes/spans -- NaN limit on GET /api/traces passed straight to listOtelTraces | — |
+| `routes-spans-nan-limit` | routes/spans -- NaN limit on GET /api/traces passed straight to listOtelTraces | Resolved: 2026-08-17 f11aee27c1710eae7f056d91ab11c0c8809ed71f |
 | `routes-tool-log-uncaught-json-parse` | routes-tool-log-uncaught-json-parse | Resolved: 2026-08-17 0d23278 |
 | `routes-update-checker-dead-catch-handlers` | Dead `.catch(() => {})` handlers in startUpdateChecker | — |
 | `routes-update-checker-path-mismatch` | Task prompt referenced a path that does not exist | — |
