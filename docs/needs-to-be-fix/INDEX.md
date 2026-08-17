@@ -105,7 +105,7 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `agent-worker-ensure-ready-throw` | agent-worker.ts: ensureWorkerReady does not catch startWorkerSessionFor throws | — |
 | `agent-worker-runviaworker-afterloop` | agent-worker.ts: runViaWorker's after-loop `return` is dead code | Resolved: 2026-08-17 911de24 |
 | `agent-worker-seedworkercredentials-unreachable` | agent-worker.ts: seedWorkerCredentials mkdirSync arm is unreachable | Resolved: 2026-08-17 a58a811 |
-| `agent-worker-selfheal-catch-unreachable` | agent-worker.ts: ensureWorkerReady's self-heal catch arm is unreachable | — |
+| `agent-worker-selfheal-catch-unreachable` | agent-worker.ts: ensureWorkerReady's self-heal catch arm is unreachable | Resolved: 2026-08-17 2e9ab6f |
 | `agent-worker-settings-symlink-preserve` | agent-worker.ts: ensureWorkerCwd drops the shared settings.json content when the link is replaced | — |
 | `agent-worker-symlink-catch` | agent-worker.ts: ensureWorkerCwd's symlinkSync catch is unreachable from tests | — |
 | `approvals-raw-resolved-by-in-log` | approvals PATCH logger receives untrimmed resolved_by | Resolved: 2026-08-16 9173b54 |
