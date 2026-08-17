@@ -138,6 +138,13 @@ describe('tryHandleSkillUsage -- dispatcher surface', () => {
 // POST /api/skill-usage
 // -----------------------------------------------------------------------
 describe('POST /api/skill-usage', () => {
+  it('returns 400 with { error: "Invalid JSON" } when the body is not parseable (pinned defect)', async () => {
+    const { res, json } = await call('POST', '/api/skill-usage', { body: 'not-json{' })
+    expect(res.statusCode).toBe(400)
+    expect(json()).toEqual({ error: 'Invalid JSON' })
+    expect(H.logSkillUsage).not.toHaveBeenCalled()
+  })
+
   it('rejects a body with a missing agent_id (400 + error)', async () => {
     const body = JSON.stringify({ skill_name: 'fleet-helper', trigger_type: 'tool_call' })
     const { res, json } = await call('POST', '/api/skill-usage', { body })
