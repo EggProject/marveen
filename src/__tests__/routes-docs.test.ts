@@ -250,11 +250,10 @@ describe('GET /api/docs', () => {
     // branch). We arm the mock to succeed once per path, then throw on
     // subsequent calls for that path.
     //
-    // Note: the catch block is empty -- see the PINNING test below and the
-    // bug MD. title is whatever titleOf returned before the throw (the
-    // extracted heading), not the filename. created stays null because the
-    // assignment is on the same line as the throw site. The expected object
-    // below pins the actual behaviour, not the documented intent.
+    // The catch resets `title = name` so that a doc whose statSync throws
+    // reports the filename as its title (matching the inner-catch comment),
+    // and `created` stays null because the assignment is on the same line
+    // as the throw site.
     writeFileSync(join(DOCS_DIR, 'broken.md'), '# Title\nbody')
     const seen = new Set<string>()
     hoisted.fsState.statSyncOverride = (p) => {
@@ -269,19 +268,15 @@ describe('GET /api/docs', () => {
     expect(res.statusCode).toBe(200)
     const docs = json() as Array<{ name: string; title: string; created: string | null }>
     const broken = docs.find(d => d.name === 'broken.md')
-    expect(broken).toEqual({ name: 'broken.md', title: 'Title', created: null })
+    expect(broken).toEqual({ name: 'broken.md', title: 'broken.md', created: null })
   })
 
-  it('inner catch keeps titleOf result instead of resetting to filename (current behaviour)', async () => {
+  it('PINNING (resolved 2026-08-17) -- routes-docs-inner-catch-no-title-reset: inner catch should reset title to filename when statSync throws after readFileSync', async () => {
     // The catch comment in src/web/routes/docs.ts says "keep filename as
-    // title, created stays null", but the catch block is EMPTY. title was
-    // already overwritten by titleOf() above the throw site, so it keeps the
-    // extracted heading value (or whatever titleOf returned) instead of
-    // resetting to the filename. Baseline: this test asserts CURRENT
-    // behaviour and will fail if the code is changed to reset title in the
-    // catch -- which is fine, the fix author updates the assertion. The dev
-    // intent / regression context lives in
-    // docs/needs-to-be-fix/routes-docs-inner-catch-no-title-reset.md.
+    // title, created stays null"; this pins the fixed behaviour where the
+    // catch actually resets `title = name` after titleOf had overwritten
+    // it with the extracted `# heading`. Bug MD:
+    // docs/needs-to-be-fix/routes-docs-inner-catch-no-title-reset.md
     writeFileSync(join(DOCS_DIR, 'broken.md'), '# Real Title\nbody')
     const seen = new Set<string>()
     hoisted.fsState.statSyncOverride = (p) => {
@@ -296,9 +291,7 @@ describe('GET /api/docs', () => {
     expect(res.statusCode).toBe(200)
     const docs = json() as Array<{ name: string; title: string; created: string | null }>
     const broken = docs.find(d => d.name === 'broken.md')
-    // Actual (buggy) result: title is 'Real Title' because the catch does
-    // not reset it. Documented intent (in the bug MD) is 'broken.md'.
-    expect(broken?.title).toBe('Real Title')
+    expect(broken?.title).toBe('broken.md')
   })
 
   it('falls back to mtimeMs when birthtimeMs is 0 (filesystem does not track birthtime)', async () => {

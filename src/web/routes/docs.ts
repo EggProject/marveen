@@ -44,7 +44,8 @@ export async function tryHandleDocs(ctx: RouteContext): Promise<boolean> {
           ms = s.birthtimeMs && s.birthtimeMs > 0 ? s.birthtimeMs : s.mtimeMs
           created = new Date(ms).toISOString().slice(0, 10)
         } catch {
-          /* keep filename as title, created stays null */
+          title = name
+          /* created stays null */
         }
         return { name, title, created, ms }
       })
