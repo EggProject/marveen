@@ -212,8 +212,10 @@ describe('updateEnvFile', () => {
     chmodSync(envPath, 0o600)
     expect(statSync(envPath).mode & 0o777).toBe(0o600)
 
-    // A kimenet az umask-tol fugg (az atomic write UJ inode-ot hoz letre), ezert
-    // a teszt fixalja: igy a 0644 elvaras a fejlesztoi umask-tol fuggetlen.
+    // Az umask 0o022-re fixalasa biztositja, hogy a tmp fajl default modja
+    // 0o644 legyen, es a { mode: 0o600 } tenylegesen gyakorolja a chmod-ot --
+    // egy restrikt 0o077 dev umask mellett a tmp amugy is 0o600 lenne, es a
+    // teszt a fix nelkul is atmenne.
     const previousUmask = process.umask(0o022)
     try {
       updateEnvFile({ SECRET: 'b' })
