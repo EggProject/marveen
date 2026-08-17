@@ -141,6 +141,13 @@ describe('tryHandleAgentConversation dispatcher', () => {
     expect(result.handled).toBe(true)
     expect(result.status).toBe(400)
     expect(result.body).toEqual({ error: 'Érvénytelen agent-név (percent-encoding hiba)' })
+    // The malformed name must short-circuit BEFORE the handler touches disk,
+    // so the transcript-discovery mocks are never invoked. A regression that
+    // moves the try/catch below `newestTranscript(name)` would pass otherwise
+    // because `newestTranscript` swallows a missing dir into a null return.
+    expect(H.projectsDirFor).not.toHaveBeenCalled()
+    expect(H.resolveAgentConfigDir).not.toHaveBeenCalled()
+    expect(H.isMainChannelsAgent).not.toHaveBeenCalled()
   })
 })
 
