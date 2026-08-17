@@ -12604,7 +12604,13 @@ async function cancelBgTask(id) {
   try {
     const res = await fetch(`/api/background-tasks/${id}`, { method: 'DELETE' })
     if (res.ok) {
-      showToast(t('bgTasks.toast.stopped'))
+      let body = null
+      try { body = await res.json() } catch {}
+      const priorStatus = body?.status
+      if (priorStatus === 'done') showToast(t('bgTasks.toast.already_done'))
+      else if (priorStatus === 'failed') showToast(t('bgTasks.toast.already_failed'))
+      else if (priorStatus === 'timeout') showToast(t('bgTasks.toast.already_timeout'))
+      else showToast(t('bgTasks.toast.stopped'))
       loadBgTasks()
     } else {
       showToast(t('bgTasks.toast.stop_error'))

@@ -200,13 +200,13 @@ export async function tryHandleBackgroundTasks(ctx: RouteContext): Promise<boole
   if (taskMatch && method === 'DELETE') {
     const task = getBackgroundTask(taskMatch[1])
     if (!task) { json(res, { error: 'Háttérfeladat nem található' }, 404); return true }
-    if (task.status !== 'running') { json(res, { ok: true, already: task.status }); return true }
-    const output = task.tmux_session ? captureSession(task.tmux_session) : null
-    if (task.tmux_session) {
-      killSession(task.tmux_session)
-    }
+    if (task.status !== 'running') { json(res, { ok: true, status: task.status }); return true }
+    const session = task.tmux_session
+    const output = session ? captureSession(session) : null
+    if (session) killSession(session)
     finishBackgroundTask(task.id, 'failed', output?.trim() || '(cancelled)')
-    json(res, { ok: true })
+    logger.info({ id: task.id, session }, 'Background task cancelled via DELETE')
+    json(res, { ok: true, status: 'cancelled' })
     return true
   }
 

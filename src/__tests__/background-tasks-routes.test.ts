@@ -789,9 +789,12 @@ describe('DELETE /api/background-tasks/:id', () => {
 
     expect(handled).toBe(true)
     expect(res.statusCode).toBe(200)
-    expect(json()).toEqual({ ok: true })
+    expect(json()).toEqual({ ok: true, status: 'cancelled' })
     expect(callsOf('kill-session')).toHaveLength(1)
     expect(H.finishBackgroundTask).toHaveBeenCalledWith(TASK_ID, 'failed', 'half done')
+    expect(H.logs).toContainEqual(
+      expect.objectContaining({ level: 'info', msg: 'Background task cancelled via DELETE' }),
+    )
   })
 
   it('falls back to (cancelled) when the pane is empty', async () => {
@@ -814,14 +817,28 @@ describe('DELETE /api/background-tasks/:id', () => {
 
   it('does not kill a session for an already finished task', async () => {
     H.getBackgroundTask.mockReturnValue(mkTask({ status: 'done', output: 'result' }))
-    programTmux({ sessions: [], panes: {} })
 
-    const { json } = await call('DELETE', `/api/background-tasks/${TASK_ID}`)
+    const { res, handled, json } = await call('DELETE', `/api/background-tasks/${TASK_ID}`)
 
-    expect(callsOf('kill-session')).toHaveLength(0)
+    expect(handled).toBe(true)
+    expect(res.statusCode).toBe(200)
+    expect(tmuxCalls).toHaveLength(0)
     expect(H.finishBackgroundTask).not.toHaveBeenCalled()
-    expect(json()).toEqual({ ok: true, already: 'done' })
+    expect(json()).toEqual({ ok: true, status: 'done' })
   })
+
+  it.each(['done', 'failed', 'timeout'] as const)(
+    'returns the terminal status without touching tmux for status=%s',
+    async (status) => {
+      H.getBackgroundTask.mockReturnValue(mkTask({ status }))
+
+      const { json } = await call('DELETE', `/api/background-tasks/${TASK_ID}`)
+
+      expect(tmuxCalls).toHaveLength(0)
+      expect(H.finishBackgroundTask).not.toHaveBeenCalled()
+      expect(json()).toEqual({ ok: true, status })
+    },
+  )
 })
 
 // ---------------------------------------------------------------------------
