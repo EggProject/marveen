@@ -104,7 +104,7 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `agent-worker-blank-line-v8-quirk` | agent-worker.ts: a 20. sor (üres sor) v8 coverage quirk miatt 1 line uncoverable | Resolved: 2026-08-17 461b2b4 |
 | `agent-worker-ensure-ready-throw` | agent-worker.ts: ensureWorkerReady does not catch startWorkerSessionFor throws | — |
 | `agent-worker-runviaworker-afterloop` | agent-worker.ts: runViaWorker's after-loop `return` is dead code | Resolved: 2026-08-17 911de24 |
-| `agent-worker-seedworkercredentials-unreachable` | agent-worker.ts: seedWorkerCredentials mkdirSync arm is unreachable | — |
+| `agent-worker-seedworkercredentials-unreachable` | agent-worker.ts: seedWorkerCredentials mkdirSync arm is unreachable | Resolved: 2026-08-17 a58a811 |
 | `agent-worker-selfheal-catch-unreachable` | agent-worker.ts: ensureWorkerReady's self-heal catch arm is unreachable | — |
 | `agent-worker-settings-symlink-preserve` | agent-worker.ts: ensureWorkerCwd drops the shared settings.json content when the link is replaced | — |
 | `agent-worker-symlink-catch` | agent-worker.ts: ensureWorkerCwd's symlinkSync catch is unreachable from tests | — |
