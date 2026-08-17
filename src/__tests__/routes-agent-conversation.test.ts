@@ -374,6 +374,19 @@ describe('pagination', () => {
     ] })
   })
 
+  it('clamps a sub-1 fractional limit to a single entry instead of returning an empty page', async () => {
+    const result = await call('GET', '/api/agents/a/conversation?limit=0.5')
+
+    expect(result.body).toMatchObject({
+      total: 5,
+      count: 1,
+      hasOlder: true,
+      entries: [
+        expect.objectContaining({ text: 'five' }),
+      ],
+    })
+  })
+
   it('covers the defensive null session id fallback', async () => {
     H.json.mockClear()
     const ctx = makeContext('GET', '/api/agents/a/conversation')
