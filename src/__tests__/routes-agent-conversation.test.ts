@@ -137,8 +137,10 @@ describe('tryHandleAgentConversation dispatcher', () => {
   })
 
   it('pins the malformed encoded agent-name failure', async () => {
-    await expect(call('GET', '/api/agents/%E0%A4%A/conversation')).rejects.toThrow(URIError)
-    expect(H.json).not.toHaveBeenCalled()
+    const result = await call('GET', '/api/agents/%E0%A4%A/conversation')
+    expect(result.handled).toBe(true)
+    expect(result.status).toBe(400)
+    expect(result.body).toEqual({ error: 'Érvénytelen agent-név (percent-encoding hiba)' })
   })
 })
 
