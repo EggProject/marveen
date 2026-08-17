@@ -45,7 +45,7 @@ dead code, doc issue).
 | `profiles-replace-dollar-pattern` | `src/web/profiles.ts:51-56` | `resolveProfilePlaceholders` interpolates ctx values as `String.replace` patterns, so `$&` / `` $` `` in a path corrupts the emitted permission rule | `src/__tests__/profiles.test.ts` | — |
 | `stuck-tool-call-watcher-skew-defer` | `src/web/stuck-tool-call-watcher.ts:141` | a future-dated respawn stamp makes `shouldDeferForRecentRespawn` suppress wedge recovery for the whole skew, not just the grace window | `src/__tests__/stuck-tool-call-watcher.test.ts` | Resolved: 2026-08-16 d634f48 |
 | `model-fallback-runner-writemainmodel-nonobject` | `src/web/model-fallback-runner.ts:56-61` | `writeMainModel` guards only a JSON *parse* failure, so a `null` body throws (swap abandoned) and an array body silently drops the model while logging success | `src/__tests__/model-fallback-runner.test.ts` | — |
-| `routes-ideas-comment-orphan` | `src/web/routes/ideas.ts:135-144` | `POST /api/ideas/:id/comments` never checks that the idea exists, so the comment is written to an unreachable `idea_id` and returns 200 | `src/__tests__/ideas-routes.test.ts` | — |
+| `routes-ideas-comment-orphan` | `src/web/routes/ideas.ts:135-144` | `POST /api/ideas/:id/comments` never checks that the idea exists, so the comment is written to an unreachable `idea_id` and returns 200 | `src/__tests__/ideas-routes.test.ts` | Resolved: 2026-08-17 c7c974ff74bd27d0d1f789d474aaaea1a7b6f3e1 |
 | `routes-ideas-promote-double` | `src/web/routes/ideas.ts:149-172` | re-promoting a `kanban` idea creates a second card and overwrites `kanban_id`, orphaning the first card and breaking `revertIdeaFromKanban` | `src/__tests__/ideas-routes.test.ts` | — |
 | `routes-memories-nan-limit` | `src/web/routes/memories.ts:72` | `limit` is clamped only from above, so `?limit=abc` binds `NaN` (SqliteError -> 500) and `?limit=-1` returns every row (SQLite treats a negative LIMIT as unlimited) | `src/__tests__/memories-routes.test.ts` | Resolved: 2026-08-17 22f68f8 |
 | `routes-memories-put-tier-precedence` | `src/web/routes/memories.ts:242` | `PUT` resolves `tier \|\| category` while `POST` resolves `category \|\| tier`, so the deprecated field wins on edit and a round-trip silently reclassifies the row | `src/__tests__/memories-routes.test.ts` | Resolved: 2026-08-16 c4b4b9a |
@@ -165,7 +165,7 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `routes-reauth-detect-missing-source-path` | routes/reauth-detect: task target path does not exist on disk | — |
 | `routes-reauth-healer-missing-file` | src/web/routes/reauth-healer.ts does not exist; the actual file lives at src/web/reauth-healer.ts | — |
 | `routes-remote-status-cache-path-mismatch` | routes/remote-status-cache: task path does not exist on disk | — |
-| `routes-skill-usage-jsonparse-throws` | skill-usage.ts: POST /api/skill-usage lets malformed JSON throw | — |
+| `routes-skill-usage-jsonparse-throws` | skill-usage.ts: POST /api/skill-usage lets malformed JSON throw | Resolved: 2026-08-17 08a64603de2ef2f069fce05a44d0652815ef2070 |
 | `routes-skills-dead-branches` | routes/skills.ts: defensive dead branches in sort, walker, and importer | 2026-08-14 c2b4ea2 |
 | `routes-spans-nan-limit` | routes/spans -- NaN limit on GET /api/traces passed straight to listOtelTraces | — |
 | `routes-tool-log-uncaught-json-parse` | routes-tool-log-uncaught-json-parse | Resolved: 2026-08-17 0d23278 |
