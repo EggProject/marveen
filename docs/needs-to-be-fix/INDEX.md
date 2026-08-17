@@ -168,7 +168,7 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `routes-skill-usage-jsonparse-throws` | skill-usage.ts: POST /api/skill-usage lets malformed JSON throw | — |
 | `routes-skills-dead-branches` | routes/skills.ts: defensive dead branches in sort, walker, and importer | 2026-08-14 c2b4ea2 |
 | `routes-spans-nan-limit` | routes/spans -- NaN limit on GET /api/traces passed straight to listOtelTraces | — |
-| `routes-tool-log-uncaught-json-parse` | routes-tool-log-uncaught-json-parse | — |
+| `routes-tool-log-uncaught-json-parse` | routes-tool-log-uncaught-json-parse | Resolved: 2026-08-17 0d23278 |
 | `routes-update-checker-dead-catch-handlers` | Dead `.catch(() => {})` handlers in startUpdateChecker | — |
 | `routes-update-checker-path-mismatch` | Task prompt referenced a path that does not exist | — |
 | `routes-updates-release-lock-unreachable-defensive-branch` | routes/updates.ts: releaseLock's `if (!lockHeld) return` is structurally unreachable | 2026-08-14 c2b4ea2 |
