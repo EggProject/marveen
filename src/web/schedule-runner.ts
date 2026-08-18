@@ -465,15 +465,14 @@ export function runPreCheck(task: ScheduledTask): { skip: boolean; prefix?: stri
 const lastMcpMissing = new Map<string, string[]>()
 
 function mcpMissingReason(taskName: string, agentName: string): string {
-  // The `?? []` arm is structurally unreachable at runtime: all three call sites
+  // The cache-miss branch is structurally unreachable: all three call sites
   // are guarded by `result === 'mcp-missing'`, which attemptFireTask only returns
-  // after writing the cache entry. It is kept because `Map.get` is typed
-  // `string[] | undefined` and something must narrow it -- but note that the
-  // `?.length` form narrows equally well, so this arm is a style choice, not a
-  // compiler requirement, and it still costs one uncovered branch.
+  // after writing the cache entry. Using `?.length` instead of `?? []` narrows
+  // the `string[] | undefined` type without a fallback arm, so coverage can
+  // hit 100% on this function.
   // See docs/needs-to-be-fix/schedule-runner-mcpmissingreason-cache-miss-unreachable.md
-  const missing = lastMcpMissing.get(`${taskName}@${agentName}`) ?? []
-  return missing.length ? `mcp-missing:${missing.join(',')}` : 'mcp-missing'
+  const missing = lastMcpMissing.get(`${taskName}@${agentName}`)
+  return missing?.length ? `mcp-missing:${missing.join(',')}` : 'mcp-missing'
 }
 
 // Two pre-check gates coexist here:
