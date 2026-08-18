@@ -21,7 +21,7 @@
 // are exercised end-to-end through the fake res.
 
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
-import { mkdirSync, rmSync, writeFileSync, utimesSync } from 'node:fs'
+import { mkdirSync, rmSync, writeFileSync, utimesSync, symlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { mkTempDir } from './setup/temp-sandbox.js'
 import type { RouteContext } from '../web/routes/types.js'
@@ -329,6 +329,33 @@ describe('research routes', () => {
     const { ctx, out } = fakeCtx(`/api/research/${SUB_AGENT_ID}`)
     expect(await tryHandleResearch(ctx)).toBe(false)
     expect(out.status).toBe(0)
+  })
+
+  // -----------------------------------------------------------------------
+  // Symlink-traversal regression (routes-research-symlink-traversal P1 SEC)
+  // -----------------------------------------------------------------------
+
+  it('404s on a single-doc path that is a symlink, even if the target is readable', async () => {
+    // Plant agents/<sub>/research/leak.md -> /etc/passwd. Before the fix,
+    // existsSync + statSync followed the link, so /api/research/<sub>/leak.md
+    // served /etc/passwd verbatim. After the fix, statSync(throwIfNoEntry:false)
+    // plus !st.isFile() || st.isSymbolicLink() short-circuits to 404.
+    symlinkSync('/etc/passwd', join(SUB_RESEARCH_DIR, 'leak.md'))
+    const { ctx, out } = fakeCtx(`/api/research/${SUB_AGENT_ID}/leak.md`)
+    expect(await tryHandleResearch(ctx)).toBe(true)
+    expect(out.status).toBe(404)
+    expect(out.body.error).toBe('Not found')
+  })
+
+  it('excludes symlinks from the listing even when they point at readable files', async () => {
+    // Same fixture, but on the listing branch: Dirent.isSymbolicLink() filter
+    // drops the entry without ever calling statSync on it.
+    symlinkSync('/etc/passwd', join(SUB_RESEARCH_DIR, 'leak.md'))
+    const { ctx, out } = fakeCtx('/api/research')
+    expect(await tryHandleResearch(ctx)).toBe(true)
+    const sub = out.body.find((a: any) => a.agent === SUB_AGENT_ID)
+    expect(sub.docs.map((d: any) => d.name)).not.toContain('leak.md')
+    expect(sub.docs.map((d: any) => d.name)).toContain('alpha.md')
   })
 
   // -----------------------------------------------------------------------
