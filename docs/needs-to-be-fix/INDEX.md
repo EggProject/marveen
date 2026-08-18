@@ -122,7 +122,7 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `command-task-persist-healthmap-empty-fallback-unreachable` | command-task.ts: `persist()` `healthMap ?? {}` empty-fallback arm is unreachable | 2026-08-15 af4c087 |
 | `context-guard-runner-dead-code-branches` | context-guard-runner.ts: four branches in the restart/request-handoff switch are unreachable | — |
 | `federation-capability-runner-unreachable-promise-resolve` | federation/capability-runner.ts: the `?? Promise.resolve()` right branch is structurally unreachable defensive code | 2026-08-14 08d7508 |
-| `federation-poller-defensive-coverage` | federation/poller.ts: belt catch and startFederationPoller swallow require contrived test setups | — |
+| `federation-poller-defensive-coverage` | federation/poller.ts: belt catch and startFederationPoller swallow require contrived test setups | Resolved: 2026-08-19 5c7dbe0 |
 | `federation-v8-coverage-quirks` | v8 coverage reports unreachable binary-expr branches in federation.ts | — |
 | `federation-validator-refusal-paths` | federation.ts validator-refusal 400 paths are unreachable in practice | 2026-08-14 08d7508 |
 | `fleet-transfer-agents-nullish-coalesce-dead-code` | fleet-transfer.ts: `fleet.agents ?? []` nullish-coalesce right arm is unreachable | 2026-08-14 014f1de |
@@ -182,7 +182,7 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `schedules-expand-prompt-missing-answers` | Expand-prompt crashes when answers is omitted | Resolved: 2026-08-17 d99f171 |
 | `skills-import-seg-truthy-guard` | skills.ts:409 -- `if (seg)` truthy guard is unreachable | 2026-08-14 c2b4ea2 |
 | `skills-sort-comparator-falsy-arms` | skills.ts:157 -- `label || name` nullish fallback is unreachable | 2026-08-14 c2b4ea2 |
-| `stuck-input-watcher-give-up-inner-if-unreachable` | stuck-input-watcher.ts: the give-up `prev.attempts < maxAttempts` inner-if is unreachable | — |
+| `stuck-input-watcher-give-up-inner-if-unreachable` | stuck-input-watcher.ts: the give-up `prev.attempts < maxAttempts` inner-if is unreachable | Resolved: 2026-08-19 b23bccb |
 | `stuck-tool-call-watcher-respawn-ternary-null-unreachable` | stuck-tool-call-watcher: sinceRespawnMs ternary `:null` arm is unreachable | 2026-08-14 014f1de |
 | `telegram-client-probehighwater-ignores-okfalse` | telegram-client.ts: `probeHighWater` ignores `ok: false` in the body and returns a fake `update_id` | Resolved: 2026-08-18 1672bf5 |
 | `updates-release-lock-unreachable` | updates.ts:198 -- releaseLock's `if (!lockHeld) return` early-exit is unreachable | 2026-08-14 c2b4ea2 |

@@ -131,3 +131,42 @@ Three options, in order of decreasing cost:
 This doc itself is a needs-to-be-fix entry -- it should be either deleted
 (if option 1 is taken and the comment lands) or acted on (if option 2
 or 3 is approved).
+
+## Resolution
+
+Applied: **typed error re-throw + logger.warn** for both defensive paths
+(cycle 32, test/baseline).
+
+1. The belt catch in `pollPeerManifests` (lines 219-226) now logs the warn
+   AND re-throws a typed `FederationPollInternalError(peerId, cause)`. The
+   defensive cache update to `'internal poll error'` was dropped -- the
+   cache state was unreachable in practice (pollOnePeer's own try/catch
+   net already handles every observable failure mode) and the contrived
+   `Map.prototype.set` monkey-patch was the only thing that drove coverage.
+
+2. The trailing `.catch(() => {})` in `startFederationPoller` was replaced
+   with `.catch((err) => logger.warn({ err }, 'federation poller:
+   background refresh failed'))` -- the rejection now has a logged
+   breadcrumb instead of vanishing silently.
+
+Behavior change: a future regression in pollOnePeer's internal try/catch
+net will now surface as a rejected `pollPeerManifests`, propagating up to
+`refreshFederationStatus` and the interval timer's new `.catch` handler.
+This breaks the "one broken peer must never abort the round" belt on paper,
+but in practice the belt never fires today (pollOnePeer catches every
+observable failure), so the live behavior is unchanged.
+
+Tests flipped:
+- `a throw escaping pollOnePeer marks the peer as "internal poll error"`
+  → `a throw escaping pollOnePeer surfaces as a FederationPollInternalError`
+  (asserts `caught instanceof FederationPollInternalError` and `peerId === 'teodor'`).
+- `one broken peer does not abort the round (other peers still polled)`
+  → `a throw escaping pollOnePeer aborts the round (typed rejection surfaces)`
+  (asserts the rejection is raised; cecil is not polled because the belt
+  no longer silently continues past a throw).
+
+The "the inline lambdas run when the timers fire" test still passes --
+the `getFederationConfig` spy + captured setTimeout/setInterval callbacks
+still exercise the new `.catch((err) => logger.warn(...))` handler with a
+real rejection (the spy throws synchronously, `refreshFederationStatus`
+returns a rejected promise, the new `.catch` logs the warn).

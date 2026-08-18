@@ -108,3 +108,35 @@ Two acceptable resolutions:
 This doc itself is a needs-to-be-fix entry -- until a resolution is
 chosen, the test suite cannot reach 100% branch coverage on
 `src/web/stuck-input-watcher.ts` without modifying the source.
+
+## Resolution
+
+Applied: **drop the inner guard** at all three sites (cycle 32, test/baseline).
+The dead `prev.attempts < X.maxAttempts` clause was removed from:
+
+- `recoverParkedPaste` line 124 -- the warn fires whenever
+  `next.attempts >= thresholds.maxAttempts`.
+- `bareEnterRecovery` lines 160-167 -- the inner `if (prev.attempts < X)`
+  was deleted; the warn fires whenever
+  `next.parkedSig !== null && next.attempts >= THRESHOLDS.maxAttempts`.
+- `checkLocalSession` lines 201-204 -- the inner clause was deleted from
+  the compound condition; the alert fires whenever
+  `alertOnGiveUp && next.attempts >= LOCAL_FAST_THRESHOLDS.maxAttempts`.
+
+The "logged at most once per spell" comment was removed because the inner
+guard that implemented it was structurally dead (decideStuckInputRecovery's
+budget-spent branch returns `{ recover: false, next: { ...prev } }`, so
+`next.attempts === prev.attempts` whenever the outer condition holds). After
+the fix the warn/alert fires on every tick where the budget is spent -- the
+test `a give-up is alerted exactly once per spell` was flipped to
+`a give-up alerts on every tick where next.attempts has hit maxAttempts`
+(assertion: `toHaveBeenCalledTimes(2)`).
+
+The `recoverParkedPaste logs the give-up warning when attempts maxAttempts
+via injected decision` and `bareEnterRecovery logs the give-up warning when
+attempts maxAttempts via injected decision` tests continue to pass without
+flipping (their assertions only require the warn to fire at least once,
+which now happens on the first sweep via the real decideStuckInputRecovery
+flow as well -- the `vi.doMock('../pane-state.js')` injection is still
+there, kept to avoid coupling the test to the helper's exact budget-spent
+branch).
