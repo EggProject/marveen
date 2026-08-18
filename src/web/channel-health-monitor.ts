@@ -20,11 +20,17 @@ import { MAIN_CHANNELS_SESSION } from './main-agent.js'
 // uv__run_timers). So run it in a DETACHED child (reconnect-cli.js) -- the
 // blocking work happens off the main event loop. One in-flight reconnect per
 // agent (the child clears the flag on exit).
+//
+// Forward-compat tripwire: spawnDetachedReconnect used to guard on
+// `inFlightReconnects.has(agentName)` at its top. Through the current public
+// API (checkAgent, a few lines below) that arm is unreachable -- the caller
+// gates on the same Set before invoking us. If a second caller is ever
+// introduced that does its own dedup and forgets to gate, the arm must be
+// reinstated here with a corresponding test.
 const RECONNECT_CLI = fileURLToPath(new URL('./reconnect-cli.js', import.meta.url))
 const inFlightReconnects = new Set<string>()
 
 function spawnDetachedReconnect(agentName: string): boolean {
-  if (inFlightReconnects.has(agentName)) return false
   inFlightReconnects.add(agentName)
   try {
     const child = spawn(process.execPath, [RECONNECT_CLI, agentName], {
