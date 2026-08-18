@@ -118,3 +118,47 @@ A malformed-but-parseable settings.json then gets replaced by a minimal
 unparseable content.
 
 Not applied here: the task forbids modifying `src/web/model-fallback-runner.ts`.
+
+## Resolution
+
+Reused the reader's `cfg && typeof cfg === 'object' && !Array.isArray(cfg)`
+guard in the writer at `src/web/model-fallback-runner.ts:56-65`. The new
+block:
+
+```ts
+function writeMainModel(model: string): void {
+  let cfg: Record<string, unknown> = {}
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(MAIN_SETTINGS_PATH, 'utf-8'))
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      cfg = parsed satisfies object as Record<string, unknown>
+    }
+  } catch {}
+  cfg.model = model
+  atomicWriteFileSync(MAIN_SETTINGS_PATH, JSON.stringify(cfg, null, 2))
+}
+```
+
+collapses the `null`, `number`, `string`, and `[]` failure modes into the
+same fall-through the existing `catch` already took for unparseable
+content: keep `cfg = {}`, set `cfg.model`, write a minimal
+`{ "model": ... }`. So both pinned scenarios now land a real model on
+disk and the runner records the downgrade as a normal `switched model`
+info entry.
+
+Side benefits:
+- `cfg`'s declared type (`Record<string, unknown>`) is no longer a lie
+  when the parsed body is a non-object — TS now knows the value it
+  dereferences has an object shape.
+- Reader/writer asymmetry called out in this MD's `Excerpt` is gone:
+  both sides narrow identically, so a `null` settings.json produces
+  identical behaviour in both directions (read: fall back to
+  `DEFAULT_MODEL`; write: replace with `{ "model": ... }`).
+- `src/__tests__/model-fallback-runner.test.ts` flips the two pinning
+  cases (`'aborts the switch when settings.json holds a JSON null
+  body'` and `'silently drops the model when settings.json holds an
+  array body'`) to the fixed behaviour: the file lands at
+  `{ "model": CHAIN[1] }`, no warn fires, the downgrade switch record
+  is emitted, and `hardRestart` runs. The describe block name drops
+  the `(pins a known defect)` suffix to reflect that the cases are now
+  regression coverage.
