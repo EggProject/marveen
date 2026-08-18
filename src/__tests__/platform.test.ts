@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 // each branch is to mutate process.platform / process.env['MARVEEN_ENV'] /
 // DISPLAY-family vars BEFORE re-importing the module with vi.resetModules().
 //
-// Uncovered without these tests: lines 12-16 (linux branch with display
+// Uncovered without these tests: lines 12-21 (linux branch with display
 // detection + the non-darwin non-linux fallback) and the three paths of the
 // `||` chain at line 10.
 
@@ -74,14 +74,14 @@ describe('detect() -- process.platform branches', () => {
   })
 
   it('returns linux-server when process.platform is linux and DISPLAY/WAYLAND/XDG are all unset', async () => {
-    // The `linux-server` arm of the `hasDisplay ?` ternary (line 14 else).
+    // The `linux-server` arm of the `hasDisplay ?` ternary (line 19 else).
     setPlatform('linux')
     const { PLATFORM } = await importPlatformFresh()
     expect(PLATFORM).toBe('linux-server')
   })
 
   it('returns linux-gui when process.platform is linux and DISPLAY is set', async () => {
-    // The `linux-gui` arm of the `hasDisplay ?` ternary (line 14 then),
+    // The `linux-gui` arm of the `hasDisplay ?` ternary (line 19 then),
     // hit through the first operand of the DISPLAY-family `||` chain.
     setPlatform('linux')
     process.env['DISPLAY'] = ':0'
@@ -98,16 +98,16 @@ describe('detect() -- process.platform branches', () => {
     expect(PLATFORM).toBe('linux-gui')
   })
 
-  it('returns linux-gui when process.platform is linux and only XDG_SESSION_TYPE is set', async () => {
-    // The `linux-gui` arm through the third operand of the DISPLAY-family `||`
-    // chain (DISPLAY unset, WAYLAND_DISPLAY unset, XDG_SESSION_TYPE set).
+  it('returns linux-gui when process.platform is linux and XDG_SESSION_TYPE is wayland (allowlist match)', async () => {
+    // The `linux-gui` arm through the third operand: XDG_SESSION_TYPE is
+    // allowlisted (x11 / wayland / mir) -- `includes` returns true.
     setPlatform('linux')
     process.env['XDG_SESSION_TYPE'] = 'wayland'
     const { PLATFORM } = await importPlatformFresh()
     expect(PLATFORM).toBe('linux-gui')
   })
 
-  it('returns linux-server when process.platform is win32 (the line 16 fallback)', async () => {
+  it('returns linux-server when process.platform is win32 (the line 21 fallback)', async () => {
     // Non-darwin, non-linux -> falls through to `return 'linux-server'`.
     setPlatform('win32')
     const { PLATFORM } = await importPlatformFresh()
@@ -170,5 +170,19 @@ describe('detect() -- XDG_SESSION_TYPE allowlist', () => {
     process.env['XDG_SESSION_TYPE'] = 'tty'
     const { PLATFORM } = await importPlatformFresh()
     expect(PLATFORM).toBe('linux-server')
+  })
+
+  it('treats XDG_SESSION_TYPE=x11 as a GUI session (allowlist match)', async () => {
+    setPlatform('linux')
+    process.env['XDG_SESSION_TYPE'] = 'x11'
+    const { PLATFORM } = await importPlatformFresh()
+    expect(PLATFORM).toBe('linux-gui')
+  })
+
+  it('treats XDG_SESSION_TYPE=mir as a GUI session (allowlist match)', async () => {
+    setPlatform('linux')
+    process.env['XDG_SESSION_TYPE'] = 'mir'
+    const { PLATFORM } = await importPlatformFresh()
+    expect(PLATFORM).toBe('linux-gui')
   })
 })
