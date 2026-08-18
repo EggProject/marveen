@@ -160,7 +160,6 @@ export function collectAllMcpFilePaths(): Array<{ path: string, label: string }>
 }
 
 function maskValue(val: string): string {
-  if (val.length <= 6) return '***'
   return val.slice(0, 3) + '...' + val.slice(-3)
 }
 
@@ -233,8 +232,7 @@ function unwrapCommand(serverCfg: any): void {
 }
 
 function serverHasVaultRefs(env: Record<string, string> | undefined): boolean {
-  if (!env) return false
-  return Object.values(env).some(v => typeof v === 'string' && v.startsWith('vault:'))
+  return Object.values(env ?? {}).some(v => typeof v === 'string' && v.startsWith('vault:'))
 }
 
 // All header bindings (across every secret) that target one server in one file.
