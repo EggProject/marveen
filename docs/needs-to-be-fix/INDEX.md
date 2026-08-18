@@ -128,7 +128,7 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `fleet-transfer-agents-nullish-coalesce-dead-code` | fleet-transfer.ts: `fleet.agents ?? []` nullish-coalesce right arm is unreachable | 2026-08-14 014f1de |
 | `fleet-transfer-assertsafename-dead-code` | fleet-transfer.ts: assertSafeName is dead code (lines 49-52) | 2026-08-14 08d7508 |
 | `fleet-transfer-fleet-agents-nullish-unreachable` | fleet-transfer.ts: `fleet.agents ?? []` nullish-coalesce right-arms are unreachable (7 sites) | 2026-08-14 014f1de |
-| `message-router-cache-fallback-unreachable` | message-router.ts: cached session-lookup `??` fallback arms are unreachable | Partial 2026-08-18 eb9b951 (`??` arms gone, replaced by an equally-uncovered `if (!cached)` guard -- coverage went DOWN, see MD) |
+| `message-router-cache-fallback-unreachable` | message-router.ts: cached session-lookup `??` fallback arms are unreachable | — |
 | `message-router-dead-defensive-branches` | message-router.ts: three dead defensive branches block 100% branch coverage | — |
 | `message-router-unreachable-defensive-branches` | message-router.ts: four unreachable defensive branches block 100% branch coverage | — |
 | `model-suggest-buildreason-preapplied-fallbacks-unreachable` | model-suggest.ts: `buildReason` `signals` and field-specific `?? 0` fallbacks are unreachable | 2026-08-14 c2b4ea2 |
