@@ -1,4 +1,4 @@
-# `mergeAuthorizedKeys` has a single-input trailing newline guard that is only reachable when the input has multiple trailing newlines
+# `mergeAuthorizedKeys` trailing-newline guard
 
 ## Location
 `src/remote-enroll-core.ts`, `mergeAuthorizedKeys()` at lines 193-206.
@@ -17,19 +17,43 @@ if (!content.endsWith('\n')) content += '\n'
 return { content, action: replaced ? 'replaced' : 'added' }
 ```
 
-## Failure scenario
-The trailing-newline guard (`if (!content.endsWith('\n')) content += '\n'`) is mostly unreachable: `out.join('\n')` ends with a newline ONLY when the last entry of `out` is the empty string.
+## Resolution
 
-The pop guard on line 193 removes ONE trailing empty. So an input with TWO trailing newlines (e.g. `'a\n\n'`) leaves the trailing empty after the pop, and the join produces a trailing newline -- the append is skipped. The branch is reachable in that narrow case.
+The original MD description was factually wrong. The guard
+`if (!content.endsWith('\n')) content += '\n'` at line 206 is **reachable with
+any input that does not end with a trailing newline** -- which is the common
+case. After the pop on line 193 removes the trailing empty element, the
+`out.push(restrictedLine)` on line 204 appends `restrictedLine` as the last
+element of `out`. Unless `restrictedLine` itself ends with `\n`, the join
+produces a `content` that does not end with a newline, and the guard
+executes.
 
-The bug is that the defensive `if (!content.endsWith('\n'))` branch is misleading: it suggests the function is defensive about double newlines, but in practice the only entry that survives the pop is what the function does already. If the pop ever stopped removing the trailing empty (e.g. an `else` branch guarding an empty input), the function would silently double-newline its output.
+Concrete trace for `existing = 'a\nb\n'`, `restrictedLine = 'marveen-remote:xyz'`:
+- `lines = ['a', 'b', '']`
+- pop -> `lines = ['a', 'b']`
+- map (no match) -> `out = ['a', 'b']`
+- push -> `out = ['a', 'b', 'marveen-remote:xyz']`
+- `content = 'a\nb\nmarveen-remote:xyz'` (no trailing newline)
+- guard executes, appends `\n` -> `content = 'a\nb\nmarveen-remote:xyz\n'`
+
+The guard is also reachable for empty input (`existing = ''`), input with no
+trailing newline (`existing = 'a'`), and input with multiple trailing
+newlines (`existing = 'a\n\n'`) -- in the last case the leftover empty entry
+after the pop is no longer the last element of `out` once `restrictedLine` is
+pushed, so the join still does not end with `\n` and the guard executes.
+
+The only path that skips the guard is a `restrictedLine` that itself ends with
+`\n` joined with a trailing empty in `out`, which is not a real input shape.
+
+**No code change required.** The guard is doing exactly what its comment
+claims: ensuring the output ends with exactly one newline. The original MD
+incorrectly characterized the guard as unreachable; the pinning test
+`src/__tests__/remote-enroll-core-full.test.ts` (`skips the trailing-newline
+append when a leftover empty entry already provides one`) still pins the
+multi-trailing-newline case correctly.
 
 ## Pinning test
 `src/__tests__/remote-enroll-core-full.test.ts`, test `skips the trailing-newline append when a leftover empty entry already provides one`. The test pins the multi-trailing-newline case and asserts the result is exactly one trailing newline (not two).
 
-## Suggested direction
-Either:
-- Simplify the function to `let content = out.join('\n') + '\n'` (the trailing-empty pop already guarantees `out` is non-empty when the input was non-empty, and an empty input would have given an empty `lines` array, so push behaves the same).
-- OR keep the guard but write a guard that ALSO drops the trailing empty inside the join (e.g. `out.filter(line => line !== '').join('\n') + '\n'`).
-
-The first option is cleaner; the second option preserves the `replaced` vs `added` distinction for the case where the only line in the file is the matching comment.
+## Note
+This MD is documented only. `src/remote-enroll-core.ts` is unchanged.

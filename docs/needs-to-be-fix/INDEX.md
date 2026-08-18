@@ -1,8 +1,8 @@
 # needs-to-be-fix index
 
-Every bug MD filed in this session. Total count: 177
+Every bug MD filed in this session. Total count: 176
 (`find docs/needs-to-be-fix -name '*.md' ! -name 'INDEX.md' | wc -l`;
-the unfiltered command returns 178 because it counts this index too).
+the unfiltered command returns 177 because it counts this index too).
 The index has one table row per MD, so the two counts must stay equal.
 
 The original 50 entries below were filed during the first coverage pass.
@@ -139,7 +139,7 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `reauth-healer-sweep-callsite-dead-arms` | reauth-healer.ts: two structurally unreachable arms at lines 391 and 395 | 2026-08-14 c2b4ea2 |
 | `recall-dayofweek-noon-utc-far-east-skew` | routes/recall.ts: dayOfWeekBudapest anchors at noon UTC but reads the weekday in APP_TZ, so every week-range is off by a day for install zones at UTC+12 and beyond | — |
 | `recall-unreachable-defensive-fallbacks` | recall.ts: two unreachable defensive `?? 0` fallbacks block 100% branch coverage | Resolved: 2026-08-16 3bec823 |
-| `remote-enroll-core-merge-trailing-newline-skip` | `mergeAuthorizedKeys` has a single-input trailing newline guard that is only reachable when the input has multiple trailing newlines | — |
+| `remote-enroll-core-merge-trailing-newline-skip` | `mergeAuthorizedKeys` trailing-newline guard (description corrected; no code change needed) | Documented only — source unchanged |
 | `remote-enroll-fs-lock-vanish-spin` | `acquireLock` spins forever when statSync throws but the lock file is still there | Resolved: 2026-08-19 7d76d14 |
 | `remote-enroll-fs-rename-failure-cleanup-untestable` | `writeAtomic` rename-failure cleanup is unreachable in the type system | Documented only — source unchanged |
 | `route-token-usage-nan-params` | NaN-via-parseInt: numeric query params silently default to NaN | Resolved: 2026-08-17 46e97a9ba973c094bd7f5c67cbd65a19254b66a3 |
@@ -154,7 +154,6 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `routes-background-tasks-session-ended-status` | routes/background-tasks.ts: a dead session is `done` in the poller but `failed` in the sweeper | Resolved: 2026-08-19 19d7991 |
 | `routes-background-tasks-sweep-timeout-reset` | routes/background-tasks.ts: restart grants every surviving task a fresh 30 minutes | Resolved: 2026-08-19 19d7991 |
 | `routes-background-tasks-unused-imports` | routes/background-tasks.ts: unused imports (`execSync`, `markOrphanedTasksFailed`) | 2026-08-14 68b94fe |
-| `routes-channel-conflict-probe-selfinflicted-409` | channel-conflict-probe.ts: the diagnostic probe issues a competing `getUpdates` and can *cause* the 409 it exists to observe | — |
 | `routes-connectors-hu-config-nostring-token` | routes-connectors-hu-config-nostring-token | Resolved: 2026-08-17 5a348eadbfd7d4a9ef65e6d22e783a4e9473ff4b |
 | `routes-dashboard-auth-nonexistent-sut` | routes/dashboard-auth.ts does not exist; task brief references the wrong path | Resolved: 2026-08-18 e5cfea6 |
 | `routes-docs-basename-redundant` | routes/docs.ts: the `basename(name) !== name` check in /api/docs/<name> is unreachable | Resolved: 2026-08-18 e4ec60b |
