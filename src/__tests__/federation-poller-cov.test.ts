@@ -474,12 +474,13 @@ describe('startFederationPoller', () => {
   })
 
   it('the inline lambdas run when the timers fire (fake timers + rejecting refresh)', async () => {
-    // The two inner `() => { refreshFederationStatus().catch(() => {}) }`
-    // arrows live inside startFederationPoller. They are only executed when
-    // the timers fire, and the trailing `.catch(() => {})` is only invoked
-    // when refreshFederationStatus() rejects (pollPeerManifests catches
-    // its own network errors, so the only way to surface a rejection is to
-    // force the very first getFederationConfig() call to throw).
+    // The two inner `() => { refreshFederationStatus().catch((err) =>
+    // logger.warn(...)) }` arrows live inside startFederationPoller. They are
+    // only executed when the timers fire, and the trailing .catch is only
+    // invoked when refreshFederationStatus() rejects (pollPeerManifests's
+    // own net catches every observable network failure, so the only way to
+    // surface a rejection is to force the very first getFederationConfig()
+    // call to throw).
     //
     // We stub setInterval/setTimeout to capture the callbacks directly --
     // fake-timer APIs (advanceTimersByTimeAsync) abort after 10000 ticks
@@ -518,7 +519,7 @@ describe('startFederationPoller', () => {
       // Fire the captured setInterval callback -- awaits the inner .catch.
       if (i) await i()
       // Give the rejected-promise microtask queue a chance to drain so the
-      // empty `() => {}` passed to .catch() is actually invoked.
+      // .catch((err) => logger.warn(...)) handler is actually invoked.
       await Promise.resolve()
       await Promise.resolve()
       await Promise.resolve()
@@ -534,14 +535,14 @@ describe('startFederationPoller', () => {
   })
 })
 
-describe('refreshFederationStatus: error catch swallow', () => {
-  it('does not surface rejection from the inner round', async () => {
+describe('refreshFederationStatus: pollOnePeer internal catches', () => {
+  it('does not deadlock when pollOnePeer catches a thrown fetchImpl internally', async () => {
     enabledConfig()
     const failing = (() => { throw new Error('sync boom') }) as unknown as typeof fetch
-    // refreshFederationStatus surfaces the rejection from pollPeerManifests;
-    // the .catch(() => {}) swallow lives inside startFederationPoller's
-    // lambda, not in refreshFederationStatus itself. Here we just verify
-    // refreshFederationStatus does not deadlock on a thrown fetchImpl.
+    // The sync-throwing fetchImpl is caught by pollOnePeer's own try/catch
+    // (fetch catch), so it is recorded as 'unreachable' rather than escaping
+    // to pollPeerManifests's belt. refreshFederationStatus therefore resolves
+    // with the cache view; we just verify no deadlock.
     await expect(refreshFederationStatus(failing)).resolves.toBeDefined()
   })
 
