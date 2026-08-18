@@ -121,7 +121,7 @@ function recoverParkedPaste(
       'stuck-input-watcher: parked paste placeholder persisted past confirm window, sending recovery Enter',
     )
     sendEnterToSession(session, host)
-  } else if (next.attempts >= thresholds.maxAttempts && prev.attempts < thresholds.maxAttempts) {
+  } else if (next.attempts >= thresholds.maxAttempts) {
     logger.warn(
       { label, session },
       'stuck-input-watcher: paste placeholder still parked after max recovery Enters, giving up for this spell',
@@ -158,12 +158,7 @@ function bareEnterRecovery(label: string, session: string, host: string | null):
     )
     sendEnterToSession(session, host)
   } else if (next.parkedSig !== null && next.attempts >= THRESHOLDS.maxAttempts) {
-    // Logged at most once per spell: the give-up is recorded on the tick
-    // that spent the last attempt (attempts hits maxAttempts there), not
-    // every subsequent tick.
-    if (prev.attempts < THRESHOLDS.maxAttempts) {
-      logger.warn({ label, session }, 'stuck-input-watcher: input still parked after max recovery Enters, giving up for this spell')
-    }
+    logger.warn({ label, session }, 'stuck-input-watcher: input still parked after max recovery Enters, giving up for this spell')
   }
 }
 
@@ -200,8 +195,7 @@ async function checkLocalSession(label: string, session: string, alertOnGiveUp: 
     watchState.set(session, next)
     if (
       alertOnGiveUp &&
-      next.attempts >= LOCAL_FAST_THRESHOLDS.maxAttempts &&
-      prev.attempts < LOCAL_FAST_THRESHOLDS.maxAttempts
+      next.attempts >= LOCAL_FAST_THRESHOLDS.maxAttempts
     ) {
       logger.warn({ label, session }, 'stuck-input-watcher: sub-agent input still parked after max recovery attempts, alerting for manual restart')
       sendAlert(`⚠️ A(z) ${label} agens bemenete beragadt és az auto-recovery (Enter + clear/re-inject) nem szabadította ki. Valószínűleg kézi restart kell: POST /api/agents/${label}/restart vagy a dashboardon.`)
