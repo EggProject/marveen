@@ -126,7 +126,6 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `federation-v8-coverage-quirks` | v8 coverage reports unreachable binary-expr branches in federation.ts | — |
 | `federation-validator-refusal-paths` | federation.ts validator-refusal 400 paths are unreachable in practice | 2026-08-14 08d7508 |
 | `fleet-transfer-agents-nullish-coalesce-dead-code` | fleet-transfer.ts: `fleet.agents ?? []` nullish-coalesce right arm is unreachable | 2026-08-14 014f1de |
-| `fleet-transfer-assertsafename-dead-code` | fleet-transfer.ts: assertSafeName is dead code (lines 49-52) | 2026-08-14 08d7508 |
 | `fleet-transfer-fleet-agents-nullish-unreachable` | fleet-transfer.ts: `fleet.agents ?? []` nullish-coalesce right-arms are unreachable (7 sites) | 2026-08-14 014f1de |
 | `message-router-cache-fallback-unreachable` | message-router.ts: cached session-lookup `??` fallback arms are unreachable | — |
 | `message-router-dead-defensive-branches` | message-router.ts: three dead defensive branches block 100% branch coverage | — |
