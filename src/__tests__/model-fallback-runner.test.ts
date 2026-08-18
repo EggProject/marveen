@@ -358,59 +358,39 @@ describe('main agent: reading the model from .claude/settings.json', () => {
 // DEFECT PINNING -- see
 // docs/needs-to-be-fix/model-fallback-runner-writemainmodel-nonobject.md
 //
-// writeMainModel() only guards a JSON *parse* failure, so a valid-JSON
-// non-object body (null / number / string / array) flows into
-// `cfg: Record<string, unknown>` and breaks the write. readMainModel() guards
-// exactly this case (`cfg &&` on line 50); the writer does not.
-//
-// These two tests assert what the code does TODAY, not what it should do.
-// Invert them when the bug is fixed.
-describe('main agent: non-object settings.json (pins a known defect)', () => {
+// writeMainModel() only guarded a JSON *parse* failure before the fix; a
+// valid-JSON non-object body (null / number / string / array) flowed into
+// `cfg: Record<string, unknown>` and broke the write. readMainModel() guards
+// exactly this case (`cfg &&` on line 50); the writer now narrows to the
+// same shape. A non-object body is replaced with a minimal `{ "model": ... }`,
+// matching what the existing catch already does for unparseable content.
+describe('main agent: non-object settings.json', () => {
   beforeEach(() => {
     mainPane = PANE_LIMIT
   })
 
-  it('aborts the switch when settings.json holds a JSON null body', async () => {
+  it('rewrites settings.json with a minimal object when the body is a JSON null', async () => {
     writeMainSettings('null')
     await startRunner()
     await firstSweep()
 
-    // The read side copes (falls back to DEFAULT_MODEL, so a downgrade is due)...
-    const failure = mocks.warn.mock.calls[0]![0] satisfies unknown as { err: Error; name: string }
-    expect(mocks.warn.mock.calls[0]![1]).toBe('model-fallback: switch failed')
-    // ...but the write side throws on `cfg.model = model`.
-    expect(failure.err).toBeInstanceOf(TypeError)
-    // V8/Node and Bun JSC report the same TypeError with different wording:
-    // node: "Cannot set properties of null"
-    // bun:  "null is not an object (evaluating 'cfg.model = model')"
-    // Both signal "tried to assign a property on null"; we assert one of the
-    // two so the test passes on both runtimes.
-    const msg = failure.err.message
-    expect(
-      msg.includes('Cannot set properties of null') ||
-        msg.includes("null is not an object (evaluating 'cfg.model = model')"),
-    ).toBe(true)
-    expect(failure.name).toBe(MAIN_ID)
-
-    // Nothing was restarted and the file is untouched: main stays on the
-    // limited model, and every later sweep repeats the same failure.
-    expect(mocks.hardRestart).not.toHaveBeenCalled()
-    expect(switchRecords()).toHaveLength(0)
-    expect(readFileSync(settingsPath(), 'utf-8')).toBe('null')
+    // No throw: writeMainModel narrows null to {} and writes the model.
+    expect(mocks.warn).not.toHaveBeenCalled()
+    expect(mocks.hardRestart).toHaveBeenCalledTimes(1)
+    expect(switchRecords()[0]).toMatchObject({ from: DEFAULT_MODEL, to: CHAIN[1], action: 'downgrade' })
+    expect(readMainSettings().model).toBe(CHAIN[1])
   })
 
-  it('silently drops the model when settings.json holds an array body', async () => {
+  it('rewrites settings.json with a minimal object when the body is a JSON array', async () => {
     writeMainSettings('[]')
     await startRunner()
     await firstSweep()
 
-    // `cfg.model = ...` on an array is a non-index property, which
-    // JSON.stringify does not serialize -- the model never lands on disk.
-    expect(readFileSync(settingsPath(), 'utf-8')).toBe('[]')
-    // Yet nothing threw, so the runner restarts main and records a success.
-    expect(mocks.hardRestart).toHaveBeenCalledTimes(1)
+    // No silent drop: writeMainModel narrows [] to {} and writes the model.
     expect(mocks.warn).not.toHaveBeenCalled()
-    expect(switchRecords()[0]).toMatchObject({ to: CHAIN[1], action: 'downgrade' })
+    expect(mocks.hardRestart).toHaveBeenCalledTimes(1)
+    expect(switchRecords()[0]).toMatchObject({ from: DEFAULT_MODEL, to: CHAIN[1], action: 'downgrade' })
+    expect(readMainSettings().model).toBe(CHAIN[1])
   })
 })
 
