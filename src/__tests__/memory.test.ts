@@ -466,6 +466,15 @@ describe('runDailyDigest', () => {
     expect(runAgentCalls).toHaveLength(1)
   })
 
+  it('returns null when the sub-agent yields whitespace-only text', async () => {
+    memoriesForChat.push(memRecent({ content: 'a' }), memRecent({ content: 'b' }))
+    runAgentResult = { text: '   \n\t  ' }
+    const out = await runDailyDigest('chat-1')
+    expect(out).toBeNull()
+    expect(saveMemoryCalls).toEqual([])
+    expect(runAgentCalls).toHaveLength(1)
+  })
+
   it('persists the digest as episodic and returns the trimmed text', async () => {
     memoriesForChat.push(
       memRecent({ id: 1, content: 'A'.repeat(220) }),
