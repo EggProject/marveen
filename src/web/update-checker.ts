@@ -252,6 +252,6 @@ export async function refreshUpdateStatus(): Promise<UpdateStatus> {
 // without anyone having to SSH in and run update.sh.
 export function startUpdateChecker(): NodeJS.Timeout {
   // First check shortly after startup; then every 15 minutes.
-  setTimeout(() => { refreshUpdateStatus().catch(() => {}) }, 10_000)
-  return setInterval(() => { refreshUpdateStatus().catch(() => {}) }, 15 * 60_000)
+  setTimeout(() => { refreshUpdateStatus() }, 10_000)
+  return setInterval(() => { refreshUpdateStatus() }, 15 * 60_000)
 }
