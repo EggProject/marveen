@@ -170,17 +170,15 @@ describe('remote-enroll-fs: extra branches', () => {
   })
 
   // -----------------------------------------------------------------------
-  // acquireLock: lock vanished between open and stat (line 116-118)
+  // acquireLock: statSync throws on the contended lock
+  // (docs/needs-to-be-fix/remote-enroll-fs-lock-vanish-spin.md)
   //
-  // The EEXIST handler runs statSync; if that throws, the catch block
-  // continues immediately. We trigger this by making statSync throw on
-  // the lockPath. The next openSync attempt also fails with EEXIST (the
-  // file is still there because the mock does not delete it), so the
-  // loop eventually exhausts its retries. The trait we pin: sleep is
-  // NEVER invoked because the catch on line 116-118 short-circuits the
-  // wait before sleep runs.
+  // The EEXIST handler runs statSync; when that throws we cannot tell whether
+  // the lock is stale, and the file is still there (the mock does not delete
+  // it). The loop must therefore WAIT between retries instead of spinning
+  // through every attempt instantly. Pinned trait: sleep runs once per retry.
   // -----------------------------------------------------------------------
-  it('loops without sleeping when statSync throws on the contended lock', async () => {
+  it('sleeps between retries when statSync throws on the contended lock', async () => {
     fs.mkdirSync(sshDir, { mode: 0o700 })
     const lockPath = join(sshDir, 'authorized_keys.lock')
     fs.writeFileSync(lockPath, 'thief\n')
@@ -202,7 +200,7 @@ describe('remote-enroll-fs: extra branches', () => {
         sleep,
       }),
     ).rejects.toThrow(/could not acquire/)
-    expect(sleepCalls).toBe(0)
+    expect(sleepCalls).toBe(3)
   })
 
   // -----------------------------------------------------------------------
