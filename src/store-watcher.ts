@@ -23,7 +23,7 @@ const SYSTEM_FILES = new Set([
   // Federation config + inbound peer token (written by /api/federation/peers)
   'federation.json', '.federation-token',
   // Capability-summary cache (written by the capability-summary runner);
-  // capability text, not a secret -- deliberately NOT in SENSITIVE_NAMES.
+  // capability text, not a secret -- deliberately exposed (not denylisted).
   'capability-summaries.json',
   // Usage and keepalive
   'claude-usage.json', '.channel-keepalive', '.channel-last-respawn',
@@ -36,10 +36,6 @@ const SYSTEM_FILES = new Set([
 // Regex for system-generated filename patterns.
 // Also covers atomic-write temp files (keep in sync with settings-store.ts).
 const SYSTEM_RE = /\.pid$|\.tmp$|\.tmp\.[a-f0-9]+$|\.migrated$|\.bak$|^\.DS_Store$/
-
-// Filenames whose presence is sensitive; the audit row is flagged so the UI
-// can show a sanitised label instead of hinting at secret values.
-const SENSITIVE_NAMES = new Set(['.dashboard-token', 'vault.json', '.vault-key', '.claude-oauth-token', '.federation-token', 'federation.json'])
 
 // --- Agent attribution slot ---
 // Node.js is single-threaded; a route handler sets this before writing,
@@ -139,10 +135,14 @@ export function startStoreWatcher(): void {
 
       // New file -- record it and mark as known.
       knownFiles.add(rel)
-      const isSensitive = SENSITIVE_NAMES.has(basename(rel)) ? 1 : 0
 
       try {
-        logStoreFileEvent(rel, 'create', isSensitive, fileSize, agent)
+        // Every entry in the historical SENSITIVE_NAMES set (now removed) was
+        // also in SYSTEM_FILES, so the isSystemFile filter above already
+        // prevents those names from reaching this log call. The is_sensitive
+        // flag is therefore always 0 here -- hardcoded to keep the
+        // "do not audit secrets" contract.
+        logStoreFileEvent(rel, 'create', 0, fileSize, agent)
       } catch (err) {
         logger.warn({ err, rel }, 'store-watcher: failed to log new file event')
       }
