@@ -453,18 +453,19 @@ describe('store-watcher', () => {
     })
 
     // A `0` oldali ág fedett: minden sikeresen naplózott új fájl isSensitive=0.
-    // Az `1` oldali ág strukturálisan elérhetetlen: a SENSITIVE_NAMES halmaz
-    // minden eleme a SYSTEM_FILES halmazban is benne van, ezért a watch
-    // callback a 113. sor `isSystemFile` korai return-jénél már kilép, mielőtt
-    // a 142. sor `isSensitive` ternary-jéhez érne. A részletes elemzés a
+    // Az érték mostantól egy hardcoded const -- korábban egy 'SENSITIVE_NAMES
+    // subset-of SYSTEM_FILES' alapú ternary választotta ki, amelynek az 1-ágát az
+    // isSystemFile filter mindig levágta, így strukturálisan elérhetetlen
+    // volt. A ternary-t (és a SENSITIVE_NAMES halmazt) töröltük; a 0-s
+    // contract maradt. A részletes elemzés a
     // docs/needs-to-be-fix/store-watcher-sensitive-unreachable.md fájlban.
-    it('a watch callback minden naplózott fájlnál isSensitive=0 értéket ad át (SENSITIVE_NAMES ⊆ SYSTEM_FILES)', () => {
+    it('a watch callback minden naplózott fájlnál isSensitive=0 értéket ad át (hardcoded constant, no SENSITIVE_NAMES branch)', () => {
       writeFileSync(join(STORE, 'non-sensitive.txt'), 'x')
       fireRename('non-sensitive.txt')
       expect(logStoreFileEventMock).toHaveBeenCalledWith(
         'non-sensitive.txt',
         'create',
-        0, // 1-es oldal elérhetetlen: lásd a teszt leírását
+        0, // hardcoded constant (post-fix contract)
         expect.any(Number),
         null,
       )
