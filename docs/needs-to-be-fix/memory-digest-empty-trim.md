@@ -74,3 +74,33 @@ empty-digest suppression and the return-type guarantee.
 Per task rule "NEVER modify src/memory.ts" this requires an explicit
 override from the user; the test suite documents the gap and the pinning
 case above should be added when the fix is applied.
+
+## Resolution
+
+Replaced the `!text` early-return with a post-trim guard at
+`src/memory.ts:200-202`. The new pair:
+
+```ts
+const digest = (text ?? '').trim()
+if (!digest) return null
+```
+
+collapses the `null`, `''`, and `'   \n\t  '` failure modes into a single
+no-op return. `null` and `''` reach the guard as a `''` digest after the
+`?? ''` coalesce; whitespace-only payloads reach it after `.trim()`. In
+all three cases `runDailyDigest` now returns `null`, emits no
+`saveMemory` row, and does not invoke the `Napi naplo mentve` info log
+— matching the contract callers already assumed (`if (digest === null)`).
+
+No collateral changes:
+- `src/memory.ts` branch coverage unchanged for the happy path; the new
+  branch is the missing whitespace-only path that the test now covers.
+- The pre-trim `if (!text) return null` line is removed because the
+  combined guard subsumes it. The `text ?? ''` keeps the change safe for
+  `null` even though `runAgent`'s declared contract (`{ text: string | null }`)
+  already shows up only as `null` on the agent side.
+- `src/__tests__/memory.test.ts` gets a new case (`'returns null when the
+  sub-agent yields whitespace-only text'`) that pins the new contract.
+  The pre-existing `'returns null when the sub-agent yields no text'` case
+  continues to cover the `null` body, so both branches of the combined
+  guard have regression coverage.
