@@ -25,9 +25,25 @@ export async function tryHandleFleetQ(ctx: RouteContext): Promise<boolean> {
   const capMatch = path.match(/^\/api\/agents\/([^/]+)\/capabilities$/)
   if (capMatch && method === 'PUT') {
     const name = decodeURIComponent(capMatch[1])
-    if (!isKnownAgent(name)) { json(res, { error: 'Agent nem található' }, 404); return true }
-    const body = await readBody(req)
-    const parsed = JSON.parse(body.toString()) as { capabilities?: unknown }
+    if (!isKnownAgent(name)) { json(res, { error: 'Not found' }, 404); return true }
+    let body: Buffer
+    try {
+      body = await readBody(req)
+    } catch (err) {
+      json(res, { error: `Kérés olvasási hiba: ${(err as Error).message}` }, 400)
+      return true
+    }
+    let parsed: { capabilities?: unknown }
+    try {
+      parsed = JSON.parse(body.toString())
+    } catch (err) {
+      json(res, { error: 'Érvénytelen JSON törzs.' }, 400)
+      return true
+    }
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      json(res, { error: 'capabilities: object body required' }, 400)
+      return true
+    }
     if (!Array.isArray(parsed.capabilities) || !parsed.capabilities.every((c: unknown) => typeof c === 'string')) {
       json(res, { error: 'capabilities: string[] required' }, 400)
       return true
