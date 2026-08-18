@@ -87,3 +87,11 @@ current "any truthy value" because `mir` is a real display server.
 
 Per task rule "NEVER modify src/platform.ts" this requires an explicit
 override from the user.
+
+## Resolution
+
+Replaced the truthy-XDG branch with an explicit allowlist (`x11`, `wayland`,
+`mir`) so `XDG_SESSION_TYPE=tty` (and `unspecified`) now correctly resolves to
+`linux-server`. Flipped the regression pin in `platform.test.ts` to assert
+`linux-server` and removed the "currently buggy" framing. DISPLAY and
+WAYLAND_DISPLAY paths are unchanged. Fix committed in cb68aad.

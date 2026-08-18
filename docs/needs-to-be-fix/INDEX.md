@@ -135,7 +135,7 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `model-suggest-buildreason-unreachable-fallbacks` | model-suggest.ts: three unreachable `?? X` fallbacks in buildReason block 100% branch coverage | 2026-08-14 c2b4ea2 |
 | `openrouter-models-tier1-auto-empty-fallback` | openrouter-models.ts: `??` misses the empty-string tier1.auto fallback | Resolved: 2026-08-18 63d62da |
 | `password-hash-defensive-branches` | password-hash.ts: two defensive branches unreachable through real inputs | 2026-08-14 c2b4ea2 |
-| `platform-xdg-session-type-tty-bug` | platform.ts: XDG_SESSION_TYPE=tty is misclassified as `linux-gui` | — |
+| `platform-xdg-session-type-tty-bug` | platform.ts: XDG_SESSION_TYPE=tty is misclassified as `linux-gui` | Resolved: 2026-08-18 cb68aad |
 | `reauth-healer-stampalert-if-st-dead-code` | reauth-healer.ts: stampAlert `if (st)` false branch is dead code | 2026-08-14 c2b4ea2 |
 | `reauth-healer-sweep-callsite-dead-arms` | reauth-healer.ts: two structurally unreachable arms at lines 391 and 395 | 2026-08-14 c2b4ea2 |
 | `recall-dayofweek-noon-utc-far-east-skew` | routes/recall.ts: dayOfWeekBudapest anchors at noon UTC but reads the weekday in APP_TZ, so every week-range is off by a day for install zones at UTC+12 and beyond | — |
