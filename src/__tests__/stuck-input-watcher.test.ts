@@ -520,15 +520,19 @@ describe('startStuckInputWatcher -- escalation side effects', () => {
     clearInterval(timer)
   })
 
-  it('a give-up is alerted exactly once per spell (prev already at max does not re-alert)', async () => {
+  it('a give-up alerts on every tick where next.attempts has hit maxAttempts', async () => {
     mockListAgentNames.mockReturnValue(['samu'])
     mockIsAgentRunning.mockReturnValue(true)
     mockResolveSession.mockReturnValue('agent-samu')
     mockReadHost.mockReturnValue(null)
     mockCapture.mockReturnValue(IDLE)
     const stuck: StuckInputState = { parkedSig: 'sig', firstSeenAt: 1, lastRecoverAt: 1, attempts: 5 }
-    // Sequence: main NO_STATE, sub-agent stuck (first give-up),
-    //           main NO_STATE, sub-agent stuck (would re-alert but prev guard).
+    // Sequence: main NO_STATE, sub-agent stuck (give-up fires),
+    //           main NO_STATE, sub-agent stuck (give-up fires again --
+    //           the prev.attempts < maxAttempts inner guard was dropped
+    //           because decideStuckInputRecovery's budget-spent branch
+    //           makes prev.attempts == next.attempts and the inner guard
+    //           was structurally dead).
     mockRecover
       .mockResolvedValueOnce(NO_STATE)
       .mockResolvedValueOnce(stuck)
@@ -539,9 +543,9 @@ describe('startStuckInputWatcher -- escalation side effects', () => {
     await vi.advanceTimersByTimeAsync(20_000)
     await vi.advanceTimersByTimeAsync(15_000)
 
-    // 1 alert (first give-up); subsequent ticks are silent because the
-    // prev.attempts < maxAttempts guard prevents a duplicate alert.
-    expect(mockSendAlert).toHaveBeenCalledTimes(1)
+    // Two alerts: the first sweep's give-up fires, then the second sweep's
+    // give-up also fires because prev.attempts is no longer gated.
+    expect(mockSendAlert).toHaveBeenCalledTimes(2)
     clearInterval(timer)
   })
 
