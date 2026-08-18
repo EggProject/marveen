@@ -30,13 +30,13 @@ export async function tryHandleFleetQ(ctx: RouteContext): Promise<boolean> {
     try {
       body = await readBody(req)
     } catch (err) {
-      json(res, { error: `Kérés olvasási hiba: ${(err as Error).message}` }, 400)
+      json(res, { error: `Kérés olvasási hiba: ${err instanceof Error ? err.message : String(err)}` }, 400)
       return true
     }
     let parsed: { capabilities?: unknown }
     try {
       parsed = JSON.parse(body.toString())
-    } catch (err) {
+    } catch {
       json(res, { error: 'Érvénytelen JSON törzs.' }, 400)
       return true
     }

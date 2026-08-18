@@ -502,28 +502,42 @@ describe('tryHandleFleetQ -- PUT request body failure paths', () => {
   })
 
   it('returns 400 with Kérés olvasási hiba when readBody rejects', async () => {
-    const { res, handled, json } = await call({ method: 'PUT', path: '/api/agents/agent-a/capabilities', bodyError: new Error('socket reset') })
-    expect(handled).toBe(true); expect(res.statusCode).toBe(400); expect(json()).toEqual({ error: 'Kérés olvasási hiba: socket reset' })
+    const { res, handled, json } = await call({
+      method: 'PUT',
+      path: '/api/agents/agent-a/capabilities',
+      bodyError: new Error('socket reset'),
+    })
+    expect(handled).toBe(true)
+    expect(res.statusCode).toBe(400)
+    expect(json()).toEqual({ error: 'Kérés olvasási hiba: socket reset' })
     expect(H.writeAgentCapabilities).not.toHaveBeenCalled()
   })
 
   it('returns 400 with Érvénytelen JSON törzs when the body is malformed', async () => {
-    const { res, handled, json } = await call({ method: 'PUT', path: '/api/agents/agent-a/capabilities', body: '{not valid json' })
-    expect(handled).toBe(true); expect(res.statusCode).toBe(400); expect(json()).toEqual({ error: 'Érvénytelen JSON törzs.' })
+    const { res, handled, json } = await call({
+      method: 'PUT',
+      path: '/api/agents/agent-a/capabilities',
+      body: '{not valid json',
+    })
+    expect(handled).toBe(true)
+    expect(res.statusCode).toBe(400)
+    expect(json()).toEqual({ error: 'Érvénytelen JSON törzs.' })
     expect(H.writeAgentCapabilities).not.toHaveBeenCalled()
   })
 
   it('returns 400 with object body required when the body parses to null', async () => {
-    const { res, handled, json } = await call({ method: 'PUT', path: '/api/agents/agent-a/capabilities', body: 'null' })
-    expect(handled).toBe(true); expect(res.statusCode).toBe(400); expect(json()).toEqual({ error: 'capabilities: object body required' })
+    const { res, handled, json } = await call({
+      method: 'PUT',
+      path: '/api/agents/agent-a/capabilities',
+      body: 'null',
+    })
+    expect(handled).toBe(true)
+    expect(res.statusCode).toBe(400)
+    expect(json()).toEqual({ error: 'capabilities: object body required' })
     expect(H.writeAgentCapabilities).not.toHaveBeenCalled()
   })
 
-  it('throws when the body is a JSON array (defect: capabilities access on array)', async () => {
-    // JSON.parse('[]') -> []; `parsed.capabilities` is `undefined`, but
-    // the subsequent `Array.isArray(undefined)` is false, so it falls into
-    // the 400 branch and does NOT throw here. This test pins the actual
-    // behavior: an array body is rejected via the 400 branch.
+  it('returns 400 with object body required when the body is a JSON array', async () => {
     const { res, handled, json } = await call({
       method: 'PUT',
       path: '/api/agents/agent-a/capabilities',
@@ -534,9 +548,7 @@ describe('tryHandleFleetQ -- PUT request body failure paths', () => {
     expect(json()).toEqual({ error: 'capabilities: object body required' })
   })
 
-  it('throws when the body is a JSON string (defect: primitives crash the read)', async () => {
-    // JSON.parse('"hi"') -> "hi"; `parsed.capabilities` is undefined, so
-    // `Array.isArray(undefined)` is false -> 400 branch (no throw).
+  it('returns 400 with object body required when the body is a JSON string', async () => {
     const { res, handled, json } = await call({
       method: 'PUT',
       path: '/api/agents/agent-a/capabilities',
