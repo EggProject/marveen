@@ -1,4 +1,4 @@
-import { lstatSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { lstatSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { MAIN_AGENT_ID } from '../../config.js'
 import { agentConfigRoot, listAgentNames } from '../agent-config.js'
