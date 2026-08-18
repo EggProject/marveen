@@ -94,3 +94,7 @@ For `research-routes.test.ts:8-12`:
 ```
 
 Both edits are doc-only and ship with no runtime change.
+
+## Resolution
+
+Basename was removed in `e62eb87` (cycle 30 fix); the actual defense is `NAME_RE`'s character class allowlist `[A-Za-z0-9._-]+`, which excludes path separators. The module and test preamble comments still described the now-deleted basename check until this cycle 31 doc-only diff replaced both blocks with the `NAME_RE`-based narrative.
