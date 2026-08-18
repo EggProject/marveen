@@ -632,16 +632,7 @@ describe('resolveOpenRouterModel', () => {
     expect(resolveOpenRouterModel(`${AUTO_PREFIX}does-not-exist`)).toBe('deepseek/deepseek-chat-v3.1')
   })
 
-  it('ervenytelen tierKey es tier1.auto ures -- jelenleg ures stringet ad (defect: a ?? nem kapja el az ures stringet)', () => {
-    // A SUT utolso sora: `cat.tiers.find(t => t.key === 'tier1')?.auto ?? 'deepseek/...'`.
-    // A `??` csak null/undefined-re triggerel, igy ha tier1.auto = '' (ures
-    // string, de tenylegesen jelen van), a függvény ures stringet ad vissza
-    // a hardcoded 'deepseek/deepseek-chat-v3.1' helyett. Ez egy bug: ha egy
-    // operátor szándékosan ures 'auto'-val definiálja a tier1-et, az agent
-    // egy üres modellel próbál indulni. A teszt a jelenlegi (bugos) viselkedést
-    // rögzíti; a fix során a `??` || helyett cserélendő, és a tesztet
-    // 'deepseek/deepseek-chat-v3.1'-re kell frissíteni (lásd
-    // docs/needs-to-be-fix/openrouter-models-tier1-auto-empty-fallback.md).
+  it('ervenytelen tierKey es ures tier1.auto -- hardcoded deepseek defaultra esik vissza', () => {
     writeFileSync(MODELS_FILE, JSON.stringify({
       updated: 'test',
       tiers: [
