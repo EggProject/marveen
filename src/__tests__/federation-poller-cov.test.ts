@@ -28,6 +28,7 @@ import {
   resetFederationPollerCache,
   sanitizeManifest,
   startFederationPoller,
+  FederationPollInternalError,
   MANIFEST_MAX_BODY_BYTES,
   MANIFEST_MAX_AGENTS,
   MANIFEST_MAX_SKILLS,
@@ -276,12 +277,14 @@ describe('pollOnePeer: error branches beyond the existing suite', () => {
 })
 
 describe('pollPeerManifests: belt catch on pollOnePeer throw', () => {
-  it('a throw escaping pollOnePeer marks the peer as "internal poll error"', async () => {
+  it('a throw escaping pollOnePeer surfaces as a FederationPollInternalError', async () => {
     enabledConfig()
     // pollOnePeer has try/catch around fetch, readBoundedBody, JSON.parse,
     // and the cancel() calls, but the FINAL `statusCache.set(... state: ok ...)`
     // is unguarded. Monkey-patch Map.prototype.set to throw on the 'ok' store
-    // for our peer -- the throw escapes pollOnePeer and lands in the belt.
+    // for our peer -- the throw escapes pollOnePeer and lands in the belt,
+    // which now logs warn + re-throws a typed FederationPollInternalError so
+    // the interval timer's .catch handler can record it.
     const origSet = Map.prototype.set
     let armed = false
     Map.prototype.set = function (k, v) {
@@ -291,20 +294,23 @@ describe('pollPeerManifests: belt catch on pollOnePeer throw', () => {
       }
       return origSet.call(this, k, v)
     }
+    let caught: unknown
     try {
       await pollPeerManifests(NOW, fetchReturning(200, GOOD_MANIFEST))
+    } catch (err) {
+      caught = err
     } finally {
       Map.prototype.set = origSet
     }
     expect(armed).toBe(true)
-    const [st] = getFederationStatus()
-    expect(st.state).toBe('error')
-    expect(st.error).toBe('internal poll error')
-    // The belt catch preserves the previous lastOkAt/manifest (none here, so 0).
-    expect(st.lastChecked).toBe(NOW)
+    expect(caught).toBeInstanceOf(FederationPollInternalError)
+    expect((caught as FederationPollInternalError).peerId).toBe('teodor')
+    // Cache was NOT updated to 'internal poll error' -- the belt now
+    // surfaces the escape as a rejection instead of recording a defensive
+    // state that pollOnePeer's internal try/catches make unreachable.
   })
 
-  it('one broken peer does not abort the round (other peers still polled)', async () => {
+  it('a throw escaping pollOnePeer aborts the round (typed rejection surfaces)', async () => {
     writeConfigFile({
       enabled: true,
       systemId: 'localsys',
@@ -321,8 +327,10 @@ describe('pollPeerManifests: belt catch on pollOnePeer throw', () => {
       }
       return new Response(JSON.stringify({ ...GOOD_MANIFEST, system: 'cecil' }), { status: 200 })
     }) as unknown as typeof fetch
-    // Arm the map throw ONLY for teodor's 'ok' store; cecil's 'ok' store
-    // must succeed so we can prove the round continued past the throw.
+    // Arm the map throw ONLY for teodor's 'ok' store. The belt now re-throws,
+    // so the round aborts on teodor's throw and cecil is never polled --
+    // cecil's cache row stays absent (getFederationStatus synthesizes it as
+    // 'unknown', not 'ok').
     const origSet = Map.prototype.set
     Map.prototype.set = function (k, v) {
       if (k === 'teodor' && typeof v === 'object' && v !== null && (v as { state?: string }).state === 'ok') {
@@ -330,18 +338,21 @@ describe('pollPeerManifests: belt catch on pollOnePeer throw', () => {
       }
       return origSet.call(this, k, v)
     }
+    let caught: unknown
     try {
-      const status = await pollPeerManifests(NOW, fetchFor)
-      const byId = new Map(status.map((s) => [s.id, s]))
-      expect(byId.get('teodor')?.state).toBe('error')
-      expect(byId.get('teodor')?.error).toBe('internal poll error')
-      // Cecil still got through -- the belt caught the throw and the loop
-      // moved on.
-      expect(byId.get('cecil')?.state).toBe('ok')
-      expect(byId.get('cecil')?.lastOkAt).toBe(NOW)
+      await pollPeerManifests(NOW, fetchFor)
+    } catch (err) {
+      caught = err
     } finally {
       Map.prototype.set = origSet
     }
+    expect(caught).toBeInstanceOf(FederationPollInternalError)
+    expect((caught as FederationPollInternalError).peerId).toBe('teodor')
+    // Cecil is NOT cached -- the belt no longer silently continues past a
+    // throw, so the round aborts at the first broken peer.
+    const cecil = getFederationStatus().find((s) => s.id === 'cecil')
+    expect(cecil?.state).toBe('unknown')
+    expect(cecil?.lastChecked).toBe(0)
   })
 })
 
