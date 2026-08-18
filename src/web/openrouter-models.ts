@@ -169,5 +169,5 @@ export function resolveOpenRouterModel(model: string): string {
   const tier = cat.tiers.find(t => t.key === tierKey)
   if (tier?.auto) return tier.auto
   logger.warn({ model, tierKey }, 'openrouter-auto tier not found; falling back to tier1/deepseek')
-  return cat.tiers.find(t => t.key === 'tier1')?.auto ?? 'deepseek/deepseek-chat-v3.1'
+  return cat.tiers.find(t => t.key === 'tier1')?.auto || 'deepseek/deepseek-chat-v3.1'
 }
