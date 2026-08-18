@@ -133,3 +133,15 @@ with a corresponding test.
 Per task rule "NEVER modify src/" the source edit is blocked until the
 user overrides; the test suite documents the gap and pins every reachable
 sibling branch.
+
+## Resolution
+
+Dropped the dead `if (inFlightReconnects.has(agentName)) return false` arm
+in `src/web/channel-health-monitor.ts` (was line 27 in `spawnDetachedReconnect`).
+Kept a forward-compat tripwire note above the call site explaining when the
+arm must be reinstated (a future second caller that does its own dedup).
+Flipped the corresponding pinning test in `src/__tests__/channel-health-monitor.test.ts`
+from asserting the dead guard fires (mockSpawn NOT called) to asserting the
+unguarded outcome (mockSpawn IS called), so the test now documents the new
+contract: only checkAgent's gate filters spawns; the helper itself is
+unconditional. Fix committed in 8046287.

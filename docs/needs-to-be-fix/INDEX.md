@@ -111,7 +111,7 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `approvals-raw-resolved-by-in-log` | approvals PATCH logger receives untrimmed resolved_by | Resolved: 2026-08-16 9173b54 |
 | `auto-restart-runner-unreachable-defensive-fallbacks` | auto-restart-runner.ts: two `??` fallbacks are unreachable defensive code | 2026-08-14 c2b4ea2 |
 | `channel-coordinator-coverage-limits` | channel-coordinator.ts: unreachable branches block 100% branch coverage | Resolved: 2026-08-18 e5cfea6 |
-| `channel-health-monitor-spawndetach-inflight-redundant-guard` | channel-health-monitor.ts: spawnDetachedReconnect's in-flight guard is unreachable through public API | — |
+| `channel-health-monitor-spawndetach-inflight-redundant-guard` | channel-health-monitor.ts: spawnDetachedReconnect's in-flight guard is unreachable through public API | Resolved: 2026-08-18 8046287 |
 | `channel-monitor-agentdownsince-nullish-coalesce` | channel-monitor.ts: agentDownSince.get(t.session) ?? Date.now() at line 1647 is structurally dead | 2026-08-14 c2b4ea2 |
 | `channel-monitor-t-agentname-nullish-coalesce` | channel-monitor.ts: t.agentName ?? t.session at lines 1455 and 1494 is structurally dead | 2026-08-14 08d7508 |
 | `channel-monitor-test-holes` | channel-monitor.ts: pinned test holes in handleMarveenDown cascade + post-resume guard | — |
