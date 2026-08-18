@@ -133,7 +133,7 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `message-router-unreachable-defensive-branches` | message-router.ts: four unreachable defensive branches block 100% branch coverage | — |
 | `model-suggest-buildreason-preapplied-fallbacks-unreachable` | model-suggest.ts: `buildReason` `signals` and field-specific `?? 0` fallbacks are unreachable | 2026-08-14 c2b4ea2 |
 | `model-suggest-buildreason-unreachable-fallbacks` | model-suggest.ts: three unreachable `?? X` fallbacks in buildReason block 100% branch coverage | 2026-08-14 c2b4ea2 |
-| `openrouter-models-tier1-auto-empty-fallback` | openrouter-models.ts: `??` misses the empty-string tier1.auto fallback | — |
+| `openrouter-models-tier1-auto-empty-fallback` | openrouter-models.ts: `??` misses the empty-string tier1.auto fallback | Resolved: 2026-08-18 63d62da |
 | `password-hash-defensive-branches` | password-hash.ts: two defensive branches unreachable through real inputs | 2026-08-14 c2b4ea2 |
 | `platform-xdg-session-type-tty-bug` | platform.ts: XDG_SESSION_TYPE=tty is misclassified as `linux-gui` | — |
 | `reauth-healer-stampalert-if-st-dead-code` | reauth-healer.ts: stampAlert `if (st)` false branch is dead code | 2026-08-14 c2b4ea2 |
