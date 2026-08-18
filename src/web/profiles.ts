@@ -49,8 +49,7 @@ export function loadProfileTemplate(id: string): ProfileTemplate {
 }
 
 export function resolveProfilePlaceholders(value: string, ctx: { HOME: string; AGENT_DIR: string }): string {
-  return value
-    .replace(/\$\{HOME\}/g, ctx.HOME)
-    .replace(/\$\{AGENT_DIR\}/g, ctx.AGENT_DIR)
-    .replace(/\$\{WORKDIR\}/g, ctx.AGENT_DIR)
+  return value.replace(/\$\{(HOME|AGENT_DIR|WORKDIR)\}/g, (_m, key: string) =>
+    key === 'HOME' ? ctx.HOME : ctx.AGENT_DIR,
+  )
 }
