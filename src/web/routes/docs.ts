@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
-import { join, basename } from 'node:path'
+import { join } from 'node:path'
 import { PROJECT_ROOT } from '../../config.js'
 import { json } from '../http-helpers.js'
 import type { RouteContext } from './types.js'
@@ -9,8 +9,11 @@ import type { RouteContext } from './types.js'
 // auth wiring here. Nothing is writable; this only ever reads .md files that
 // already live in the repo.
 const DOCS_DIR = join(PROJECT_ROOT, 'docs')
-// Allowlist: a bare markdown filename. Combined with the basename() check below
-// this blocks path traversal (../, absolute paths, nested segments).
+// Allowlist: a bare markdown filename. The character class excludes every
+// path-separator node:path treats as one (`/`, `\`), and the upstream
+// path-segment regex `[^/]+` rejects percent-encoded slashes before decode,
+// so the regex alone blocks path traversal (../, absolute paths, nested
+// segments, null bytes).
 const NAME_RE = /^[A-Za-z0-9._-]+\.md$/
 
 function titleOf(content: string, fallback: string): string {
