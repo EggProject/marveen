@@ -11,11 +11,7 @@
 // keep the live checkout's docs/ untouched. We also wrap node:fs.statSync
 // to drive the per-file inner catch (statSync throws -> filename fallback)
 // and the birthtimeMs === 0 branch (mtimeMs fallback when the filesystem
-// does not track birth time). We wrap node:path.basename to drive the
-// `basename(name) !== name` defensive branch; the branch is unreachable
-// on real input because NAME_RE excludes every character node:path treats
-// as a path separator, so a bug MD is filed in
-// docs/needs-to-be-fix/routes-docs-basename-redundant.md.
+// does not track birth time).
 
 import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest'
 import type http from 'node:http'
@@ -37,9 +33,6 @@ const hoisted = vi.hoisted(() => {
     realFs: fs,
     fsState: {
       statSyncOverride: undefined as ((p: string) => import('node:fs').Stats) | undefined,
-    },
-    pathState: {
-      basenameOverride: undefined as ((p: string, ext?: string) => string) | undefined,
     },
   }
 })
@@ -65,20 +58,6 @@ vi.mock('node:fs', async (orig) => {
       if (hoisted.fsState.statSyncOverride) return hoisted.fsState.statSyncOverride(ps)
       return actual.statSync(p)
     }) as typeof actual.statSync,
-  }
-})
-
-// Wrap basename only. join must remain real so DOCS_DIR resolves correctly.
-vi.mock('node:path', async (orig) => {
-  const actual = await orig<typeof import('node:path')>()
-  return {
-    ...actual,
-    basename: ((p: string, ext?: string) => {
-      if (hoisted.pathState.basenameOverride) {
-        return hoisted.pathState.basenameOverride(p, ext)
-      }
-      return actual.basename(p, ext)
-    }) as typeof actual.basename,
   }
 })
 
@@ -136,7 +115,6 @@ beforeAll(() => {
 
 beforeEach(() => {
   hoisted.fsState.statSyncOverride = undefined
-  hoisted.pathState.basenameOverride = undefined
   rmSync(DOCS_DIR, { recursive: true, force: true })
   mkdirSync(DOCS_DIR, { recursive: true })
 })
