@@ -183,7 +183,6 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `schedules-expand-prompt-missing-answers` | Expand-prompt crashes when answers is omitted | Resolved: 2026-08-17 d99f171 |
 | `skills-import-seg-truthy-guard` | skills.ts:409 -- `if (seg)` truthy guard is unreachable | 2026-08-14 c2b4ea2 |
 | `skills-sort-comparator-falsy-arms` | skills.ts:157 -- `label || name` nullish fallback is unreachable | 2026-08-14 c2b4ea2 |
-| `store-watcher-sensitive-unreachable` | store-watcher: isSensitive=1 branch unreachable (SENSITIVE_NAMES ⊆ SYSTEM_FILES) | — |
 | `stuck-input-watcher-give-up-inner-if-unreachable` | stuck-input-watcher.ts: the give-up `prev.attempts < maxAttempts` inner-if is unreachable | — |
 | `stuck-tool-call-watcher-respawn-ternary-null-unreachable` | stuck-tool-call-watcher: sinceRespawnMs ternary `:null` arm is unreachable | 2026-08-14 014f1de |
 | `telegram-client-probehighwater-ignores-okfalse` | telegram-client.ts: `probeHighWater` ignores `ok: false` in the body and returns a fake `update_id` | Resolved: 2026-08-18 1672bf5 |
