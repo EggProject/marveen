@@ -91,3 +91,36 @@ implementation: because the three `replace` calls run in sequence, a
 `ctx.HOME` value that itself contains the literal `${AGENT_DIR}` is
 re-substituted by the next pass. The single-pass regex above cannot
 re-enter its own output.
+
+## Resolution
+
+Replaced the three sequential `String.prototype.replace` calls with a
+single pass over `/\$\{(HOME|AGENT_DIR|WORKDIR)\}/g` whose replacer is a
+function. Function replacements receive the match and the captured group
+and return a string verbatim — `$&`, `` $` ``, `$'` and `$n` sequences
+in `ctx.HOME` / `ctx.AGENT_DIR` are now literal text, not metacharacters.
+
+New block at `src/web/profiles.ts:51-54`:
+
+```ts
+export function resolveProfilePlaceholders(value: string, ctx: { HOME: string; AGENT_DIR: string }): string {
+  return value.replace(/\$\{(HOME|AGENT_DIR|WORKDIR)\}/g, (_m, key: string) =>
+    key === 'HOME' ? ctx.HOME : ctx.AGENT_DIR,
+  )
+}
+```
+
+Side benefits (called out in the suggested direction):
+- The previously-pinned `'PINS BUG: `$&` in a context value re-inserts
+  the matched placeholder'` and `'PINS BUG: a backtick pattern in a
+  context value drops characters'` cases in
+  `src/__tests__/profiles.test.ts` flip to the expected literal-text
+  output (`'/home/a$&b/x'` and `` '/a$`z/x' ``).
+- The single-pass regex cannot re-enter its own output, so a `ctx.HOME`
+  value that itself contains the literal `${AGENT_DIR}` is no longer
+  re-substituted by a follow-up pass (this secondary ordering bug was
+  unreachable on real inputs because `homedir()` contains no `$`, but
+  the symmetric case where `agentDir(name)` did could surface once one
+  user-path literal started nesting another).
+- The `${WORKDIR}` alias for `AGENT_DIR` is preserved by collapsing
+  the alternation to `key === 'HOME' ? ctx.HOME : ctx.AGENT_DIR`.
