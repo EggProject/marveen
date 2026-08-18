@@ -159,19 +159,16 @@ describe('detect() -- MARVEEN_ENV override', () => {
 })
 
 // ---------------------------------------------------------------------------
-// detect() -- a single edge case worth pinning separately. Documented as a
-// bug in docs/needs-to-be-fix/platform-xdg-session-type-tty-bug.md.
+// detect() -- XDG_SESSION_TYPE allowlist. Only x11 / wayland / mir prove a
+// GUI display; tty and unspecified are headless. See
+// docs/needs-to-be-fix/platform-xdg-session-type-tty-bug.md.
 // ---------------------------------------------------------------------------
 
-describe('detect() -- XDG_SESSION_TYPE=tty is misclassified as linux-gui', () => {
-  // Regression: XDG_SESSION_TYPE=tty means a headless TTY session, but the
-  // current `||` chain treats ANY truthy XDG_SESSION_TYPE value as proof of
-  // a GUI display. Pin the CURRENT (buggy) behaviour so a future fix does
-  // not silently regress; the bug MD documents the correct fix.
-  it('treats XDG_SESSION_TYPE=tty as a GUI session (pinned as a bug)', async () => {
+describe('detect() -- XDG_SESSION_TYPE allowlist', () => {
+  it('treats XDG_SESSION_TYPE=tty as a headless server (not a GUI session)', async () => {
     setPlatform('linux')
     process.env['XDG_SESSION_TYPE'] = 'tty'
     const { PLATFORM } = await importPlatformFresh()
-    expect(PLATFORM).toBe('linux-gui')
+    expect(PLATFORM).toBe('linux-server')
   })
 })
