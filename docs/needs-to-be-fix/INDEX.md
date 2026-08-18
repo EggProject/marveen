@@ -158,7 +158,7 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `routes-channel-conflict-probe-selfinflicted-409` | channel-conflict-probe.ts: the diagnostic probe issues a competing `getUpdates` and can *cause* the 409 it exists to observe | — |
 | `routes-connectors-hu-config-nostring-token` | routes-connectors-hu-config-nostring-token | Resolved: 2026-08-17 5a348eadbfd7d4a9ef65e6d22e783a4e9473ff4b |
 | `routes-dashboard-auth-nonexistent-sut` | routes/dashboard-auth.ts does not exist; task brief references the wrong path | — |
-| `routes-docs-basename-redundant` | routes/docs.ts: the `basename(name) !== name` check in /api/docs/<name> is unreachable | — |
+| `routes-docs-basename-redundant` | routes/docs.ts: the `basename(name) !== name` check in /api/docs/<name> is unreachable | Resolved: 2026-08-18 bc4d036 |
 | `routes-docs-inner-catch-no-title-reset` | routes/docs.ts: inner per-file catch does not reset `title` despite the comment | Resolved: 2026-08-17 16949d9 |
 | `routes-fleet-q-404-leaks-roster` | fleet-q.ts: PUT /api/agents/:name/capabilities -- 404 message leaks internal agent identity | — |
 | `routes-fleet-q-body-parse-uncaught` | fleet-q.ts: PUT /api/agents/:name/capabilities -- unguarded readBody + JSON.parse crash | — |
