@@ -34,7 +34,7 @@
 //     - agent projects dir unreadable -> catch -> []
 //     - external project paths / present / absent
 //   maskValue()
-//     - val.length >  6 -> first 3 + '...' + last 3
+//     - always -> first 3 + '...' + last 3 (input range gated by looksLikeSensitiveValue >= 8)
 //   looksLikeSensitiveValue()
 //     - falsy/empty -> false
 //     - length < 8 -> false
@@ -1104,11 +1104,8 @@ describe('maskValue (via scanMcpConfigs)', () => {
   // maskValue is non-exported; the only consumer is scanMcpConfigs. We
   // confirm the 3-char-prefix / 3-char-suffix truncation directly:
   // looksLikeSensitiveValue rejects < 8 chars before maskValue is called,
-  // so the truncation is the only reachable branch.
-  it('produces the "first3...last3" form for a > 6 char sensitive value', () => {
-    // Already covered by the "flags a sensitive env var/value pair as a finding"
-    // test above (maskedValue === 'rea...ere'). This placeholder exists so
-    // vitest does not flag the describe block as empty.
+  // so the truncation is the only reachable form maskValue can produce.
+  it('produces the "first3...last3" form for a >= 8 char sensitive value', () => {
     writeFileSync(
       projectMcpPath(),
       JSON.stringify({ mcpServers: { srv: { env: { API_KEY: 'abcdefghijkl' } } } }),

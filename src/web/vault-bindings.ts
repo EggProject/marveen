@@ -231,8 +231,8 @@ function unwrapCommand(serverCfg: any): void {
   delete serverCfg._vaultOriginalArgs
 }
 
-function serverHasVaultRefs(env: Record<string, string> | undefined): boolean {
-  return Object.values(env ?? {}).some(v => typeof v === 'string' && v.startsWith('vault:'))
+function serverHasVaultRefs(env: Record<string, string>): boolean {
+  return Object.values(env).some(v => typeof v === 'string' && v.startsWith('vault:'))
 }
 
 // All header bindings (across every secret) that target one server in one file.
