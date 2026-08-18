@@ -260,6 +260,15 @@ describe('research routes', () => {
     expect(out.status).toBe(400)
   })
 
+  it('returns 400 when the encoded filename is malformed (stray percent)', async () => {
+    // %G0 is not valid hex after the %, so decodeURIComponent throws URIError.
+    // Before the fix this throw escaped the handler and produced a 500 from web.ts.
+    const { ctx, out } = fakeCtx(`/api/research/${SUB_AGENT_ID}/foo%G0.md`)
+    expect(await tryHandleResearch(ctx)).toBe(true)
+    expect(out.status).toBe(400)
+    expect(out.body.error).toBe('Invalid file name')
+  })
+
   it('rejects unknown agents', async () => {
     const { ctx, out } = fakeCtx('/api/research/zz-no-such-agent/alpha.md')
     expect(await tryHandleResearch(ctx)).toBe(true)
