@@ -472,12 +472,14 @@ export async function runMessageRouterTick(): Promise<void> {
         continue
       }
       // Use cached session data from the pre-pass (one sessionExistsOnHost call
-      // per unique receiver per tick). Fall back to a direct call for agents not
-      // in the pending set (shouldn't happen, but safe).
+      // per unique receiver per tick). The pre-pass populated the cache for every
+      // non-MAIN_AGENT_ID receiver in `pending`, so the lookup always wins.
       const cached = agentSessionCache.get(msg.to_agent)
-      const session = cached?.session ?? agentSessionName(msg.to_agent)
-      const host = isMainAgent ? null : cached?.host ?? readAgentRemoteHost(msg.to_agent)
-      const sessionExists = cached?.exists ?? sessionExistsOnHost(host, session)
+      if (!cached) {
+        logger.warn({ to: msg.to_agent }, 'message-router: receiver not in cache (should never happen)')
+        continue
+      }
+      const { session, host, exists: sessionExists } = cached
 
       if (shouldAbandon(sessionExists, ageMs, MESSAGE_ABANDON_WINDOW_MS)) {
         logger.warn({ id: msg.id, from: msg.from_agent, to: msg.to_agent, ageMs }, 'Agent message abandoned: target session absent for full retry window')
