@@ -159,8 +159,8 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `routes-dashboard-auth-nonexistent-sut` | routes/dashboard-auth.ts does not exist; task brief references the wrong path | Resolved: 2026-08-18 e5cfea6 |
 | `routes-docs-basename-redundant` | routes/docs.ts: the `basename(name) !== name` check in /api/docs/<name> is unreachable | Resolved: 2026-08-18 e4ec60b |
 | `routes-docs-inner-catch-no-title-reset` | routes/docs.ts: inner per-file catch does not reset `title` despite the comment | Resolved: 2026-08-17 16949d9 |
-| `routes-fleet-q-404-leaks-roster` | fleet-q.ts: PUT /api/agents/:name/capabilities -- 404 message leaks internal agent identity | — |
-| `routes-fleet-q-body-parse-uncaught` | fleet-q.ts: PUT /api/agents/:name/capabilities -- unguarded readBody + JSON.parse crash | — |
+| `routes-fleet-q-404-leaks-roster` | fleet-q.ts: PUT /api/agents/:name/capabilities -- 404 message leaks internal agent identity | Resolved: 2026-08-18 b7cd64c |
+| `routes-fleet-q-body-parse-uncaught` | fleet-q.ts: PUT /api/agents/:name/capabilities -- unguarded readBody + JSON.parse crash | Resolved: 2026-08-18 b7cd64c |
 | `routes-reauth-detect-missing-source-path` | routes/reauth-detect: task target path does not exist on disk | Resolved: 2026-08-18 e5cfea6 |
 | `routes-reauth-healer-missing-file` | src/web/routes/reauth-healer.ts does not exist; the actual file lives at src/web/reauth-healer.ts | Resolved: 2026-08-18 e5cfea6 |
 | `routes-remote-status-cache-path-mismatch` | routes/remote-status-cache: task path does not exist on disk | Resolved: 2026-08-18 e5cfea6 |
