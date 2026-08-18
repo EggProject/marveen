@@ -60,7 +60,7 @@ export async function tryHandleDocs(ctx: RouteContext): Promise<boolean> {
   const match = path.match(/^\/api\/docs\/([^/]+)$/)
   if (match && method === 'GET') {
     const name = decodeURIComponent(match[1])
-    if (!NAME_RE.test(name) || basename(name) !== name) {
+    if (!NAME_RE.test(name)) {
       json(res, { error: 'Invalid doc name' }, 400)
       return true
     }
