@@ -1,8 +1,8 @@
 # needs-to-be-fix index
 
-Every bug MD filed in this session. Total count: 181
+Every bug MD filed in this session. Total count: 177
 (`find docs/needs-to-be-fix -name '*.md' ! -name 'INDEX.md' | wc -l`;
-the unfiltered command returns 177 because it counts this index too).
+the unfiltered command returns 178 because it counts this index too).
 The index has one table row per MD, so the two counts must stay equal.
 
 The original 50 entries below were filed during the first coverage pass.
@@ -78,7 +78,7 @@ dead code, doc issue).
 | `routes-ideas-body-parse-500` | `src/web/routes/ideas.ts:43,86,138,152,201` | unguarded `JSON.parse` + destructuring throws out of the handler, so a malformed or `null` body returns 500 "Szerver hiba" instead of 400 | `src/__tests__/ideas-routes.test.ts` | Resolved: 2026-08-17 943dba8 |
 | `routes-ideas-breakdown-nonerror` | `src/web/routes/ideas.ts:186-189` | `(err as Error).message` is undefined for a non-Error throw, so the 500 response body is `{}` | `src/__tests__/ideas-routes.test.ts` | Resolved: 2026-08-16 8bdb2cd |
 | `routes-ideas-title-validation` | `src/web/routes/ideas.ts:51` | `title` is neither trimmed nor type-checked (unlike the sibling comment endpoint), so a whitespace-only title is stored and an object title 500s in the driver | `src/__tests__/ideas-routes.test.ts` | Resolved: 2026-08-17 cfb72db |
-| `fleet-transfer-assertsafename-dead` | `src/web/fleet-transfer.ts:48-52` | `assertSafeName` is defined but never called from anywhere (validateNames inlines `SAFE_NAME_RE.test`); caps line coverage at 99.35% on fleet-transfer.ts | `src/__tests__/fleet-transfer-routes.test.ts` | 2026-08-14 08d7508 |
+| `fleet-transfer-assertsafename-dead` | `src/web/fleet-transfer.ts:48-52` | `assertSafeName` is defined but never called from anywhere (validateNames inlines `SAFE_NAME_RE.test`); caps line coverage at 99.35% on fleet-transfer.ts | `src/__tests__/fleet-transfer-routes.test.ts` | Resolved: 2026-08-14 08d7508 |
 | `test-suite-llm-api-audit-clean` | audit doc (not a bug) | the suite never makes a real LLM call, never reaches a real HTTP endpoint, and never spawns a real child process; every layer is mocked (`globalThis.fetch = vi.fn`, `vi.mock('../agent.js')`, `vi.mock('@anthropic-ai/claude-agent-sdk')`, `vi.mock('node:child_process')`). The user's "LLM call during tests" concern is unfounded; only side effect is the `./store/` pollution | n/a (audit record) | — |
 | `overview-routes-yesterday-timestamp-flake` | `src/__tests__/overview-routes.test.ts:534` (was `now - 25h`) | the "yesterday" timestamp is computed as `now - 25 * 60 * 60 * 1000`, which only falls in the `[yesterday, startTs)` bin when `now >= 01:00 LOCAL`. Tests run just past midnight (00:00-01:00) flake-fail because the line lands in the day-before-yesterday bin | `src/__tests__/overview-routes.test.ts` | Resolved: 2026-08-17 9be7a59 |
 | `channel-poller-reap-isclaudebinary-unreachable-fallbacks` | `src/web/channel-poller-reap.ts:267,268` | `isClaudeBinary`'s two `?? ''` arms are unreachable (`split(sep, 1)` always yields >= 1 element, `pop()` on it never returns `undefined`); reached in the suite only by patching `String.prototype.split` | `src/__tests__/channel-poller-reap.test.ts` | 2026-08-14 c2b4ea2 |
