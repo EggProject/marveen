@@ -624,21 +624,16 @@ describe('spawnDetachedReconnect (via checkAgent in-flight path)', () => {
     clearInterval(handle)
   })
 
-  // ---- pinning test for the dead in-flight guard at line 27 --------
+  // ---- pinning test for the removed in-flight guard ------------------
   //
-  // `spawnDetachedReconnect`'s `if (inFlightReconnects.has(agentName))
-  // return false` guard is structurally unreachable through the public
-  // API: checkAgent (line 122) checks the same Set and returns BEFORE
-  // calling spawnDetachedReconnect whenever the agent is in-flight.
-  // Reaching line 27 therefore requires bypassing checkAgent's guard.
-  //
-  // The pin below uses a Set.prototype.has spy that consults the call
-  // stack: when the spy fires from inside spawnDetachedReconnect it
-  // returns true (so the dead guard fires), otherwise it returns the
-  // real Set's has() result (so checkAgent's guard is unaffected).
-  // This is a coverage-only workaround -- see the bug MD for the
-  // structural reason the arm is dead.
-  it('pinning: dead line-27 in-flight guard fires under stack-aware Set spy', async () => {
+  // `spawnDetachedReconnect` no longer carries an `if (inFlightReconnects.has(
+  // agentName)) return false` guard at its top. The Set spy below simulates
+  // a hypothetical second caller injecting an in-flight Set state and then
+  // confirms the spawn still proceeds -- i.e. the unguarded outcome holds
+  // even under adversarial Set membership. checkAgent's own gate (further
+  // up the call chain) is unchanged; if that ever stops filtering, this pin
+  // becomes load-bearing again.
+  it('pinning: removed in-flight guard does not block spawn even if Set reports in flight', async () => {
     mockCapturePane.mockReturnValue(
       'plugin:telegram:telegram\n✘ failed',
     )
@@ -651,9 +646,12 @@ describe('spawnDetachedReconnect (via checkAgent in-flight path)', () => {
       value: unknown,
     ): boolean {
       const stack = new Error().stack ?? ''
-      // When the call originates inside spawnDetachedReconnect, force
-      // the dead guard to fire by reporting a hit. All other call
-      // sites see the real Set membership.
+      // Pretend the Set reports an in-flight reconnect when queried from
+      // inside spawnDetachedReconnect. With the old (dead) guard this would
+      // have short-circuited; the new contract is that the helper is
+      // unconditional, so the spawn must still happen. checkAgent's own
+      // gate sits above us and is unaffected (its stack does not include
+      // 'spawnDetachedReconnect').
       if (stack.includes('spawnDetachedReconnect')) return true
       return originalHas.call(this, value)
     })
@@ -661,11 +659,11 @@ describe('spawnDetachedReconnect (via checkAgent in-flight path)', () => {
     const { startChannelHealthMonitor } = await loadModule()
     const handle = startChannelHealthMonitor()
     vi.advanceTimersByTime(45_000)
-    // checkAgent passed line 122 (real .has returned false -> proceed)
-    // and called spawnDetachedReconnect, which now sees the stack-aware
-    // spy return true and exits early on the line-27 guard. The
-    // detached child is NOT created.
-    expect(mockSpawn).not.toHaveBeenCalled()
+    // The dead guard is gone, so even with the spy reporting a stale
+    // in-flight membership the detached child IS created. This pins the
+    // new contract: only checkAgent's gate filters spawns; the helper
+    // itself is unconditional.
+    expect(mockSpawn).toHaveBeenCalledTimes(1)
 
     hasSpy.mockRestore()
     clearInterval(handle)
