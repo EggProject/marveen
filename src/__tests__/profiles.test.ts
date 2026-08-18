@@ -369,27 +369,23 @@ describe('resolveProfilePlaceholders', () => {
     expect(resolveProfilePlaceholders('${HOME}/x', { HOME: '', AGENT_DIR: '' })).toBe('/x')
   })
 
-  // --- DEFECT PIN: profiles-replace-dollar-pattern ------------------------
-  // String.replace() treats `$&`, `` $` ``, `$'` and `$n` in the REPLACEMENT
-  // as special patterns. ctx values are interpolated raw, so a path holding
-  // one of those sequences is corrupted. See
-  // docs/needs-to-be-fix/profiles-replace-dollar-pattern.md. Pins current
-  // behaviour.
-  it('PINS BUG: `$&` in a context value re-inserts the matched placeholder', () => {
+  // --- regression coverage: profiles-replace-dollar-pattern ----------------
+  // A replacer-fn form passes the matched group back to JavaScript verbatim,
+  // so `$&`, `` $` ``, `$'` and `$n` in ctx values are now treated as
+  // literal text. See docs/needs-to-be-fix/profiles-replace-dollar-pattern.md.
+  it('treats `$&` in a context value as literal text', () => {
     const out = resolveProfilePlaceholders('${HOME}/x', {
       HOME: '/home/a$&b',
       AGENT_DIR: '/agents/scout',
     })
-    // Correct output would be '/home/a$&b/x'.
-    expect(out).toBe('/home/a${HOME}b/x')
+    expect(out).toBe('/home/a$&b/x')
   })
 
-  it('PINS BUG: a backtick pattern in a context value drops characters', () => {
+  it('treats a backtick pattern in a context value as literal text', () => {
     const out = resolveProfilePlaceholders('${AGENT_DIR}/x', {
       HOME: '/Users/tester',
       AGENT_DIR: '/a$`z',
     })
-    // Correct output would be '/a$`z/x'.
-    expect(out).toBe('/az/x')
+    expect(out).toBe('/a$`z/x')
   })
 })
