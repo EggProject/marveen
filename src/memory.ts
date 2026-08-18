@@ -197,9 +197,8 @@ ${memoryLines}`
     const { text } = await runAgent(prompt, undefined, undefined, false, digestCwd, {
       CLAUDE_CONFIG_DIR: digestConfigDir,
     })
-    if (!text) return null
-
-    const digest = text.trim()
+    const digest = (text ?? '').trim()
+    if (!digest) return null
     const today = new Date().toLocaleDateString('hu-HU')
     saveMemory(chatId, `[Napi naplo ${today}] ${digest}`, 'episodic')
     logger.info({ chatId, digestCwd, digestConfigDir }, `Napi naplo mentve: ${today}`)
