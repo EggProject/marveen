@@ -34,7 +34,6 @@
 //     - agent projects dir unreadable -> catch -> []
 //     - external project paths / present / absent
 //   maskValue()
-//     - val.length <= 6 -> '***'
 //     - val.length >  6 -> first 3 + '...' + last 3
 //   looksLikeSensitiveValue()
 //     - falsy/empty -> false
@@ -61,7 +60,6 @@
 //     - serverCfg.command is VAULT_WRAPPER_PATH, no _vaultOriginalCommand -> return early
 //     - serverCfg.command is VAULT_WRAPPER_PATH with backup   -> restore
 //   serverHasVaultRefs()
-//     - env undefined                                  -> false
 //     - env present, no vault: prefix                  -> false
 //     - env present, at least one vault: prefix        -> true
 //   headerBindingsForServer()
@@ -588,24 +586,15 @@ describe('scanMcpConfigs', () => {
     expect(findings[0].alreadyInVault).toBe(false)
   })
 
-  it('masks short values (<=6 chars) as ***', () => {
-    // serverCfg.env value is 8+ chars to pass looksLikeSensitiveValue, but we
-    // exercise the short-mask branch by providing a 6-char value via a second env
-    // entry. We use ACCESS_KEY (matches _KEY pattern) but a 6-char value.
+  it('skips short values (<8 chars) via looksLikeSensitiveValue', () => {
+    // Values shorter than 8 chars are filtered by looksLikeSensitiveValue before
+    // maskValue is called, so the truncation branch in maskValue is the only
+    // reachable one from scanMcpConfigs.
     writeFileSync(
       projectMcpPath(),
       JSON.stringify({ mcpServers: { srv: { env: { SECRET_KEY: 'abcdef' } } } }),
     )
-    // The value is length 6 (< 8) so looksLikeSensitiveValue returns false -> skipped.
     expect(scanMcpConfigs()).toEqual([])
-    // Now with a 7-char value: passes looksLikeSensitiveValue (>= 8 chars), but
-    // the mask is still '***' because maskValue applies for <= 6 chars only.
-    // Actually 7 chars passes both — maskValue uses `length <= 6 -> '***'`, so
-    // 7 chars would slice. To exercise the '***' branch directly we rely on
-    // an existing sensitive value that happens to be <= 6 chars... but
-    // looksLikeSensitiveValue requires >= 8. So the '***' branch is unreachable
-    // from scanMcpConfigs in practice. We still cover the helper separately via
-    // the maskValue unit tests below.
   })
 
   it('casts a non-string env value through String() before scanning', () => {
@@ -1113,11 +1102,9 @@ describe('syncAllBindings', () => {
 
 describe('maskValue (via scanMcpConfigs)', () => {
   // maskValue is non-exported; the only consumer is scanMcpConfigs. We
-  // confirm its branches indirectly: the 3-char-prefix / 3-char-suffix
-  // truncation with > 6 chars is the only reachable branch from scanMcpConfigs
-  // (the <= 6 branch is unreachable because looksLikeSensitiveValue rejects
-  // < 8 chars). The '***' branch is therefore unreachable from the public
-  // surface, so we document it here for completeness without an assertion.
+  // confirm the 3-char-prefix / 3-char-suffix truncation directly:
+  // looksLikeSensitiveValue rejects < 8 chars before maskValue is called,
+  // so the truncation is the only reachable branch.
   it('produces the "first3...last3" form for a > 6 char sensitive value', () => {
     // Already covered by the "flags a sensitive env var/value pair as a finding"
     // test above (maskedValue === 'rea...ere'). This placeholder exists so
