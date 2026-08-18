@@ -202,21 +202,27 @@ describe('buildTtsDirective', () => {
     expect(directive).not.toContain(`"state_dir":"/tmp/o'brien/channels"`)
   })
 
-  // PINNED DEFECT -- docs/needs-to-be-fix/voice-directive-json-quote-escape.md
-  // The escape covers the shell layer only; a double quote (legal in a POSIX
-  // path, so reachable via homedir()) passes through raw and breaks the JSON
-  // literal that jq has to parse. Asserting the current output so the fix
-  // flips this test.
-  it('leaves a double quote in the state dir unescaped, emitting invalid JSON', () => {
+  // Regression -- docs/needs-to-be-fix/voice-directive-json-quote-escape.md
+  // A double quote is legal in a POSIX path, so it is reachable via homedir().
+  // It used to pass through raw and break the JSON literal jq has to parse
+  // (jq exit 3 -> empty POST body -> the owner got no audio and no text).
+  it('JSON-escapes a double quote in the state dir so the jq filter stays valid JSON', () => {
     writeToken('tok')
 
+    const stateDir = '/tmp/a"b/channels'
     const directive =
       buildTtsDirective({
         chatId: 'c1',
-        stateDir: '/tmp/a"b/channels',
+        stateDir,
         voiceModel: 'tts-1',
       }) ?? ''
 
-    expect(directive).toContain(`"state_dir":"/tmp/a"b/channels"`)
+    expect(directive).toContain(`"state_dir":"/tmp/a\\"b/channels"`)
+    expect(directive).not.toContain(`"state_dir":"/tmp/a"b/channels"`)
+
+    // The emitted filter parses as JSON once jq's $t is a literal again.
+    const filter = directive.match(/'(\{"text".*?\})' \| curl/)?.[1] ?? ''
+    const parsed: unknown = JSON.parse(filter.replace('$t', '"T"'))
+    expect(parsed).toMatchObject({ state_dir: stateDir, chat_id: 'c1', voice_model: 'tts-1' })
   })
 })
