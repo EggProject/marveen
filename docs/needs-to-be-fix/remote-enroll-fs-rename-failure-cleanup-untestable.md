@@ -36,3 +36,13 @@ The mock is at the test-file level (vi.mock('node:fs')) so the existing tests in
 
 ## Suggested direction
 If the cleanup logic ever needs to evolve, the test pattern in this file is the canonical way to exercise it without touching the production environment. No code change is needed today; the pinning test is the only guarantee that the cleanup runs.
+
+## Resolution
+
+MD retired as a documented-only record. The MD's own recommendation
+is "no code change is needed today; the pinning test is the only
+guarantee that the cleanup runs," and nothing has changed in that
+posture -- the cleanup contract continues to be exercised through
+the mocked-`node:fs` test in
+`src/__tests__/remote-enroll-fs-full.test.ts`. No source edit is
+warranted and no follow-up is outstanding.

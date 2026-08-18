@@ -99,3 +99,13 @@ Three acceptable resolutions (in order of preference):
 Per task rule "NEVER modify src/channel-coordinator.ts" neither fix has been
 applied; the test suite is the highest achievable without source changes
 (100% statements, 100% lines, 100% functions, 99.15% branches).
+
+## Resolution
+
+MD retired; the source code was already simplified in an earlier
+commit. `src/channel-coordinator.ts:399-401` now reads
+`const maxUpdateId = processBatch(updates)` followed by an
+unconditional `setOffset(SOURCE, maxUpdateId)` -- the
+`if (maxUpdateId != null)` guard and the unreachable else branch
+that this MD documented are gone. The dead conditional flagged at
+line 401 no longer exists, so this defect is no longer reachable.

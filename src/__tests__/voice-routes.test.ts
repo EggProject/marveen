@@ -489,11 +489,10 @@ describe('runProc internals (driven through endpoints)', () => {
     setVoiceInstalled(true, ['hu_HU-imre-medium'])
     const dir = join(H.home, '.claude', 'channels', 'telegram')
     markDirHasEnv(dir, true)
-    // The SUT calls runProc(VENV_PY, [VTOOLS_PY, 'transcribe', ...]) with NO
-    // stdinData -- cover runProc's "no stdin path" by going through tts,
-    // which also passes no stdinData. The internal `opts.stdinData == null`
-    // branch is exercised on every TTS call below; we mark it here for
-    // intent visibility only.
+    // The SUT calls runProc(VENV_PY, [VTOOLS_PY, 'transcribe', ...]) and
+    // always supplies both `stdinData` (required string) and `timeoutMs`
+    // (required number) on the opts bag; we drive the path through tts to
+    // confirm the upstream payload reaches the spawn's stdin pipe.
     H.spawnQueue.push({ code: 0, stdout: 'ok=True id=1\n' })
     const { res, json } = await call('POST', '/api/voice/tts', {
       body: { text: 'hi', chat_id: '123', state_dir: dir, voice_model: 'hu_HU-imre-medium' },

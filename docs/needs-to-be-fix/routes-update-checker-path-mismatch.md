@@ -29,3 +29,13 @@ module (`src/web/update-checker.ts`) and mocked the module's actual imports
   needs to be created first; the existing handler lives at
   `src/web/routes/updates.ts` and exposes `/api/updates`, `/api/updates/check`,
   `/api/updates/apply`, `/api/updates/status`, `/api/updates/diagnose`.
+
+## Resolution
+
+MD retired as a stale path-mismatch record. The actual SUT lives at
+`src/web/update-checker.ts` and is already imported directly by the
+test suite (`src/__tests__/update-checker-routes.test.ts`), which
+targets the real module under coverage include and mocks the module's
+actual import graph (`node:child_process`, `../config.js`,
+`../tool-timeouts.js`). No follow-up is outstanding: the route-side
+brief framing has no on-disk target.

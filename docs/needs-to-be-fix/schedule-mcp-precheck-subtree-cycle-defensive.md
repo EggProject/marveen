@@ -73,3 +73,13 @@ Per task rule "NEVER modify src/web/schedule-mcp-precheck.ts" the
 source edit is blocked until the user overrides; the test suite
 documents the gap and the test that exercises the cycle stays in
 place alongside the (no-op) fix.
+
+## Resolution
+
+MD retired as a documented-only record. The MD's own recommendation
+is to "leave the source unchanged and keep the test as a regression
+sentinel for the cycle guard" -- nothing in that posture has
+changed, and no source edit is being made. The pinning test
+(`schedule-mcp-precheck-full.test.ts`, "collectSubtreeCmdlines --
+defensive duplicate-pid branch") remains in place as the
+regression sentinel.

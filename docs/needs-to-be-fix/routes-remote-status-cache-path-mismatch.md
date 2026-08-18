@@ -56,3 +56,12 @@ use the bare class directly.
 Per task rule "NEVER modify src/web/routes/remote-status-cache.ts" the
 absence is being left alone; this document records the discrepancy so
 the next baseline pass does not waste time hunting for it.
+
+## Resolution
+
+MD retired as a stale path-mismatch record. The actual cache lives at
+`src/web/remote-status-cache.ts` and is already imported directly by
+`src/__tests__/remote-status-cache-routes.test.ts`; the test file's
+coverage include path matches the real on-disk module and the
+supplemental suite pushes the module to 100% including the previously
+uncovered `invalidate()` path. No follow-up is outstanding.

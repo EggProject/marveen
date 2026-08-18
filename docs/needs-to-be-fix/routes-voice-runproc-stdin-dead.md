@@ -77,3 +77,15 @@ Pick one of:
 
 Until then, both branches are reported as coverage gaps and the global
 100% threshold fails.
+
+## Resolution
+
+MD retired; the source code was already simplified in an earlier
+commit. `src/web/routes/voice.ts:65-83` now declares
+`opts: { stdinData: string; timeoutMs: number }` (both fields
+required) and unconditionally writes stdin, sets the SIGKILL timer,
+and clears it on close. The defensive `if (opts.stdinData != null)`
+branch and the falsy-`timer` arm flagged by this MD no longer exist.
+A complementary fix in `src/__tests__/voice-routes.test.ts:492-496`
+removes the now-stale "no stdinData" comment that pointed at the
+deleted defensive guard.

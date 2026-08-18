@@ -93,3 +93,12 @@ Two equivalent fixes; either is acceptable:
 Per task rule "NEVER modify src/" the source edits are blocked until the
 user overrides; the test suite documents the gap and pins every
 reachable sibling branch.
+
+## Resolution
+
+MD retired; the source code was already simplified in an earlier
+commit. `src/web/agent-process.ts:777` now reads
+`execFileSync(inv.file, inv.args, { timeout: opts.timeout ?? 3000, ... })`
+-- the inline `host ? 8000 : 3000` ternary flagged by this MD is
+gone. With the truthy arm deleted, the cond-expr coverage gap no
+longer exists.

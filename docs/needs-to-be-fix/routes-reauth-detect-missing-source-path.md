@@ -122,3 +122,12 @@ the routes path is a brief-only artefact and the coverage gate should
 be evaluated against `src/web/reauth-detect.ts`. Per task rule
 "NEVER modify src/web/routes/reauth-detect.ts" neither fix has been
 applied -- the file does not exist to modify.
+
+## Resolution
+
+MD retired as a stale path-mismatch record. The actual SUT lives at
+`src/web/reauth-detect.ts` and is already imported directly by the
+test file (`src/__tests__/reauth-detect-routes.test.ts`); coverage for
+the real module is at 100% across statements, branches, functions
+and lines. The routes-side brief framing has no on-disk target and
+no follow-up is required.

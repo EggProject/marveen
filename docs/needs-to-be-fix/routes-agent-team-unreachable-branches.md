@@ -95,3 +95,17 @@ Treat the branch-coverage gap as a known defect and either:
   `agent-team-trustfrom-nullish-coalesce.md`.
 
 Until then, no test can advance branches past 62/64.
+
+## Resolution
+
+MD retired as a stale path-mismatch record: the real SUT lives at
+`src/web/agent-team.ts` and is already covered at 100% statements /
+lines / functions and 96.87% branches. The two still-open, source-
+relevant defects are tracked under
+`agent-team-trustfrom-nullish-coalesce.md` (the `?? []` right-arms
+on lines 191 and 192) and
+`agent-team-trustfrom-required-type-narrow-deferred.md` (the
+`TeamConfig.trustFrom?: string[]` -> `string[]` narrowing work that
+unblocks dropping those fallbacks). Both remain open and not retired by
+this commit; the branch-coverage gate on `agent-team.ts` continues to
+be blocked by them.

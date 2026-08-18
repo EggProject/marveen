@@ -96,7 +96,7 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `agent-conversation-malformed-name-uri` | Malformed encoded agent names escape conversation route handling | Resolved: 2026-08-17 aa2650b |
 | `agent-process-answerfirstrungates-acted-unchanged-unreachable` | agent-process.ts: `answerFirstRunGates` final-return `'unchanged'` arm is unreachable | Resolved: 2026-08-14 08d7508 |
 | `agent-process-restartagentprocess-stop-error-default-unreachable` | agent-process.ts: `restartAgentProcess` `||` default error string is unreachable | Resolved: 2026-08-14 08d7508 |
-| `agent-process-runtmux-host-truthy-cond-unreachable` | agent-process.ts: `runTmux` `(host ? 8000 : 3000)` truthy arm is unreachable | — |
+| `agent-process-runtmux-host-truthy-cond-unreachable` | agent-process.ts: `runTmux` `(host ? 8000 : 3000)` truthy arm is unreachable | Resolved: 2026-08-18 e5cfea6 |
 | `agent-restart-policy-consecutivefailures-nullish-coalesce` | agent-restart-policy.ts: `consecutiveFailures ?? 0` nullish-coalesce left arm is unreachable | Resolved: 2026-08-16 410ca1655 |
 | `agent-scaffold-unreachable-defensive-branches` | agent-scaffold.ts: four unreachable defensive branches block 100% branch coverage | 2026-08-14 c2b4ea2 |
 | `agent-team-trustfrom-nullish-coalesce` | agent-team.ts: `team.trustFrom ?? []` nullish-coalesce right-arm is unreachable | — |
@@ -110,7 +110,7 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `agent-worker-symlink-catch` | agent-worker.ts: ensureWorkerCwd's symlinkSync catch is unreachable from tests | Resolved: 2026-08-17 e16bc34 |
 | `approvals-raw-resolved-by-in-log` | approvals PATCH logger receives untrimmed resolved_by | Resolved: 2026-08-16 9173b54 |
 | `auto-restart-runner-unreachable-defensive-fallbacks` | auto-restart-runner.ts: two `??` fallbacks are unreachable defensive code | 2026-08-14 c2b4ea2 |
-| `channel-coordinator-coverage-limits` | channel-coordinator.ts: unreachable branches block 100% branch coverage | — |
+| `channel-coordinator-coverage-limits` | channel-coordinator.ts: unreachable branches block 100% branch coverage | Resolved: 2026-08-18 e5cfea6 |
 | `channel-health-monitor-spawndetach-inflight-redundant-guard` | channel-health-monitor.ts: spawnDetachedReconnect's in-flight guard is unreachable through public API | — |
 | `channel-monitor-agentdownsince-nullish-coalesce` | channel-monitor.ts: agentDownSince.get(t.session) ?? Date.now() at line 1647 is structurally dead | 2026-08-14 c2b4ea2 |
 | `channel-monitor-t-agentname-nullish-coalesce` | channel-monitor.ts: t.agentName ?? t.session at lines 1455 and 1494 is structurally dead | 2026-08-14 08d7508 |
@@ -142,9 +142,9 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `recall-unreachable-defensive-fallbacks` | recall.ts: two unreachable defensive `?? 0` fallbacks block 100% branch coverage | Resolved: 2026-08-16 3bec823 |
 | `remote-enroll-core-merge-trailing-newline-skip` | `mergeAuthorizedKeys` has a single-input trailing newline guard that is only reachable when the input has multiple trailing newlines | — |
 | `remote-enroll-fs-lock-vanish-spin` | `acquireLock` spins forever when statSync throws but the lock file is still there | — |
-| `remote-enroll-fs-rename-failure-cleanup-untestable` | `writeAtomic` rename-failure cleanup is unreachable in the type system | — |
+| `remote-enroll-fs-rename-failure-cleanup-untestable` | `writeAtomic` rename-failure cleanup is unreachable in the type system | Documented only — source unchanged |
 | `route-token-usage-nan-params` | NaN-via-parseInt: numeric query params silently default to NaN | Resolved: 2026-08-17 46e97a9ba973c094bd7f5c67cbd65a19254b66a3 |
-| `routes-agent-team-unreachable-branches` | routes/agent-team.ts: file path does not exist; coverage pin moved to web/agent-team.ts | — |
+| `routes-agent-team-unreachable-branches` | routes/agent-team.ts: file path does not exist; coverage pin moved to web/agent-team.ts | Resolved: 2026-08-18 e5cfea6 |
 | `routes-agent-terminal-literalkeys-nullish` | agent-terminal.ts: unreachable `literalKeys ?? ''` on the audit-preview line blocks 100% branch coverage | 2026-08-14 c2b4ea2 |
 | `routes-agents-br-baseline-partial-coverage` | routes/agents.ts: remaining uncovered branches after baseline regression tests | — |
 | `routes-agents-parse-channel-provider-dead-branches` | routes/agents.ts: parseChannelProvider / matchChannelProvider else branches are dead code | Resolved: 2026-08-16 3e1dd3f |
@@ -157,14 +157,14 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `routes-background-tasks-unused-imports` | routes/background-tasks.ts: unused imports (`execSync`, `markOrphanedTasksFailed`) | 2026-08-14 68b94fe |
 | `routes-channel-conflict-probe-selfinflicted-409` | channel-conflict-probe.ts: the diagnostic probe issues a competing `getUpdates` and can *cause* the 409 it exists to observe | — |
 | `routes-connectors-hu-config-nostring-token` | routes-connectors-hu-config-nostring-token | Resolved: 2026-08-17 5a348eadbfd7d4a9ef65e6d22e783a4e9473ff4b |
-| `routes-dashboard-auth-nonexistent-sut` | routes/dashboard-auth.ts does not exist; task brief references the wrong path | — |
+| `routes-dashboard-auth-nonexistent-sut` | routes/dashboard-auth.ts does not exist; task brief references the wrong path | Resolved: 2026-08-18 e5cfea6 |
 | `routes-docs-basename-redundant` | routes/docs.ts: the `basename(name) !== name` check in /api/docs/<name> is unreachable | Resolved: 2026-08-18 e4ec60b |
 | `routes-docs-inner-catch-no-title-reset` | routes/docs.ts: inner per-file catch does not reset `title` despite the comment | Resolved: 2026-08-17 16949d9 |
 | `routes-fleet-q-404-leaks-roster` | fleet-q.ts: PUT /api/agents/:name/capabilities -- 404 message leaks internal agent identity | — |
 | `routes-fleet-q-body-parse-uncaught` | fleet-q.ts: PUT /api/agents/:name/capabilities -- unguarded readBody + JSON.parse crash | — |
-| `routes-reauth-detect-missing-source-path` | routes/reauth-detect: task target path does not exist on disk | — |
-| `routes-reauth-healer-missing-file` | src/web/routes/reauth-healer.ts does not exist; the actual file lives at src/web/reauth-healer.ts | — |
-| `routes-remote-status-cache-path-mismatch` | routes/remote-status-cache: task path does not exist on disk | — |
+| `routes-reauth-detect-missing-source-path` | routes/reauth-detect: task target path does not exist on disk | Resolved: 2026-08-18 e5cfea6 |
+| `routes-reauth-healer-missing-file` | src/web/routes/reauth-healer.ts does not exist; the actual file lives at src/web/reauth-healer.ts | Resolved: 2026-08-18 e5cfea6 |
+| `routes-remote-status-cache-path-mismatch` | routes/remote-status-cache: task path does not exist on disk | Resolved: 2026-08-18 e5cfea6 |
 | `routes-research-basename-redundant` | research.ts: `basename(name) !== name` check unreachable (mirrors routes-docs-basename-redundant) | Resolved: 2026-08-18 e62eb87 |
 | `routes-research-double-stat-inefficiency` | research.ts:32,44,72-73 -- listing branch performs 2N+1 statSync per agent; could halve syscalls with readdirSync({withFileTypes: true}) + lstat | — |
 | `routes-research-malformed-uri-500` | research.ts:61 -- decodeURIComponent on regex path throws URIError → web.ts 500 instead of 400 | — |
@@ -175,10 +175,10 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `routes-spans-nan-limit` | routes/spans -- NaN limit on GET /api/traces passed straight to listOtelTraces | Resolved: 2026-08-17 f11aee27c1710eae7f056d91ab11c0c8809ed71f |
 | `routes-tool-log-uncaught-json-parse` | routes-tool-log-uncaught-json-parse | Resolved: 2026-08-17 0d23278 |
 | `routes-update-checker-dead-catch-handlers` | Dead `.catch(() => {})` handlers in startUpdateChecker | — | Resolved: 2026-08-18 38a3189 |
-| `routes-update-checker-path-mismatch` | Task prompt referenced a path that does not exist | — |
+| `routes-update-checker-path-mismatch` | Task prompt referenced a path that does not exist | Resolved: 2026-08-18 e5cfea6 |
 | `routes-updates-release-lock-unreachable-defensive-branch` | routes/updates.ts: releaseLock's `if (!lockHeld) return` is structurally unreachable | 2026-08-14 c2b4ea2 |
-| `routes-voice-runproc-stdin-dead` | src/web/routes/voice.ts: runProc has two unreachable defensive branches | — |
-| `schedule-mcp-precheck-subtree-cycle-defensive` | schedule-mcp-precheck.ts: collectSubtreeCmdlines cycle guard is only reachable through malformed ps output | — |
+| `routes-voice-runproc-stdin-dead` | src/web/routes/voice.ts: runProc has two unreachable defensive branches | Resolved: 2026-08-18 e5cfea6 |
+| `schedule-mcp-precheck-subtree-cycle-defensive` | schedule-mcp-precheck.ts: collectSubtreeCmdlines cycle guard is only reachable through malformed ps output | Documented only — source unchanged |
 | `schedule-runner-mcpmissingreason-cache-miss-unreachable` | schedule-runner: `mcpMissingReason` cache-miss branch is unreachable | Resolved: 2026-08-18 2c36e37 |
 | `schedules-expand-prompt-missing-answers` | Expand-prompt crashes when answers is omitted | Resolved: 2026-08-17 d99f171 |
 | `skills-import-seg-truthy-guard` | skills.ts:409 -- `if (seg)` truthy guard is unreachable | 2026-08-14 c2b4ea2 |

@@ -117,3 +117,12 @@ docs/dashboard-auth-recovery.md
 - `/Users/eggp/marveen-develop/test-baseline/src/__tests__/dashboard-auth.test.ts`
 - `/Users/eggp/marveen-develop/test-baseline/src/web/routes/`
   (directory listing)
+
+## Resolution
+
+MD retired as a stale path-mismatch record. The actual SUT lives at
+`src/web/dashboard-auth.ts` and is already covered at 100% by the
+existing `src/__tests__/dashboard-auth.test.ts` suite; no path
+correction or mock-list rewrite is outstanding. The brief's
+`src/web/routes/dashboard-auth.ts` was never a real module and never
+needs to become one for the test gate to pass.

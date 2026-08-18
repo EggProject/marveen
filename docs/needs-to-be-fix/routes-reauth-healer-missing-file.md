@@ -76,3 +76,12 @@ The test imports from `../web/reauth-healer.js` (the file that actually
 exists). Per task rule 1 ("NEVER modify src/web/routes/reauth-healer.ts")
 nothing was changed at the bogus target path -- there is no file there to
 modify.
+
+## Resolution
+
+MD retired as a stale path-mismatch record. The real watchdog lives at
+`src/web/reauth-healer.ts` and is already exercised by the
+`reauth-healer-routes.test.ts` supplemental suite, which imports from
+the real on-disk path; no follow-up is outstanding. The brief's
+`src/web/routes/reauth-healer.ts` never existed as a file and is not
+worth introducing -- the watchdog is not an Express route handler.
