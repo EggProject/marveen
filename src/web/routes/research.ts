@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
-import { join, basename } from 'node:path'
+import { join } from 'node:path'
 import { MAIN_AGENT_ID } from '../../config.js'
 import { agentConfigRoot, listAgentNames } from '../agent-config.js'
 import { json } from '../http-helpers.js'
@@ -60,7 +60,7 @@ export async function tryHandleResearch(ctx: RouteContext): Promise<boolean> {
   if (match && method === 'GET') {
     const agent = decodeURIComponent(match[1])
     const name = decodeURIComponent(match[2])
-    if (!NAME_RE.test(name) || basename(name) !== name) {
+    if (!NAME_RE.test(name)) {
       json(res, { error: 'Invalid file name' }, 400)
       return true
     }
