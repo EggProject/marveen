@@ -50,11 +50,13 @@
 //     - empty list                                    -> no-op
 //
 //   resolveOpenRouterModel(model)
-//     - non-AUTO_PREFIX model                         -> return unchanged
-//     - AUTO_PREFIX, valid tierKey                    -> return tier.auto
-//     - AUTO_PREFIX, invalid tierKey, tier1 present   -> tier1.auto (warn)
-//     - AUTO_PREFIX, invalid tierKey, tier1 absent    -> hardcoded fallback (warn)
-//     - AUTO_PREFIX, valid tierKey, but tier.auto empty-> warn + tier1.auto
+//     - non-AUTO_PREFIX model                              -> return unchanged
+//     - AUTO_PREFIX, valid tierKey                         -> return tier.auto
+//     - AUTO_PREFIX, invalid tierKey, tier1 present        -> tier1.auto (warn)
+//     - AUTO_PREFIX, invalid tierKey, tier1 absent         -> hardcoded fallback (warn)
+//     - AUTO_PREFIX, valid tierKey, but tier.auto empty    -> warn + tier1.auto
+//     - AUTO_PREFIX, invalid tierKey, tier1.auto=''        -> hardcoded fallback (warn)
+//     - AUTO_PREFIX, valid tierKey, tier.auto='' AND tier1.auto='' -> hardcoded fallback (warn)
 //
 // Sandbox: OPENROUTER_MODELS_FILE = STORE_DIR/openrouter-models.json
 // (src/web/openrouter-models.ts:26) and OPENROUTER_MANUAL_FILE = STORE_DIR
@@ -640,5 +642,20 @@ describe('resolveOpenRouterModel', () => {
       ],
     }))
     expect(resolveOpenRouterModel(`${AUTO_PREFIX}does-not-exist`)).toBe('deepseek/deepseek-chat-v3.1')
+  })
+
+  it('ervenyes tierKey + ures tier.auto + ures tier1.auto -- || a hardcoded fallbackra old', () => {
+    // Ez a `??` -> `||` valtozas egyetlen olyan bemenete, ahol a ket operator
+    // kulonbozik: ervenyes tierKey, mind a keresett tier.auto, mind a
+    // tier1.auto ures. Korabban `??`-szel ez a kod a `''`-t adta volna vissza.
+    // A regresszio elleni pin (2026-08-18, 63d62da).
+    writeFileSync(MODELS_FILE, JSON.stringify({
+      updated: 'test',
+      tiers: [
+        { key: 'tier1', label: 't1', auto: '', manual: ['a', 'b'] },
+        { key: 'tier2', label: 't2', auto: '', manual: ['c', 'd'] },
+      ],
+    }))
+    expect(resolveOpenRouterModel(`${AUTO_PREFIX}tier2`)).toBe('deepseek/deepseek-chat-v3.1')
   })
 })

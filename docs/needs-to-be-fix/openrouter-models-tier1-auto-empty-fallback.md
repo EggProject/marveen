@@ -80,6 +80,16 @@ guard, which already treats `''` as "no auto". After the fix, update the
 pinning test to expect `'deepseek/deepseek-chat-v3.1'` and remove the
 defect comment.
 
-Per task rule "NEVER modify src/web/openrouter-models.ts" the source
-edit is blocked until the user overrides; the test suite documents the
-gap and the regression case above should be updated alongside the fix.
+## Resolution
+
+Applied 2026-08-18 in 63d62da (`fix(openrouter-models): use || so empty
+tier1.auto falls back to deepseek default`). The `??` on the final
+return of `resolveOpenRouterModel` was swapped for `||`, the pinning
+test was updated to expect the hardcoded fallback, and the stale defect
+comment was dropped. Tracked entry in `INDEX.md` was also flipped to
+"Resolved: 2026-08-18 63d62da".
+
+A follow-up regression test was added that exercises the symmetric
+branch (`AUTO_PREFIX, valid tierKey, tier.auto='' AND tier1.auto=''`)
+which is the one input where `??` and `||` differ; this pins the
+behaviour so a future accidental revert is caught by CI.
