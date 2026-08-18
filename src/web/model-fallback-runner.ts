@@ -55,7 +55,12 @@ function readMainModel(): string {
 
 function writeMainModel(model: string): void {
   let cfg: Record<string, unknown> = {}
-  try { cfg = JSON.parse(readFileSync(MAIN_SETTINGS_PATH, 'utf-8')) } catch {}
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(MAIN_SETTINGS_PATH, 'utf-8'))
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      cfg = parsed satisfies object as Record<string, unknown>
+    }
+  } catch {}
   cfg.model = model
   atomicWriteFileSync(MAIN_SETTINGS_PATH, JSON.stringify(cfg, null, 2))
 }
