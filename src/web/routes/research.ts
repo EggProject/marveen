@@ -7,8 +7,10 @@ import type { RouteContext } from './types.js'
 
 // Read-only viewer for each agent's research/ folder (agents/<name>/research/,
 // or the project root for the main agent). Mirrors routes/docs.ts: everything
-// sits under /api/* (bearer-token gated), nothing is writable, and filenames
-// are allowlisted + basename-checked to block path traversal.
+// sits under /api/* (bearer-token gated), nothing is writable. Filenames
+// pass NAME_RE (a character-class allowlist that excludes path separators)
+// and readFileSync is called only on join(researchDir(agent), name) with
+// the agent segment allowlisted upstream.
 const NAME_RE = /^[A-Za-z0-9._-]+\.md$/
 
 function titleOf(content: string, fallback: string): string {
