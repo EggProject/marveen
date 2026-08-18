@@ -465,7 +465,7 @@ export function runPreCheck(task: ScheduledTask): { skip: boolean; prefix?: stri
 const lastMcpMissing = new Map<string, string[]>()
 
 function mcpMissingReason(taskName: string, agentName: string): string {
-  const missing = lastMcpMissing.get(`${taskName}@${agentName}`)
+  const missing = lastMcpMissing.get(`${taskName}@${agentName}`) ?? []
   return missing.length ? `mcp-missing:${missing.join(',')}` : 'mcp-missing'
 }
 
