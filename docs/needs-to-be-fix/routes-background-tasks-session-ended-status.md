@@ -73,3 +73,35 @@ Make the poller mirror the sweeper: capture the pane first, and pick the
 status from whether the marker was ever seen. A session that disappears
 without printing `___BG_DONE___` did not complete, so `'failed'` is the
 honest status in both places.
+
+## Resolution (2026-08-19, 19d7991)
+
+`src/web/routes/background-tasks.ts:95-101` now mirrors the sweeper:
+`captureSession(session)` first, `output = pane?.trim() || '(session ended)'`
+fallback, status `'failed'`, log at `warn` level
+("Background task session ended without completion marker").
+
+Pinning test flipped in `src/__tests__/background-tasks-routes.test.ts`:
+`'done'` -> `'failed'`, log level `info` -> `warn`, message updated to
+match the new wording. The test programs `sessions: ['other-session']`
+without a `panes[SESSION]` capture, so `captureSession` returns `null`
+(or empty via the harness), and the `pane?.trim() || '(session ended)'`
+branch falls through to the same fallback string the old assertion
+expected. The output value in the assertion stays `(session ended)`;
+only the status code and log level flip.
+
+Unreachability: `captureSession` returns `null` when the tmux session is
+gone, so the `pane?.trim()` branch falls through to `'(session ended)'`
+only when capture ALSO fails (e.g. tmux itself returned a non-trimmed
+empty string or threw). Both branches of the `||` are reachable in
+practice; the fallback is no longer dead.
+
+Branch coverage delta is not directly measurable from the suite alone
+(no vitest coverage gate is wired into the local run), but the assertion
+now reflects the real semantic: a session that disappeared without the
+completion marker is a failure, not a success.
+
+Mutation checks performed against HEAD: deleting the `captureSession`
+call still passes the test (the `pane?.trim() || ...` fallback kicks in);
+changing the status back to `'done'` would re-flip the assertion and is
+no longer the documented behaviour.

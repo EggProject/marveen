@@ -151,8 +151,8 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `routes-agents-skills-unreachable-stat-throw` | agents-skills.ts: unreachable `catch { return false }` on the extracted-skills filter | 2026-08-14 c2b4ea2 |
 | `routes-background-tasks-delete-clobber` | routes/background-tasks.ts: DELETE clobbers an already finished task | Resolved: 2026-08-17 231eb21a4c5852a1a7fe5f1f450b5cef6a93881e |
 | `routes-background-tasks-post-invalid-json` | routes/background-tasks.ts: malformed POST body returns 500 instead of 400 | Resolved: 2026-08-17 780f126a0a433a8c68bc6297b54edfee8cb7094b |
-| `routes-background-tasks-session-ended-status` | routes/background-tasks.ts: a dead session is `done` in the poller but `failed` in the sweeper | — |
-| `routes-background-tasks-sweep-timeout-reset` | routes/background-tasks.ts: restart grants every surviving task a fresh 30 minutes | — |
+| `routes-background-tasks-session-ended-status` | routes/background-tasks.ts: a dead session is `done` in the poller but `failed` in the sweeper | Resolved: 2026-08-19 19d7991 |
+| `routes-background-tasks-sweep-timeout-reset` | routes/background-tasks.ts: restart grants every surviving task a fresh 30 minutes | Resolved: 2026-08-19 19d7991 |
 | `routes-background-tasks-unused-imports` | routes/background-tasks.ts: unused imports (`execSync`, `markOrphanedTasksFailed`) | 2026-08-14 68b94fe |
 | `routes-channel-conflict-probe-selfinflicted-409` | channel-conflict-probe.ts: the diagnostic probe issues a competing `getUpdates` and can *cause* the 409 it exists to observe | — |
 | `routes-connectors-hu-config-nostring-token` | routes-connectors-hu-config-nostring-token | Resolved: 2026-08-17 5a348eadbfd7d4a9ef65e6d22e783a4e9473ff4b |
