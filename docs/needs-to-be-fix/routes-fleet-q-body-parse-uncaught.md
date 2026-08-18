@@ -85,3 +85,5 @@ if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
 
 This matches the convention used in `src/web/routes/fleet.ts` for the
 import route.
+
+Resolved: 2026-08-18 b7cd64c
