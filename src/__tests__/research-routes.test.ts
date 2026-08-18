@@ -8,8 +8,9 @@
 //
 // Everything is gated through the bearer-token middleware upstream
 // (auth-gate.ts), so this module only reads the filesystem. Nothing is
-// writable; filenames are allowlisted and basename-checked against path
-// traversal.
+// writable; filenames pass NAME_RE (a character-class allowlist that
+// excludes path separators) and the agent segment is allowlisted
+// against [MAIN_AGENT_ID, ...listAgentNames()] before any filesystem call.
 //
 // Sandbox: PROJECT_ROOT is pinned at a tmpdir-scoped value via the mocked
 // config.js; the listed db/config/logger/auth-gate/auth-sessions collaborators
