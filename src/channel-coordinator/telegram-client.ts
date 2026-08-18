@@ -219,7 +219,8 @@ export async function probeHighWater(token: string): Promise<number | null> {
     if (res.status === 409) throw new TelegramApiError('conflict', '409 conflict (high-water probe)')
     throw new TelegramApiError('transient', `high-water probe HTTP ${res.status}`)
   }
-  const json = await res.json() as { ok: boolean; result?: RawUpdate[] }
+  const json = await res.json() as { ok: boolean; result?: RawUpdate[]; description?: string }
+  if (!json.ok) throw new TelegramApiError('transient', `high-water probe ok=false: ${json.description ?? 'unknown'}`)
   const last = json.result && json.result.length ? json.result[json.result.length - 1] : null
   return last ? last.update_id : null
 }
