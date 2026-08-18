@@ -436,19 +436,6 @@ describe('GET /api/docs/<name> -- 400 invalid name', () => {
     expect(res.statusCode).toBe(400)
     expect(json()).toEqual({ error: 'Invalid doc name' })
   })
-
-  it('returns 400 via the basename check when basename(name) !== name (mocked)', async () => {
-    // Pinning test for the dead-but-defensive basename branch. NAME_RE
-    // excludes every char node:path treats as a separator, so on real input
-    // `basename(name) !== name` cannot fire. The branch is reached here by
-    // mocking path.basename to claim a valid name has a different basename.
-    // Bug MD: docs/needs-to-be-fix/routes-docs-basename-redundant.md
-    writeFileSync(join(DOCS_DIR, 'valid.md'), '# valid')
-    hoisted.pathState.basenameOverride = () => 'other.md'
-    const { res, json } = await call('GET', '/api/docs/valid.md')
-    expect(res.statusCode).toBe(400)
-    expect(json()).toEqual({ error: 'Invalid doc name' })
-  })
 })
 
 // --- GET /api/docs/<name> -- 404 not found --------------------------------
