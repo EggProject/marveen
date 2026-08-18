@@ -29,7 +29,6 @@ export function keychainStore(value: string): void {
     '-s', SERVICE,
     '-a', ACCOUNT,
     '-w', value,
-    '-A',
   ], { stdio: ['ignore', 'ignore', 'ignore'] })
 }
 
