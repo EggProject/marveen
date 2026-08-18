@@ -287,7 +287,7 @@ describe('tryHandleFleetQ -- GET /.well-known/fleetq', () => {
 // ---------------------------------------------------------------------------
 
 describe('tryHandleFleetQ -- PUT unknown agent', () => {
-  it('returns 404 with a Hungarian error message when isKnownAgent is false', async () => {
+  it('returns 404 with generic Not found when isKnownAgent is false', async () => {
     H.isKnownAgent.mockReturnValue(false)
     const { res, handled, json } = await call({
       method: 'PUT',
@@ -296,7 +296,7 @@ describe('tryHandleFleetQ -- PUT unknown agent', () => {
     })
     expect(handled).toBe(true)
     expect(res.statusCode).toBe(404)
-    expect(json()).toEqual({ error: 'Agent nem található' })
+    expect(json()).toEqual({ error: 'Not found' })
     // The body is never read when the agent is unknown.
     expect(H.writeAgentCapabilities).not.toHaveBeenCalled()
   })
@@ -492,9 +492,8 @@ describe('tryHandleFleetQ -- PUT success', () => {
 // promise rejection. The web dispatcher only sees `false` when the handler
 // resolves cleanly -- a rejection propagates up the chain.
 //
-// These tests pin the behavior: the rejection IS thrown, which proves the
-// defect rather than hiding it. Tests must remain deterministic -- they
-// pass through vi.asser's normal exception handling.
+// These tests pin the FIXED behavior: the handler returns a structured 400
+// instead of propagating the rejection, which proves the fix.
 // ---------------------------------------------------------------------------
 
 describe('tryHandleFleetQ -- PUT request body failure paths', () => {
@@ -502,38 +501,21 @@ describe('tryHandleFleetQ -- PUT request body failure paths', () => {
     H.isKnownAgent.mockReturnValue(true)
   })
 
-  it('propagates readBody errors as an unhandled rejection (defect: no try/catch)', async () => {
-    await expect(
-      call({
-        method: 'PUT',
-        path: '/api/agents/agent-a/capabilities',
-        bodyError: new Error('socket reset'),
-      }),
-    ).rejects.toThrow('socket reset')
+  it('returns 400 with Kérés olvasási hiba when readBody rejects', async () => {
+    const { res, handled, json } = await call({ method: 'PUT', path: '/api/agents/agent-a/capabilities', bodyError: new Error('socket reset') })
+    expect(handled).toBe(true); expect(res.statusCode).toBe(400); expect(json()).toEqual({ error: 'Kérés olvasási hiba: socket reset' })
     expect(H.writeAgentCapabilities).not.toHaveBeenCalled()
   })
 
-  it('throws JSON.parse SyntaxError when the body is malformed (defect: unguarded JSON.parse)', async () => {
-    await expect(
-      call({
-        method: 'PUT',
-        path: '/api/agents/agent-a/capabilities',
-        body: '{not valid json',
-      }),
-    ).rejects.toThrow()
+  it('returns 400 with Érvénytelen JSON törzs when the body is malformed', async () => {
+    const { res, handled, json } = await call({ method: 'PUT', path: '/api/agents/agent-a/capabilities', body: '{not valid json' })
+    expect(handled).toBe(true); expect(res.statusCode).toBe(400); expect(json()).toEqual({ error: 'Érvénytelen JSON törzs.' })
     expect(H.writeAgentCapabilities).not.toHaveBeenCalled()
   })
 
-  it('throws when the body is valid JSON but not an object (defect: capabilities access on null)', async () => {
-    // JSON.parse('null') -> null; the SUT then does `parsed.capabilities`
-    // which throws "Cannot read properties of null".
-    await expect(
-      call({
-        method: 'PUT',
-        path: '/api/agents/agent-a/capabilities',
-        body: 'null',
-      }),
-    ).rejects.toThrow()
+  it('returns 400 with object body required when the body parses to null', async () => {
+    const { res, handled, json } = await call({ method: 'PUT', path: '/api/agents/agent-a/capabilities', body: 'null' })
+    expect(handled).toBe(true); expect(res.statusCode).toBe(400); expect(json()).toEqual({ error: 'capabilities: object body required' })
     expect(H.writeAgentCapabilities).not.toHaveBeenCalled()
   })
 
@@ -549,7 +531,7 @@ describe('tryHandleFleetQ -- PUT request body failure paths', () => {
     })
     expect(handled).toBe(true)
     expect(res.statusCode).toBe(400)
-    expect(json()).toEqual({ error: 'capabilities: string[] required' })
+    expect(json()).toEqual({ error: 'capabilities: object body required' })
   })
 
   it('throws when the body is a JSON string (defect: primitives crash the read)', async () => {
@@ -562,6 +544,6 @@ describe('tryHandleFleetQ -- PUT request body failure paths', () => {
     })
     expect(handled).toBe(true)
     expect(res.statusCode).toBe(400)
-    expect(json()).toEqual({ error: 'capabilities: string[] required' })
+    expect(json()).toEqual({ error: 'capabilities: object body required' })
   })
 })
