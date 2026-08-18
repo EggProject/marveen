@@ -89,13 +89,8 @@ unreachable on real input. This documents the invariant for future
 readers but does NOT remove the coverage gap, so the basename-mocking
 test stays in place (we don't have one today, so this is the no-op).
 
-## Why this stays
+## Resolution
 
-basename(name) !== name is a defence-in-depth check against path
-traversal. While the open bug `profiles-traversal-id` (High severity) of
-the same class is unfixed, removing this guard would delete a layer
-for stylistic reasons. NAME_RE excludes slashes/backslashes by
-construction, so the check is provably redundant at runtime today, but
-the project prefers belt-and-braces on a route that resolves files
-under the agent's research directory. Revisit after `profiles-traversal-id`
-is resolved.
+Applied 2026-08-18 in e62eb87 (`fix(routes-research): drop redundant basename check at research.ts:63`). The `basename(name) !== name` disjunct was removed from the `/api/research/<agent>/<name>` handler, leaving a single `NAME_RE.test(name)` guard. The `basename` import was also dropped from the `node:path` import line as it became unused. Tracked entry in `INDEX.md` was flipped to "Resolved: 2026-08-18 e62eb87".
+
+The companion `routes-docs-basename-redundant` MD (closed 2026-08-18 in e4ec60b) was retired in the same cycle. The `profiles-traversal-id` high-severity sibling remains open; this fix does not affect that handler's `loadProfileTemplate` validation gap.
