@@ -379,9 +379,9 @@ describe('pollUntilDone', () => {
     programTmux({ sessions: ['other-session'] })
     spawnAndPoll()
 
-    expect(H.finishBackgroundTask).toHaveBeenCalledWith(TASK_ID, 'done', '(session ended)')
+    expect(H.finishBackgroundTask).toHaveBeenCalledWith(TASK_ID, 'failed', '(session ended)')
     expect(H.logs).toContainEqual(
-      expect.objectContaining({ level: 'info', msg: 'Background task session ended' }),
+      expect.objectContaining({ level: 'warn', msg: 'Background task session ended without completion marker' }),
     )
     expect(vi.getTimerCount()).toBe(1)
   })
@@ -391,7 +391,7 @@ describe('pollUntilDone', () => {
     programTmux({ fail: ['list-sessions'] })
     spawnAndPoll()
 
-    expect(H.finishBackgroundTask).toHaveBeenCalledWith(TASK_ID, 'done', '(session ended)')
+    expect(H.finishBackgroundTask).toHaveBeenCalledWith(TASK_ID, 'failed', '(session ended)')
   })
 
   it('captures the pane, strips the marker and kills the session when done', () => {
@@ -570,6 +570,7 @@ describe('sweepOrphanedBackgroundTasks', () => {
     H.getRunningBackgroundTasks.mockReturnValue([mkTask()])
     H.getBackgroundTask.mockReturnValue(mkTask())
     programTmux({ sessions: [SESSION], panes: { [SESSION]: 'still working' } })
+    vi.setSystemTime(1_700_000_000_000)
 
     sweepOrphanedBackgroundTasks()
     // The task never produces the marker, so only the timeout can end it.

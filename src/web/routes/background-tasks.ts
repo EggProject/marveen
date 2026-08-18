@@ -93,9 +93,10 @@ function pollUntilDone(id: string): void {
     if (!session) { clearInterval(interval); return }
 
     if (!isBgSessionAlive(session)) {
-      const output = '(session ended)'
-      finishBackgroundTask(id, 'done', output)
-      logger.info({ id }, 'Background task session ended')
+      const pane = captureSession(session)
+      const output = pane?.trim() || '(session ended)'
+      finishBackgroundTask(id, 'failed', output)
+      logger.warn({ id }, 'Background task session ended without completion marker')
       clearInterval(interval)
       return
     }
@@ -131,7 +132,9 @@ export function sweepOrphanedBackgroundTasks(): void {
       finishBackgroundTask(task.id, 'failed', output?.trim() || '(orphaned on restart)')
       orphaned++
     } else {
-      setTimeout(() => checkAndFinalize(task.id), TIMEOUT_MS)
+      const elapsedMs = Date.now() - task.started_at * 1000
+      const remainingMs = Math.max(0, TIMEOUT_MS - elapsedMs)
+      setTimeout(() => checkAndFinalize(task.id), remainingMs)
       pollUntilDone(task.id)
     }
   }
