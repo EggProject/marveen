@@ -59,6 +59,19 @@ export interface PeerStatus {
 const statusCache = new Map<string, PeerStatus>()
 let inflightRefresh: Promise<PeerStatus[]> | null = null
 
+/** Typed error for the belt-catch in pollPeerManifests. pollOnePeer's
+ *  internal try/catch already handles every observable failure mode
+ *  (fetch, body read, JSON parse, sanitizeManifest); the belt only fires
+ *  if a new code path regresses one of those guards. We surface the
+ *  escape as a typed rejection so the interval timer's .catch handler
+ *  can log it instead of silently swallowing it. */
+export class FederationPollInternalError extends Error {
+  constructor(public readonly peerId: string, public readonly cause: unknown) {
+    super(`federation poller: internal error for peer ${peerId}`)
+    this.name = 'FederationPollInternalError'
+  }
+}
+
 function truncate(s: unknown, max: number): string {
   const str = typeof s === 'string' ? s : ''
   return str.length > max ? str.slice(0, max) + '…' : str
@@ -216,13 +229,12 @@ export async function pollPeerManifests(now: number, fetchImpl: typeof fetch = f
     try {
       await pollOnePeer(peer, now, fetchImpl)
     } catch (err) {
-      // Belt: one broken peer must never abort the round.
+      // Belt: one broken peer must never abort the round via pollOnePeer's
+      // OWN failure modes, but a regression in pollOnePeer's own try/catch
+      // net would otherwise surface silently. Log the escape and re-throw as
+      // a typed error so the interval timer's .catch can record it.
       logger.warn({ err, peer: peer.id }, 'federation poller: unexpected error')
-      const prev = statusCache.get(peer.id)
-      statusCache.set(peer.id, {
-        id: peer.id, baseUrl: peer.baseUrl, state: 'error', lastChecked: now,
-        lastOkAt: prev?.lastOkAt ?? 0, manifest: prev?.manifest, error: 'internal poll error',
-      })
+      throw new FederationPollInternalError(peer.id, err)
     }
   }
   return getFederationStatus()
@@ -262,6 +274,14 @@ export function resetFederationPollerCache(peerId?: string): void {
 }
 
 export function startFederationPoller(): NodeJS.Timeout {
-  setTimeout(() => { refreshFederationStatus().catch(() => {}) }, FEDERATION_POLL_INITIAL_DELAY_MS).unref()
-  return setInterval(() => { refreshFederationStatus().catch(() => {}) }, FEDERATION_POLL_INTERVAL_MS)
+  setTimeout(() => {
+    refreshFederationStatus().catch((err) => {
+      logger.warn({ err }, 'federation poller: background refresh failed')
+    })
+  }, FEDERATION_POLL_INITIAL_DELAY_MS).unref()
+  return setInterval(() => {
+    refreshFederationStatus().catch((err) => {
+      logger.warn({ err }, 'federation poller: background refresh failed')
+    })
+  }, FEDERATION_POLL_INTERVAL_MS)
 }
