@@ -34,12 +34,9 @@ const NAME_RE = /^[A-Za-z0-9._-]+\.md$/
 ## Excerpt
 
 `NAME_RE` is a character-class allowlist: it only accepts letters,
-digits, `.`, `_`, `-`, and `.md` at the end. `node:path.basename` on
-POSIX uses `/` as its only path separator; on Windows it accepts both
-`/` and `\`. Neither separator character is in NAME_RE's class, so any
-string that passes `NAME_RE.test(name)` cannot contain a path separator
-and therefore `basename(name)` must equal `name`. The `basename(name)
-!== name` disjunct can never fire on real input.
+digits, `.`, `_`, `-`, and `.md` at the end. Neither / nor \ is in
+NAME_RE's [A-Za-z0-9._-] character class, so any path containing a
+separator cannot reach `basename(name)`.
 
 ## Failure scenario
 
