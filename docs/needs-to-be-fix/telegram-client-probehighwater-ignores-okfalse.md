@@ -129,3 +129,16 @@ Per task rule "NEVER modify src/channel-coordinator/telegram-client.ts"
 the source edit is blocked until the user overrides; the pinning test
 is the highest achievable without source changes and will gate the
 fix.
+
+## Resolution
+
+Resolved on 2026-08-18 in commit `1672bf5` by mirroring the
+`getUpdates` body guard: `probeHighWater` now throws
+`TelegramApiError('transient', ...)` when the parsed JSON has
+`ok: false`, using `json.description ?? 'unknown'` to match its
+sibling. The pinning test was flipped from `expect(result).toBe(99999)`
+to `expect(result).toBeInstanceOf(TelegramApiError)`, and a second
+test was added (`falls back to "unknown" when ok: false omits
+description`) to cover the no-description branch. Test suite: 65
+passes, 100% statements/branches/functions/lines on
+`telegram-client.ts`.
