@@ -114,3 +114,16 @@ jq arguments rather than interpolating them into the filter —
 which removes the JSON layer from the problem entirely.
 
 Per task rule "NEVER modify src/web/voice-directive.ts", no fix is applied here.
+
+## Resolution (2026-08-19)
+
+Fixed in commit `7c0e64a` (fix) + `be2cfee` (test flip).
+`buildTtsDirective` now builds the JSON document with `JSON.stringify` and
+applies the shell single-quote escape once to the finished filter, so `"` and
+`\` (and any other JSON-meta characters) are escaped at the JSON layer, and
+the shell layer is handled by a single existing `replace(/'/g, "'\\''")`. The
+`$t` placeholder for the agent's text is spliced in via an
+`@@TTS_TEXT@@ -> $t` substitution between the two steps. The previously
+pinning test in `src/__tests__/voice-directive.test.ts` was flipped to a
+positive assertion: it now expects the embedded `"` to be JSON-escaped and
+the emitted filter to parse as valid JSON.

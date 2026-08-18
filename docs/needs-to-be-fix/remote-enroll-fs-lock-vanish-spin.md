@@ -54,3 +54,15 @@ Distinguish "statSync throws because the file is gone" (ENOENT) from "statSync t
 ```
 
 Alternatively, the catch could attempt a defensive `unlinkSync` (best-effort, ignore ENOENT) before continuing, so a stale lock that fs can't stat gets removed anyway.
+
+## Resolution (2026-08-19)
+
+Fixed in commit `e99df57` (fix) + `7d76d14` (test flip).
+The unconditional `catch { continue }` was removed. When `statSync` throws we
+no longer can prove the lock is stale, and the file is still there as far as
+`openSync` is concerned, so control falls through to `await sleep(delayMs)`.
+The stale-lock branch above (which `unlinkSync`s + `continue`s) is unaffected.
+The previously pinning test in
+`src/__tests__/remote-enroll-fs-full.test.ts` was flipped to a positive
+assertion: with 3 retries and statSync forced to throw, `sleep` is now
+invoked 3 times instead of 0.
