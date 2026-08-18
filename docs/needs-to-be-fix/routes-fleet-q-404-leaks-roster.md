@@ -41,3 +41,5 @@ The Bearer auth gate in `src/web.ts` blocks unauthenticated callers from
 reaching this handler at all on most routes -- but the comment at the top
 of `fleet-q.ts` notes the gate is shared across the module. Confirm that
 the PUT branch is actually gated.
+
+Resolved: 2026-08-18 b7cd64c
