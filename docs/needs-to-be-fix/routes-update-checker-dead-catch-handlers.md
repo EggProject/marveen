@@ -1,5 +1,16 @@
 # Dead `.catch(() => {})` handlers in startUpdateChecker
 
+## Status
+**Resolved: 2026-08-18 — commit 38a3189** (Cycle 24).
+
+Option B from "Options to fix" was applied: the inner `.catch(() => {})`
+arrow handlers at `src/web/update-checker.ts:255,256` were removed.
+`refreshUpdateStatus()` already converts every error into a `status.error`
+string, so the promise always resolves — the catch handlers were dead
+code. Verified: `bun --bun vitest run` 11126/11126 pass; `bunx tsc
+--noEmit` = 2255 (baseline parity, 0 new errors); diff = `1 file changed,
+2 insertions(+), 2 deletions(-)`.
+
 ## Summary
 The two arrow functions registered as `.catch(() => {})` in
 `startUpdateChecker` (src/web/update-checker.ts:255,256) are unreachable.
