@@ -83,6 +83,20 @@ For the single-doc branch:
 For the listing branch, the symmetric fix is to switch to
 `readdirSync(dir, { withFileTypes: true })` and inspect the returned
 `Dirent` objects (`entry.isFile() && !entry.isSymbolicLink()`) plus a
-single `lstatSync` for `mtimeMs` — see
+single `lstatSync` for `mtimeMs` -- see
 `routes-research-double-stat-inefficiency` for the full listing-side
 refactor.
+
+## Resolution
+
+Applied direction (3) on the single-doc branch and the Dirent-based
+fix on the listing branch in commit `68d19c6` (test/baseline,
+2026-08-19). The single-doc branch now does one
+`lstatSync(file, { throwIfNoEntry: false })` and rejects with 404
+when the result is missing, a directory, or a symlink. The listing
+branch uses `readdirSync(dir, { withFileTypes: true })` and filters
+on `entry.isFile() && !entry.isSymbolicLink()`, keeping one
+`lstatSync` per accepted entry for `mtimeMs`. Regression tests in
+`src/__tests__/research-routes.test.ts` plant a symlink under
+`agents/<sub>/research/leak.md` pointing at `/etc/passwd` and assert
+404 on the single-doc path and exclusion from the listing.

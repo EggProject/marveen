@@ -119,3 +119,17 @@ This collapses the `existsSync` + `statSync` pair into a single
 syscall and removes the TOCTOU window between them. See
 `routes-research-symlink-traversal` for the security-side motivation
 for the same refactor.
+
+## Resolution
+
+Applied both refactors in commit `68d19c6` (test/baseline,
+2026-08-19). The listing branch now drops `2N` filter stats to zero
+(`readdirSync(dir, { withFileTypes: true })` already returns the
+file/dir/symlink kind), keeping one `lstatSync` per accepted entry
+for `mtimeMs`. The single-doc branch drops the `existsSync` +
+`statSync` pair to a single `lstatSync(file, { throwIfNoEntry:
+false })`, which also closes the `routes-research-symlink-traversal`
+P1 SEC. The combined syscall count on the listing branch drops from
+`2N + M` to `N + M` per request, and the single-doc branch drops from
+two stat calls to one. Regression tests in
+`src/__tests__/research-routes.test.ts` cover both paths.
