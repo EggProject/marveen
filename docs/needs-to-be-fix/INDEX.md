@@ -191,10 +191,8 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `web-agent-bundle-single-line-trycatch` | agent-bundle.ts: single-line try-catch and defensive-guard branches block 100% branch coverage | 2026-08-14 68b94fe |
 | `web-agent-scaffold-defensive-coverage` | web/agent-scaffold.ts: 18 defensive nullish-coalesce / guard branches cap branch coverage at 93.61% | — |
 | `web-agent-worker-runviaworker-coverage` | agent-worker: runViaWorker / runWorkerAttempt / ensureWorkerReady integration paths lack 100% unit-test coverage | — |
-| `web-command-task-persist-nullish-coalesce` | Dead branch in `persist()`: `healthMap ?? {}` fallback is unreachable | Resolved: 2026-08-15 af4c087 |
 | `web-inbound-probe-cache-sticky` | Defect: ALLOWED_CHAT_ID cache never invalidated, breaking the "reset" branch | — |
 | `web-inbound-probe-respawn-grace` | Defect: stuck mod-scope cache blocks coverage of `shouldTriggerDeafnessRespawn` respawn branches | — |
-| `worker-liveness-defensive-nullish-fallback` | worker-liveness.ts: defensive `??` fallback in decideWorkerLiveness is unreachable | Resolved: 2026-08-14 c2b4ea2 |
 
 ## Orphan addenda (2026-08-15 reconcile v3)
 
