@@ -60,8 +60,15 @@ export async function tryHandleResearch(ctx: RouteContext): Promise<boolean> {
 
   const match = path.match(/^\/api\/research\/([^/]+)\/([^/]+)$/)
   if (match && method === 'GET') {
-    const agent = decodeURIComponent(match[1])
-    const name = decodeURIComponent(match[2])
+    let agent: string
+    let name: string
+    try {
+      agent = decodeURIComponent(match[1])
+      name = decodeURIComponent(match[2])
+    } catch {
+      json(res, { error: 'Invalid file name' }, 400)
+      return true
+    }
     if (!NAME_RE.test(name)) {
       json(res, { error: 'Invalid file name' }, 400)
       return true
