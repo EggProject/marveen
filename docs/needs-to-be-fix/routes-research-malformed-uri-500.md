@@ -85,3 +85,11 @@ and throws a typed `InvalidPathComponent` on failure, which the route
 handler maps to the existing 400. The agent-side decode failure
 inherits the same 400; if a separate 404 is preferred for the agent
 segment, add a second `try` block scoped to `match[1]`.
+
+## Resolution
+
+Wrapped the pair of `decodeURIComponent` calls in a single `try/catch`
+that maps any `URIError` to the existing 400 `{ error: 'Invalid file name' }`
+response, matching the wording of the adjacent malformed-name branch. Added
+a regression test that requests `/api/research/<sub>/foo%G0.md` and asserts
+the 400 + body shape.

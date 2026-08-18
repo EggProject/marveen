@@ -167,7 +167,7 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `routes-remote-status-cache-path-mismatch` | routes/remote-status-cache: task path does not exist on disk | Resolved: 2026-08-18 e5cfea6 |
 | `routes-research-basename-redundant` | research.ts: `basename(name) !== name` check unreachable (mirrors routes-docs-basename-redundant) | Resolved: 2026-08-18 e62eb87 |
 | `routes-research-double-stat-inefficiency` | research.ts:32,44,72-73 -- listing branch performs 2N+1 statSync per agent; could halve syscalls with readdirSync({withFileTypes: true}) + lstat | — |
-| `routes-research-malformed-uri-500` | research.ts:61 -- decodeURIComponent on regex path throws URIError → web.ts 500 instead of 400 | — |
+| `routes-research-malformed-uri-500` | research.ts:61 -- decodeURIComponent on regex path throws URIError → web.ts 500 instead of 400 | Resolved: 2026-08-18 7aa9551 |
 | `routes-research-stale-basename-narrative` | research.ts:8-11 + research-routes.test.ts:8-11 -- stale basename-checked comments after basename removal (cycle 30) | Resolved: 2026-08-18 a0d981d |
 | `routes-research-symlink-traversal` | research.ts:72 -- existsSync + statSync follow symlinks; leak.md symlink serves arbitrary file content via /api/research/<agent>/leak.md | — |
 | `routes-skill-usage-jsonparse-throws` | skill-usage.ts: POST /api/skill-usage lets malformed JSON throw | Resolved: 2026-08-17 08a64603de2ef2f069fce05a44d0652815ef2070 |
