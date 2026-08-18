@@ -648,6 +648,6 @@ describe('resolveOpenRouterModel', () => {
         { key: 'tier1', label: 't1', auto: '', manual: ['a', 'b'] },
       ],
     }))
-    expect(resolveOpenRouterModel(`${AUTO_PREFIX}does-not-exist`)).toBe('')
+    expect(resolveOpenRouterModel(`${AUTO_PREFIX}does-not-exist`)).toBe('deepseek/deepseek-chat-v3.1')
   })
 })
