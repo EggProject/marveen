@@ -619,7 +619,7 @@ describe('startUpdateChecker', () => {
     clearInterval(handle)
   })
 
-  it('swallows rejections from the inner refresh (silently logs nothing observable)', async () => {
+  it('does not surface refresh errors as unhandled rejections when fetch throws', async () => {
     vi.useFakeTimers()
     const fetchMock = vi.fn(async () => {
       throw new Error('network unreachable')
