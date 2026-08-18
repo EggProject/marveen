@@ -1,6 +1,6 @@
 # needs-to-be-fix index
 
-Every bug MD filed in this session. Total count: 176
+Every bug MD filed in this session. Total count: 181
 (`find docs/needs-to-be-fix -name '*.md' ! -name 'INDEX.md' | wc -l`;
 the unfiltered command returns 177 because it counts this index too).
 The index has one table row per MD, so the two counts must stay equal.
@@ -166,6 +166,10 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `routes-reauth-healer-missing-file` | src/web/routes/reauth-healer.ts does not exist; the actual file lives at src/web/reauth-healer.ts | — |
 | `routes-remote-status-cache-path-mismatch` | routes/remote-status-cache: task path does not exist on disk | — |
 | `routes-research-basename-redundant` | research.ts: `basename(name) !== name` check unreachable (mirrors routes-docs-basename-redundant) | Resolved: 2026-08-18 e62eb87 |
+| `routes-research-double-stat-inefficiency` | research.ts:32,44,72-73 -- listing branch performs 2N+1 statSync per agent; could halve syscalls with readdirSync({withFileTypes: true}) + lstat | — |
+| `routes-research-malformed-uri-500` | research.ts:61 -- decodeURIComponent on regex path throws URIError → web.ts 500 instead of 400 | — |
+| `routes-research-stale-basename-narrative` | research.ts:8-11 + research-routes.test.ts:8-11 -- stale basename-checked comments after basename removal (cycle 30) | — |
+| `routes-research-symlink-traversal` | research.ts:72 -- existsSync + statSync follow symlinks; leak.md symlink serves arbitrary file content via /api/research/<agent>/leak.md | — |
 | `routes-skill-usage-jsonparse-throws` | skill-usage.ts: POST /api/skill-usage lets malformed JSON throw | Resolved: 2026-08-17 08a64603de2ef2f069fce05a44d0652815ef2070 |
 | `routes-skills-dead-branches` | routes/skills.ts: defensive dead branches in sort, walker, and importer | 2026-08-14 c2b4ea2 |
 | `routes-spans-nan-limit` | routes/spans -- NaN limit on GET /api/traces passed straight to listOtelTraces | Resolved: 2026-08-17 f11aee27c1710eae7f056d91ab11c0c8809ed71f |
