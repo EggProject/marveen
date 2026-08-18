@@ -2,7 +2,7 @@
 //
 // The module is a thin `/usr/bin/security` wrapper with four exports:
 //   isKeychainAvailable  -- platform() === 'darwin'
-//   keychainStore        -- add-generic-password -U ... -A  (no try/catch)
+//   keychainStore        -- add-generic-password -U ... -w  (no try/catch)
 //   keychainRetrieve     -- find-generic-password -w, catch -> null
 //   keychainDelete       -- delete-generic-password, catch -> false
 //
@@ -298,21 +298,21 @@ describe('keychainDelete - delete-generic-password', () => {
 // once the corresponding docs/needs-to-be-fix/ entry is fixed.
 // ---------------------------------------------------------------------------
 describe('keychain.ts - known deviations (pinning)', () => {
-  // docs/needs-to-be-fix/keychain-store-insecure-acl.md
-  it('passes -A, the flag security(1) itself calls insecure', () => {
+  // docs/needs-to-be-fix/keychain-store-insecure-acl.md (resolved)
+  it('omits -A so the item keeps the default user-restricted ACL', () => {
     // security(1): "-A  Allow any application to access this item without
     // warning (insecure, not recommended!)". -A leaves the item's ACL empty,
-    // so the vault master key is readable through the SecKeychain API
-    // directly -- not only by way of an exec of /usr/bin/security. The MD
-    // prescribes removing -A, but in the current install -A is what keeps
-    // the background process able to access the keychain without a UI
-    // prompt. A prompt would be silently swallowed as null by
-    // keychainRetrieve, triggering vault re-key (vault.ts:44-49). Until
-    // keychain-retrieve-swallows-locked-keychain is fixed first, -A must
-    // stay so the background flow continues to work.
+    // so the vault master key would be readable through the SecKeychain API
+    // directly -- not only by way of an exec of /usr/bin/security. Dropping
+    // -A leaves the default ACL, which restricts reads to the current user
+    // (and to /usr/bin/security itself, which is what the wrapper invokes).
+    // The macOS keychain would prompt on first access from a non-interactive
+    // session, but keychainRetrieve now surfaces that as a
+    // KeychainUnavailableError (exit 36, see pinned test below) which
+    // vault.ts refuses to silently re-key over.
     mocks.execFileSync.mockReturnValue('')
     keychainStore('master')
-    expect(onlyCall().args).toContain('-A')
+    expect(onlyCall().args).not.toContain('-A')
   })
 
   // docs/needs-to-be-fix/keychain-retrieve-swallows-locked-keychain.md (resolved)
