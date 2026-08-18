@@ -717,23 +717,26 @@ describe('probeHighWater', () => {
     expect(err.message).toMatch(/high-water probe network error: This operation was aborted/)
   })
 
-  // PINNING TEST for the "probeHighWater ignores body ok: false" bug.
-  // Today the SUT returns the update_id from a body that the Bot API marked
-  // as `ok: false`. This test pins the CURRENT (buggy) behaviour so the
-  // suite is green at 100% coverage. The companion bug MD
-  // (docs/needs-to-be-fix/telegram-client-probehighwater-ignores-okfalse.md)
-  // notes the assertion that should replace the current line once the fix
-  // lands: `expect(result).toBeInstanceOf(TelegramApiError)`.
-  it('PIN: probeHighWater returns 99999 from a 200 OK with ok: false (defect: should throw)', async () => {
+  it('throws transient on 200 OK with ok: false and a description', async () => {
     setFetchImpl(async () => jsonResponse({
       ok: false,
       description: 'Bad Request: bad webhook',
       result: [{ update_id: 99999 }],
     }, 200))
     const result = await probeHighWater('tok').catch((e) => e)
-    // CURRENT (buggy) behaviour: 99999 is returned. POST-FIX this should be
-    // `expect(result).toBeInstanceOf(TelegramApiError)` (mirror getUpdates'
-    // `if (!json.ok)` guard).
-    expect(result).toBe(99999)
+    expect(result).toBeInstanceOf(TelegramApiError)
+    expect((result as TelegramApiError).kind).toBe('transient')
+    expect((result as TelegramApiError).message).toMatch(/high-water probe ok=false: Bad Request: bad webhook/)
+  })
+
+  it('falls back to "unknown" when ok: false omits description', async () => {
+    setFetchImpl(async () => jsonResponse({
+      ok: false,
+      result: [],
+    }, 200))
+    const result = await probeHighWater('tok').catch((e) => e)
+    expect(result).toBeInstanceOf(TelegramApiError)
+    expect((result as TelegramApiError).kind).toBe('transient')
+    expect((result as TelegramApiError).message).toMatch(/high-water probe ok=false: unknown/)
   })
 })
