@@ -99,7 +99,7 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `agent-process-runtmux-host-truthy-cond-unreachable` | agent-process.ts: `runTmux` `(host ? 8000 : 3000)` truthy arm is unreachable | Resolved: 2026-08-18 e5cfea6 |
 | `agent-restart-policy-consecutivefailures-nullish-coalesce` | agent-restart-policy.ts: `consecutiveFailures ?? 0` nullish-coalesce left arm is unreachable | Resolved: 2026-08-16 410ca1655 |
 | `agent-scaffold-unreachable-defensive-branches` | agent-scaffold.ts: four unreachable defensive branches block 100% branch coverage | 2026-08-14 c2b4ea2 |
-| `agent-team-trustfrom-nullish-coalesce` | agent-team.ts: `team.trustFrom ?? []` nullish-coalesce right-arm is unreachable | — |
+| `agent-team-trustfrom-nullish-coalesce` | agent-team.ts: `team.trustFrom ?? []` nullish-coalesce right-arm is unreachable | Resolved: 2026-08-19 7e1277c |
 | `agent-worker-array-claude-json` | agent-worker.ts: array-valued host .claude.json silently drops the worker's trust flags | — |
 | `agent-worker-blank-line-v8-quirk` | agent-worker.ts: a 20. sor (üres sor) v8 coverage quirk miatt 1 line uncoverable | Resolved: 2026-08-17 461b2b4 |
 | `agent-worker-ensure-ready-throw` | agent-worker.ts: ensureWorkerReady does not catch startWorkerSessionFor throws | — |
@@ -204,7 +204,7 @@ when a commit on `test/baseline` already deleted the buggy defensive guard, `-` 
 | Bug ID | File:Line | Title | Pinning test path | Resolved |
 | --- | --- | --- | --- | --- |
 | `agent-process-777-ts-strict-blocks-delete` | `src/web/agent-process.ts:777` | runTmux timeout required-delete blocked | - | Resolved: 2026-08-16 a71cc759 |
-| `agent-team-trustfrom-required-type-narrow-deferred` | `src/web/agent-team.ts:191,192` | trustFrom type-narrow deferred | - | - |
+| `agent-team-trustfrom-required-type-narrow-deferred` | `src/web/agent-team.ts:191,192` | trustFrom type-narrow deferred | - | Resolved: 2026-08-19 7e1277c |
 | `agent-terminal-218-ts-strict-blocks-delete` | `src/web/routes/agent-terminal.ts:218` | TS strict blocks the safe-delete | - | - |
 | `agent-terminal-keys-preview-literalKeys-fallback` | `src/web/routes/agent-terminal.ts:218` | literalKeys ?? '' fallback is unreachable | - | - |
 | `agents-parseChannelProvider-return-null` | `src/web/routes/agents.ts:231` | parseChannelProvider's null return is unreachable | - | Resolved: 2026-08-16 3e1dd3f |
