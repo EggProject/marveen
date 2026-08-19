@@ -1,5 +1,5 @@
 /**
- * PR-D smoke: the post-rollback diagnosis offer on the Updates page.
+ * Smoke: the post-rollback diagnosis offer on the Updates page.
  *
  * Prerequisites: the dashboard must be running and DASHBOARD_TOKEN set.
  *   DASHBOARD_TOKEN=$(cat store/.dashboard-token) npm run smoke
@@ -15,7 +15,7 @@ import { test, expect } from '@playwright/test'
 const TOKEN = process.env.DASHBOARD_TOKEN || ''
 
 // Block the service worker so our /api route overrides are not shadowed by the
-// SW cache (the PR-A lesson).
+// SW cache.
 test.use({ serviceWorkers: 'block' })
 
 async function stubUpdates(page: import('@playwright/test').Page, status: Record<string, unknown>) {
