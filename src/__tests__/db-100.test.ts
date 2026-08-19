@@ -133,8 +133,7 @@ const {
   clearPendingTaskRetryAlert, listPendingTaskRetries, getPendingTaskRetry,
   deletePendingTaskRetry, deletePendingTaskRetryById, markPendingTaskRetryAlert,
   generateEmbedding, hybridSearch, backfillEmbeddings,
-  upsertChannelRequest, listPendingChannelRequests, updateChannelRequestStatus,
-  updateChannelRequestName, saveTelegramMessage, getTelegramHistory,
+  upsertChannelRequest, listPendingChannelRequests, updateChannelRequestStatus, updateChannelRequestName,
   listIdeas, createIdea, updateIdea, deleteIdea, listIdeaCategories,
   getIdeaComments, addIdeaComment, logIdeaStatusChange, getIdeaStatusLog,
   revertIdeaFromKanban,
@@ -943,48 +942,11 @@ describe('pending_channel_requests', () => {
 })
 
 // ---------------------------------------------------------------------------
-// telegram_history -- pinned defect (table missing in initDatabase)
-//
-// The two `it` blocks below pin the defect: until `telegram_history` is added to
-// initDatabase() (or the functions are removed), every call throws
-// `no such table: telegram_history`. The third `it` exercises the success
-// branch by pre-creating the table -- this drives line 2575 (the `.run(...)`
-// inside saveTelegramMessage) and the corresponding SELECT in
-// getTelegramHistory, which would otherwise be unreachable without bypassing
-// the defect.
+// telegram_history -- regression for `db-missing-telegram-history-table` lives
+// in src/__tests__/db.test.ts (the table is created by initDatabase now, so the
+// old "table missing" pin no longer applies). The directional + user_id
+// coverage that used to live here was folded into the same describe block.
 // ---------------------------------------------------------------------------
-describe('telegram_history (pinned defect: table missing)', () => {
-  it('saveTelegramMessage throws because the table is missing', () => {
-    expect(() => saveTelegramMessage('c1', 'm1', 'in', 'hello')).toThrow(/no such table: telegram_history/)
-  })
-  it('getTelegramHistory throws for the same reason', () => {
-    expect(() => getTelegramHistory('c1', 5)).toThrow(/no such table: telegram_history/)
-  })
-  it('after table is created, both functions succeed (covers line 2575)', () => {
-    // Mirrors the schema the upstream fix would install -- this is a WORKAROUND
-    // for the pinned defect, not a fix. The pinning test above stays in place.
-    getDb().exec(`
-      CREATE TABLE IF NOT EXISTS telegram_history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        chat_id TEXT NOT NULL,
-        message_id TEXT NOT NULL,
-        user_id TEXT,
-        direction TEXT NOT NULL,
-        text TEXT,
-        ts INTEGER NOT NULL,
-        UNIQUE(chat_id, message_id, direction)
-      )
-    `)
-    saveTelegramMessage('c1', 'm1', 'in', 'hello', 'u1', 1000)
-    saveTelegramMessage('c1', 'm2', 'out', 'reply', null, 1001)
-    // Duplicate (chat_id, message_id, direction) is IGNOREd
-    saveTelegramMessage('c1', 'm1', 'in', 'dup', 'u1', 2000)
-    const rows = getTelegramHistory('c1', 10)
-    expect(rows.length).toBe(2)
-    expect(rows[0].message_id).toBe('m2') // ORDER BY ts DESC
-    expect(rows[0].user_id).toBeNull()
-  })
-})
 
 // ---------------------------------------------------------------------------
 // idea_box
