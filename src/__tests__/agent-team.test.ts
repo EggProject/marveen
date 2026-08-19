@@ -361,6 +361,7 @@ describe('sanitizeTeamConfig', () => {
       reportsTo: 'mainagent',
       delegatesTo: [],
       autoDelegation: false,
+      trustFrom: [],
     })
     expect(out.team.reportsTo).toBe('mainagent')
     expect(out.warnings.droppedUnknown).toEqual([])
@@ -373,6 +374,7 @@ describe('sanitizeTeamConfig', () => {
       reportsTo: 'selfish',
       delegatesTo: [],
       autoDelegation: false,
+      trustFrom: [],
     })
     expect(out.team.reportsTo).toBeNull()
     expect(out.warnings.droppedSelf).toEqual(['reportsTo'])
@@ -385,6 +387,7 @@ describe('sanitizeTeamConfig', () => {
       reportsTo: 'ghost',
       delegatesTo: [],
       autoDelegation: false,
+      trustFrom: [],
     })
     expect(out.team.reportsTo).toBeNull()
     expect(out.warnings.droppedUnknown).toEqual(['ghost'])
@@ -397,6 +400,7 @@ describe('sanitizeTeamConfig', () => {
       reportsTo: null,
       delegatesTo: ['self_deleg', 'other'],
       autoDelegation: false,
+      trustFrom: [],
     })
     expect(out.team.delegatesTo).toEqual([])
     expect(out.warnings.droppedSelf).toEqual(['delegatesTo'])
@@ -409,6 +413,7 @@ describe('sanitizeTeamConfig', () => {
       reportsTo: null,
       delegatesTo: ['phantom-a', 'phantom-b'],
       autoDelegation: false,
+      trustFrom: [],
     })
     expect(out.team.delegatesTo).toEqual([])
     expect(out.warnings.droppedUnknown.sort()).toEqual(['phantom-a', 'phantom-b'])
@@ -422,6 +427,7 @@ describe('sanitizeTeamConfig', () => {
       reportsTo: null,
       delegatesTo: ['b', 'b', 'b'],
       autoDelegation: false,
+      trustFrom: [],
     })
     expect(out.team.delegatesTo).toEqual(['b'])
   })
@@ -452,13 +458,14 @@ describe('sanitizeTeamConfig', () => {
     expect(out.warnings.droppedUnknown).toEqual(['mystery'])
   })
 
-  it('defaults trustFrom to [] when undefined', () => {
+  it('passes an empty trustFrom through unchanged', () => {
     seedAgent('no_trust')
     const out = at.sanitizeTeamConfig('no_trust', {
       role: 'member',
       reportsTo: null,
       delegatesTo: [],
       autoDelegation: false,
+      trustFrom: [],
     })
     expect(out.team.trustFrom).toEqual([])
     expect(out.warnings).toEqual({ droppedSelf: [], droppedUnknown: [] })
@@ -484,6 +491,7 @@ describe('sanitizeTeamConfig', () => {
       reportsTo: null,
       delegatesTo: [],
       autoDelegation: false,
+      trustFrom: [],
     })
     expect(out.team.reportsTo).toBeNull()
     expect(out.warnings).toEqual({ droppedSelf: [], droppedUnknown: [] })
@@ -496,6 +504,7 @@ describe('sanitizeTeamConfig', () => {
       reportsTo: '',
       delegatesTo: [],
       autoDelegation: false,
+      trustFrom: [],
     })
     expect(out.team.reportsTo).toBe('')
     expect(out.warnings.droppedUnknown).toEqual([])
@@ -536,6 +545,7 @@ describe('sanitizeTeamConfig', () => {
       reportsTo: null,
       delegatesTo: [],
       autoDelegation: true,
+      trustFrom: [],
     })
     expect(out.team.role).toBe('leader')
     expect(out.team.autoDelegation).toBe(true)
@@ -650,23 +660,8 @@ describe('cleanupTeamReferences', () => {
     expect(after.trustFrom).toEqual(['keep-tf'])
   })
 
-  // A 191-192. sor `(team.trustFrom ?? [])` kifejezés `: []` fallback ága
-  // strukturálisan elérhetetlen a jelenlegi kódon: a readAgentTeam mindig
-  // normalizálja a trustFrom mezőt `[]` -re (vagy a JSON-ból jön tömbként,
-  // vagy a 48. sor DEFAULT_TEAM-ból jön `[]` -ként). A `?? []` így sosem
-  // fut le, mert a cleanupTeamReferences-be belépő team objektumban a
-  // trustFrom MINDIG definiált tömb. A részletes elemzés a
-  // docs/needs-to-be-fix/agent-team-trustfrom-nullish-coalesce.md fájlban.
-  it('a cleanupTeamReferences mindig `[]` tömbbé normalizálja a trustFrom-ot (a ?? [] fallback sosem fut le)', () => {
-    seedAgent('no-tf', { team: { role: 'member', reportsTo: null, delegatesTo: [], autoDelegation: false } })
-    // A JSON-ban nincs trustFrom kulcs; a readAgentTeam DEFAULT_TEAM fallback
-    // ága `[]` -t ad vissza. A cleanupTeamReferences 191-192. sorában a
-    // `(team.trustFrom ?? [])` a truthy ágat veszi (`[]`).
-    expect(() => at.cleanupTeamReferences('removed')).not.toThrow()
-    const after = at.readAgentTeam('no-tf')
-    expect(after.trustFrom).toEqual([])
-    // A cleanupTeamReferences a trustFrom mezőt nem írta felül (a `[]` -
-    // ből szűrve ugyanaz a `[]` jön ki), tehát a `team.trustFrom` értéke
-    // továbbra is a readAgentTeam által normalizált `[]` marad.
-  })
+  // The previous pinning test for the `(team.trustFrom ?? [])` dead branch
+  // was removed when trustFrom was narrowed to a required `string[]`: that
+  // fallback no longer exists, so the dead-branch documentation has no
+  // surviving code to pin.
 })
