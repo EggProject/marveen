@@ -130,7 +130,7 @@ describe('resolveKanbanDispatchTarget -- degenerate config', () => {
   })
 })
 
-// BUG PIN (resolved) -- docs/needs-to-be-fix/kanban-dispatch-owner-case.md
+// BUG PIN (resolved) -- kanban-dispatch-owner-case
 // The owner guard (kanban-dispatch.ts:34) used to be the ONLY case-sensitive
 // comparison in the function; the bot, main-id and sub-agent matches all
 // lowercased both sides. The guard now matches case-insensitively too --

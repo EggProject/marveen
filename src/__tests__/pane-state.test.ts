@@ -2965,7 +2965,7 @@ describe('decideStuckInputAction', () => {
 // ---------------------------------------------------------------------------
 describe('parkedMainInputHasRemedy', () => {
   it('returns true on an empty / idle pane (BUG: should be false but does not gate on typing state)', () => {
-    // BUG PIN (docs/needs-to-be-fix/pane-state-idle-remedy.md):
+    // BUG PIN pane-state-idle-remedy:
     // parkedMainInputHasRemedy does not gate on the 'typing' state, so an
     // idle/empty pane also falls through to the default 'enter' branch and
     // reads as having a remedy. Documented; the test pins the actual
@@ -3028,7 +3028,7 @@ describe('parkedMainInputHasRemedy', () => {
     // block routes to 'enter' (the harmless legacy fallback), which IS a
     // remedy per the function's own contract. Pin the actual behavior so a
     // future refactor cannot silently change the contract without breaking
-    // the gate -- documented in docs/needs-to-be-fix/pane-state-idle-remedy.md.
+    // the gate -- documented in pane-state-idle-remedy.
     expect(parkedMainInputHasRemedy(pane)).toBe(true)
   })
 

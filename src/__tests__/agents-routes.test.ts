@@ -2946,7 +2946,7 @@ describe('PUT /api/agents/:name', () => {
     // because the outer check always fires first -- the second predicate
     // is a defensive guard that can never execute. We assert the observable
     // behaviour here and file the dead branch separately. See
-    // docs/needs-to-be-fix/routes-agents-memoryisolation-dead-branch.md.
+    // routes-agents-memoryisolation-dead-branch.
     H.isKnownAgent.mockReturnValue(true)
     H.listAgentNames.mockReturnValue(['marveen'])
     H.isMainChannelsAgent.mockImplementation((n: string) => n === 'marveen')

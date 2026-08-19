@@ -148,7 +148,7 @@ describe('parseDateExpression', () => {
     })
 
     // The two lookups below used to carry a `?? 0` fallback that no input
-    // could reach (docs/needs-to-be-fix/recall-unreachable-defensive-fallbacks.md).
+    // could reach (recall-unreachable-defensive-fallbacks).
     // The fallbacks are gone, so these two tests are what guarantee every key
     // of the weekday map and of weekMap actually resolves.
     //
@@ -163,7 +163,7 @@ describe('parseDateExpression', () => {
     // zones where these assertions do not hold are UTC+12 and beyond, and
     // there the SUT itself yields inconsistent week starts across the year,
     // which is filed separately as
-    // docs/needs-to-be-fix/recall-dayofweek-noon-utc-far-east-skew.md.
+    // recall-dayofweek-noon-utc-far-east-skew.
     // Making the test pass there would assert a wrong result, not a right one.
     // CI (ubuntu, UTC) and the documented install zone both hold.
     const withPinnedClock = (fn: () => void): void => {

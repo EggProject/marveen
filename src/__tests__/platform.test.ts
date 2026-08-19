@@ -161,7 +161,7 @@ describe('detect() -- MARVEEN_ENV override', () => {
 // ---------------------------------------------------------------------------
 // detect() -- XDG_SESSION_TYPE allowlist. Only x11 / wayland / mir prove a
 // GUI display; tty and unspecified are headless. See
-// docs/needs-to-be-fix/platform-xdg-session-type-tty-bug.md.
+// platform-xdg-session-type-tty-bug.
 // ---------------------------------------------------------------------------
 
 describe('detect() -- XDG_SESSION_TYPE allowlist', () => {

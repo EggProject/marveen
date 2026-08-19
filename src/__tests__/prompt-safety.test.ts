@@ -363,7 +363,7 @@ describe('sanitizeOriginNote', () => {
   })
 
   it('collapses internal whitespace runs to a single space', () => {
-    // REGRESSION PIN: see docs/needs-to-be-fix/prompt-safety-origin-note-tab-strip.md
+    // REGRESSION PIN: see prompt-safety-origin-note-tab-strip
     // Tabs/newlines/NBSP are now whitelisted by `\s` so the /\s+/g collapse
     // step turns runs of mixed whitespace into a single space.
     expect(sanitizeOriginNote('a    b\tc')).toBe('a b c')

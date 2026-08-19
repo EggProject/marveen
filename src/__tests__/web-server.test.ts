@@ -530,7 +530,7 @@ describe('worker warm-up', () => {
     expect(H.startWorkerLivenessMonitor).not.toHaveBeenCalled()
     // PINS CURRENT BEHAVIOUR: the warm-up import has no equivalent cancel flag,
     // so a close() before it resolves still spawns a worker session.
-    // See docs/needs-to-be-fix/web-worker-warmup-ignores-close.md
+    // See web-worker-warmup-ignores-close
     expect(H.startWorkerSession).toHaveBeenCalled()
   })
 
@@ -538,7 +538,7 @@ describe('worker warm-up', () => {
     // PINS CURRENT BEHAVIOUR: close() clears every background interval except
     // the not-listening watchdog, so a deliberate close that keeps the process
     // alive is treated as a silent listener failure.
-    // See docs/needs-to-be-fix/web-watchdog-survives-close.md
+    // See web-watchdog-survives-close
     const srv = await boot()
     await flush()
     srv.close()

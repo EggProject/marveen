@@ -458,7 +458,7 @@ describe('store-watcher', () => {
     // isSystemFile filter mindig levágta, így strukturálisan elérhetetlen
     // volt. A ternary-t (és a SENSITIVE_NAMES halmazt) töröltük; a 0-s
     // contract maradt. A részletes elemzés a
-    // docs/needs-to-be-fix/store-watcher-sensitive-unreachable.md fájlban.
+    // store-watcher-sensitive-unreachable fájlban.
     it('a watch callback minden naplózott fájlnál isSensitive=0 értéket ad át (hardcoded constant, no SENSITIVE_NAMES branch)', () => {
       writeFileSync(join(STORE, 'non-sensitive.txt'), 'x')
       fireRename('non-sensitive.txt')

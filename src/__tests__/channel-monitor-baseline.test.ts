@@ -19,7 +19,7 @@
 //     a freshly-reset SUT instance.
 //   * The structurally-dead branches (`t.agentName ?? t.session`,
 //     `agentDownSince.get(t.session) ?? Date.now()`) are documented in
-//     docs/needs-to-be-fix/channel-monitor-unreachable-defensive-branches.md
+//     channel-monitor-unreachable-defensive-branches
 //     and not asserted on here. They are unreachable from the test surface
 //     without source modifications.
 //
@@ -866,7 +866,7 @@ describe('baseline: hardRestartMarveenChannels non-Error launchctl catch (line 1
 // kombinációját igényli -- itt a meglévő coverage suite másik tesztje
 // (channel-monitor-coverage.test.ts) fedi le a happy-path-ot, és a
 // baseline suite a `?? null` fallback ágakat dokumentálja (lásd
-// docs/needs-to-be-fix/channel-monitor-unreachable-defensive-branches.md).
+// channel-monitor-unreachable-defensive-branches).
 // ============================================================================
 
 describe('baseline: capturePane null -> paneState=null branch (line 1243, 1652)', () => {

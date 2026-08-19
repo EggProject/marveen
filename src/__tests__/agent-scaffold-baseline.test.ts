@@ -13,7 +13,7 @@
 //   * vi.resetModules() + dynamic import() to get a fresh SUT with mocked deps.
 //   * The structurally-dead branches (`heading.index ?? 0`,
 //     `entry.hooks?.length ?? 0`, `(entry.hooks ?? [])` after a map that always
-//     materialises an array) are documented in docs/needs-to-be-fix/ and not
+//     materialises an array) are documented and not
 //     asserted on here. They are unreachable from the test surface without
 //     source modifications.
 //

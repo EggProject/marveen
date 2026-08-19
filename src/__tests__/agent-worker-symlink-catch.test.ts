@@ -8,7 +8,7 @@
 // production code's destructured import of `symlinkSync` is replaced by
 // the proxy.
 //
-// See docs/needs-to-be-fix/agent-worker-symlink-catch.md for the production-
+// See agent-worker-symlink-catch for the production-
 // context trigger (TOCTOU race with another writer between the rmSync
 // that precedes the call and the symlinkSync itself).
 

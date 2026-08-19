@@ -344,7 +344,7 @@ describe('getMasterKey via setSecret/getSecret round-trip', () => {
   })
 
   // (8) keychainRetrieve throws AND vault is non-empty -> refuse to re-key.
-  // Pins docs/needs-to-be-fix/keychain-retrieve-swallows-locked-keychain.md:
+  // Pins keychain-retrieve-swallows-locked-keychain:
   // the bare catch in keychainRetrieve previously mapped "locked" and
   // "missing" to the same null, so vault.getMasterKey minted a replacement
   // master key and silently overwrote (-U) the original -- every secret

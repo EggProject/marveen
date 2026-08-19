@@ -402,7 +402,7 @@ describe('src/web/stuck-tool-call-watcher.ts', () => {
     // amit a lastMainRespawnAt() visszaadhat, és a 0-val a log egyáltalán
     // nem hívódik. Tehát a log body-ban a lastRespawn MINDIG truthy szám,
     // a `: null` ág soha nem fut le. A részletes elemzés a
-    // docs/needs-to-be-fix/stuck-tool-call-watcher-respawn-ternary-null-unreachable.md
+    // stuck-tool-call-watcher-respawn-ternary-null-unreachable
     // fájlban.
     it('does not sample CPU when the grace guard defers', async () => {
       mocks.lastMainRespawnAt.mockImplementation(() => Date.now() - 1_000)

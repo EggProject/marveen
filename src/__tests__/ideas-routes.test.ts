@@ -33,7 +33,7 @@
 // mocked (it is the only live consumer of it in this graph), so this is a
 // second line of defence rather than the primary one.
 //
-// Pinned defects (documented in docs/needs-to-be-fix/, NOT fixed here):
+// Pinned defects (NOT fixed here):
 //   * routes-ideas-promote-double       -- re-promoting orphans the first kanban card
 //   * routes-ideas-body-parse-500       -- malformed/`null` JSON body throws out of the handler
 //   * routes-ideas-breakdown-nonerror   -- non-Error throw yields a 500 with an empty body
@@ -665,7 +665,7 @@ describe('POST /api/ideas/:id/promote', () => {
     expect(r.status).toBe(200)
   })
 
-  // PINNED DEFECT (resolved 2026-08-17) -- routes-ideas-promote-double
+  // PINNED DEFECT -- routes-ideas-promote-double
   it('returns 409 with the existing kanban_id when re-promoting a kanban idea', async () => {
     seedIdea({ id: 'idea-1', status: 'kanban', kanban_id: 'regi-kartya' })
 
@@ -754,7 +754,7 @@ describe('POST /api/ideas/:id/promote-breakdown', () => {
     expect(r.body).toEqual({ error: 'Ötlet nem található' })
   })
 
-  // PINNED DEFECT (resolved 2026-08-17) -- routes-ideas-promote-double (sibling)
+  // PINNED DEFECT -- routes-ideas-promote-double (sibling)
   it('returns 409 with the existing kanban_id when re-promoting a kanban idea via breakdown', async () => {
     seedIdea({ id: 'idea-1', status: 'kanban', kanban_id: 'regi-kartya' })
 
@@ -1025,7 +1025,7 @@ describe('pinned defects', () => {
     expect(db.createIdea).not.toHaveBeenCalled()
   })
 
-  // routes-ideas-body-parse-500 (resolved 2026-08-17)
+  // routes-ideas-body-parse-500
   it.each([
     ['POST', '/api/ideas'],
     ['PUT', '/api/ideas/idea-1'],

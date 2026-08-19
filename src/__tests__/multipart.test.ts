@@ -256,9 +256,9 @@ describe('parseMultipart - kihagyott reszek', () => {
 // A kovetkezo blokk a JELENLEGI viselkedest rogziti olyan eseteknel, ahol az
 // eltert az RFC 7578 / RFC 2046 elvarasatol. Ezek pinning tesztek: ha a hibat
 // kesobb javitjak, ezeknek EL KELL bukniuk. Reszletek:
-//   docs/needs-to-be-fix/multipart-boundary-greedy.md
-//   docs/needs-to-be-fix/multipart-latin1-fields.md
-//   docs/needs-to-be-fix/multipart-case-sensitive-disposition.md
+//   multipart-boundary-greedy
+//   multipart-latin1-fields
+//   multipart-case-sensitive-disposition
 describe('parseMultipart - ismert eltresek (pinning)', () => {
   it('idezojeles boundary eseten a mezo erteke a hatarolot is elnyeli', () => {
     // RFC 2046 szerint a boundary lehet quoted-string. A `(.+)` az idezojeleket

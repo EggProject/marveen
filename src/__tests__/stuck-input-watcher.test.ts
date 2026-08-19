@@ -301,7 +301,7 @@ describe('startStuckInputWatcher -- sub-agent paths', () => {
     // Covers src/web/stuck-input-watcher.ts lines 124-138 -- the maxAttempts
     // give-up branch inside recoverParkedPaste. The branch is unreachable
     // through decideStuckInputRecovery's normal return values (see
-    // docs/needs-to-be-fix/stuck-input-watcher-give-up-inner-if-unreachable.md).
+    // stuck-input-watcher-give-up-inner-if-unreachable).
     // We force it by mocking pane-state for this test only and re-importing
     // the watcher via vi.resetModules. The freshly imported watcher sees a
     // decideStuckInputRecovery that always returns the unreachable shape

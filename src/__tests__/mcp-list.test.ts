@@ -719,7 +719,7 @@ describe('startMcpListChecker -- refresh rejection arm', () => {
 
 // ---------------------------------------------------------------------------
 // Pinning test for the dead `execError ?` truthy arm in the warn payload
-// (line 135). See docs/needs-to-be-fix/mcp-list-warn-execError-dead-branch.md.
+// (line 135). See mcp-list-warn-execError-dead-branch.
 //
 // The test asserts what production guarantees: whenever the warn fires
 // (previousCount > 0, outcome.entries empty, !retainedStale), the

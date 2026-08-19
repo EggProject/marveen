@@ -330,7 +330,7 @@ describe('stageAgentDirForExport', () => {
     }
   })
 
-  // See docs/needs-to-be-fix/web-agent-bundle-channels-not-dir.md -- the
+  // See web-agent-bundle-channels-not-dir -- the
   // channels loop crashes when `.claude/channels` exists but is a regular
   // file; the `existsSync` guard passes and the readdirSync throws ENOTDIR.
   it('throws ENOTDIR when .claude/channels is a file, not a directory (defect)', () => {

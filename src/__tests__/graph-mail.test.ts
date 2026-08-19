@@ -136,7 +136,7 @@ describe('loadCredentials + getToken (cache, mtime, errors)', () => {
     // The statSync try/catch only catches "not found"; readFileSync on a
     // directory throws EISDIR. The operator sees a low-level fs error with
     // no hint that MARVEEN_MAIL_CREDS is the wrong path. Documented in
-    // docs/needs-to-be-fix/graph-mail-stat-not-isdir.md.
+    // graph-mail-stat-not-isdir.
     rmSync(credsPath, { force: true })
     process.env.MARVEEN_MAIL_CREDS = tmp // tmp IS the directory, not the file inside it
     const { listMessages } = await import('../graph-mail.js')

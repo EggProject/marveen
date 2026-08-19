@@ -1054,7 +1054,7 @@ describe('branch coverage -- default-value fallbacks', () => {
     // pinning test documents that current behaviour.
     //
     // Branch coverage for the `?? ''` default on line 224 is documented in
-    // docs/needs-to-be-fix/claude-credentials-guard-line-224-dead-code.md:
+    // claude-credentials-guard-line-224-dead-code:
     // the fallback is dead code because isPromotableSetupCredential already
     // enforces the same guarantee.
     const json = JSON.stringify({
@@ -1099,7 +1099,7 @@ describe('branch coverage -- default-value fallbacks', () => {
 //     Investigation shows the SUT's internal binding to isPromotableSetupCredential
 //     cannot be overridden through vi.doMock (the override applies to the module
 //     exports but not to the local binding inside the SUT's own functions).
-//     See the bug MD: docs/needs-to-be-fix/claude-credentials-guard-line-224-dead-code.md
+//     See the bug MD: claude-credentials-guard-line-224-dead-code
 // ---------------------------------------------------------------------------
 
 describe('line 224 unreachable branch investigation', () => {

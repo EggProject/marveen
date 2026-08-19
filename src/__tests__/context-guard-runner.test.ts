@@ -179,8 +179,8 @@ vi.mock('../web/context-guard-store.js', () => ({
 
 // decideGuard is the pure state machine in src/context-guard.ts. We import
 // the real module directly: no test overrides it (the pinning tests for
-// unreachable branches were dropped in cycle 35 -- see
-// docs/needs-to-be-fix/context-guard-runner-dead-code-branches.md), so the
+// unreachable branches were dropped for the
+// context-guard-runner-dead-code-branches defect), so the
 // earlier `mockDecideGuard` hoisted bridge had become pure dead code with
 // two `as any` casts.
 

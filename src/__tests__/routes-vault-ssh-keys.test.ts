@@ -585,7 +585,7 @@ describe('POST /api/vault/ssh-keys/import', () => {
     expect(writtenKeyContent).toBe('no-trailing-newline\n')
   })
 
-  // PINNING TEST for docs/needs-to-be-fix/vault-ssh-keys-endsWith-newline.md.
+  // PINNING TEST for vault-ssh-keys-endsWith-newline.
   //
   // The handler trims privateKey before writing the temp key file, so the
   // written content is always exactly the trimmed key plus ONE newline,

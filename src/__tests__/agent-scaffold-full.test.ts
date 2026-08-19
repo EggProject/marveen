@@ -14,7 +14,7 @@
 //
 // Pinning: every test asserts the CURRENT (possibly-buggy) behavior. We do NOT
 // intentionally fail on the production code. Bugs that surface during the
-// coverage sweep are filed separately under docs/needs-to-be-fix/.
+// coverage sweep are filed separately.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {

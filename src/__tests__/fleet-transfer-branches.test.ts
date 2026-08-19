@@ -1372,7 +1372,7 @@ describe('fleet.agents: null/undefined rejected by schema validation (?? [] righ
   // alábbi függvények (validateNames, buildDiffReport, applyFleetImport)
   // egyáltalán lefutnának. A `?? []` jobb oldali ágak tehát a jelenlegi
   // kódban strukturálisan elérhetetlenek. A részletes elemzés a
-  // docs/needs-to-be-fix/fleet-transfer-fleet-agents-nullish-unreachable.md
+  // fleet-transfer-fleet-agents-nullish-unreachable
   // fájlban.
   it('agents: null is rejected by the schema validation (the ?? [] right-arms never fire)', async () => {
     addDir(`${H.PROJECT_ROOT}/.claude`)

@@ -1134,7 +1134,7 @@ describe('shutdown() signal-handler paths', () => {
     )
   })
 
-  // Regression pin for docs/needs-to-be-fix/index-stopHeartbeat-throw.md.
+  // Regression pin for index-stopHeartbeat-throw.
   // The legacy native scheduler was retired: index.ts no longer imports
   // heartbeat.js at all, so shutdown() can never reach stopHeartbeat().
   // If someone re-wires initHeartbeat/stopHeartbeat into index.ts without
@@ -2724,7 +2724,7 @@ describe('buildProcessLockContext.log methods exercise', () => {
 // path in the test harness is racy across test orderings (the captured-
 // timeouts stub that the rest of the suite depends on holds ctx.sleep's
 // setTimeout indefinitely). Documented as unreachable from the current
-// test harness in docs/needs-to-be-fix/index-unreachable-coverage.md.
+// test harness in index-unreachable-coverage.
 })
 
 // ---------------------------------------------------------------------------

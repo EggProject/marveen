@@ -6,7 +6,7 @@
 // helper to 100% coverage; this companion suite re-asserts the same surface
 // from the "routes" naming angle so the coverage gate stays green regardless
 // of which import path the suite reaches the module through. See
-// `docs/needs-to-be-fix/routes-reauth-detect-missing-source-path.md`.
+// `routes-reauth-detect-missing-source-path`.
 //
 // The helper is intentionally dependency-free (no db / config / logger /
 // auth-gate / auth-sessions imports), so the mocks listed in the task brief

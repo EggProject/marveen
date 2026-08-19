@@ -295,10 +295,10 @@ describe('keychainDelete - delete-generic-password', () => {
 
 // ---------------------------------------------------------------------------
 // Known deviations (pinning). These lock in current behavior and MUST fail
-// once the corresponding docs/needs-to-be-fix/ entry is fixed.
+// once the corresponding entry is fixed.
 // ---------------------------------------------------------------------------
 describe('keychain.ts - known deviations (pinning)', () => {
-  // docs/needs-to-be-fix/keychain-store-insecure-acl.md
+  // keychain-store-insecure-acl
   it('passes -A, the flag security(1) itself calls insecure', () => {
     // security(1): "-A  Allow any application to access this item without
     // warning (insecure, not recommended!)". -A leaves the item's ACL empty,
@@ -315,7 +315,7 @@ describe('keychain.ts - known deviations (pinning)', () => {
     expect(onlyCall().args).toContain('-A')
   })
 
-  // docs/needs-to-be-fix/keychain-retrieve-swallows-locked-keychain.md (resolved)
+  // keychain-retrieve-swallows-locked-keychain (resolved)
   it('throws KeychainUnavailableError on a locked keychain (status 36) but stays null for missing items (status 44)', () => {
     // errSecInteractionNotAllowed (-25308) surfaces from security(1) as exit
     // 36 / "User interaction is not allowed." -- the normal state for a login

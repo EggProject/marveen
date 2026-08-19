@@ -36,7 +36,7 @@
 //   * callVoiceSTT -- existsSync false -> null, transcribeVoiceFile returns
 //     string, transcribeVoiceFile throws -> null, .env missing
 //
-// Any bug found by the suite is filed under docs/needs-to-be-fix/.
+// Any bug found by the suite is filed separately.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 

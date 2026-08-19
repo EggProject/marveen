@@ -308,7 +308,7 @@ describe('decideDownAgentAction', () => {
   // returns false for null per ECMA-262, so failures = 0 via the
   // ternary's else arm). Pin that current behaviour here so the gap
   // between `null` and `0` (both produce the same 'restart' result via
-  // the else arm) is explicit. See docs/needs-to-be-fix/agent-restart-policy-consecutivefailures-nullish-coalesce.md
+  // the else arm) is explicit. See agent-restart-policy-consecutivefailures-nullish-coalesce
   it("treats consecutiveFailures: null identically to 0 (Number.isFinite short-circuits before ?? is evaluated)", () => {
     // Use a non-restartable shape so the result lands in 'skip' via a
     // different guard, making it unambiguous that the null-vs-zero path

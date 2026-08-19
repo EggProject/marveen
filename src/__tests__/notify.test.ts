@@ -117,7 +117,7 @@ describe('notifyChannel', () => {
     expect(notifyTelegram).toBe(notifyChannel)
   })
 
-  // Pinned defect (resolved 2026-08-17) -- notify-fallback-repeats-head
+  // Pinned defect -- notify-fallback-repeats-head
   it('re-sends the failing chunk (not the full outbound head) on each fallback attempt', async () => {
     const long = `${'x'.repeat(4096)}TAIL`
     markIfTestRun.mockReturnValue(long)
@@ -142,8 +142,8 @@ describe('notifyChannel', () => {
     expect(fallbacks[0]?.[2]).not.toContain('TAIL')
   })
 
-  // PINNING (resolved 2026-08-17) -- notify-fallback-hardcodes-telegram-limit
-  it('uses provider splitMessage for the fallback chunk (resolved 2026-08-17)', async () => {
+  // PINNING notify-fallback-hardcodes-telegram-limit
+  it('uses provider splitMessage for the fallback chunk', async () => {
     state.provider = 'discord'
     const long = 'y'.repeat(3000)
     markIfTestRun.mockReturnValue(long)

@@ -600,7 +600,7 @@ describe('reapChannelOrphans', () => {
     }
   })
 
-  // PINNING (docs/needs-to-be-fix/channel-poller-reap-botpid-killed-without-identity-check.md):
+  // PINNING reap-botpid-killed-without-identity-check:
   // the bot.pid half of the reaper has NO identity check -- a pid that the live
   // env scan does not corroborate is still SIGTERMed and SIGKILLed. With a
   // stale bot.pid (nothing ever deletes it) plus pid reuse, that kills an

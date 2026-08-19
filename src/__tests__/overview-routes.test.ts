@@ -536,8 +536,8 @@ describe('tryHandleOverview -- tasksToday / tasksYesterday', () => {
     // 1h after midnight yesterday -- inside the [yesterday, startTs) bin at any
     // wall-clock time. The earlier `now - 25h` only worked when now >= 01:00
     // LOCAL; just past midnight it landed in the day-before-yesterday bin and
-    // the test flake-failed. See docs/needs-to-be-fix/overview-routes-yesterday-
-    // timestamp-flake.md for the full failure scenario.
+    // the test flake-failed. See overview-routes-yesterday-
+    // timestamp-flake for the full failure scenario.
     const tsYesterday = startTs - 1 * 60 * 60 * 1000
     writeFileSync(join(projectsDir, 'session.jsonl'),
       [

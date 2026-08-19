@@ -597,7 +597,7 @@ describe('flushQuietSummary', () => {
     //      by the time notify fires, stillDeadCount has already run with a
     //      valid state, so the next watchState read is stampAlert. The
     //      spy returns undefined for THAT read, hitting the false branch.
-    // See docs/needs-to-be-fix/reauth-healer-stampalert-if-st-dead-code.md.
+    // See reauth-healer-stampalert-if-st-dead-code.
     const QUIET_T0 = Date.UTC(2026, 0, 10, 23, 30)
     vi.setSystemTime(QUIET_T0)
     mocks.listAgentNames.mockReturnValue([])

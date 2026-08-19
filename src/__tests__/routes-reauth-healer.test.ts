@@ -359,7 +359,7 @@ describe('checkSession: reauth.reason fallback (line 301 ?? false arm)', () => {
 // and 395 (sweep callsite lambdas). Both depend on a desync between the
 // module-level `watchState` and `quietSuppressed` Maps. The maps are kept
 // in sync at every mutation site, so neither branch fires through public
-// API. See docs/needs-to-be-fix/reauth-healer-sweep-callsite-dead-arms.md
+// API. See reauth-healer-sweep-callsite-dead-arms
 // for the structural argument.
 //
 // The pinning tests document what IS reachable and prove the desync isn't

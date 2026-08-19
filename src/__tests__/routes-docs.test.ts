@@ -249,12 +249,12 @@ describe('GET /api/docs', () => {
     expect(broken).toEqual({ name: 'broken.md', title: 'broken.md', created: null })
   })
 
-  it('PINNING (resolved 2026-08-17) -- routes-docs-inner-catch-no-title-reset: inner catch should reset title to filename when statSync throws after readFileSync', async () => {
+  it('PINNING routes-docs-inner-catch-no-title-reset: inner catch should reset title to filename when statSync throws after readFileSync', async () => {
     // The catch comment in src/web/routes/docs.ts says "keep filename as
     // title, created stays null"; this pins the fixed behaviour where the
     // catch actually resets `title = name` after titleOf had overwritten
     // it with the extracted `# heading`. Bug MD:
-    // docs/needs-to-be-fix/routes-docs-inner-catch-no-title-reset.md
+    // routes-docs-inner-catch-no-title-reset
     writeFileSync(join(DOCS_DIR, 'broken.md'), '# Real Title\nbody')
     const seen = new Set<string>()
     hoisted.fsState.statSyncOverride = (p) => {

@@ -284,7 +284,7 @@ describe('loadProfileTemplate', () => {
   // --- DEFECT PIN: profiles-traversal-id ---------------------------------
   // `join(PROFILES_DIR, `${id}.json`)` never validates `id`, so a relative
   // id escapes the profiles directory. See
-  // docs/needs-to-be-fix/profiles-traversal-id.md. This test pins the CURRENT
+  // profiles-traversal-id. This test pins the CURRENT
   // (buggy) behaviour so the suite stays green; flip it when the fix lands.
   it('PINS BUG: a traversing id reads a JSON file outside PROFILES_DIR', () => {
     writeProfile('default.json', {
@@ -372,7 +372,7 @@ describe('resolveProfilePlaceholders', () => {
   // --- regression coverage: profiles-replace-dollar-pattern ----------------
   // A replacer-fn form passes the matched group back to JavaScript verbatim,
   // so `$&`, `` $` ``, `$'` and `$n` in ctx values are now treated as
-  // literal text. See docs/needs-to-be-fix/profiles-replace-dollar-pattern.md.
+  // literal text. See profiles-replace-dollar-pattern.
   it('treats `$&` in a context value as literal text', () => {
     const out = resolveProfilePlaceholders('${HOME}/x', {
       HOME: '/home/a$&b',

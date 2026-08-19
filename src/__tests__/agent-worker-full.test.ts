@@ -1197,7 +1197,7 @@ describe('selfHealWorkerOnce (via ensureWorkerReady)', () => {
     // from the inside-loop return on line 749. The after-loop return on
     // line 751 would produce the SAME payload, so it is structurally a
     // duplicate of an inside-loop path. See
-    // docs/needs-to-be-fix/agent-worker-runviaworker-afterloop.md.
+    // agent-worker-runviaworker-afterloop.
     expect(out.authFailed).toBe(true)
     expect(out.error).toBe('worker auth failed (401/login) after recovery')
   })

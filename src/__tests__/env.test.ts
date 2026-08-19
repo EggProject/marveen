@@ -190,7 +190,7 @@ describe('updateEnvFile', () => {
     expect(readFileSync(envPath, 'utf-8')).toBe('A=uj\nB=marad\n\nC=friss')
   })
 
-  // --- Rogzitett defektek (docs/needs-to-be-fix/) -------------------------
+  // --- Rogzitett defektek -----------------------------------
   // Mindketto a JELENLEGI, hibas viselkedest allitja. Fix utan ezek a tesztek
   // ELBUKNAK -- ez a szandek: a fix akkor keszult el, ha ezeket at kell irni.
 

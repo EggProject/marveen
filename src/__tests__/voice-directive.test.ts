@@ -202,7 +202,7 @@ describe('buildTtsDirective', () => {
     expect(directive).not.toContain(`"state_dir":"/tmp/o'brien/channels"`)
   })
 
-  // Regression -- docs/needs-to-be-fix/voice-directive-json-quote-escape.md
+  // Regression -- voice-directive-json-quote-escape
   // A double quote is legal in a POSIX path, so it is reachable via homedir().
   // It used to pass through raw and break the JSON literal jq has to parse
   // (jq exit 3 -> empty POST body -> the owner got no audio and no text).

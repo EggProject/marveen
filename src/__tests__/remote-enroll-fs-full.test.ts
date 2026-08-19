@@ -171,7 +171,7 @@ describe('remote-enroll-fs: extra branches', () => {
 
   // -----------------------------------------------------------------------
   // acquireLock: statSync throws on the contended lock
-  // (docs/needs-to-be-fix/remote-enroll-fs-lock-vanish-spin.md)
+  // (remote-enroll-fs-lock-vanish-spin)
   //
   // The EEXIST handler runs statSync; when that throws we cannot tell whether
   // the lock is stale, and the file is still there (the mock does not delete
