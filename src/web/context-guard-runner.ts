@@ -287,7 +287,8 @@ async function checkAgent(name: string, nowMs: number): Promise<void> {
             `[CONTEXT-GUARD] Ujrainditottam a(z) "${name}" agentet -- ok: ${decision.reason}` +
             (pctRound !== null ? ` (kontextus ~${pctRound}%)` : '') +
             `. A regi sessionbe az utolso percekben kuldott uzenetek/utasitasok ELVESZHETTEK -- ellenorizd es kuldd ujra oket.` +
-            (snapshotPath ? ` Pane-snapshot a restart elotti allapotrol: ${snapshotPath}` : ''),
+            // snapshotPath is non-null here: line 277 (join) runs before any potential throw in writeFileSync, and join() is pure (cannot throw). The catch block does not reset snapshotPath. See context-guard-runner.ts:273-281.
+            ` Pane-snapshot a restart elotti allapotrol: ${snapshotPath!}`,
             'context-guard restart notice',
           )
         } catch (err) {
