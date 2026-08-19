@@ -1489,6 +1489,20 @@ describe('decideStuckInputRecovery', () => {
     expect(d.next.lastRecoverAt).toBe(null)
     expect(d.next.attempts).toBe(0)
   })
+
+  it('preserves giveUpAlerted across backwards clock skew within the SAME spell', () => {
+    // Regression: a clock jump within the same spell used to silently drop
+    // giveUpAlerted (the "Backwards clock skew" branch returned a fresh object
+    // without it), letting the watcher's per-spell alert gate re-open and the
+    // give-up alert fire a second time once the spell reached maxAttempts again.
+    const prev = { parkedSig: 'msg-A', firstSeenAt: 1_000_000, lastRecoverAt: 1_000_000, attempts: 5, giveUpAlerted: true }
+    const d = decideStuckInputRecovery('msg-A', prev, 500_000, TH)
+    expect(d.recover).toBe(false)
+    expect(d.next.firstSeenAt).toBe(500_000)
+    expect(d.next.lastRecoverAt).toBe(null)
+    expect(d.next.attempts).toBe(0)
+    expect(d.next.giveUpAlerted).toBe(true)
+  })
 })
 
 describe('parkedChannelInput (stuck channel-block gate + truncation guard)', () => {

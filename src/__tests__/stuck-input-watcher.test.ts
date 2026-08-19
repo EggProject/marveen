@@ -298,7 +298,7 @@ describe('startStuckInputWatcher -- sub-agent paths', () => {
   })
 
   it('recoverParkedPaste logs the give-up warning when attempts maxAttempts via injected decision', async () => {
-    // Covers src/web/stuck-input-watcher.ts lines 124-125 -- the maxAttempts
+    // Covers src/web/stuck-input-watcher.ts lines 124-138 -- the maxAttempts
     // give-up branch inside recoverParkedPaste. The branch is unreachable
     // through decideStuckInputRecovery's normal return values (see
     // docs/needs-to-be-fix/stuck-input-watcher-give-up-inner-if-unreachable.md).
@@ -306,7 +306,10 @@ describe('startStuckInputWatcher -- sub-agent paths', () => {
     // the watcher via vi.resetModules. The freshly imported watcher sees a
     // decideStuckInputRecovery that always returns the unreachable shape
     // (recover=false, next.attempts=3, parkedSig != null). With prev
-    // freshly NO_STATE on the first sweep, the inner if fires.
+    // freshly NO_STATE on the first sweep, the per-spell giveUpAlerted gate
+    // is open and the warn fires; subsequent sweeps would have the gate
+    // closed by giveUpAlerted=true, but the assertion only requires the warn
+    // to fire at least once.
     vi.doMock('../pane-state.js', () => ({
       stuckInputSignature: () => null,
       parkedPasteSignature: () => 'parked-paste',
@@ -341,13 +344,14 @@ describe('startStuckInputWatcher -- sub-agent paths', () => {
   })
 
   it('bareEnterRecovery logs the give-up warning when attempts maxAttempts via injected decision', async () => {
-    // Covers src/web/stuck-input-watcher.ts lines 164-165 -- the maxAttempts
+    // Covers src/web/stuck-input-watcher.ts lines 169-183 -- the maxAttempts
     // give-up branch inside bareEnterRecovery. Same dead-branch reasoning as
     // recoverParkedPaste; here we make parkedPasteSignature return null so
-    // bareEnterRecovery is the path that fires. We also exercise both
-    // outcomes of the inner if (prev.attempts < maxAttempts is true on the
-    // first sweep, false on the second sweep once watchState carries
-    // attempts=3 from the first tick).
+    // bareEnterRecovery is the path that fires. The per-spell giveUpAlerted
+    // gate is open on the first sweep (prev=NO_STATE), so the warn fires
+    // and the watcher's re-store sets giveUpAlerted=true; subsequent sweeps
+    // see the closed gate. The assertion only requires the warn to fire at
+    // least once.
     vi.doMock('../pane-state.js', () => ({
       stuckInputSignature: () => 'parked-typing',
       parkedPasteSignature: () => null,

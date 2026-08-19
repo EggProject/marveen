@@ -1325,9 +1325,12 @@ export function decideStuckInputRecovery(
     return { recover: false, next: { parkedSig, firstSeenAt: now, lastRecoverAt: null, attempts: 0 } }
   }
   // Backwards clock skew: a stored timestamp in the future relative to
-  // now would drive the deltas negative and stall. Restart the spell.
+  // now would drive the deltas negative and stall. Restart the spell
+  // (reset attempts + firstSeenAt), but PRESERVE giveUpAlerted from prev
+  // so a clock-jump within the SAME spell does not silently drop the
+  // watcher's per-spell alert gate and re-fire the give-up alert.
   if (now < prev.firstSeenAt || (prev.lastRecoverAt !== null && now < prev.lastRecoverAt)) {
-    return { recover: false, next: { parkedSig, firstSeenAt: now, lastRecoverAt: null, attempts: 0 } }
+    return { recover: false, next: { ...prev, firstSeenAt: now, lastRecoverAt: null, attempts: 0 } }
   }
   // Retry budget spent: hold without acting.
   if (prev.attempts >= thresholds.maxAttempts) {
