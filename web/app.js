@@ -11,7 +11,7 @@ function avatarBust() { return _avatarEpoch ? `?t=${_avatarEpoch}` : '' }
 // === i18n runtime ===
 // Priority: localStorage['marveen.lang'] > DASHBOARD_LANG (server default, read
 // from /api/settings on init) > 'hu' (hardcoded fallback).
-// Rick's spec (kanban card 209696a9): t(key,params), window._i18n={hu,en},
+// t(key,params), window._i18n={hu,en},
 // window._lang; {name} interpolation; EN-fallback then key; dev-mode warning.
 ;(() => {
   const LS_KEY = 'marveen.lang'
@@ -753,7 +753,7 @@ function renderActivity(entries) {
     // exactly the one worth surfacing, so a future Claude Code mode shows up
     // here instead of hiding behind a list nobody remembered to extend.
     // Without this an agent parked in an ask-first mode renders as plain
-    // 'idle', which is how one sat unusable for hours on 2026-07-27.
+    // 'idle': one sat unusable for hours.
     const AUTONOMOUS_MODES = ['bypass permissions', 'accept edits', 'auto mode']
     const modeChip = a.mode && !AUTONOMOUS_MODES.includes(a.mode)
       ? '<span class="act-mode-badge" title="' + escapeHtml(t('activity.tooltip.mode', { mode: a.mode })) + '">' + escapeHtml(a.mode) + '</span>'
@@ -11239,7 +11239,7 @@ function buildBubbleHtml(m) {
         <span class="bubble-id-chip">#${m.id}</span>
         <span class="badge ${statusMeta.cls}" style="font-size:10px">${escapeHtml(statusMeta.label)}</span>
         ${m.status === 'pending' && m.to_agent === mainAgentId() ? `<span style="font-size:10px;color:var(--text-muted)">${escapeHtml(t('messages.pending_main_hint'))}</span>` : ''}
-        ${m.origin_note ? `<span class="badge" style="font-size:10px" title="Self-declared by the sender, not verified (card 06f062e4)">origin: ${escapeHtml(m.origin_note)}</span>` : ''}
+        ${m.origin_note ? `<span class="badge" style="font-size:10px" title="Self-declared by the sender, not verified">origin: ${escapeHtml(m.origin_note)}</span>` : ''}
       </div>
       <div class="bubble-text">${escapeHtml(m.content || '')}</div>
       <div class="bubble-time">${when}</div>
@@ -13751,10 +13751,11 @@ let tuChartState = null
 // Fallback row is used when model is unknown or not yet captured.
 // cache-write is 1.25x input, cache-read is 0.1x input -- keep the derived
 // columns consistent with `in` when editing a row.
-// Sonnet 5 launched on introductory pricing (2 / 10) that ends 2026-08-31;
-// the standard rate (3 / 15) applies from 2026-09-01. Resolved by date at load
-// time instead of pinned to one of the two, so the table neither understates
-// spend today nor silently overstates it the morning the intro rate expires.
+// Sonnet 5 launched on introductory pricing (2 / 10);
+// the standard rate (3 / 15) applies after the intro rate ends. Resolved by date
+// at load time instead of pinned to one of the two, so the table neither
+// understates spend today nor silently overstates it the morning the intro
+// rate expires.
 const TU_SONNET5_INTRO_END = Date.parse('2026-09-01T00:00:00Z')
 const TU_SONNET5_PRICE = Date.now() < TU_SONNET5_INTRO_END
   ? { in: 2.0, out: 10.0, cw: 2.50, cr: 0.20 }
