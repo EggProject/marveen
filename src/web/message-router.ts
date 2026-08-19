@@ -117,7 +117,7 @@ function notifyDelegationFailed(msg: AgentMessage, error: string): void {
   }
 }
 
-// ---- session-stuck detection (card 2922e380 thread a) ------------------------
+// ---- session-stuck detection ------------------------
 // When a session EXISTS but is never ready (menu-blocked / context-saturated /
 // parked input the janitor can't clear), track how long it has been continuously
 // stuck. After STUCK_ESCALATE_MS, escalate to warning-level logs so the existing
@@ -126,7 +126,7 @@ function notifyDelegationFailed(msg: AgentMessage, error: string): void {
 const STUCK_ESCALATE_MS = 10 * 60 * 1000  // 10 min continuously stuck -> escalate
 const agentStuckSince = new Map<string, number>()  // agent -> first tick stuck (Date.now)
 
-// ---- reconnect-backlog batching (card 2922e380 thread b) --------------------
+// ---- reconnect-backlog batching --------------------
 // When a session was absent and reconnects, old pending messages are summarized
 // into ONE batch delivery instead of FIFO-bursting them one by one (the pattern
 // that made the Mason incident read like churn). Only triggers when there are
@@ -159,7 +159,7 @@ export function shouldAbandon(sessionExists: boolean, ageMs: number, windowMs: n
   return !sessionExists && ageMs > windowMs
 }
 
-// ---- Distributed trace context (card def5a189) ------------------------------
+// ---- Distributed trace context ------------------------------
 // In-memory map of the last trace context delivered TO each agent. When the
 // agent subsequently sends a new message (no explicit trace_id), the router
 // stamps it with this context so the whole chain shares one root trace_id.
@@ -502,7 +502,7 @@ export async function runMessageRouterTick(): Promise<void> {
       }
 
       if (!(await isSessionReadyForPrompt(session, host))) {
-        // ---- session-stuck detection (card 2922e380 thread a) ----
+        // ---- session-stuck detection ----
         // Track how long this session has been continuously not-ready.
         const stuckStart = agentStuckSince.get(msg.to_agent)
         if (!stuckStart) {
@@ -545,7 +545,7 @@ export async function runMessageRouterTick(): Promise<void> {
       // Classify (channel-inbound / trusted-peer / untrusted) + reject an empty
       // from_agent -- SINGLE SOURCE in agent-message-wrap so the router and the
       // main-agent pull endpoint frame messages identically (no security drift).
-      // Trace context (card def5a189): stamp if not yet set. channel-inbound
+      // Trace context: stamp if not yet set. channel-inbound
       // messages (user → agent) are excluded -- only inter-agent spans.
       const cls = classifyAgentMessage(msg.from_agent, msg.to_agent)
       if (!cls) {

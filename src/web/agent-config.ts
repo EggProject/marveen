@@ -68,7 +68,7 @@ export function resolveModelId(raw: string): string {
   return MODEL_ALIASES[raw] || raw
 }
 
-// ---- model-profile map (deployment-local, card c755f4b2 Block B) -------------
+// ---- model-profile map (deployment-local) -------------
 //
 // store/ is gitignored, so the concrete profile -> model mapping never leaves
 // the machine. config-examples/model-profile-map.example.json documents the

@@ -684,14 +684,13 @@ export function stampProjectTrustForDir(dotClaudePath: string, projectDir: strin
 // Pre-stamp the Fable overage-consent acknowledgment in a config root's
 // .claude.json so the "Fable 5 now uses usage credits" dialog never renders.
 //
-// Root cause chain (2026-07-23, card b71fc541): a config root without
-// fableOverageConsentV2[<orgUuid>] parks the first Fable 5 turn on a TUI
-// dialog whose DEFAULT option is "Switch to Sonnet 5 and continue". The
-// fleet's own blind Enters (identity /name, sendPromptToSession retry-Enter)
-// accept that default, silently switching the session to Sonnet while
-// agent-config still says claude-fable-5 -- the long-unexplained
-// model/activeModel drift. Fleet policy (owner decision 2026-07-23): the
-// fleet stays on Fable 5, so the consent is pre-acknowledged the same way
+// Root cause chain: a config root without fableOverageConsentV2[<orgUuid>]
+// parks the first Fable 5 turn on a TUI dialog whose DEFAULT option is
+// "Switch to Sonnet 5 and continue". The fleet's own blind Enters (identity
+// /name, sendPromptToSession retry-Enter) accept that default, silently
+// switching the session to Sonnet while agent-config still says claude-fable-5
+// -- the long-unexplained model/activeModel drift. Fleet policy: the fleet
+// stays on Fable 5, so the consent is pre-acknowledged the same way
 // onboarding/trust flags already are (see stampProjectTrustForDir above).
 //
 // Claude Code keys the consent on oauthAccount.organizationUuid (or

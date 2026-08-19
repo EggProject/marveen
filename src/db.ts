@@ -912,7 +912,7 @@ export function initDatabase(dbPathOverride?: string): void {
   // line in the same step. Null for keys minted outside the pairing flow.
   try { runScript(db, `ALTER TABLE device_keys ADD COLUMN install_id TEXT`) } catch { /* column already exists */ }
 
-  // --- OTel Distributed Tracing (card def5a189) ---
+  // --- OTel Distributed Tracing ---
   // SQLite-native span store. No external OTel SDK: spans are written via
   // /api/spans and the message-router middleware injects trace context into
   // agent_messages rows transparently (agents don't need to know about tracing).
@@ -3234,7 +3234,7 @@ export function expireTimedOutApprovals(): number {
   `).run(now, now).changes
 }
 
-// --- OTel Distributed Tracing (card def5a189) ---
+// --- OTel Distributed Tracing ---
 
 export interface OtelSpan {
   trace_id: string

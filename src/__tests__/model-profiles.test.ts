@@ -1,4 +1,4 @@
-// Block B: behaviour-neutral model profiles (card c755f4b2, spec 5.6).
+// Behaviour-neutral model profiles.
 //
 // The whole point of Phase 1's profile layer is that it changes NOTHING. These
 // tests are therefore mostly about what must not happen: an explicit model

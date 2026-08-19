@@ -1,4 +1,4 @@
-// Behaviour-neutral model profiles (card c755f4b2, Phase 1 Block B).
+// Behaviour-neutral model profiles.
 //
 // The point of this layer is ABSTRACTION, not re-tiering. An agent config can
 // name a generic capability tier instead of a concrete vendor model id, and the

@@ -1,4 +1,4 @@
-// Tests for OTel distributed tracing (card def5a189).
+// Tests for OTel distributed tracing.
 //
 // Scope: DB layer (otel_spans table + stampMessageTrace), API route
 // (POST/GET /api/spans, GET /api/traces/:id, GET /api/traces), and the

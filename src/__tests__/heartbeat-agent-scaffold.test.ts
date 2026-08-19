@@ -99,7 +99,7 @@ describe('renderHeartbeatClaudeMd', () => {
     expect(out).toContain('You are headless')
   })
 
-  it('excludes done cards from the urgent-title kanban query (card 776e800a)', () => {
+  it('excludes done cards from the urgent-title kanban query', () => {
     const out = renderHeartbeatClaudeMd(ID)
     // A done card can still carry priority='urgent' -- the title lookup
     // must filter it out, or closed issues get reported as active forever.
