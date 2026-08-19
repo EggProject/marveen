@@ -205,8 +205,8 @@ when a commit on `test/baseline` already deleted the buggy defensive guard, `-` 
 | --- | --- | --- | --- | --- |
 | `agent-process-777-ts-strict-blocks-delete` | `src/web/agent-process.ts:777` | runTmux timeout required-delete blocked | - | Resolved: 2026-08-16 a71cc759 |
 | `agent-team-trustfrom-required-type-narrow-deferred` | `src/web/agent-team.ts:191,192` | trustFrom type-narrow deferred | - | Resolved: 2026-08-19 7e1277c |
-| `agent-terminal-218-ts-strict-blocks-delete` | `src/web/routes/agent-terminal.ts:218` | TS strict blocks the safe-delete | - | 2026-08-20 e325b0c |
-| `agent-terminal-keys-preview-literalKeys-fallback` | `src/web/routes/agent-terminal.ts:218` | literalKeys ?? '' fallback is unreachable | - | 2026-08-20 e325b0c |
+| `agent-terminal-218-ts-strict-blocks-delete` | `src/web/routes/agent-terminal.ts:218` | TS strict blocks the safe-delete | - | 2026-08-20 c8ce4a4 |
+| `agent-terminal-keys-preview-literalKeys-fallback` | `src/web/routes/agent-terminal.ts:218` | literalKeys ?? '' fallback is unreachable | - | 2026-08-20 c8ce4a4 |
 | `agents-parseChannelProvider-return-null` | `src/web/routes/agents.ts:231` | parseChannelProvider's null return is unreachable | - | Resolved: 2026-08-16 3e1dd3f |
 | `channel-coordinator-setOffset-null-maxUpdateId` | `src/channel-coordinator.ts:401` | maxUpdateId != null setOffset FALSE branch is unreachable | `src/__tests__/channel-coordinator-process-batch.test.ts` | Resolved: 2026-08-16 1a9d0d5a |
 | `channel-invites-108-ts-strict-blocks-delete` | `src/web/channel-invites.ts:108` | TS strict blocks the safe-delete | - | 2026-08-19 d48256c |

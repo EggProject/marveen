@@ -103,6 +103,6 @@ requires an explicit override from the user.
 
 ## Resolved
 
-Resolved: 2026-08-20 e325b0c --
+Resolved: 2026-08-20 c8ce4a4 --
 dead `?? ''` arms removed at agent-terminal.ts:218; see Item 1 of the
 curious-doodling-dawn plan.
