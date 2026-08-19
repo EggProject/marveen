@@ -127,9 +127,9 @@ export const SLACK_CHANNEL_ID = env['SLACK_CHANNEL_ID'] ?? ''
 // text like "owner channels".
 export const OWNER_NAME_PLACEHOLDER = 'Owner'
 // Empty-string-tolerant .env read: a present-but-empty line means "unset", not "blank".
-// Mirrors the resolveBrandName guard (config.ts:150-153). The constants below
-// route through this helper so an empty `BOT_NAME=` line in .env does not blank
-// the install identity (dashboard chrome, service unit names, DB/tmux routing).
+// Mirrors the resolveBrandName guard below. The constants below route through this
+// helper so an empty `BOT_NAME=` line in .env does not blank the install identity
+// (dashboard chrome, service unit names, DB/tmux routing).
 function envOr(key: string, fallback: string): string {
   return (env[key] ?? '').trim() || fallback
 }
