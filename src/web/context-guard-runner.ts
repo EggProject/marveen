@@ -272,10 +272,15 @@ async function checkAgent(name: string, nowMs: number): Promise<void> {
         // inter-agent queue -- the channel supervisors actually read.
         let snapshotPath: string | null = null
         try {
-          // pane is non-null here: decideGuard returns 'restart' only when state.phase ∈ {idle, await-handoff} which forces pane non-null (see context-guard.ts:301,320,352,358,367,373).
-          const finalPane: string = pane!
-          snapshotPath = join(PROJECT_ROOT, 'store', `context-guard-last-pane-${name}.txt`)
-          writeFileSync(snapshotPath, finalPane)
+          // `pane` is capturePane(session) for the running check (MAIN) or
+          // for needPct sub-agents; both can return null on a transient tmux
+          // error even if agentRunState says 'running'. Retry capture once
+          // before giving up on the snapshot.
+          const finalPane = pane ?? capturePane(session)
+          if (finalPane) {
+            snapshotPath = join(PROJECT_ROOT, 'store', `context-guard-last-pane-${name}.txt`)
+            writeFileSync(snapshotPath, finalPane)
+          }
         } catch (err) {
           logger.warn({ err, name }, 'context-guard: pre-restart pane snapshot failed')
         }
@@ -287,8 +292,7 @@ async function checkAgent(name: string, nowMs: number): Promise<void> {
             `[CONTEXT-GUARD] Ujrainditottam a(z) "${name}" agentet -- ok: ${decision.reason}` +
             (pctRound !== null ? ` (kontextus ~${pctRound}%)` : '') +
             `. A regi sessionbe az utolso percekben kuldott uzenetek/utasitasok ELVESZHETTEK -- ellenorizd es kuldd ujra oket.` +
-            // snapshotPath is non-null here: line 277 (join) runs before any potential throw in writeFileSync, and join() is pure (cannot throw). The catch block does not reset snapshotPath. See context-guard-runner.ts:273-281.
-            ` Pane-snapshot a restart elotti allapotrol: ${snapshotPath!}`,
+            (snapshotPath ? ` Pane-snapshot a restart elotti allapotrol: ${snapshotPath}` : ''),
             'context-guard restart notice',
           )
         } catch (err) {

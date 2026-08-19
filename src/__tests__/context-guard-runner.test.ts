@@ -177,35 +177,12 @@ vi.mock('../web/context-guard-store.js', () => ({
   readContextGuardConfig: (n: string) => mockReadContextGuardConfig(n),
 }))
 
-// Per-test controllable decideGuard: the mock fn delegates to the real
-// decideGuard by default so all existing semantic tests pass unchanged. Tests
-// that need to drive the runner into unreachable-code branches (see
-// context-guard-runner-dead-code-branches.md) override
-// `mockDecideGuard.mockImplementation(...)` in their own scope.
-const { mockDecideGuard, realDecideGuard } = vi.hoisted(() => {
-  // `vi.hoisted` runs before any vi.mock factory, so this function captures
-  // the REAL decideGuard by value (not the mocked one, which would be a vi.fn
-  // returning undefined and break every existing test).
-  const mockDecideGuard = vi.fn()
-  return {
-    mockDecideGuard,
-    realDecideGuard: (...args: Parameters<typeof import('../context-guard.js').decideGuard>) =>
-      (mockDecideGuard as any).__real?.(...args) as ReturnType<typeof import('../context-guard.js').decideGuard>,
-  }
-})
-vi.mock('../context-guard.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../context-guard.js')>()
-  // Capture the real decideGuard in the closure so the hoisted bridge can
-  // find it (mockDecideGuard is the only mutable reference vi.hoisted gave
-  // us; assigning a private slot here lets the hoisted bridge call through).
-  ;(mockDecideGuard as any).__real = actual.decideGuard
-  return {
-    ...actual,
-    decideGuard: (...args: Parameters<typeof actual.decideGuard>) =>
-      mockDecideGuard(...args),
-  }
-})
-mockDecideGuard.mockImplementation((...args) => (mockDecideGuard as any).__real(...args))
+// decideGuard is the pure state machine in src/context-guard.ts. We import
+// the real module directly: no test overrides it (the pinning tests for
+// unreachable branches were dropped in cycle 35 -- see
+// docs/needs-to-be-fix/context-guard-runner-dead-code-branches.md), so the
+// earlier `mockDecideGuard` hoisted bridge had become pure dead code with
+// two `as any` casts.
 
 vi.mock('../db.js', () => ({
   createAgentMessage: (...a: unknown[]) => mockCreateAgentMessage(...a),

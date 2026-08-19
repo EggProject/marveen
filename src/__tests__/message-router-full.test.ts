@@ -30,8 +30,8 @@
 //       - delivery wrap + deliveredAt + trace propagation + traceId on log
 //       - inject throw path: retry < 3 then give up at 3 with notify
 //       - per-message fault-isolation catch wrapping the whole loop body
-//       - main-agent-myself guard in notify (target == MAIN_AGENT_ID short-
-//         circuits)
+//       - main-agent wakeup short-circuit (the main-loop's isMainAgent
+//         continue at line 470 keeps main-agent targets off the notify path)
 //       - createAgentMessage-throw in notify (catch arm)
 //   * callVoiceSTT -- existsSync false -> null, transcribeVoiceFile returns
 //     string, transcribeVoiceFile throws -> null, .env missing

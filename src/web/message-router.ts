@@ -76,7 +76,10 @@ export function shouldGiveUpOnInject(failCount: number, maxFailures: number): bo
  */
 function notifyOrchestratorOfFailedHandoff(msg: AgentMessage, reason: string): void {
   try {
-    // Dead guard removed (cycle 35): the main-loop short-circuits main-agent targets at line ~461 (continue) before reaching notifyOrchestratorOfFailedHandoff, and the inject-give-up path also filters main-agent targets. See message-router-unreachable-defensive-branches.md.
+    // Dead guard removed (cycle 35): the main-loop's `if (isMainAgent) { ... continue }`
+    // at lines 459-470 short-circuits main-agent targets before they reach
+    // either call site of notifyOrchestratorOfFailedHandoff (lines 485, 634).
+    // See message-router-unreachable-defensive-branches.md.
     const preview = (msg.content ?? '').slice(0, 220)
     createAgentMessage(
       'system',
@@ -312,7 +315,10 @@ function batchDeliverBacklog(agent: string, agentPending: AgentMessage[], now: n
       recent.push(m)
     }
   }
-  // old.length >= 1 by construction (caller's oldestAge > BATCH_AGE_MS gate at line ~410).
+  // old.length >= 1 by construction: the caller at lines 405-411 gates on
+  // `oldestAge > RECONNECT_BATCH_AGE_MS` where oldestAge is the age of
+  // agentPending[0] (oldest row, ORDER BY created_at ASC), so the first
+  // partition iteration always pushes that row into `old`.
 
   // Build a summary: who sent what, when (oldest first).
   const lines: string[] = [
