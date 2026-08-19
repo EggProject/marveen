@@ -109,34 +109,51 @@ This doc itself is a needs-to-be-fix entry -- until a resolution is
 chosen, the test suite cannot reach 100% branch coverage on
 `src/web/stuck-input-watcher.ts` without modifying the source.
 
+## Resolution (cycle 32, superseded -- DO NOT RELY ON)
+
+This MD was originally resolved by cycle 32 commit `1e58ebd` (test/baseline,
+"fix(stuck-input-watcher): drop dead prev-attempts guards in three recovery
+branches") which simply removed the inner `prev.attempts < X.maxAttempts`
+clause at all three sites. The MD correctly identified the inner guard as
+structurally dead, but it failed to flag a critical side effect: once the
+inner guard is removed, the outer `else-if` body becomes a regression
+vector. The dead-guard removal alone caused `sendAlert` (the sub-agent
+escalation path) to fire on EVERY tick of a stuck spell, at roughly 15s
+intervals, for the full duration of the spell. That is user-facing
+Telegram/Slack notification spam. The cycle 32 fix was therefore unsafe.
+It is superseded by the per-spell gate resolution below.
+
 ## Resolution
 
-Applied: **drop the inner guard** at all three sites (cycle 32, test/baseline).
-The dead `prev.attempts < X.maxAttempts` clause was removed from:
+**Date:** 2026-08-19
+**Fixed-by:** `edae3f1` (Phase 2+3 fix), `53490cd` (Phase 4 regression test)
+**Phase 1 prep:** `f47a60f` (added `giveUpAlerted` flag to `StuckInputState`)
 
-- `recoverParkedPaste` line 124 -- the warn fires whenever
-  `next.attempts >= thresholds.maxAttempts`.
-- `bareEnterRecovery` lines 160-167 -- the inner `if (prev.attempts < X)`
-  was deleted; the warn fires whenever
-  `next.parkedSig !== null && next.attempts >= THRESHOLDS.maxAttempts`.
-- `checkLocalSession` lines 201-204 -- the inner clause was deleted from
-  the compound condition; the alert fires whenever
-  `alertOnGiveUp && next.attempts >= LOCAL_FAST_THRESHOLDS.maxAttempts`.
+The fix does NOT revert to the dead inner guard. It introduces a per-spell
+gate so the alert fires exactly once per stuck spell, regardless of how
+many ticks the spell spans:
 
-The "logged at most once per spell" comment was removed because the inner
-guard that implemented it was structurally dead (decideStuckInputRecovery's
-budget-spent branch returns `{ recover: false, next: { ...prev } }`, so
-`next.attempts === prev.attempts` whenever the outer condition holds). After
-the fix the warn/alert fires on every tick where the budget is spent -- the
-test `a give-up is alerted exactly once per spell` was flipped to
-`a give-up alerts on every tick where next.attempts has hit maxAttempts`
-(assertion: `toHaveBeenCalledTimes(2)`).
+- `StuckInputState` gains an optional `giveUpAlerted: boolean` field,
+  initialised to `false` in `NO_STATE` (Phase 1, commit `f47a60f`).
+- All three recovery sites (`recoverParkedPaste`, `bareEnterRecovery`,
+  `checkLocalSession`) read the flag before sending the warn/alert and
+  set it to `true` after the first send. Subsequent ticks of the SAME
+  spell are silent.
+- The flag resets on spell-end automatically because every new spell
+  starts from a fresh `NO_STATE` (which has `giveUpAlerted: false`),
+  so the next spell gets exactly one alert again.
+- Tripwire comments are added at all 3 sites documenting the per-spell
+  intent, so a future cycle cannot silently regress this back to
+  "fire on every tick".
 
-The `recoverParkedPaste logs the give-up warning when attempts maxAttempts
-via injected decision` and `bareEnterRecovery logs the give-up warning when
-attempts maxAttempts via injected decision` tests continue to pass without
-flipping (their assertions only require the warn to fire at least once,
-which now happens on the first sweep via the real decideStuckInputRecovery
-flow as well -- the `vi.doMock('../pane-state.js')` injection is still
-there, kept to avoid coupling the test to the helper's exact budget-spent
-branch).
+**Regression test (Phase 4, commit `53490cd`):**
+`src/__tests__/stuck-input-watcher.test.ts` line 548 (`it('keeps the
+give-up alert to exactly once across 6+ ticks of the SAME spell (real
+decideStuckInputRecovery)', ...)`). The test deliberately diverges from
+the existing `a give-up is alerted exactly once per spell` test (which is
+a tautology because it queues `NO_STATE -> stuck -> NO_STATE -> stuck`,
+i.e. two SEPARATE spells). The new test routes the watcher's
+`recoverStuckInputForSession` call through the REAL `decideStuckInputRecovery`
+from `pane-state.ts` and parks the same pane text across all ticks so the
+spell truly spans 6+ ticks. Without the per-spell gate, `sendAlert` would
+fire 5+ times; with the gate it fires exactly once.
