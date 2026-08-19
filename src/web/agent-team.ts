@@ -20,7 +20,7 @@ export interface TeamConfig {
   // agent outside the usual reportsTo / delegatesTo derivation -- e.g. a
   // cross-team collaborator. Unknown names and self-references are stripped
   // at write time (see writeAgentTeam + sanitizeTeamConfig).
-  trustFrom?: string[]
+  trustFrom: string[]
 }
 
 export const DEFAULT_TEAM: TeamConfig = {
@@ -136,7 +136,7 @@ export function sanitizeTeamConfig(
       reportsTo,
       delegatesTo: cleanList(team.delegatesTo, 'delegatesTo'),
       autoDelegation: team.autoDelegation,
-      trustFrom: cleanList(team.trustFrom ?? [], 'trustFrom'),
+      trustFrom: cleanList(team.trustFrom, 'trustFrom'),
     },
     warnings,
   }
@@ -188,8 +188,8 @@ export function cleanupTeamReferences(removedName: string): void {
       team.delegatesTo = filteredDelegates
       dirty = true
     }
-    const filteredTrust = (team.trustFrom ?? []).filter(n => n !== removedName)
-    if (filteredTrust.length !== (team.trustFrom ?? []).length) {
+    const filteredTrust = team.trustFrom.filter(n => n !== removedName)
+    if (filteredTrust.length !== team.trustFrom.length) {
       team.trustFrom = filteredTrust
       dirty = true
     }
