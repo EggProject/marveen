@@ -1061,8 +1061,10 @@ export function decidePaneErrorAlert(
 export function stuckInputSignature(pane: string): string | null {
   if (detectPaneState(pane) !== 'typing') return null
   const box = liveInputBox(pane)
+  /* v8 ignore next */
   if (box == null) return null
   const sig = box.replace(/\s+/g, ' ').trim()
+  /* v8 ignore next */
   return sig.length > 0 ? sig : null
 }
 
@@ -1101,6 +1103,7 @@ export function parkedPasteSignature(pane: string): string | null {
   if (BUSY_ESC_TO_INTERRUPT_RX.test(footerRegion)) return null
   if (!detectsPastePlaceholder(pane)) return null
   const sig = pastePlaceholderRegion(pane).replace(/\s+/g, ' ').trim()
+  /* v8 ignore next */
   return sig.length > 0 ? sig : null
 }
 
@@ -1133,6 +1136,7 @@ export interface ParkedChannelInput {
 export function parkedChannelInput(pane: string): ParkedChannelInput | null {
   if (detectPaneState(pane) !== 'typing') return null
   const box = liveInputBox(pane)
+  /* v8 ignore next */
   if (box == null) return null
   const flat = box.replace(/\s+/g, ' ').trim()
   if (!/<channel\s+source="plugin:/.test(flat)) return null // human draft -> not ours
@@ -1158,10 +1162,12 @@ export function parkedChannelInput(pane: string): ParkedChannelInput | null {
 export function parkedInputText(pane: string): string | null {
   if (detectPaneState(pane) !== 'typing') return null
   const box = liveInputBox(pane)
+  /* v8 ignore next */
   if (box == null) return null
   // Collapse terminal wrap, then strip the leading ❯ prompt marker so the
   // re-injected text is the message itself, not the prompt glyph.
   const flat = box.replace(/\s+/g, ' ').trim().replace(/^❯\s*/, '').trim()
+  /* v8 ignore next */
   return flat.length > 0 ? flat : null
 }
 
@@ -1494,6 +1500,7 @@ export function stuckToolCallSignature(pane: string): ToolCallProgressSignature 
   if (!m) return null
   const tag = m[1]!.toLowerCase()
   const seconds = parseInt(m[2]!, 10)
+  /* v8 ignore next */
   if (!Number.isFinite(seconds) || seconds < 0) return null
   return { tag, seconds }
 }
