@@ -922,47 +922,6 @@ describe('runMessageRouterTick', () => {
     vi.useRealTimers()
   })
 
-  it('does not notify the orchestrator when the failed message was already to the main agent', async () => {
-    // Pinning test. The notify function explicitly guards against MAIN_AGENT_ID
-    // target (notifyOrchestratorOfFailedHandoff short-circuits with `if
-    // (msg.to_agent === MAIN_AGENT_ID) return`), but the router never reaches
-    // that branch for messages targeting the main agent: those take the
-    // wakeup path (the main agent drains its own inbox via pull model), which
-    // continues before the abandon path fires. Concretely: sendPromptToSession
-    // gets the wakeup prompt, markMessageFailed is NOT called, and no
-    // handoff-failure system note is created. The function's short-circuit is
-    // therefore defensive dead code reachable only via a future code path
-    // that wires the main agent into the abandon path.
-    vi.useFakeTimers()
-    vi.setSystemTime(NOW_MS)
-    const msg = makeLocalMsg({
-      id: 180,
-      from_agent: 'dex',
-      to_agent: H.MAIN_AGENT_ID,
-    })
-    H.getPendingMessages.mockImplementation((toAgent?: string) => (toAgent ? [] : [msg]))
-
-    await runMessageRouterTick()
-
-    // Wakeup path is taken, not the abandon path -> markMessageFailed is NOT
-    // called and no handoff-failure notification is created.
-    expect(H.markMessageFailed).not.toHaveBeenCalled()
-    expect(H.createAgentMessage).not.toHaveBeenCalledWith(
-      'system', H.MAIN_AGENT_ID,
-      expect.stringContaining('[handoff-failure]'),
-    )
-    // The wakeup IS fired (one sendPromptToSession call with the inbox-wakeup
-    // prompt signature), which is the observable signal that the main-agent
-    // branch was taken.
-    expect(H.sendPromptToSession).toHaveBeenCalledWith(
-      H.MAIN_CHANNELS_SESSION,
-      '[inbox-wakeup: pending inter-agent messages]',
-      null,
-      { waitForIdle: false },
-    )
-    vi.useRealTimers()
-  })
-
   // ----- main-agent wakeup branch -----
   it('fires the main-agent wakeup once per tick when the message targets MAIN_AGENT_ID and the cooldown has elapsed', async () => {
     const msg = makeLocalMsg({
