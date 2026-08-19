@@ -1247,6 +1247,10 @@ export interface StuckInputState {
   lastRecoverAt: number | null
   /** How many recovery Enters have been sent in the active spell. */
   attempts: number
+  /** Whether a "giving up" alert has already been emitted for the active
+   * spell. Reset on every new spell. Optional so existing full-literal
+   * state objects (test mocks, persisted snapshots) keep compiling. */
+  giveUpAlerted?: boolean
 }
 
 export interface StuckInputThresholds {
@@ -1273,6 +1277,7 @@ const NO_STUCK_INPUT: StuckInputState = {
   firstSeenAt: null,
   lastRecoverAt: null,
   attempts: 0,
+  giveUpAlerted: false,
 }
 
 /**

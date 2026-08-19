@@ -75,7 +75,7 @@ const LOCAL_FAST_THRESHOLDS: StuckInputThresholds = {
 const INITIAL_DELAY_MS = 20_000
 const INTERVAL_MS = 15_000
 
-const NO_STATE: StuckInputState = { parkedSig: null, firstSeenAt: null, lastRecoverAt: null, attempts: 0 }
+const NO_STATE: StuckInputState = { parkedSig: null, firstSeenAt: null, lastRecoverAt: null, attempts: 0, giveUpAlerted: false }
 
 const watchState = new Map<string, StuckInputState>()
 

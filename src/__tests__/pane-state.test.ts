@@ -1413,7 +1413,7 @@ describe('stuckInputSignature', () => {
 
 describe('decideStuckInputRecovery', () => {
   const TH = { confirmMs: 10_000, dedupMs: 12_000, maxAttempts: 3 }
-  const NONE = { parkedSig: null, firstSeenAt: null, lastRecoverAt: null, attempts: 0 }
+  const NONE = { parkedSig: null, firstSeenAt: null, lastRecoverAt: null, attempts: 0, giveUpAlerted: false }
 
   it('does nothing when nothing is parked and no spell is active', () => {
     const d = decideStuckInputRecovery(null, NONE, 5_000, TH)
