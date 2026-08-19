@@ -1,8 +1,8 @@
 # needs-to-be-fix index
 
-Every bug MD filed in this session. Total count: 176
+Every bug MD filed in this session. Total count: 177
 (`find docs/needs-to-be-fix -name '*.md' ! -name 'INDEX.md' | wc -l`;
-the unfiltered command returns 177 because it counts this index too).
+the unfiltered command returns 178 because it counts this index too).
 The index has one table row per MD, so the two counts must stay equal.
 
 The original 50 entries below were filed during the first coverage pass.
@@ -216,6 +216,7 @@ when a commit on `test/baseline` already deleted the buggy defensive guard, `-` 
 | `federation-inbox-fedPeer-null-fallback` | `src/web/routes/federation.ts:329` | ctx.fedPeer ?? null fallback is unreachable (MD heading off-by-one: line 330 in MD, actual code at line 329) | - | - |
 | `federation-rememberRef-oldest-undefined` | `src/web/routes/federation.ts:93` | rememberRef's if (oldest !== undefined) falsy arm is unreachable | - | 2026-08-14 08d7508 |
 | `federation-routes-fedpeer-required-type-narrow-deferred` | `src/web/routes/federation.ts:298,329` | fedPeer type-narrow deferred | - | - |
+| `index-283-test-pins-error-wiring` | `src/index.ts:283` | buildPidfileLockContext.log.error is pinned by TS strict (process-lock.ts:253 requires it) and a positive test (index.test.ts:1382 'forwards pidfile context errors to logger.error') | `src/__tests__/index.test.ts:1382` | - |
 | `index-stopHeartbeat-throw` | `src/index.ts:382` | stopHeartbeat-throws-during-shutdown catch is unreachable | `src/__tests__/index.test.ts` | Resolved: 2026-08-16 221d5c8 |
 | `mcp-list-warn-execError-dead-branch` | `src/web/mcp-list.ts:135` | warn() payload's execError ? truthy arm is unreachable | `src/__tests__/mcp-list.test.ts` | Resolved: 2026-08-16 c1ee774 |
 | `recall-dayOfWeekBudapest-fallback` | `src/web/routes/recall.ts:25` | dayOfWeekBudapest's weekday-map fallback is unreachable | - | Resolved: 2026-08-16 3bec823 |
