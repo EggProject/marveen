@@ -215,7 +215,9 @@ export async function tryHandleAgentTerminal(ctx: RouteContext): Promise<boolean
     // present so a forged prompt is traceable).
     const preview = parsed.special
       ? `special:${parsed.special}`
-      : `keys:${JSON.stringify((literalKeys ?? '').slice(0, 120))}${(literalKeys ?? '').length > 120 ? '…' : ''}`
+      : literalKeys
+        ? `keys:${JSON.stringify(literalKeys.slice(0, 120))}${literalKeys.length > 120 ? '…' : ''}`
+        : '' // unreachable: if (!args) already returned
     logger.info({ name, remote, xff, ua, preview }, 'agent-terminal: KEYS INJECTION ACCEPTED')
     try {
       await tmux(args)

@@ -25,3 +25,12 @@ in place alongside the source.
 
 `docs/needs-to-be-fix/agent-terminal-keys-preview-literalKeys-fallback.md`
 documents the dead-branch analysis.
+
+## Resolved
+
+Resolved: 2026-08-20 e325b0c -- agent-terminal.ts:218 `?? ''` replaced
+with nested-ternary narrowing (`literalKeys ? ... : ''`) so TS narrows
+`literalKeys` to `string` and the `?? ''` arms become unreachable in
+the type system too. Branch count: 2 dead `??` arms -> 1 dead ternary
+arm (net -1 dead branch). The orphaned "Edit reverted." prose above is
+now stale -- the fix landed.

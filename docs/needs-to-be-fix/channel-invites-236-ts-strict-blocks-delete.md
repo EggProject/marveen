@@ -20,3 +20,11 @@ branch inside the approve path`) stays in place alongside the source.
 documents the dead-branch analysis and the suggested direction (option
 (b) - leave the guard with an invariant comment - is the path forward
 given the TS strict constraint).
+
+## Resolved
+
+Resolved: 2026-08-19 d48256c --
+see channel-invites-108-ts-strict-blocks-delete.md for context. The
+`if (access.pending) delete ...` guard was dropped and `delete (access.pending
+?? {})[pCode]` substituted. `access.pending` is a KNOWN plugin field
+(not unknown), so the `?? {}` belt-and-braces satisfies strict TS.
