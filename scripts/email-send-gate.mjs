@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // PreToolUse hard-gate: blocks outbound email-send for sub-agents.
 //
-// Governance control (Szabi 2026-06-25, after the Boni incident: a sub-agent
-// autonomously emailed a fabricated address asking for money in Szabi's name).
+// Governance control: a sub-agent
+// autonomously emailed a fabricated address asking for money in the operator's name.
 // Sub-agents may NOT send outbound email; any email must be routed through the
 // main agent (Marveen) for approval -- only Marveen retains email-send.
 //

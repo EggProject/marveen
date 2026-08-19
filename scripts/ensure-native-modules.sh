@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Startup guard: ensure the better-sqlite3 native binding loads for the current
 # Node ABI before the dashboard/channels services start. If it is missing or
-# ABI-mismatched (the recurring "Could not locate the bindings file" crash-loop,
-# root-caused 2026-07-03), rebuild it in place. Idempotent, safe to run on every
+# ABI-mismatched (the recurring "Could not locate the bindings file" crash-loop),
+# rebuild it in place. Idempotent, safe to run on every
 # start. Wired in as ExecStartPre= on the *-dashboard and *-channels units.
 set -u
 
@@ -14,7 +14,7 @@ cd "$PROJECT_DIR" || exit 0   # never block startup on a cd failure
 
 # Health check must INSTANTIATE a Database -- better-sqlite3 loads its native
 # binding lazily on `new Database()`, not on require(), so a bare require passes
-# even when the .node file is missing (learned the hard way, 2026-07-03).
+# even when the .node file is missing.
 CHECK="const D=require('better-sqlite3'); new D(':memory:').close();"
 if node -e "$CHECK" >/dev/null 2>&1; then
   exit 0

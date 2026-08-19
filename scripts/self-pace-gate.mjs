@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // PreToolUse hard-gate: blocks SELF-PACE for sub-agents.
 //
-// Governance control (2026-06-26, after the autonom-kor incident: a sub-agent
-// scheduled its own wakeups via ScheduleWakeup, fed itself prompts, and acted
-// on a SELF-GENERATED "A) zárjuk le" decision -- dispatching real development
-// -- while the operator slept. Two independent adversarial audits confirmed the
-// root cause is the agent's own self-pace loop, not an external vector).
+// Governance control: a sub-agent scheduled its own wakeups via ScheduleWakeup,
+// fed itself prompts, and acted on a SELF-GENERATED "A) zárjuk le" decision --
+// dispatching real development -- while the operator slept. Two independent
+// adversarial audits confirmed the root cause is the agent's own self-pace
+// loop, not an external vector.
 //
 // A sub-agent must be INPUT-DRIVEN: it acts on operator / peer messages, never
 // on prompts it scheduled for itself. This gate blocks every self-pace path:
@@ -56,9 +56,9 @@ const SELF_PACE_BASH_PATTERNS = [
   // `\/loop\b` fired on any `loop`-prefixed path component whenever `.claude` was
   // in the same command (\bclaude\b matches the `.claude` in every memory/skill
   // path), so reading `.../memory/loop-stop-...md` or `~/.claude/skills/loop/...`
-  // was denied (measured 2026-07-26, found by pg: Heli denied a harmless memory
-  // read). Same bug class as the at/batch and launchctl fixes below: a keyword in
-  // a PATH collided with a call pattern; the fix is to match the invocation SHAPE.
+  // was denied (a harmless memory read). Same bug class as the at/batch and
+  // launchctl fixes below: a keyword in a PATH collided with a call pattern; the
+  // fix is to match the invocation SHAPE.
   // Every real form stays denied: `claude /loop 5m`, `claude -p "/loop x"`,
   // `claude '/loop'`, bare `claude /loop`.
   /\bclaude\b[\s\S]*(?:^|[\s'"])\/loop(?=[\s'"]|$)/i,
@@ -81,9 +81,9 @@ const SCHED_BOUNDARY = '[;&|(`]'
 // `at` and `batch` are also ordinary English words, and splitSegments splits on
 // NEWLINES -- so a PROSE line inside a multi-line commit body ("at least 80% of
 // entries", "batch size is 50") lands at a segment start and looked exactly like
-// the at(1)/batch(1) binaries. Measured 2026-07-25 (found by JogAsz): a heredoc
-// commit message was denied for the words "at least"; the identical command
-// passed after rewording that one line. The `-m "$(...)"` form is deliberately
+// the at(1)/batch(1) binaries. A heredoc commit message was denied for the
+// words "at least"; the identical command passed after rewording that one line.
+// The `-m "$(...)"` form is deliberately
 // NOT blanked by stripGitCommitMessages (a real substitution could hide there),
 // so the body does reach the splitter -- the fix belongs here, not there.
 //
@@ -95,21 +95,19 @@ const SCHED_BOUNDARY = '[;&|(`]'
 const AT_INVOCATION = String.raw`(?=\s*$|\s+-|\s*<|\s+(?:now|noon|midnight|teatime|today|tomorrow|next\b|\+\s*\d|\d{1,2}:\d{2}|\d{3,4}\b|\d{1,2}\s*(?:am|pm)\b|\d{1,2}[./]\d{1,2}|(?:mon|tue|wed|thu|fri|sat|sun)|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)))`
 // `launchctl` needed the SAME narrowing, for a different reason than at/batch, and
 // the comment above ("not English words, so prose cannot collide") was measured
-// wrong on 2026-07-26 (found by Hacker). It is not an English word -- but the
-// fleet's own heartbeats ORDER every agent to report `launchctl list | grep
-// com.jarvis.channels` output, so a launchd JOB LABEL appears in prose constantly.
-// splitSegments splits on `;`, so a report line "...; launchctl com.jarvis.channels
-// PID 555" put `launchctl <label>` at a segment start and it read as a real
-// invocation. His status message was denied; the finding is systemic, not his.
+// wrong. It is not an English word -- but the fleet's own heartbeats ORDER every
+// agent to report `launchctl list | grep <label>` output, so a launchd JOB LABEL
+// appears in prose constantly. splitSegments splits on `;`, so a report line
+// "...; launchctl <label> PID 555" put `launchctl <label>` at a segment start and
+// it read as a real invocation. The finding is systemic, not the reporter's.
 //
 // The narrowing mirrors AT_INVOCATION: instead of enumerating dangerous
 // subcommands (a denylist -- miss one and it is a hole), require the SHAPE of a
 // real invocation. Every launchctl self-pace vector (load/bootstrap/submit/
 // kickstart/start/enable/...) takes a SUBCOMMAND word first, so demand that the
 // next token could be one: a bare lowercase word, no dot and no slash. A job
-// label (`com.jarvis.channels`) and a path both fail that and pass through as
-// prose. End-of-segment and a flag stay DENIED -- a bare `launchctl` is
-// interactive, still a real vector.
+// label and a path both fail that and pass through as prose. End-of-segment and
+// a flag stay DENIED -- a bare `launchctl` is interactive, still a real vector.
 const LAUNCHCTL_SUBCOMMAND = String.raw`(?=\s*$|\s+-|\s+[a-z][a-z-]*(?:\s|$))`
 const SCHEDULER_RX = new RegExp(
   String.raw`(^|${SCHED_BOUNDARY}\s*)${SCHED_PREFIX}(?:(?:crontab|systemd-run)\b(?!-)(?!\s*=)|launchctl\b(?!-)(?!\s*=)${LAUNCHCTL_SUBCOMMAND}|(?:batch|at)\b(?!-)(?!\s*=)${AT_INVOCATION})`,
@@ -190,9 +188,9 @@ export function stripDataPayloads(seg) {
 
 // Blank out git commit/tag/stash -m/--message LITERAL text before self-pace
 // matching. A commit message is prose, NEVER a shell invocation, so a trigger
-// token that only appears INSIDE the message must not false-deny (2026-07-13,
-// DrCode: a long `git commit -m "...batch...; at..."` blocked twice, the short
-// one passed -- the message text was split as shell segments). Same principle
+// token that only appears INSIDE the message must not false-deny (a long
+// `git commit -m "...batch...; at..."` blocked twice, the short one passed -- the
+// message text was split as shell segments). Same principle
 // and same literal-only quote handling as stripDataPayloads: single-quoted,
 // ANSI-C $'...', and double-quoted WITHOUT $(...)/backtick are blanked; a
 // double-quoted message that CAN command-substitute (`git commit -m "$(crontab
@@ -213,9 +211,9 @@ export function stripGitCommitMessages(command) {
 
 // Normalise two shell-level obfuscations that bash resolves at EXEC time, so an
 // invocation whose SHAPE is a real self-pace cannot dodge the slash-command match
-// with quoting the shell undoes anyway. Measured end-to-end through the gate hook
-// (upstream review, 2026-07-27): `claude \/loop` and `claude$IFS/loop` BOTH run
-// `claude /loop` in bash but slipped the `(?:^|[\s'"])\/loop` match -- the char
+// with quoting the shell undoes anyway. Measured end-to-end through the gate hook:
+// `claude \/loop` and `claude$IFS/loop` BOTH run `claude /loop` in bash but slipped
+// the `(?:^|[\s'"])\/loop` match -- the char
 // before `/loop` was `\` and `S` (end of `$IFS`), neither in the [\s'"] class.
 // The fix is NOT to widen that class (that would let more prose through); it is to
 // resolve what the shell resolves before matching: `$IFS`/`${IFS}` word-splits to

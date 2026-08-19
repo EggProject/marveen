@@ -40,9 +40,9 @@ done
 #
 # These hold install-specific data (chat ids, absolute home paths, account-bound
 # token refreshers), so they are deliberately never pushed upstream -- which
-# means git can never restore them, and this folder is the ONLY copy. On
-# 2026-07-26 a branch switch silently deleted pre-modify-backup.sh itself (it
-# lived only on a feature branch); nothing errored, it was simply gone.
+# means git can never restore them, and this folder is the ONLY copy. A branch
+# switch that drops a feature-branch-only file deletes it silently; nothing
+# errors, the file is simply gone.
 #
 # WHICH files count as personal is per-install, so the list is data, not code:
 # store/personal-scripts.txt, one repo-relative path per line (# comments and

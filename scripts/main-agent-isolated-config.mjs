@@ -7,9 +7,9 @@
 // from whatever on-process credential refreshes that shared root -- the
 // ROTATING macOS Keychain OAuth session, or (Linux) the shared
 // ~/.claude/.credentials.json -- both periodically expire and 401 the main bot
-// (a manual /login is then needed), see the 2026-07-23 outage. An isolated
-// config dir (no .credentials.json) makes it authenticate from the long-lived
-// fleet setup-token via CLAUDE_CODE_OAUTH_TOKEN, exactly like the sub-agents.
+// (a manual /login is then needed). An isolated config dir (no .credentials.json)
+// makes it authenticate from the long-lived fleet setup-token via
+// CLAUDE_CODE_OAUTH_TOKEN, exactly like the sub-agents.
 //
 // Prints NOTHING (and exits 0) when isolation is not applicable -- setting off,
 // no fleet token (store/.claude-oauth-token), or ~/.claude absent -- so the

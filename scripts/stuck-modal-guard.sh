@@ -2,7 +2,7 @@
 # Mid-session stuck-modal guard for the main channels session (systemd --user
 # timer, every minute).
 #
-# Incident it fixes (2026-06-03 dawn): a disk-full event left the main session
+# Incident it fixes: a disk-full event left the main session
 # wedged in a /mcp modal. A modal left open blocks the ENTIRE session -- inbound
 # Telegram messages are lost while it sits there -- and nothing closed it until a
 # human noticed. agent-context-guard.sh only watches the 1M-context credit wall,
