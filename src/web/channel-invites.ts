@@ -105,9 +105,8 @@ function pruneInvites(store: InvitesFile, now: number): boolean {
 }
 
 function activeInviteCount(store: InvitesFile, now: number): number {
-  if (!store.invites) return 0
   let n = 0
-  for (const inv of Object.values(store.invites)) {
+  for (const inv of Object.values(store.invites ?? {})) {
     if (!inv.used && inv.expiresAt >= now) n++
   }
   return n
@@ -233,7 +232,7 @@ export function runInviteMonitorTick(mainAgentId: string, agentsRoot: string): v
 
       if (!access.allowFrom) access.allowFrom = []
       if (!access.allowFrom.includes(pEntry.senderId)) access.allowFrom.push(pEntry.senderId)
-      if (access.pending) delete access.pending[pCode]
+      delete (access.pending ?? {})[pCode]
 
       tEntry.used = true
       tEntry.usedBy = pEntry.senderId
