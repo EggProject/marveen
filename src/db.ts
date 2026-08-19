@@ -525,6 +525,27 @@ export function initDatabase(dbPathOverride?: string): void {
   runScript(db, `CREATE UNIQUE INDEX IF NOT EXISTS idx_pcr_agent_channel ON pending_channel_requests(agent, channel_id) WHERE status = 'pending'`)
   try { runScript(db, 'ALTER TABLE pending_channel_requests ADD COLUMN resolved_at INTEGER') } catch { /* already exists */ }
 
+  // --- Telegram History ---
+  // In/out message log for the Telegram channel. Persisted here so the
+  // dashboard's conversation view survives restarts and so the schema
+  // migrations for fresh installs don't trip over a missing table the
+  // first time saveTelegramMessage runs. The UNIQUE constraint backs the
+  // `INSERT OR IGNORE` semantics in saveTelegramMessage (idempotent on
+  // re-delivery of the same Telegram update).
+  runScript(db, `
+    CREATE TABLE IF NOT EXISTS telegram_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      chat_id TEXT NOT NULL,
+      message_id TEXT NOT NULL,
+      user_id TEXT,
+      direction TEXT NOT NULL CHECK(direction IN ('in','out')),
+      text TEXT,
+      ts INTEGER NOT NULL,
+      UNIQUE(chat_id, message_id, direction)
+    )
+  `)
+  runScript(db, `CREATE INDEX IF NOT EXISTS idx_telegram_history_chat_ts ON telegram_history(chat_id, ts)`)
+
   // --- Task Run History ---
   // Log every scheduled-task firing so the dashboard overview's "tasksToday"
   // survives dashboard restarts. Replaces the old store/task-run-history.json

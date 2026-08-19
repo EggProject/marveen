@@ -21,6 +21,8 @@ import {
   deletePendingTaskRetryById,
   markPendingTaskRetryAlert,
   clearPendingTaskRetryAlert,
+  saveTelegramMessage,
+  getTelegramHistory,
 } from '../db.js'
 import { DB_FILENAME } from '../config.js'
 
@@ -304,5 +306,30 @@ describe('database file permissions', () => {
     if (!existsSync(journalPath)) return
     const mode = statSync(journalPath).mode & 0o777
     expect(mode).toBe(0o600)
+  })
+})
+
+describe('telegram_history table (regression: db-missing-telegram-history-table)', () => {
+  it('initDatabase creates telegram_history so saveTelegramMessage does not throw', () => {
+    initDatabase(':memory:')
+    expect(() => saveTelegramMessage('c1', 'm1', 'in', 'hello')).not.toThrow()
+  })
+
+  it('getTelegramHistory returns rows in ts DESC order', () => {
+    initDatabase(':memory:')
+    saveTelegramMessage('c1', 'm1', 'in', 'first',  undefined, 1000)
+    saveTelegramMessage('c1', 'm2', 'in', 'second', undefined, 2000)
+    const rows = getTelegramHistory('c1')
+    expect(rows).toHaveLength(2)
+    expect(rows[0].text).toBe('second')
+    expect(rows[1].text).toBe('first')
+  })
+
+  it('saveTelegramMessage is idempotent on (chat_id, message_id, direction)', () => {
+    initDatabase(':memory:')
+    saveTelegramMessage('c1', 'm1', 'in', 'hello')
+    expect(() => saveTelegramMessage('c1', 'm1', 'in', 'hello')).not.toThrow()
+    const rows = getTelegramHistory('c1')
+    expect(rows).toHaveLength(1)
   })
 })
