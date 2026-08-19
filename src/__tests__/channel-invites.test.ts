@@ -143,49 +143,6 @@ vi.mock('node:fs', async (orig) => {
   })
 })
 
-// JSON.parse interceptor for the two defensive branches the SUT cannot
-// reach through normal control flow (line 108: `!store.invites` truthy
-// in activeInviteCount; line 236: `if (access.pending)` falsy).
-//
-// The SUT's callers gate on the same property before these defensive
-// branches run, so reaching the branches requires making the property
-// appear defined to the gating check but undefined to the defensive
-// check. We do that with a counter-Proxy on the parsed JSON: the first
-// N reads return the real value, the (N+1)th read returns undefined.
-//
-// Arm ONLY during the SUT call -- test helpers (readAccessRaw,
-// readInvitesRaw) run JSON.parse too and must see normal behaviour.
-const jsonParseInterceptor: {
-  arm: boolean
-  invites: { reads: number } | null
-  pending: { reads: number } | null
-} = { arm: false, invites: null, pending: null }
-const originalJsonParse = JSON.parse
-JSON.parse = ((text: string, reviver?: (k: string, v: unknown) => unknown) => {
-  const result = originalJsonParse(text, reviver)
-  if (jsonParseInterceptor.arm && result && typeof result === 'object') {
-    const inner = result as Record<string, unknown>
-    const wrap = (key: 'invites' | 'pending', target: number) => {
-      if (!(key in inner)) return
-      const real = inner[key]
-      let reads = 0
-      Object.defineProperty(inner, key, {
-        configurable: true,
-        get() {
-          reads += 1
-          return reads > target ? undefined : real
-        },
-      })
-    }
-    if (jsonParseInterceptor.invites) wrap('invites', jsonParseInterceptor.invites.reads)
-    if (jsonParseInterceptor.pending) wrap('pending', jsonParseInterceptor.pending.reads)
-  }
-  return result
-}) as typeof JSON.parse
-
-import * as ci from '../web/channel-invites.js'
-
-
 function resetSandbox(): void {
   rmSync(SANDBOX, { recursive: true, force: true })
   mkdirSync(HOME, { recursive: true })
