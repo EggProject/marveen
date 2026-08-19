@@ -470,7 +470,6 @@ function mcpMissingReason(taskName: string, agentName: string): string {
   // after writing the cache entry. Using `?.length` instead of `?? []` narrows
   // the `string[] | undefined` type without a fallback arm, so coverage can
   // hit 100% on this function.
-  // See docs/needs-to-be-fix/schedule-runner-mcpmissingreason-cache-miss-unreachable.md
   const missing = lastMcpMissing.get(`${taskName}@${agentName}`)
   return missing?.length ? `mcp-missing:${missing.join(',')}` : 'mcp-missing'
 }

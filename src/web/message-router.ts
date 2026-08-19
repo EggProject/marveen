@@ -76,10 +76,9 @@ export function shouldGiveUpOnInject(failCount: number, maxFailures: number): bo
  */
 function notifyOrchestratorOfFailedHandoff(msg: AgentMessage, reason: string): void {
   try {
-    // Dead guard removed (cycle 35): the main-loop's `if (isMainAgent) { ... continue }`
-    // at lines 459-470 short-circuits main-agent targets before they reach
-    // either call site of notifyOrchestratorOfFailedHandoff (lines 485, 634).
-    // See message-router-unreachable-defensive-branches.md.
+    // No main-agent guard is needed here: the main loop's `if (isMainAgent) { ... continue }`
+    // short-circuits main-agent targets before they reach either call site of
+    // notifyOrchestratorOfFailedHandoff.
     const preview = (msg.content ?? '').slice(0, 220)
     createAgentMessage(
       'system',

@@ -121,20 +121,17 @@ function recoverParkedPaste(
       'stuck-input-watcher: parked paste placeholder persisted past confirm window, sending recovery Enter',
     )
     sendEnterToSession(session, host)
-  } else if (next.attempts >= thresholds.maxAttempts && !prev.giveUpAlerted  // NEW per-spell gate
+  } else if (next.attempts >= thresholds.maxAttempts && !prev.giveUpAlerted
   ) {
-    // TRIPWIRE (cycle 32 regression, 2026-08-19): giveUpAlerted gates the warn
-    // to once per spell. The previous inner guard
-    // (prev.attempts < maxAttempts) was dead code that silently swallowed the
-    // warn, but deleting it caused the warn to fire every 15s for the duration
-    // of a stuck spell (log spam, not user-facing). Removing this gate restores
-    // that regression. The alerts exactly once across multiple ticks test in
+    // TRIPWIRE: giveUpAlerted gates the warn to once per spell. Without it the
+    // warn fires every 15s for the duration of a stuck spell (log spam, not
+    // user-facing). The alerts exactly once across multiple ticks test in
     // stuck-input-watcher.test.ts fails if the gate is dropped.
     logger.warn(
       { label, session },
       'stuck-input-watcher: paste placeholder still parked after max recovery Enters, giving up for this spell',
     )
-    watchState.set(session, { ...next, giveUpAlerted: true })  // NEW: re-store with flag
+    watchState.set(session, { ...next, giveUpAlerted: true })
   }
   return true
 }
@@ -169,17 +166,14 @@ function bareEnterRecovery(label: string, session: string, host: string | null):
   } else if (
     next.parkedSig !== null &&
     next.attempts >= THRESHOLDS.maxAttempts &&
-    !prev.giveUpAlerted  // NEW per-spell gate
+    !prev.giveUpAlerted
   ) {
-    // TRIPWIRE (cycle 32 regression, 2026-08-19): giveUpAlerted gates the warn
-    // to once per spell. The previous inner guard
-    // (prev.attempts < maxAttempts) was dead code that silently swallowed the
-    // warn, but deleting it caused the warn to fire every 15s for the duration
-    // of a stuck spell (log spam, not user-facing). Removing this gate restores
-    // that regression. The alerts exactly once across multiple ticks test in
+    // TRIPWIRE: giveUpAlerted gates the warn to once per spell. Without it the
+    // warn fires every 15s for the duration of a stuck spell (log spam, not
+    // user-facing). The alerts exactly once across multiple ticks test in
     // stuck-input-watcher.test.ts fails if the gate is dropped.
     logger.warn({ label, session }, 'stuck-input-watcher: input still parked after max recovery Enters, giving up for this spell')
-    watchState.set(session, { ...next, giveUpAlerted: true })  // NEW: re-store with flag
+    watchState.set(session, { ...next, giveUpAlerted: true })
   }
 }
 
@@ -213,23 +207,19 @@ async function checkLocalSession(label: string, session: string, alertOnGiveUp: 
   if (next.parkedSig === null) {
     watchState.delete(session)
   } else {
-    // TRIPWIRE (cycle 32 regression, 2026-08-19): giveUpAlerted gates the alert
-    // to once per spell. The previous inner guard
-    // (prev.attempts < LOCAL_FAST_THRESHOLDS.maxAttempts) was dead code that
-    // silently swallowed the alert, but deleting it caused sendAlert to fire
-    // every 15s for the duration of a stuck spell (user-facing notification
-    // spam). Removing this gate restores that regression. The
-    // alerts exactly once across multiple ticks test in
+    // TRIPWIRE: giveUpAlerted gates the alert to once per spell. Without it
+    // sendAlert fires every 15s for the duration of a stuck spell (user-facing
+    // notification spam). The alerts exactly once across multiple ticks test in
     // stuck-input-watcher.test.ts fails if the gate is dropped.
     watchState.set(session, next)
     if (
       alertOnGiveUp &&
       next.attempts >= LOCAL_FAST_THRESHOLDS.maxAttempts &&
-      !prev.giveUpAlerted  // NEW per-spell gate
+      !prev.giveUpAlerted
     ) {
       logger.warn({ label, session }, 'stuck-input-watcher: sub-agent input still parked after max recovery attempts, alerting for manual restart')
       sendAlert(`⚠️ A(z) ${label} agens bemenete beragadt és az auto-recovery (Enter + clear/re-inject) nem szabadította ki. Valószínűleg kézi restart kell: POST /api/agents/${label}/restart vagy a dashboardon.`)
-      watchState.set(session, { ...next, giveUpAlerted: true })  // NEW: re-store with flag
+      watchState.set(session, { ...next, giveUpAlerted: true })
     }
   }
 }
