@@ -128,8 +128,8 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `fleet-transfer-agents-nullish-coalesce-dead-code` | fleet-transfer.ts: `fleet.agents ?? []` nullish-coalesce right arm is unreachable | 2026-08-14 014f1de |
 | `fleet-transfer-fleet-agents-nullish-unreachable` | fleet-transfer.ts: `fleet.agents ?? []` nullish-coalesce right-arms are unreachable (7 sites) | 2026-08-14 014f1de |
 | `message-router-cache-fallback-unreachable` | message-router.ts: cached session-lookup `??` fallback arms are unreachable | — |
-| `message-router-dead-defensive-branches` | message-router.ts: three dead defensive branches block 100% branch coverage | — |
-| `message-router-unreachable-defensive-branches` | message-router.ts: four unreachable defensive branches block 100% branch coverage | — |
+| `message-router-dead-defensive-branches` | message-router.ts: three dead defensive branches block 100% branch coverage | Partially resolved: 2026-08-19 ba6faf8 |
+| `message-router-unreachable-defensive-branches` | message-router.ts: four unreachable defensive branches block 100% branch coverage | Partially resolved: 2026-08-19 ba6faf8 |
 | `model-suggest-buildreason-preapplied-fallbacks-unreachable` | model-suggest.ts: `buildReason` `signals` and field-specific `?? 0` fallbacks are unreachable | 2026-08-14 c2b4ea2 |
 | `model-suggest-buildreason-unreachable-fallbacks` | model-suggest.ts: three unreachable `?? X` fallbacks in buildReason block 100% branch coverage | 2026-08-14 c2b4ea2 |
 | `openrouter-models-tier1-auto-empty-fallback` | openrouter-models.ts: `??` misses the empty-string tier1.auto fallback | Resolved: 2026-08-18 63d62da |

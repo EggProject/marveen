@@ -111,3 +111,5 @@ surface without source modifications.
 - For line 317: drop the early return if `batchDeliverBacklog` is only ever
   called with non-empty `agentPending`. The partition loop never produces an
   empty `old` if `agentPending` is non-empty, so the guard is not needed.
+
+Partially resolved: 2026-08-19 ba6faf8 (lines 81, 317 deleted; lines 478-480 remain open due to TS strict blocking)

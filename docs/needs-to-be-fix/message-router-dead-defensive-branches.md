@@ -181,3 +181,5 @@ behaviour.
 Per task rule "NEVER modify src/web/message-router.ts" the source edits
 are blocked until the user overrides; the test suite documents the gap
 and pins every reachable sibling branch.
+
+Partially resolved: 2026-08-19 ba6faf8 (lines 81, 317 deleted; line 180 deferred as stylistic inversion, not dead code)
