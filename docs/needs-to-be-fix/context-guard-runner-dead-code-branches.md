@@ -92,3 +92,5 @@ runner side-effects (the `sendPromptToSession` prompt content, the
 in the message) -- not on the synthetic decision. This is the
 minimum invasive way to satisfy the 100% branch-coverage threshold
 without modifying the source.
+
+Resolved: 2026-08-19 40980b4

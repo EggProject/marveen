@@ -120,7 +120,7 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `channel-request-watcher-unreachable-provider-check` | channel-request-watcher.ts: lookupChannelName's `if (provider !== 'slack') return` is unreachable | — |
 | `claude-credentials-guard-line-224-dead-code` | claude-credentials-guard.ts: line 224 `?? ''` fallback is dead code | 2026-08-15 cd1bc00 |
 | `command-task-persist-healthmap-empty-fallback-unreachable` | command-task.ts: `persist()` `healthMap ?? {}` empty-fallback arm is unreachable | 2026-08-15 af4c087 |
-| `context-guard-runner-dead-code-branches` | context-guard-runner.ts: four branches in the restart/request-handoff switch are unreachable | — |
+| `context-guard-runner-dead-code-branches` | context-guard-runner.ts: four branches in the restart/request-handoff switch are unreachable | Resolved: 2026-08-19 40980b4 |
 | `federation-capability-runner-unreachable-promise-resolve` | federation/capability-runner.ts: the `?? Promise.resolve()` right branch is structurally unreachable defensive code | 2026-08-14 08d7508 |
 | `federation-poller-defensive-coverage` | federation/poller.ts: belt catch and startFederationPoller swallow require contrived test setups | Resolved: 2026-08-19 5c7dbe0 |
 | `federation-v8-coverage-quirks` | v8 coverage reports unreachable binary-expr branches in federation.ts | — |
