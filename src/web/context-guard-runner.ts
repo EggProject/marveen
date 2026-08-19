@@ -260,7 +260,8 @@ async function checkAgent(name: string, nowMs: number): Promise<void> {
   try {
     switch (decision.action) {
       case 'request-handoff':
-        await sendPromptToSession(session, handoffPrompt(pctRound ?? 0, handoffPathFor(name)))
+        // pctRound is non-null here: decideGuard returns 'request-handoff' only when inputs.pct !== null (see context-guard.ts:322-333).
+        await sendPromptToSession(session, handoffPrompt(pctRound!, handoffPathFor(name)))
         break
       case 'restart': {
         // A forced restart must never be silent: the supervisor has to know
@@ -271,11 +272,10 @@ async function checkAgent(name: string, nowMs: number): Promise<void> {
         // inter-agent queue -- the channel supervisors actually read.
         let snapshotPath: string | null = null
         try {
-          const finalPane = pane ?? capturePane(session)
-          if (finalPane) {
-            snapshotPath = join(PROJECT_ROOT, 'store', `context-guard-last-pane-${name}.txt`)
-            writeFileSync(snapshotPath, finalPane)
-          }
+          // pane is non-null here: decideGuard returns 'restart' only when state.phase ∈ {idle, await-handoff} which forces pane non-null (see context-guard.ts:301,320,352,358,367,373).
+          const finalPane: string = pane!
+          snapshotPath = join(PROJECT_ROOT, 'store', `context-guard-last-pane-${name}.txt`)
+          writeFileSync(snapshotPath, finalPane)
         } catch (err) {
           logger.warn({ err, name }, 'context-guard: pre-restart pane snapshot failed')
         }
