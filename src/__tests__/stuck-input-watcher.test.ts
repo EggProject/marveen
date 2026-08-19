@@ -545,6 +545,67 @@ describe('startStuckInputWatcher -- escalation side effects', () => {
     clearInterval(timer)
   })
 
+  it('keeps the give-up alert to exactly once across 6+ ticks of the SAME spell (real decideStuckInputRecovery)', async () => {
+    // The existing 'a give-up is alerted exactly once per spell' test above is
+    // a tautology: it queues NO_STATE -> stuck -> NO_STATE -> stuck, which
+    // simulates two SEPARATE spells (each ending in a fresh give-up). Two
+    // alerts would be correct even WITHOUT the per-spell gate. This test
+    // simulates ONE stuck spell lasting multiple ticks of the SAME parked
+    // signature, so attempts counter genuinely accumulates 0 -> 1 -> 2 -> 3
+    // -> 4 -> 5 (give-up) -> 5 (hold) -> ... -- without the per-spell gate
+    // sendAlert fires on every budget-spent tick (5+ alerts), not exactly
+    // once.
+    mockListAgentNames.mockReturnValue(['samu'])
+    mockIsAgentRunning.mockReturnValue(true)
+    mockResolveSession.mockReturnValue('agent-samu')
+    mockReadHost.mockReturnValue(null)
+    // Same parked text every tick -> same stuckInputSignature -> same spell
+    // across ticks. This is the load-bearing diff vs the tautology test:
+    // mockCapture must keep returning the SAME pane so the spell never ends.
+    mockCapture.mockReturnValue(PARKED_CHANNEL)
+    // Route the watcher's recoverStuckInputForSession call through the REAL
+    // decideStuckInputRecovery from pane-state so attempts genuinely tick
+    // 0 -> 1 -> 2 -> 3 -> 4 -> 5 across sweeps. We do NOT mock the decision.
+    mockRecover.mockImplementation(
+      async (session: string, prev: unknown, thresholds: unknown) => {
+        const pane = mockCapture(session, null)
+        const sig = pane == null ? null : stuckInputSignature(pane)
+        if (sig == null) return NO_STATE
+        const { next } = decideStuckInputRecovery(
+          sig,
+          prev as StuckInputState,
+          Date.now(),
+          thresholds as Parameters<typeof decideStuckInputRecovery>[3],
+        )
+        return next
+      },
+    )
+
+    const timer = startStuckInputWatcher()
+    // INITIAL_DELAY_MS (20s) + 5 * INTERVAL_MS (15s) -> the spell's attempts
+    // counter walks 0 -> 1 -> 2 -> 3 -> 4 -> 5 across the same spell. The 5th
+    // boundary tick is the first attempt >= maxAttempts: the watcher's
+    // checkLocalSession fires sendAlert once and sets giveUpAlerted=true.
+    await vi.advanceTimersByTimeAsync(20_000)
+    await vi.advanceTimersByTimeAsync(15_000)
+    await vi.advanceTimersByTimeAsync(15_000)
+    await vi.advanceTimersByTimeAsync(15_000)
+    await vi.advanceTimersByTimeAsync(15_000)
+    // 5 more INTERVAL_MS of budget-spent ticks (attempts >= maxAttempts, hold).
+    // The per-spell giveUpAlerted gate must keep sendAlert at exactly 1 across
+    // these.
+    await vi.advanceTimersByTimeAsync(15_000)
+    await vi.advanceTimersByTimeAsync(15_000)
+    await vi.advanceTimersByTimeAsync(15_000)
+    await vi.advanceTimersByTimeAsync(15_000)
+    await vi.advanceTimersByTimeAsync(15_000)
+
+    // Exactly 1 alert: the first give-up. The per-spell gate prevents the
+    // budget-spent ticks from re-alerting.
+    expect(mockSendAlert).toHaveBeenCalledTimes(1)
+    clearInterval(timer)
+  })
+
   it('spell clears when next.parkedSig is null (the watchState.delete branch)', async () => {
     mockListAgentNames.mockReturnValue([])
     mockCapture.mockReturnValue(PARKED_CHANNEL)
