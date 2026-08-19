@@ -126,13 +126,21 @@ export const SLACK_CHANNEL_ID = env['SLACK_CHANNEL_ID'] ?? ''
 // word -- scrubbing the literal word "owner" false-positives on fixed template
 // text like "owner channels".
 export const OWNER_NAME_PLACEHOLDER = 'Owner'
-export const OWNER_NAME = env['OWNER_NAME'] ?? OWNER_NAME_PLACEHOLDER
+// Empty-string-tolerant .env read: a present-but-empty line means "unset", not "blank".
+// Mirrors the resolveBrandName guard (config.ts:150-153). The constants below
+// route through this helper so an empty `BOT_NAME=` line in .env does not blank
+// the install identity (dashboard chrome, service unit names, DB/tmux routing).
+function envOr(key: string, fallback: string): string {
+  return (env[key] ?? '').trim() || fallback
+}
+
+export const OWNER_NAME = envOr('OWNER_NAME', OWNER_NAME_PLACEHOLDER)
 // Shared Google Drive folder ID the fleet writes deliverables into. Empty by
 // default (distribution-safe: no owner-specific folder is baked into a fresh
 // install's generated agent CLAUDE.md); set OWNER_DRIVE_FOLDER in .env to wire
 // the default shared drive for this install.
 export const OWNER_DRIVE_FOLDER = env['OWNER_DRIVE_FOLDER'] ?? ''
-export const BOT_NAME = env['BOT_NAME'] ?? 'Marveen'
+export const BOT_NAME = envOr('BOT_NAME', 'Marveen')
 
 // Product / system brand shown in the dashboard chrome (browser tab title,
 // mobile topbar, sidebar, updates page). Kept SEPARATE from BOT_NAME so an
@@ -140,11 +148,11 @@ export const BOT_NAME = env['BOT_NAME'] ?? 'Marveen'
 // another (BOT_NAME, the agent's display name). Defaults to BOT_NAME -- which
 // itself defaults to 'Marveen' -- so an install that sets neither, or only
 // BOT_NAME, behaves exactly as before.
-export const BRAND_NAME = env['BRAND_NAME'] ?? BOT_NAME
+export const BRAND_NAME = envOr('BRAND_NAME', BOT_NAME)
 
 // Pure resolution rule for BRAND_NAME, so the default (brandEnv unset =>
 // botName) is provable without a live .env. brandEnv is the raw env value
-// (undefined / empty when unset). Mirrors the `env['BRAND_NAME'] ?? BOT_NAME`
+// (undefined / empty when unset). Mirrors the `envOr('BRAND_NAME', BOT_NAME)`
 // above plus an empty-string guard (an empty .env line should not blank the
 // brand).
 export function resolveBrandName(brandEnv: string | undefined, botName: string): string {
@@ -197,7 +205,7 @@ export function brandSlug(raw: string): string {
 // labels, API routing, etc. The installer derives this from BOT_NAME
 // (NFKD + ASCII + lowercase dashes). Older installs without this env var
 // fall back to "marveen" so nothing breaks when upgrading in place.
-export const MAIN_AGENT_ID = env['MAIN_AGENT_ID'] ?? 'marveen'
+export const MAIN_AGENT_ID = envOr('MAIN_AGENT_ID', 'marveen')
 
 // Identifier the OS service manager uses for the main agent's units (launchd
 // label com.<id>.channels / com.<id>.dashboard, systemd <id>-channels, etc.).
@@ -206,7 +214,7 @@ export const MAIN_AGENT_ID = env['MAIN_AGENT_ID'] ?? 'marveen'
 // MAIN_AGENT_ID here, so an install without SERVICE_ID in its .env (every
 // existing install) keeps byte-identical service labels and the recovery path
 // (launchctl unload/load, kickstart) still targets the right unit.
-export const SERVICE_ID = env['SERVICE_ID'] ?? MAIN_AGENT_ID
+export const SERVICE_ID = envOr('SERVICE_ID', MAIN_AGENT_ID)
 
 // Legacy service id from before the OS service units were keyed off SERVICE_ID
 // (the project originally shipped as "claudeclaw"). Retained so the standalone

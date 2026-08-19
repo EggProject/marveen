@@ -543,28 +543,24 @@ describe('.env-backed exports', () => {
     expect(config.BRAND_NAME).toBe('Zed')
   })
 
-  // DEFECT PIN -- docs/needs-to-be-fix/config-empty-env-blanks-identity.md
-  // `?? default` only fires on an ABSENT key. An empty `BOT_NAME=` line parses
-  // to '' (env.ts:37), which is not nullish, so the default is skipped and the
-  // whole identity resolves blank -- contradicting config.ts:149, which states
-  // "an empty .env line should not blank the brand". resolveBrandName carries
-  // the guard; the constants it mirrors do not. Pinned, NOT fixed.
-  it('BUG: an empty .env line blanks the identity instead of using the default', async () => {
+  // This was the defect described in config-empty-env-blanks-identity.md;
+  // after the fix, the constants now match the resolveBrandName guard.
+  it('routes empty .env values through the envOr default guard', async () => {
     const { config } = await loadConfig({
       env: { BOT_NAME: '', BRAND_NAME: '', OWNER_NAME: '', WEB_HOST: '', MAIN_AGENT_ID: '' },
     })
-    expect(config.BOT_NAME).toBe('')
-    expect(config.BRAND_NAME).toBe('')
-    expect(config.OWNER_NAME).toBe('')
+    expect(config.BOT_NAME).toBe('Marveen')
+    expect(config.BRAND_NAME).toBe('Marveen')
+    expect(config.OWNER_NAME).toBe('Owner')
     expect(config.WEB_HOST).toBe('')
-    expect(config.MAIN_AGENT_ID).toBe('')
-    // SERVICE_ID inherits the blank, so the launchd/systemd unit names collapse
-    // to "com..app" / "-dashboard".
-    expect(config.SERVICE_ID).toBe('')
-    expect(config.appServiceLabel(config.SERVICE_ID)).toBe('com..app')
+    expect(config.MAIN_AGENT_ID).toBe('marveen')
+    // SERVICE_ID inherits the default, so the launchd/systemd unit names stay
+    // keyed off 'marveen'.
+    expect(config.SERVICE_ID).toBe('marveen')
+    expect(config.appServiceLabel(config.SERVICE_ID)).toBe('com.marveen.app')
 
-    // The pure helper that documents the intended rule disagrees with the
-    // constant it is supposed to mirror -- that gap IS the defect.
+    // The pure helper that documents the intended rule still agrees with the
+    // constants it mirrors -- the gap from the original bug is closed.
     expect(config.resolveBrandName('', 'Marveen')).toBe('Marveen')
   })
 })
