@@ -36,7 +36,7 @@ dead code, doc issue).
 | --- | --- | --- | --- | --- |
 | `web-watchdog-survives-close` | `src/web.ts:310-319` (arm) vs `539-562` (close override) | the not-listening watchdog survives `server.close()` and `exit(1)` afterwards | `src/__tests__/web-server.test.ts` | — |
 | `web-port-reclaim-failure-leaves-unbound` | `src/web.ts:225-280` | a failing port-reclaim leaves the process alive with no listener and no retry | `src/__tests__/web-server.test.ts` | — |
-| `env-update-duplicate-key-lost` | `src/env.ts:68-80` | duplicate-key update of `updateEnvFile` is silently lost (reader uses last-occurrence) | `src/__tests__/env.test.ts` | Resolved: 2026-08-20 bc53072 |
+| `env-update-duplicate-key-lost` | `src/env.ts:68-80` | duplicate-key update of `updateEnvFile` is silently lost (reader uses last-occurrence) | `src/__tests__/env.test.ts` | Resolved: 2026-08-20 3d7e677 |
 | `kanban-dispatch-owner-case` | `src/kanban-dispatch.ts:34` | owner-guard is the only case-sensitive comparison (mismatched casing misroutes cards) | `src/__tests__/kanban-dispatch.test.ts` | Resolved: 2026-08-16 92612c5 |
 | `notify-fallback-hardcodes-telegram-limit` | `src/notify.ts:25` | fallback hardcodes Telegram 4096 limit for every provider | `src/__tests__/notify.test.ts` | Resolved: 2026-08-17 c49c793 |
 | `notify-fallback-repeats-head` | `src/notify.ts:19-28` | per-chunk fallback re-sends the same first 4096 chars, dropping the tail | `src/__tests__/notify.test.ts` | Resolved: 2026-08-17 ff22286 |
