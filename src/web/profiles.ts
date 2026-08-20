@@ -39,12 +39,21 @@ export function listProfileTemplates(): ProfileTemplate[] {
   return out.length ? out : [HARDCODED_DEFAULT_PROFILE]
 }
 
-export function loadProfileTemplate(id: string): ProfileTemplate {
-  const path = join(PROFILES_DIR, `${id}.json`)
+export function loadProfileTemplate(profileId: string): ProfileTemplate {
+  // Allowlist rejects traversal before any filesystem read. Matches every
+  // shipped profile id (applier, default, developer-junior, developer-
+  // senior, marketer, researcher, sub-dev). Without this guard,
+  // path.join(PROFILES_DIR, ID_JSON) normalises a "../" id to a location
+  // outside PROFILES_DIR and returns whatever JSON happens to live there
+  // as if it were a security profile.
+  if (!/^[a-z0-9-]+$/i.test(profileId)) {
+    return profileId !== 'default' ? loadProfileTemplate('default') : HARDCODED_DEFAULT_PROFILE
+  }
+  const path = join(PROFILES_DIR, `${profileId}.json`)
   if (existsSync(path)) {
     try { return JSON.parse(readFileSync(path, 'utf-8')) as ProfileTemplate } catch { /* fall through */ }
   }
-  if (id !== 'default') return loadProfileTemplate('default')
+  if (profileId !== 'default') return loadProfileTemplate('default')
   return HARDCODED_DEFAULT_PROFILE
 }
 

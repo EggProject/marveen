@@ -281,12 +281,11 @@ describe('loadProfileTemplate', () => {
     expect(profile.permissionMode).toBe('strict')
   })
 
-  // --- DEFECT PIN: profiles-traversal-id ---------------------------------
-  // `join(PROFILES_DIR, `${id}.json`)` never validates `id`, so a relative
-  // id escapes the profiles directory. See
-  // profiles-traversal-id. This test pins the CURRENT
-  // (buggy) behaviour so the suite stays green; flip it when the fix lands.
-  it('PINS BUG: a traversing id reads a JSON file outside PROFILES_DIR', () => {
+  // --- profiles-traversal-id --------------------------------------------
+  // `loadProfileTemplate` rejects any id whose characters fall outside
+  // [a-z0-9-] before touching the filesystem, so a traversal like
+  // "../../outside" can never escape PROFILES_DIR.
+  it('rejects traversal ids and falls back to the on-disk default', () => {
     writeProfile('default.json', {
       id: 'default',
       label: 'On-disk default',
@@ -308,9 +307,38 @@ describe('loadProfileTemplate', () => {
     )
 
     const escaped = loadProfileTemplate('../../outside')
-    // Correct behaviour would be to reject the id and return the default.
-    expect(escaped.label).toBe('ESCAPED')
-    expect(escaped.id).toBe('outside')
+    // Allowlist regex short-circuits before any filesystem read, so the
+    // planted outside.json is unreachable and the recursion falls back to
+    // the on-disk default.
+    expect(escaped.label).toBe('On-disk default')
+    expect(escaped.id).toBe('default')
+  })
+
+  it('rejects ids containing characters outside [a-z0-9-]', () => {
+    writeProfile('default.json', {
+      id: 'default',
+      label: 'On-disk default',
+      description: 'd',
+      permissionMode: 'permissive',
+      filesystem: { allow: [], deny: [] },
+    })
+    expect(loadProfileTemplate('../package.json').id).toBe('default')
+    expect(loadProfileTemplate('foo/bar').id).toBe('default')
+    expect(loadProfileTemplate('foo bar').id).toBe('default')
+    expect(loadProfileTemplate('').id).toBe('default')
+    expect(loadProfileTemplate('sub_dev').id).toBe('default')
+  })
+
+  it('accepts ids with hyphens and digits (matches every shipped profile)', () => {
+    writeProfile('developer-junior.json', {
+      id: 'developer-junior',
+      label: 'Junior',
+      description: 'd',
+      permissionMode: 'strict',
+      filesystem: { allow: [], deny: [] },
+    })
+    expect(loadProfileTemplate('developer-junior').id).toBe('developer-junior')
+    expect(loadProfileTemplate('sub-dev').id).toBe('default')
   })
 })
 
