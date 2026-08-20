@@ -137,7 +137,7 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `platform-xdg-session-type-tty-bug` | platform.ts: XDG_SESSION_TYPE=tty is misclassified as `linux-gui` | Resolved: 2026-08-18 cb68aad |
 | `reauth-healer-stampalert-if-st-dead-code` | reauth-healer.ts: stampAlert `if (st)` false branch is dead code | 2026-08-14 c2b4ea2 |
 | `reauth-healer-sweep-callsite-dead-arms` | reauth-healer.ts: two structurally unreachable arms at lines 391 and 395 | 2026-08-14 c2b4ea2 |
-| `recall-dayofweek-noon-utc-far-east-skew` | routes/recall.ts: dayOfWeekBudapest anchors at noon UTC but reads the weekday in APP_TZ, so every week-range is off by a day for install zones at UTC+12 and beyond | Resolved: 2026-08-20 8ca8dc6 |
+| `recall-dayofweek-noon-utc-far-east-skew` | routes/recall.ts: dayOfWeekBudapest anchors at noon UTC but reads the weekday in APP_TZ, so every week-range is off by a day for install zones at UTC+12 and beyond | Resolved: 2026-08-20 482a9ea |
 | `recall-unreachable-defensive-fallbacks` | recall.ts: two unreachable defensive `?? 0` fallbacks block 100% branch coverage | Resolved: 2026-08-16 3bec823 |
 | `remote-enroll-core-merge-trailing-newline-skip` | `mergeAuthorizedKeys` trailing-newline guard (description corrected; no code change needed) | Documented only — source unchanged |
 | `remote-enroll-fs-lock-vanish-spin` | `acquireLock` spins forever when statSync throws but the lock file is still there | Resolved: 2026-08-19 7d76d14 |
