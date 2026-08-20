@@ -1,5 +1,7 @@
 # config.ts: an empty `.env` line blanks the whole install identity
 
+**Status:** RESOLVED (envOr empty-string guard routes identity constants, see commit `0df13db` on `test/baseline`). The narrative below is kept as a historical record of the bug, not as an open task.
+
 ## Location
 
 `src/config.ts`, the `??`-defaulted identity constants:

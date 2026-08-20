@@ -19,7 +19,7 @@ dead code, doc issue).
 | Bug ID | File:Line | Title | Pinning test path | Resolved |
 | --- | --- | --- | --- | --- |
 | `env-update-mode-downgrade` | `src/env.ts:87` | `updateEnvFile` rewrites `.env` from 0600 to 0644 (silent secret leak) | `src/__tests__/env.test.ts` | Resolved: 2026-08-17 d9fb8beb8d1a2e0f6a1a6ee358135f3b3c9ffe6e |
-| `config-empty-env-blanks-identity` | `src/config.ts:129,135,143,200,209` | an empty `.env` line blanks the whole install identity | `src/__tests__/config.test.ts` | — |
+| `config-empty-env-blanks-identity` | `src/config.ts:129,135,143,200,209` | an empty `.env` line blanks the whole install identity | `src/__tests__/config.test.ts` | Resolved: 2026-08-19 0df13db067af4b7cc53d4360838cb11735890be5 |
 | `db-missing-telegram-history-table` | `src/db.ts:2563,2588` (no `CREATE TABLE` in `initDatabase`) | `telegram_history` table is referenced but never created (silent data loss) | `src/__tests__/db.test.ts` | Resolved: 2026-08-19 0b61592 (functions deleted as dead code per the MD's option 2) |
 | `google-api-refresh-race` | `src/google-api.ts:108-142` | `refreshAccessToken` has no in-flight de-duplication (race overwrites tokens) | `src/__tests__/google-api.test.ts` | — |
 | `multipart-boundary-greedy` | `src/web/multipart.ts:13-15` | greedy `boundary=(.+)` keeps quotes and trailing params, silently corrupting every field | `src/__tests__/multipart.test.ts` | Resolved: 2026-08-20 6b82c2f6f117b862fc34dede4fac6bfc2d52d569 |
@@ -174,7 +174,7 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `routes-tool-log-uncaught-json-parse` | routes-tool-log-uncaught-json-parse | Resolved: 2026-08-17 0d23278 |
 | `routes-update-checker-dead-catch-handlers` | Dead `.catch(() => {})` handlers in startUpdateChecker | — | Resolved: 2026-08-18 38a3189 |
 | `routes-update-checker-path-mismatch` | Task prompt referenced a path that does not exist | Resolved: 2026-08-18 e5cfea6 |
-| `routes-updates-release-lock-unreachable-defensive-branch` | routes/updates.ts: releaseLock's `if (!lockHeld) return` is structurally unreachable | 2026-08-14 c2b4ea2 |
+| `routes-updates-release-lock-unreachable-defensive-branch` | routes/updates.ts: releaseLock's `if (!lockHeld) return` is structurally unreachable | Resolved: 2026-08-14 c2b4ea20f52bd8ed2efeb43c298b8b9668d1d6c3 |
 | `routes-voice-runproc-stdin-dead` | src/web/routes/voice.ts: runProc has two unreachable defensive branches | Resolved: 2026-08-18 e5cfea6 |
 | `schedule-mcp-precheck-subtree-cycle-defensive` | schedule-mcp-precheck.ts: collectSubtreeCmdlines cycle guard is only reachable through malformed ps output | Documented only — source unchanged |
 | `schedule-runner-mcpmissingreason-cache-miss-unreachable` | schedule-runner: `mcpMissingReason` cache-miss branch is unreachable | Resolved: 2026-08-18 2c36e37 |

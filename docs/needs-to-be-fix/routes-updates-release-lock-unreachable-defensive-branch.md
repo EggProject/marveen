@@ -1,5 +1,7 @@
 # routes/updates.ts: releaseLock's `if (!lockHeld) return` is structurally unreachable
 
+**Status:** RESOLVED (the `if (!lockHeld) return` defensive guard was deleted in the 2026-08-14 unreachable-branches sweep, see commit `c2b4ea2` on `test/baseline`). The narrative below is kept as a historical record of the bug, not as an open task.
+
 ## Location
 
 `src/web/routes/updates.ts`, the `releaseLock` closure inside
