@@ -431,8 +431,10 @@ describe('collectPollerEvidence', () => {
   it('skips ps snapshot lines that do not parse as `pid ppid command`', () => {
     const agentDir = mkAgentDir()
     try {
-      seedChanDir(agentDir, '7004')
-      script.psEnv = ''
+      const chanDir = seedChanDir(agentDir, '7004')
+      // Identity check (channel-poller-reap-botpid-killed-without-identity-check)
+      // requires the env scan to corroborate bot.pid, so seed the matching row.
+      script.psEnv = `  7004 s000 S+ 0:00.01 bun run start TELEGRAM_STATE_DIR=${chanDir}`
       script.psSnapshot = [
         '  PID  PPID COMMAND', // header: no leading digits
         '',                    // blank line
@@ -440,6 +442,50 @@ describe('collectPollerEvidence', () => {
       ].join('\n')
       const ev = collectPollerEvidence('telegram', agentDir, CLAUDE_PID)
       expect(ev.rows).toEqual([{ pid: 7004, ppid: 1, inClaudeTree: false }])
+    } finally {
+      rmTempDir(agentDir)
+    }
+  })
+
+  // channel-poller-reap-botpid-killed-without-identity-check:
+  // The forensics path applies the same identity check as reapChannelOrphans:
+  // a stale bot.pid (nothing ever deletes it) plus OS pid-reuse would otherwise
+  // mark an unrelated live process as botPidAlive, misattributing the
+  // down-spell. With corroborateBotPid, the botPid field is null whenever the
+  // env scan does not see it, and botPidAlive reflects the corroborated pid
+  // (or false when there is none).
+  it('drops bot.pid when the env scan does not corroborate it (closes identity-check on the forensics path)', () => {
+    const agentDir = mkAgentDir()
+    try {
+      seedChanDir(agentDir, '7101')
+      // 7101 is in bot.pid but the env scan sees a DIFFERENT pid (7102). The
+      // ps snapshot shows 7102 alive but not 7101, so the snapshot resolution
+      // of 7101 would be 'dead' anyway, but the identity check must clear
+      // bot.pid BEFORE that resolution so botPidAlive is false in cases where
+      // the snapshot ALSO sees 7101 (a pid-reuse scenario).
+      script.psEnv = `  7102 s000 S+ 0:00.01 bun run start TELEGRAM_STATE_DIR=${chanDirOf(agentDir)}`
+      script.psSnapshot = [
+        '  7102     1 bun run start',
+      ].join('\n')
+      const ev = collectPollerEvidence('telegram', agentDir, CLAUDE_PID)
+      expect(ev.botPid).toBeNull()
+      expect(ev.botPidAlive).toBe(false)
+      expect(ev.envScanPids).toEqual([7102])
+    } finally {
+      rmTempDir(agentDir)
+    }
+  })
+
+  it('keeps bot.pid when the env scan corroborates it (identity-check positive case)', () => {
+    const agentDir = mkAgentDir()
+    try {
+      const chanDir = seedChanDir(agentDir, '7103\n')
+      script.psEnv = `  7103 s000 S+ 0:00.01 bun run start TELEGRAM_STATE_DIR=${chanDir}`
+      script.psSnapshot = `  7103     1 bun run start`
+      const ev = collectPollerEvidence('telegram', agentDir, CLAUDE_PID)
+      expect(ev.botPid).toBe(7103)
+      expect(ev.botPidAlive).toBe(true)
+      expect(ev.envScanPids).toEqual([7103])
     } finally {
       rmTempDir(agentDir)
     }

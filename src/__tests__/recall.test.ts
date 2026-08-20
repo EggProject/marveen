@@ -302,9 +302,13 @@ describe('parseDateExpression', () => {
 // This block also keeps the BUGGY weekday algorithm in view via
 // __test__buggyDayOfWeekBudapest: for UTC+12+ zones it returns a different
 // answer than the post-fix helper, documenting that the production
-// dayOfWeekBudapest no longer matches the buggy anchor. If the production
-// code is reverted to use noon-UTC, the regression test below
-// (productionMatchesPostFix) fails.
+// dayOfWeekBudapest no longer matches the buggy anchor.
+//
+// The "production is anchored at local noon" test at the bottom of this block
+// uses vi.doMock + resetModules() per probe so each test gets a freshly-loaded
+// recall.js with the mocked APP_TZ. A revert of the production anchor back to
+// noon UTC would fail those assertions, catching the regression that the
+// helper-only tests above cannot witness.
 describe('dayOfWeekBudapest is anchored at local noon for UTC+12+ zones (recall-dayofweek-noon-utc-far-east-skew)', () => {
   // dateStr -> expected weekday (0=Sun..6=Sat) for Pacific/Auckland.
   // 2026-01-01 is Thursday (4). Pre-fix Auckland (UTC+13 summer) reads
@@ -324,46 +328,50 @@ describe('dayOfWeekBudapest is anchored at local noon for UTC+12+ zones (recall-
   })
 
   it('the BUGGY noon-UTC anchor gave a different answer for Pacific/Auckland (regression witness)', async () => {
-    const { __test__buggyDayOfWeekBudapest } = await import('../web/routes/recall.js')
-    // Pre-fix: every probe would return +1 (the off-by-one). Post-fix the
-    // production code no longer uses this anchor, but the helper itself still
-    // demonstrates the buggy behaviour so a regression test can assert that
-    // production switched anchors.
+    const { __test__buggyDayOfWeekBudapest, __test__dayOfWeekBudapestWithTz } = await import('../web/routes/recall.js')
+    // Pre-fix: every probe returns +1 (the off-by-one). Post-fix the production
+    // code no longer uses this anchor, but the helper still demonstrates the
+    // buggy behaviour so a regression test can assert that production switched
+    // anchors. The buggy answer for each probe is the expected weekday +1.
     const buggy = probes.map(([dateStr]) =>
       __test__buggyDayOfWeekBudapest('Pacific/Auckland', dateStr),
     )
-    const correct = probes.map(([dateStr]) => {
-      const parts = new Intl.DateTimeFormat('en-US', {
-        timeZone: 'Pacific/Auckland',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false,
-      }).formatToParts(new Date(`${dateStr}T12:00:00Z`))
-      const get = (type: Intl.DateTimeFormatPartTypes): string =>
-        parts.find((p) => p.type === type)?.value ?? ''
-      const probe = new Date(`${dateStr}T12:00:00Z`)
-      const localYear = Number(get('year'))
-      const localMonth = Number(get('month'))
-      const localDay = Number(get('day'))
-      let localHour = Number(get('hour'))
-      if (localHour === 24) localHour = 0
-      const localMinute = Number(get('minute'))
-      const localSecond = Number(get('second'))
-      const localAsUtcMs = Date.UTC(localYear, localMonth - 1, localDay, localHour, localMinute, localSecond)
-      const offsetMinutes = (probe.getTime() - localAsUtcMs) / 60_000
-      const [y, m, d] = dateStr.split('-').map(Number)
-      const noonLocal = new Date(Date.UTC(y, m - 1, d, 12, 0, 0) + offsetMinutes * 60_000)
-      const weekday = new Intl.DateTimeFormat('en-US', { timeZone: 'Pacific/Auckland', weekday: 'short' }).format(noonLocal)
-      const map: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
-      return map[weekday]
-    })
-    // The buggy helper and the local-noon helper must disagree on at least
-    // one probe. (In practice they disagree on all four because the +1 drift
-    // is uniform across dateStrs within a fixed zone.)
+    const expectedBuggy = probes.map(([, expected]) => (expected + 1) % 7)
+    // Pin the witness to the documented bug shape: every probe is off by one.
+    expect(buggy).toEqual(expectedBuggy)
+    // And the buggy vs post-fix helper must disagree on every probe -- a single
+    // agreement would imply the production anchor and the buggy anchor give
+    // the same answer for at least one dateStr, which contradicts the bug.
+    const correct = probes.map(([dateStr]) =>
+      __test__dayOfWeekBudapestWithTz('Pacific/Auckland', dateStr),
+    )
     expect(buggy).not.toEqual(correct)
+  })
+
+  // Pins PRODUCTION dayOfWeekBudapest for a UTC+12+ zone. Without this test,
+  // a revert of recall.ts:61-65 to the buggy noon-UTC anchor would slip past
+  // CI (the helper-only tests above still pass because they bypass production).
+  // vi.doMock + resetModules() is needed because the top-level vi.mock of
+  // recall.js (line 7-10) returns APP_TZ=undefined into the module, leaving
+  // dayOfWeekBudapest's TZ unconfigurable from a dynamic import. Re-mocking
+  // config.js here gives each probe a freshly-loaded recall.js with APP_TZ
+  // pointing at Pacific/Auckland, so the production weekday function is
+  // exercised end-to-end.
+  it('production dayOfWeekBudapest returns the correct weekday for Pacific/Auckland', async () => {
+    vi.doMock('../config.js', () => ({ APP_TZ: 'Pacific/Auckland', MAIN_AGENT_ID: 'marveen' }))
+    vi.resetModules()
+    try {
+      const { __test__dayOfWeekBudapestProduction } = await import('../web/routes/recall.js')
+      // Buggy anchor: weekday of dateStr at noon UTC in Pacific/Auckland is
+      // weekday of dateStr+1 (e.g. 2026-01-01 noon UTC -> 2026-01-02 01:00
+      // NZDT = Friday). Post-fix: weekday of dateStr at noon local (12:00
+      // NZDT) = the actual weekday of dateStr in the install zone.
+      for (const [dateStr, expected] of probes) {
+        expect(__test__dayOfWeekBudapestProduction(dateStr)).toBe(expected)
+      }
+    } finally {
+      vi.doUnmock('../config.js')
+      vi.resetModules()
+    }
   })
 })
