@@ -6,8 +6,10 @@ export interface ParsedForm {
 }
 
 export function parseMultipart(buf: Buffer, contentType: string): ParsedForm {
-  // group 1 = quoted-string (RFC 2046), group 2 = bare token [^;\s]+ (RFC 2045, leall
-  // ;-nel vagy whitespace-nel). Parameter neve case-insensitive.
+  // Group 1 = quoted-string (RFC 2045 §5.1, inherited from RFC 822).
+  // Group 2 = bare token, terminated by the next ';' or whitespace (RFC 2046 §5.1.1 bcharsnospace).
+  // /i covers the case-insensitive parameter name per RFC 2045.
+  // NOTE: unanchored -- a parameter whose name ends in "boundary" would hijack the match.
   const boundaryMatch = contentType.match(/boundary=(?:"([^"]+)"|([^;\s]+))/i)
   if (!boundaryMatch) return { fields: {} }
   const boundary = boundaryMatch[1] ?? boundaryMatch[2]

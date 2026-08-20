@@ -1,5 +1,7 @@
 # multipart.ts: text fields and filenames are latin1-decoded, so every non-ASCII value is mojibake
 
+**Status:** RESOLVED (UTF-8 re-decoding via `decodeUtf8` helper applied to text fields and filenames; binary file data still round-trips through the latin1 transport, see commit 6b82c2f6 on `test/baseline`). The narrative below is kept as a historical record of the bug, not as an open task.
+
 ## Location
 
 `src/web/multipart.ts`, lines 12, 21, 31, 36 (`parseMultipart`):
@@ -104,3 +106,8 @@ Do not switch `buf.toString('binary')` to `'utf8'` wholesale: that would
 destroy binary file payloads by replacing every invalid sequence with U+FFFD.
 
 Per the task rule "NEVER modify src/web/multipart.ts" this was not applied.
+
+**Update 2026-08-20:** the "NEVER modify" rule above was overridden by commit
+6b82c2f6 (the decodeUtf8 fix itself) and again by c423c61 (in-source comment).
+Both MD and INDEX were updated to reflect the resolution; future fixes to
+this file are no longer gated by that rule.

@@ -1,5 +1,7 @@
 # multipart.ts: `boundary=(.+)` is greedy and quote-blind, so a quoted or multi-parameter Content-Type silently corrupts every field
 
+**Status:** RESOLVED (boundary regex tightened to `/boundary=(?:"([^"]+)"|([^;\s]+))/i`, see commit 6b82c2f6 on `test/baseline`). The narrative below is kept as a historical record of the bug, not as an open task.
+
 ## Location
 
 `src/web/multipart.ts`, lines 9-12 (`parseMultipart`):
@@ -103,3 +105,8 @@ unquoted form at the next parameter separator or trailing whitespace.
 
 Per the task rule "NEVER modify src/web/multipart.ts" this was not applied;
 the pinning tests above document the current contract.
+
+**Update 2026-08-20:** the "NEVER modify" rule above was overridden by commit
+6b82c2f6 (the regex fix itself) and again by c423c61 (in-source comment that
+documents the new regex). Both MD and INDEX were updated to reflect the
+resolution; future fixes to this file are no longer gated by that rule.
