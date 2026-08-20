@@ -510,10 +510,13 @@ export function isWorkerSessionAlive(session: string): boolean {
 /**
  * Pre-start both worker sessions. Called at server startup to amortise boot
  * latency across first requests. Idempotent -- a running session is a no-op.
+ * tmux errors are logged at WARN and swallowed: server boot must not crash
+ * because one of the two worker pre-starts could not launch (the lazy
+ * runViaWorker path retries on first use; cf. ensureWorkerReady).
  */
 export function startWorkerSession(): void {
-  startWorkerSessionFor(ctxSlow)
-  startWorkerSessionFor(ctxFast)
+  try { startWorkerSessionFor(ctxSlow) } catch (err) { logger.warn({ err }, 'agent-worker: pre-start slow session failed') }
+  try { startWorkerSessionFor(ctxFast) } catch (err) { logger.warn({ err }, 'agent-worker: pre-start fast session failed') }
 }
 
 /**
@@ -597,16 +600,11 @@ async function ensureWorkerReady(ctx: WorkerCtx): Promise<boolean> {
     logger.warn({ session: ctx.session }, 'agent-worker: WEB_ONLY mode -- worker disabled, failing the request fast')
     return false
   }
-  // Mirrors the restartWorkerSession guard below: a tmux outage during the boot
-  // poll must degrade to a not-ready result, not reject the caller's await with
-  // a raw tmux error. runWorkerAttempt turns false into a structured
-  // 'worker session not ready' that runViaWorker retries once.
-  try {
-    startWorkerSessionFor(ctx)
-  } catch (err) {
-    logger.warn({ err, session: ctx.session }, 'agent-worker: startWorkerSessionFor failed; treating as not-ready')
-    return false
-  }
+  // Same shape as restartWorkerSession's catch below: a tmux outage during the
+  // boot poll must degrade to a not-ready result, not reject the caller's
+  // await with a raw tmux error. runWorkerAttempt turns false into a
+  // structured 'worker session not ready' that runViaWorker retries once.
+  try { startWorkerSessionFor(ctx) } catch (err) { logger.warn({ err, session: ctx.session }, 'agent-worker: startWorkerSessionFor failed; treating as not-ready'); return false }
   const start = Date.now()
   const deadline = start + WORKER_BOOT_TIMEOUT_MS
   let healed = false

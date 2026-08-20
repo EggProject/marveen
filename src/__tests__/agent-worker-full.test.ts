@@ -1158,20 +1158,7 @@ describe('selfHealWorkerOnce (via ensureWorkerReady)', () => {
     expect(escapes.length).toBe(1)
   })
 
-  it('warns and continues when the self-heal pass itself throws (line 604 catch -- currently uncovered)', () => {
-    // The catch around selfHealWorkerOnce in ensureWorkerReady (line 604)
-    // requires the self-heal pass itself to throw AFTER the 20s grace
-    // window. With my fake-clock harness, the runViaWorker retry loop
-    // returns before enough iterations elapse to trigger the grace
-    // window, so capturePane is called only by the post-deadline
-    // alertWorkerStuck + workerPaneHasAuthFailure paths -- both safe.
-    // The branch exists for a TOCTOU between the grace check and the
-    // capturePane call inside selfHealWorkerOnce; no test-side lever
-    // can deterministically reproduce the race. See bug MD for direction.
-    expect(true).toBe(true)
-  })
-
-  // ---- line 751 (runViaWorker after-loop fallback) is structurally dead.
+  // ---- line 767 (runViaWorker after-loop fallback) is structurally dead.
   //      Every iteration of the for loop above returns from inside it:
   //        - 'ok'  returns immediately with the text
   //        - 'fail' on attempt === 0 with r.error === 'worker session not
@@ -1288,17 +1275,14 @@ describe('restartWorkerSession (via auth-recovery retry)', () => {
     expect(H.readClaudeCodeOauthJson).toHaveBeenCalled()
   })
 
-  it('warns and continues when the restart start throws', async () => {
-    // After fix: ensureWorkerReady catches startWorkerSessionFor's throw,
-    // logs 'treating as not-ready', and returns false. runWorkerAttempt
-    // sees false and returns {kind:'auth'} because the captured pane still
-    // matches the auth-failure chrome; runViaWorker's attempt 1 terminal
-    // returns {text: null, error: 'worker auth failed (401/login) after
-    // recovery', authFailed: true} (agent-worker.ts:747-749). The mock's
-    // n === 1 succeeds (consumed by ensureWorkerReady on attempt 0),
-    // n === 2 throws (consumed by restartWorkerSession's catch, logged as
-    // 'restart failed'), n === 3 throws (consumed by ensureWorkerReady's
-    // new catch on attempt 1, logged as 'treating as not-ready').
+  it('warns and continues when the restart start throws (ensureWorkerReady new catch)', async () => {
+    // n === 1 succeeds (ensureWorkerReady attempt 0 launches the session).
+    // n === 2 throws (restartWorkerSession's catch at agent-worker.ts:635
+    // logs 'restart failed').
+    // n === 3 throws (ensureWorkerReady's new catch at agent-worker.ts:607
+    // logs 'treating as not-ready' on attempt 1).
+    // runViaWorker's attempt 1 terminal returns {text: null, authFailed: true}
+    // from the authFailed branch at agent-worker.ts:761-762.
     H.isSessionReadyForPrompt.mockResolvedValue(true)
     H.capturePane.mockReturnValue(
       Array.from({ length: 35 }, (_, i) => i === 34 ? 'Please run /login' : 'x').join('\n'),
