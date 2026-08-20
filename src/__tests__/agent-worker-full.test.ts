@@ -1288,13 +1288,17 @@ describe('restartWorkerSession (via auth-recovery retry)', () => {
     expect(H.readClaudeCodeOauthJson).toHaveBeenCalled()
   })
 
-  it('warns and continues when the restart start throws (current behaviour: error propagates)', async () => {
-    // Pin the CURRENT (buggy) behaviour: restartWorkerSession catches
-    // startWorkerSessionFor's throw and logs "restart failed", but
-    // ensureWorkerReady (called on the recovery's NEXT attempt) does NOT
-    // catch the same throw, so it propagates out of runViaWorker. The bug
-    // MD documents the right direction: ensureWorkerReady must wrap its
-    // startWorkerSessionFor call too.
+  it('warns and continues when the restart start throws', async () => {
+    // After fix: ensureWorkerReady catches startWorkerSessionFor's throw,
+    // logs 'treating as not-ready', and returns false. runWorkerAttempt
+    // sees false and returns {kind:'auth'} because the captured pane still
+    // matches the auth-failure chrome; runViaWorker's attempt 1 terminal
+    // returns {text: null, error: 'worker auth failed (401/login) after
+    // recovery', authFailed: true} (agent-worker.ts:747-749). The mock's
+    // n === 1 succeeds (consumed by ensureWorkerReady on attempt 0),
+    // n === 2 throws (consumed by restartWorkerSession's catch, logged as
+    // 'restart failed'), n === 3 throws (consumed by ensureWorkerReady's
+    // new catch on attempt 1, logged as 'treating as not-ready').
     H.isSessionReadyForPrompt.mockResolvedValue(true)
     H.capturePane.mockReturnValue(
       Array.from({ length: 35 }, (_, i) => i === 34 ? 'Please run /login' : 'x').join('\n'),
@@ -1305,17 +1309,16 @@ describe('restartWorkerSession (via auth-recovery retry)', () => {
       const argv = [String(file), ...(args as string[])].join(' ')
       if (argv.includes('new-session')) {
         n++
-        // Allow the FIRST new-session (the recovery's restartWorkerSession)
-        // to succeed -- this logs "restart failed" because the SAME throw is
-        // caught there. Subsequent new-sessions (from ensureWorkerReady on
-        // attempt 1) will also fail, escaping the for loop.
         if (n === 1) return ''
         throw new Error('tmux gone')
       }
       return ''
     })
-    await expect(AW.runViaWorker('hi', 100)).rejects.toThrow('tmux gone')
+    const out = await AW.runViaWorker('hi', 100)
+    expect(out.authFailed).toBe(true)
+    expect(out.text).toBeNull()
     expect(H.logs.some((l) => String(l.msg).includes('restart failed'))).toBe(true)
+    expect(H.logs.some((l) => String(l.msg).includes('treating as not-ready'))).toBe(true)
   })
 
   it('WEB_ONLY restart gate -- no kill-session is issued', () => {

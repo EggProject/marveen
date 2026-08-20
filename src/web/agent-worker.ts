@@ -597,7 +597,16 @@ async function ensureWorkerReady(ctx: WorkerCtx): Promise<boolean> {
     logger.warn({ session: ctx.session }, 'agent-worker: WEB_ONLY mode -- worker disabled, failing the request fast')
     return false
   }
-  startWorkerSessionFor(ctx)
+  // Mirrors the restartWorkerSession guard below: a tmux outage during the boot
+  // poll must degrade to a not-ready result, not reject the caller's await with
+  // a raw tmux error. runWorkerAttempt turns false into a structured
+  // 'worker session not ready' that runViaWorker retries once.
+  try {
+    startWorkerSessionFor(ctx)
+  } catch (err) {
+    logger.warn({ err, session: ctx.session }, 'agent-worker: startWorkerSessionFor failed; treating as not-ready')
+    return false
+  }
   const start = Date.now()
   const deadline = start + WORKER_BOOT_TIMEOUT_MS
   let healed = false
