@@ -107,7 +107,7 @@ function httpsRequest(
 
 let refreshInFlight: Promise<string> | null = null
 
-async function refreshAccessToken(): Promise<string> {
+function refreshAccessToken(): Promise<string> {
   // Single-flight: concurrent callers share one POST + one saveTokens.
   // Without this wrapper the second caller's save overwrites the first
   // caller's response, leaving the first caller holding a bearer the

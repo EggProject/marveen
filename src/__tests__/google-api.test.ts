@@ -513,7 +513,6 @@ describe('refreshAccessToken race (single-flight wrapper)', () => {
     mockState.tokensContents = tokensJson({ expiry_date: mockState.nowMs - 1000 })
     const mod = await importFresh()
     mockState.responses.push({ status: 200, body: JSON.stringify({ access_token: 'new-1', expires_in: 3600 }) })
-    mockState.responses.push({ status: 200, body: JSON.stringify({ access_token: 'new-2', expires_in: 3600 }) })
     mockState.responses.push({ status: 200, body: JSON.stringify({ items: [] }) })
     mockState.responses.push({ status: 200, body: JSON.stringify({ items: [] }) })
     await Promise.all([
