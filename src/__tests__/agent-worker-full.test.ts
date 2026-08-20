@@ -605,17 +605,16 @@ describe('ensureWorkerCwd', () => {
     expect(existsSync(join(cfg, '.credentials.json'))).toBe(false)
   })
 
-  it('handles an array-valued host .claude.json (current behaviour: silently no-op the trust stamp)', () => {
+  it('coerces an array-valued host .claude.json to an object so the trust stamp survives', () => {
     writeFileSync(join(H.home, '.claude.json'), '[]')
     AW.ensureWorkerCwd()
     const cfg = join(H.home, '.marveen-worker', '.claude-config')
-    // Pin the CURRENT (buggy) behaviour: JSON.stringify on an array only
-    // serialises numeric-indexed elements, so any properties added by
-    // stampWorkerFirstRun are dropped. The worker ends up with an empty
-    // .claude.json and the first-run modal will reappear. See bug MD for
-    // the direction (replace the JSON round-trip with a structuredClone of
-    // the parsed object, or pre-coerce non-object parsed values to {}).
-    expect(readFileSync(join(cfg, '.claude.json'), 'utf-8')).toBe('[]\n')
+    // A non-object host file is coerced to {} before stamping. Without that,
+    // JSON.stringify on the array serialises only numeric indices and every
+    // flag is dropped, parking the worker on a first-run modal with no error.
+    const dot = JSON.parse(readFileSync(join(cfg, '.claude.json'), 'utf-8'))
+    expect(dot.hasCompletedOnboarding).toBe(true)
+    expect(dot.projects[join(H.home, '.marveen-worker')].hasTrustDialogAccepted).toBe(true)
   })
 
   it('does NOT re-create the config dir when it already exists (the false branch of !existsSync)', () => {

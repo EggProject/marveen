@@ -404,8 +404,13 @@ export function ensureWorkerCwd(ctx: WorkerCtx = ctxSlow): void {
   // edge-cases) since Claude Code keys trust by the resolved workspace path.
   try {
     const homeClaudeJson = join(homedir(), '.claude.json')
+    // Coerce a non-object host .claude.json (array, null, bare scalar) to {}:
+    // JSON.stringify on an array serialises only numeric indices, so every flag
+    // stamped below would be dropped silently and the worker would park on a
+    // first-run modal with nothing logged.
+    const raw = existsSync(homeClaudeJson) ? JSON.parse(readFileSync(homeClaudeJson, 'utf-8')) : {}
     const parsed: { projects?: Record<string, unknown>; hasCompletedOnboarding?: boolean; [k: string]: unknown } =
-      existsSync(homeClaudeJson) ? JSON.parse(readFileSync(homeClaudeJson, 'utf-8')) : {}
+      (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {}
     stampWorkerFirstRun(parsed)
     const projects: Record<string, unknown> = (parsed.projects && typeof parsed.projects === 'object') ? parsed.projects : {}
     const base = (projects[PROJECT_ROOT] && typeof projects[PROJECT_ROOT] === 'object')
