@@ -50,8 +50,10 @@ export const TRANSCRIPT_DIR = join(
 // probeTimeoutMs = probeIntervalMs * PROBE_TIMEOUT_MULTIPLIER (allow 2x interval before declaring deaf).
 const PROBE_TIMEOUT_MULTIPLIER = 2
 
-// W4: env-derived values cached once at startInboundProber() startup.
-// Reading .env from disk every tick is unnecessary and wasteful.
+// ALLOWED_CHAT_ID is read once at the first spawn; subsequent ticks use
+// the cached value. To pick up a runtime change to .env, restart the
+// dashboard. If a future change invalidates the cache (e.g. an .env
+// mtime watcher), the warn-then-debug flag below must be re-added.
 let _cachedProbeIntervalMs: number | null = null
 let _cachedAllowedChatId: string | null | undefined = undefined // undefined = not yet read
 
@@ -234,6 +236,9 @@ function spawnProber(): void {
   if (!allowedChatId) {
     // CW addendum D3: if ALLOWED_CHAT_ID is absent/empty, log warning and skip.
     // W3: one-shot via logger.warn; subsequent ticks use logger.debug.
+    // Tripwire: this latch has no reset path (see the cache comment above).
+    // If the cache is ever invalidated, the warn-then-debug pattern must be
+    // re-bound to that invalidation.
     if (!_warnedChatIdAbsent) {
       logger.warn('inbound-prober: ALLOWED_CHAT_ID absent in .env -- prober skipped')
       _warnedChatIdAbsent = true
@@ -242,9 +247,7 @@ function spawnProber(): void {
     }
     return
   }
-  // Reset chat-id-absent flag if the value is now present.
-  _warnedChatIdAbsent = false
-
+  
   if (!existsSync(VENV_PYTHON)) {
     logger.warn('Inbound prober: .watchdog-venv/bin/python3 not found -- prober skipped')
     return
