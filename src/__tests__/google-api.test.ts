@@ -507,8 +507,8 @@ describe('refreshAccessToken', () => {
 // and the second save overwrites the first.
 // ---------------------------------------------------------------------------
 
-describe('refreshAccessToken race (pinned defect: no in-flight de-duplication)', () => {
-  it('fires two independent refresh requests when two callers hit the 5-min window concurrently', async () => {
+describe('refreshAccessToken race (single-flight wrapper)', () => {
+  it('coalesces two concurrent callers into a single refresh request + single saveTokens write', async () => {
     mockState.statMtimeMs = 1
     mockState.tokensContents = tokensJson({ expiry_date: mockState.nowMs - 1000 })
     const mod = await importFresh()
@@ -521,11 +521,9 @@ describe('refreshAccessToken race (pinned defect: no in-flight de-duplication)',
       mod.getCalendarEvents('cal-2', new Date(0), new Date(1)),
     ])
     const refreshes = mockState.requests.filter((r) => r.url === 'https://oauth2.googleapis.com/token')
-    expect(refreshes).toHaveLength(2)
-    // Two saveTokens writes happened -- the second one's contents overwrote
-    // the first on disk (the cache layer replaced, not merged).
+    expect(refreshes).toHaveLength(1)
     const tokenWrites = mockState.written.filter((w) => w.path === TOKENS_PATH)
-    expect(tokenWrites).toHaveLength(2)
+    expect(tokenWrites).toHaveLength(1)
   })
 })
 
