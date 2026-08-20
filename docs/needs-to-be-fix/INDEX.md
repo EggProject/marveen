@@ -100,9 +100,9 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `agent-restart-policy-consecutivefailures-nullish-coalesce` | agent-restart-policy.ts: `consecutiveFailures ?? 0` nullish-coalesce left arm is unreachable | Resolved: 2026-08-16 410ca1655 |
 | `agent-scaffold-unreachable-defensive-branches` | agent-scaffold.ts: four unreachable defensive branches block 100% branch coverage | 2026-08-14 c2b4ea2 |
 | `agent-team-trustfrom-nullish-coalesce` | agent-team.ts: `team.trustFrom ?? []` nullish-coalesce right-arm is unreachable | Resolved: 2026-08-19 7e1277c |
-| `agent-worker-array-claude-json` | agent-worker.ts: array-valued host .claude.json silently drops the worker's trust flags | — |
+| `agent-worker-array-claude-json` | agent-worker.ts: array-valued host .claude.json silently drops the worker's trust flags | Resolved: 2026-08-20 776bd02de7b0b7ef8cda5568d3041f2bb64e534b |
 | `agent-worker-blank-line-v8-quirk` | agent-worker.ts: a 20. sor (üres sor) v8 coverage quirk miatt 1 line uncoverable | Resolved: 2026-08-17 461b2b4 |
-| `agent-worker-ensure-ready-throw` | agent-worker.ts: ensureWorkerReady does not catch startWorkerSessionFor throws | — |
+| `agent-worker-ensure-ready-throw` | agent-worker.ts: ensureWorkerReady does not catch startWorkerSessionFor throws | Resolved: 2026-08-20 e65ca08b7cc9cb670f2955efb7ba5d71dda1a924 |
 | `agent-worker-runviaworker-afterloop` | agent-worker.ts: runViaWorker's after-loop `return` is dead code | Resolved: 2026-08-17 911de24 |
 | `agent-worker-seedworkercredentials-unreachable` | agent-worker.ts: seedWorkerCredentials mkdirSync arm is unreachable | Resolved: 2026-08-17 a58a811 |
 | `agent-worker-selfheal-catch-unreachable` | agent-worker.ts: ensureWorkerReady's self-heal catch arm is unreachable | Resolved: 2026-08-17 2e9ab6f |
