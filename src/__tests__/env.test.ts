@@ -194,17 +194,17 @@ describe('updateEnvFile', () => {
   // Mindketto a JELENLEGI, hibas viselkedest allitja. Fix utan ezek a tesztek
   // ELBUKNAK -- ez a szandek: a fix akkor keszult el, ha ezeket at kell irni.
 
-  it('PINNED BUG env-update-duplicate-key-lost: csak az ELSO duplikalt kulcsot irja at', async () => {
+  it('env-update-duplicate-key-lost: MINDEN duplikalt kulcsot atir', async () => {
     const { envPath, readEnvFile, updateEnvFile } = await loadEnv(
       'TOKEN=regi\nEGYEB=x\nTOKEN=regi\n',
     )
     updateEnvFile({ TOKEN: 'UJ' })
 
-    // A masodik TOKEN sor ottmarad a regi ertekkel...
-    expect(readFileSync(envPath, 'utf-8')).toBe('TOKEN=UJ\nEGYEB=x\nTOKEN=regi\n')
-    // ...es mivel a readEnvFile az UTOLSO elofordulast nyeri, a frissites
-    // csendben ELVESZIK: az iras utani olvasas a REGI erteket adja vissza.
-    expect(readEnvFile()['TOKEN']).toBe('regi')
+    // Mindket TOKEN sor atirodik -- nem marad regi ertek a fajlban.
+    expect(readFileSync(envPath, 'utf-8')).toBe('TOKEN=UJ\nEGYEB=x\nTOKEN=UJ\n')
+    // A readEnvFile az UTOLSO elofordulast nyeri, igy a frissites utan
+    // a VART ertek jon vissza, nem a regi.
+    expect(readEnvFile()['TOKEN']).toBe('UJ')
   })
 
   it('preserves 0600 across updateEnvFile (closes env-update-mode-downgrade)', async () => {

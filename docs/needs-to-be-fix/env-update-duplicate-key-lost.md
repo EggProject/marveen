@@ -1,6 +1,6 @@
 # env: duplikalt kulcs eseten az updateEnvFile frissitese csendben elveszik
 
-**Status:** pinned, not fixed (a teszt a JELENLEGI viselkedést rögzíti)
+**Status:** fixed
 
 ## Location
 

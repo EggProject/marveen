@@ -67,6 +67,8 @@ export function updateEnvFile(updates: Record<string, string>): void {
 
   const remaining = new Map(entries)
   const lines = content.length > 0 ? content.split('\n') : []
+  const seenInFile = new Set<string>()
+  const duplicateKeys: string[] = []
   const out = lines.map((line) => {
     const trimmed = line.trim()
     if (!trimmed || trimmed.startsWith('#')) return line
@@ -74,10 +76,20 @@ export function updateEnvFile(updates: Record<string, string>): void {
     if (eqIdx === -1) return line
     const key = trimmed.slice(0, eqIdx).trim()
     if (!remaining.has(key)) return line
+    if (seenInFile.has(key)) {
+      if (!duplicateKeys.includes(key)) duplicateKeys.push(key)
+    } else {
+      seenInFile.add(key)
+    }
     const val = remaining.get(key)!
-    remaining.delete(key)
     return `${key}=${val}`
   })
+  for (const key of seenInFile) remaining.delete(key)
+  if (duplicateKeys.length > 0) {
+    console.warn(
+      `[env] updateEnvFile dedup'd duplicate key(s): ${duplicateKeys.join(', ')}`,
+    )
+  }
 
   // Append keys that were not already present.
   for (const [key, val] of remaining) {
