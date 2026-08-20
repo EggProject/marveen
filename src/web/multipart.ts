@@ -6,10 +6,12 @@ export interface ParsedForm {
 }
 
 export function parseMultipart(buf: Buffer, contentType: string): ParsedForm {
-  const boundaryMatch = contentType.match(/boundary=(.+)/)
+  const boundaryMatch = contentType.match(/boundary=(?:"([^"]+)"|([^;\s]+))/i)
   if (!boundaryMatch) return { fields: {} }
-  const boundary = boundaryMatch[1]
+  const boundary = boundaryMatch[1] ?? boundaryMatch[2]
   const parts = buf.toString('binary').split(`--${boundary}`)
+
+  const decodeUtf8 = (s: string): string => Buffer.from(s, 'binary').toString('utf8')
 
   const result: ParsedForm = { fields: {} }
 
@@ -28,12 +30,12 @@ export function parseMultipart(buf: Buffer, contentType: string): ParsedForm {
     if (filenameMatch) {
       const mimeMatch = headers.match(/Content-Type:\s*(.+)\r?\n?/i)
       result.file = {
-        name: filenameMatch[1],
+        name: decodeUtf8(filenameMatch[1]),
         data: Buffer.from(body, 'binary'),
         mime: mimeMatch?.[1]?.trim() || 'application/octet-stream',
       }
     } else {
-      result.fields[fieldName] = body
+      result.fields[fieldName] = decodeUtf8(body)
     }
   }
 

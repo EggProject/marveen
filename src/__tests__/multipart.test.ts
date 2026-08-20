@@ -48,6 +48,24 @@ describe('parseMultipart - boundary felismerés', () => {
     const body = buildBody([fieldPart('a', '1')], other)
     expect(parseMultipart(body, `multipart/form-data; boundary=${other}`).fields).toEqual({ a: '1' })
   })
+
+  it('a Boundary= parameter nevet case-insensitive modon fogadja el (RFC 2045)', () => {
+    const body = buildBody([fieldPart('a', '1')], BOUNDARY)
+    const upperCT = `multipart/form-data; Boundary=${BOUNDARY}`
+    expect(parseMultipart(body, upperCT).fields).toEqual({ a: '1' })
+  })
+
+  it('a quoted boundary utan a trailing parametert is helyesen lezarja (RFC 2045+2046)', () => {
+    const body = buildBody([fieldPart('a', '1')], BOUNDARY)
+    const combined = `multipart/form-data; boundary="${BOUNDARY}"; charset=utf-8`
+    expect(parseMultipart(body, combined).fields).toEqual({ a: '1' })
+  })
+
+  it('a boundary utan levo whitespace-et levagja', () => {
+    const body = buildBody([fieldPart('a', '1')], BOUNDARY)
+    const trailingWS = `multipart/form-data; boundary=${BOUNDARY} `
+    expect(parseMultipart(body, trailingWS).fields).toEqual({ a: '1' })
+  })
 })
 
 describe('parseMultipart - szoveges mezok', () => {
@@ -253,31 +271,28 @@ describe('parseMultipart - kihagyott reszek', () => {
   })
 })
 
-// A kovetkezo blokk a JELENLEGI viselkedest rogziti olyan eseteknel, ahol az
-// eltert az RFC 7578 / RFC 2046 elvarasatol. Ezek pinning tesztek: ha a hibat
-// kesobb javitjak, ezeknek EL KELL bukniuk. Reszletek:
-//   multipart-boundary-greedy
-//   multipart-latin1-fields
-//   multipart-case-sensitive-disposition
+// A kovetkezo blokk egyreszt javitott pinning teszteket tartalmaz (cim + expect
+// atirva aktiv korrekciora a 4 egykori defect eseten), masreszt ket
+// edge-case-t rogzit (case-insensitive Content-Disposition, forditott sorrendu
+// filename/name).
 describe('parseMultipart - ismert eltresek (pinning)', () => {
-  it('idezojeles boundary eseten a mezo erteke a hatarolot is elnyeli', () => {
-    // RFC 2046 szerint a boundary lehet quoted-string. A `(.+)` az idezojeleket
-    // is elnyeli, igy a `--"BOUNDARY"` minta soha nem illeszkedik a torzsre: a
-    // split egyetlen reszt ad vissza, es a mezo erteke a lezaro hatarolot is
-    // tartalmazza. Nem hibat dob, hanem csendben serult adatot ad vissza.
+  it('a quoted-string boundary-rol leveszi az idezojeleket (RFC 2046)', () => {
+    // RFC 2046 szerint a boundary lehet quoted-string. A regex a `boundary="..."`
+    // formaban megadott boundary-rol levagja az idezojeleket, es csak a token-t
+    // hasznalja a szeteldarabolashoz.
     const body = buildBody([fieldPart('greeting', 'hello')])
     const parsed = parseMultipart(body, `multipart/form-data; boundary="${BOUNDARY}"`)
-    expect(parsed.fields.greeting).toBe(`hello\r\n--${BOUNDARY}--`)
+    expect(parsed.fields.greeting).toBe('hello')
     expect(parsed.file).toBeUndefined()
   })
 
-  it('a boundary utani tovabbi parametert is a boundary reszekent nyeli le', () => {
+  it('a boundary-t a kovetkezo parameter elott lezarja (RFC 2045)', () => {
     const body = buildBody([fieldPart('greeting', 'hello')])
     const parsed = parseMultipart(body, `multipart/form-data; boundary=${BOUNDARY}; charset=utf-8`)
-    expect(parsed.fields.greeting).toBe(`hello\r\n--${BOUNDARY}--`)
+    expect(parsed.fields.greeting).toBe('hello')
   })
 
-  it('a mezo erteket latin1-kent dekodolja, igy az UTF-8 ekezet elromlik', () => {
+  it('a szoveges mezoket UTF-8-kent dekodolja (RFC 7578)', () => {
     const value = 'árvíztűrő tükörfúrógép'
     const head = Buffer.from(
       `--${BOUNDARY}\r\nContent-Disposition: form-data; name="nev"\r\n\r\n`,
@@ -287,12 +302,10 @@ describe('parseMultipart - ismert eltresek (pinning)', () => {
     const body = Buffer.concat([head, Buffer.from(value, 'utf8'), tail])
 
     const parsed = parseMultipart(body, CT)
-    expect(parsed.fields.nev).not.toBe(value)
-    // A bajtok megvannak, csak rossz a dekodolas: latin1 -> utf8 visszaallitja.
-    expect(Buffer.from(parsed.fields.nev, 'binary').toString('utf8')).toBe(value)
+    expect(parsed.fields.nev).toBe(value)
   })
 
-  it('a fajlnevet szinten latin1-kent dekodolja', () => {
+  it('a fajlnevet UTF-8-kent dekodolja (RFC 7578)', () => {
     const filename = 'árvíz.png'
     const body = Buffer.from(
       `--${BOUNDARY}\r\nContent-Disposition: form-data; name="f"; filename="${filename}"\r\n` +
@@ -300,8 +313,7 @@ describe('parseMultipart - ismert eltresek (pinning)', () => {
       'utf8',
     )
     const name = parseMultipart(body, CT).file?.name
-    expect(name).not.toBe(filename)
-    expect(Buffer.from(name ?? '', 'binary').toString('utf8')).toBe(filename)
+    expect(name).toBe(filename)
   })
 
   it('a Content-Disposition header nevet case-insensitive modon fogadja el (RFC 9110)', () => {
@@ -312,9 +324,8 @@ describe('parseMultipart - ismert eltresek (pinning)', () => {
   })
 
   it('forditott sorrendu filename/name eseten a fajlnevbol lesz a mezonev', () => {
-    // A `/name="([^"]+)"/` a `filename="..."` belsejere is illeszkedik.
-    // Fajl reszen ez nem latszik (a fieldName ilyenkor nem hasznalt), ezert
-    // csak a dokumentalt viselkedest rogzitjuk.
+    // A regex a name=" prefixet koveteli, igy a filename="..."-re nem illeszkedik;
+    // a fajl-ág eldobja a fieldName-et, ezert a file.name helyes marad.
     const part =
       'Content-Disposition: form-data; filename="a.png"; name="avatar"\r\nContent-Type: image/png\r\n\r\nD'
     const body = Buffer.from(`--${BOUNDARY}\r\n${part}\r\n--${BOUNDARY}--\r\n`, 'binary')
