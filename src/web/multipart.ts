@@ -6,6 +6,8 @@ export interface ParsedForm {
 }
 
 export function parseMultipart(buf: Buffer, contentType: string): ParsedForm {
+  // group 1 = quoted-string (RFC 2046), group 2 = bare token [^;\s]+ (RFC 2045, leall
+  // ;-nel vagy whitespace-nel). Parameter neve case-insensitive.
   const boundaryMatch = contentType.match(/boundary=(?:"([^"]+)"|([^;\s]+))/i)
   if (!boundaryMatch) return { fields: {} }
   const boundary = boundaryMatch[1] ?? boundaryMatch[2]
