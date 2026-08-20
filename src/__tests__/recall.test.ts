@@ -168,8 +168,8 @@ describe('parseDateExpression', () => {
     // recall.js with the mocked APP_TZ; the top-level import here keeps the
     // install zone. The MD recall-dayofweek-noon-utc-far-east-skew is the
     // bug that previously broke the invariant for UTC+12 and beyond; this
-    // fix lands the helper zonedNoon() in recall.ts so dayOfWeekBudapest and
-    // addDays share a single noon-LOCAL anchor.
+    // fix has recall.ts resolve dates through Luxon in the install zone, so
+    // dayOfWeekBudapest and addDays share a single zone-local anchor.
     const withPinnedClock = (fn: () => void): void => {
       vi.useFakeTimers()
       try {
@@ -290,29 +290,25 @@ describe('parseDateExpression', () => {
 // Cross-zone pin for the weekday anchor bug covered by the MD
 // recall-dayofweek-noon-utc-far-east-skew. The pre-fix code anchored
 // dayOfWeekBudapest at noon UTC, so for any install zone at UTC+12 or beyond
-// the weekday read was for dateStr+1. The fix anchors dayOfWeekBudapest and
-// addDays at local noon via zonedNoon() in recall.ts.
+// the weekday read was for dateStr+1. recall.ts now resolves the weekday with
+// Luxon, which parses dateStr as midnight IN the zone, so no UTC instant is
+// ever re-interpreted into a neighbouring calendar day.
 //
 // The bug CANNOT be pinned through parseDateExpression alone: every parse path
-// pairs dayOfWeekBudapest with addDays, and both functions share the same
+// pairs dayOfWeekBudapest with addDays, and both functions shared the same
 // +1 day drift for UTC+12+ zones -- the pair cancels. Direct probe via the
 // __test__dayOfWeekBudapestWithTz helper bypasses that pairing by passing an
-// explicit TZ and anchoring at local noon.
+// explicit TZ.
 //
-// This block also keeps the BUGGY weekday algorithm in view via
-// __test__buggyDayOfWeekBudapest: for UTC+12+ zones it returns a different
-// answer than the post-fix helper, documenting that the production
-// dayOfWeekBudapest no longer matches the buggy anchor.
-//
-// The "production is anchored at local noon" test at the bottom of this block
-// uses vi.doMock + resetModules() per probe so each test gets a freshly-loaded
-// recall.js with the mocked APP_TZ. A revert of the production anchor back to
-// noon UTC would fail those assertions, catching the regression that the
-// helper-only tests above cannot witness.
-describe('dayOfWeekBudapest is anchored at local noon for UTC+12+ zones (recall-dayofweek-noon-utc-far-east-skew)', () => {
+// The "production is resolved in the install zone" test at the bottom of this
+// block uses vi.doMock + resetModules() per probe so each test gets a
+// freshly-loaded recall.js with the mocked APP_TZ. A revert of the production
+// path back to a noon-UTC anchor would fail those assertions, catching the
+// regression that the helper-only test above cannot witness.
+describe('dayOfWeekBudapest resolves the weekday in the install zone for UTC+12+ zones (recall-dayofweek-noon-utc-far-east-skew)', () => {
   // dateStr -> expected weekday (0=Sun..6=Sat) for Pacific/Auckland.
-  // 2026-01-01 is Thursday (4). Pre-fix Auckland (UTC+13 summer) reads
-  // 2026-01-01T12:00:00Z = Friday (5); the fix reads local-noon = Thursday (4).
+  // 2026-01-01 is Thursday (4). Pre-fix Auckland (UTC+13 summer) read
+  // 2026-01-01T12:00:00Z = Friday (5); Luxon reads the zone-local day = (4).
   const probes: ReadonlyArray<readonly [string, number]> = [
     ['2026-01-01', 4],  // Thursday (Auckland summer UTC+13)
     ['2026-06-15', 1],  // Monday (Auckland winter UTC+12)
@@ -320,37 +316,16 @@ describe('dayOfWeekBudapest is anchored at local noon for UTC+12+ zones (recall-
     ['2026-12-25', 5],  // Friday (Auckland summer UTC+13)
   ]
 
-  it('the post-fix algorithm returns the correct weekday for Pacific/Auckland', async () => {
+  it('returns the correct weekday for Pacific/Auckland', async () => {
     const { __test__dayOfWeekBudapestWithTz } = await import('../web/routes/recall.js')
     for (const [dateStr, expected] of probes) {
       expect(__test__dayOfWeekBudapestWithTz('Pacific/Auckland', dateStr)).toBe(expected)
     }
   })
 
-  it('the BUGGY noon-UTC anchor gave a different answer for Pacific/Auckland (regression witness)', async () => {
-    const { __test__buggyDayOfWeekBudapest, __test__dayOfWeekBudapestWithTz } = await import('../web/routes/recall.js')
-    // Pre-fix: every probe returns +1 (the off-by-one). Post-fix the production
-    // code no longer uses this anchor, but the helper still demonstrates the
-    // buggy behaviour so a regression test can assert that production switched
-    // anchors. The buggy answer for each probe is the expected weekday +1.
-    const buggy = probes.map(([dateStr]) =>
-      __test__buggyDayOfWeekBudapest('Pacific/Auckland', dateStr),
-    )
-    const expectedBuggy = probes.map(([, expected]) => (expected + 1) % 7)
-    // Pin the witness to the documented bug shape: every probe is off by one.
-    expect(buggy).toEqual(expectedBuggy)
-    // And the buggy vs post-fix helper must disagree on every probe -- a single
-    // agreement would imply the production anchor and the buggy anchor give
-    // the same answer for at least one dateStr, which contradicts the bug.
-    const correct = probes.map(([dateStr]) =>
-      __test__dayOfWeekBudapestWithTz('Pacific/Auckland', dateStr),
-    )
-    expect(buggy).not.toEqual(correct)
-  })
-
   // Pins PRODUCTION dayOfWeekBudapest for a UTC+12+ zone. Without this test,
-  // a revert of recall.ts:61-65 to the buggy noon-UTC anchor would slip past
-  // CI (the helper-only tests above still pass because they bypass production).
+  // a revert to the buggy noon-UTC anchor would slip past CI (the helper-only
+  // test above still passes because it bypasses production).
   // vi.doMock + resetModules() is needed because the top-level vi.mock of
   // recall.js (line 7-10) returns APP_TZ=undefined into the module, leaving
   // dayOfWeekBudapest's TZ unconfigurable from a dynamic import. Re-mocking
@@ -364,8 +339,8 @@ describe('dayOfWeekBudapest is anchored at local noon for UTC+12+ zones (recall-
       const { __test__dayOfWeekBudapestProduction } = await import('../web/routes/recall.js')
       // Buggy anchor: weekday of dateStr at noon UTC in Pacific/Auckland is
       // weekday of dateStr+1 (e.g. 2026-01-01 noon UTC -> 2026-01-02 01:00
-      // NZDT = Friday). Post-fix: weekday of dateStr at noon local (12:00
-      // NZDT) = the actual weekday of dateStr in the install zone.
+      // NZDT = Friday). Post-fix: Luxon reads dateStr as midnight NZDT, so the
+      // weekday is the actual weekday of dateStr in the install zone.
       for (const [dateStr, expected] of probes) {
         expect(__test__dayOfWeekBudapestProduction(dateStr)).toBe(expected)
       }

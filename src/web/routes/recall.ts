@@ -1,3 +1,4 @@
+import { DateTime } from 'luxon'
 import { recallByDateRange, recallSearch, getDailyLogDates } from '../../db.js'
 import { MAIN_AGENT_ID, APP_TZ } from '../../config.js'
 import { json } from '../http-helpers.js'
@@ -6,105 +7,42 @@ import type { RouteContext } from './types.js'
 const TZ = APP_TZ  // install zone (config.APP_TZ); was hardcoded Europe/Budapest
 
 function todayBudapest(): string {
-  return new Intl.DateTimeFormat('sv-SE', { timeZone: TZ }).format(new Date())
+  return DateTime.now().setZone(TZ).toFormat('yyyy-MM-dd')
 }
 
-function budapestDate(d: Date): string {
-  return new Intl.DateTimeFormat('sv-SE', { timeZone: TZ }).format(d)
-}
-
-// Return the Date instant that is 12:00 in `tz` on the given ISO date string.
-// Both dayOfWeekBudapest and addDays share this anchor: noon UTC crosses a
-// calendar day for install zones at UTC+12 and beyond, which used to make
-// the weekday read off by one (Pacific/Auckland swings UTC+12/+13 across
-// the year, so the skew was not even constant). For dateStr 'YYYY-MM-DD',
-// the returned Date satisfies:
-//   new Intl.DateTimeFormat('sv-SE', { timeZone: tz }).format(localNoon(tz, dateStr)) === dateStr
-// Probe anchors at noon UTC of dateStr so that for any zone at UTC-12 to
-// UTC+14 the local components land unambiguously on dateStr (the 12:00 UTC
-// probe is well clear of DST transitions at 02:00 local).
-function localNoon(tz: string, dateStr: string): Date {
-  const probe = new Date(`${dateStr}T12:00:00Z`)
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: tz,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  }).formatToParts(probe)
-  const get = (type: Intl.DateTimeFormatPartTypes): string =>
-    parts.find((p) => p.type === type)?.value ?? ''
-  const localYear = Number(get('year'))
-  const localMonth = Number(get('month'))
-  const localDay = Number(get('day'))
-  let localHour = Number(get('hour'))
-  if (localHour === 24) localHour = 0  // some ICU builds render midnight as '24' with hour12:false
-  const localMinute = Number(get('minute'))
-  const localSecond = Number(get('second'))
-  // probe expressed as if its local components were UTC: yields the tz offset
-  // as (probe - localAsUtcMs) / 60_000 minutes. offsetMinutes is NEGATIVE for
-  // zones east of UTC (probe is BEHIND local), POSITIVE for zones west of UTC.
-  const localAsUtcMs = Date.UTC(localYear, localMonth - 1, localDay, localHour, localMinute, localSecond)
-  const offsetMinutes = (probe.getTime() - localAsUtcMs) / 60_000
-  const [y, m, d] = dateStr.split('-').map(Number)
-  const targetLocalMs = Date.UTC(y, m - 1, d, 12, 0, 0)
-  return new Date(targetLocalMs + offsetMinutes * 60_000)
-}
-
-function zonedNoon(dateStr: string): Date {
-  return localNoon(TZ, dateStr)
-}
-
-const WEEKDAY_MAP: Readonly<Record<string, number>> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
-
-// Test-only export: the post-fix weekday algorithm against an explicit TZ.
+// Test-only export: the weekday algorithm against an explicit TZ.
 // Kept so the cross-zone pin test in recall.test.ts can exercise UTC+12+
 // zones without faking APP_TZ (test-sandbox-setup mocks config.js, which
 // leaks APP_TZ=undefined into this module; the production TZ is therefore
 // uncontrollable from a dynamic import inside vitest).
 export function __test__dayOfWeekBudapestWithTz(tz: string, dateStr: string): number {
-  const weekday = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short' }).format(localNoon(tz, dateStr))
-  return WEEKDAY_MAP[weekday]
+  return DateTime.fromISO(dateStr, { zone: tz }).weekday % 7
 }
 
-// Test-only export: the OLD (buggy) weekday algorithm against an explicit TZ.
-// Kept so the cross-zone pin test can assert that the pre-fix path gives a
-// different answer for UTC+12+ zones, documenting that the production
-// dayOfWeekBudapest no longer matches this anchor. If a future refactor
-// reintroduces the noon-UTC anchor into production, the regression witness
-// in recall.test.ts fails.
-export function __test__buggyDayOfWeekBudapest(tz: string, dateStr: string): number {
-  const weekday = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short' })
-    .format(new Date(`${dateStr}T12:00:00Z`))
-  return WEEKDAY_MAP[weekday]
-}
-
+// Luxon parses dateStr as midnight IN the zone, so the calendar day is never
+// re-derived from a UTC instant. That is what retires the noon-UTC anchor bug
+// (recall-dayofweek-noon-utc-far-east-skew): for install zones at UTC+12 and
+// beyond the old probe crossed a calendar day and read the weekday for
+// dateStr+1.
 function addDays(dateStr: string, days: number): string {
-  const ms = zonedNoon(dateStr).getTime() + days * 86_400_000
-  return budapestDate(new Date(ms))
+  return DateTime.fromISO(dateStr, { zone: TZ }).plus({ days }).toFormat('yyyy-MM-dd')
 }
 
+// Luxon's weekday is 1=Monday..7=Sunday; callers here want 0=Sunday..6=Saturday,
+// which `% 7` gives directly (Sun 7->0, Mon 1->1, ... Sat 6->6).
 function dayOfWeekBudapest(dateStr: string): number {
-  const weekday = new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'short' }).format(zonedNoon(dateStr))
-  return WEEKDAY_MAP[weekday]
+  return DateTime.fromISO(dateStr, { zone: TZ }).weekday % 7
 }
 
 // Test-only export: the PRODUCTION weekday helper (TZ-baked, no parameter).
 // Used by the cross-zone pin test in recall.test.ts to assert that the SUT
-// -- not just a test-only helper -- actually anchors at local noon. A revert
-// of production to the noon-UTC anchor fails the assertion even though the
-// helper-only tests would still pass.
-export function __test__dayOfWeekBudapestProduction(dateStr: string): number {
-  return dayOfWeekBudapest(dateStr)
-}
+// -- not just a test-only helper -- resolves the weekday in the install zone.
+export const __test__dayOfWeekBudapestProduction = dayOfWeekBudapest
 
 function startOfWeek(dateStr: string): string {
-  const dow = dayOfWeekBudapest(dateStr)
-  const diff = dow === 0 ? -6 : 1 - dow
-  return addDays(dateStr, diff)
+  const weekday = DateTime.fromISO(dateStr, { zone: TZ }).weekday
+  const offset = weekday === 7 ? -6 : 1 - weekday
+  return addDays(dateStr, offset)
 }
 
 function startOfMonth(dateStr: string): string {
@@ -112,9 +50,7 @@ function startOfMonth(dateStr: string): string {
 }
 
 function endOfMonth(dateStr: string): string {
-  const [y, m] = dateStr.split('-').map(Number)
-  const last = new Date(Date.UTC(y, m, 0))
-  return budapestDate(last)
+  return DateTime.fromISO(dateStr, { zone: TZ }).endOf('month').toFormat('yyyy-MM-dd')
 }
 
 const HU_MONTHS: Record<string, string> = {
