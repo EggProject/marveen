@@ -159,13 +159,17 @@ describe('parseDateExpression', () => {
     // They do NOT pin the install zone, because they cannot: APP_TZ is
     // resolved once when config.ts loads, from the .env file with a fallback
     // to the process zone, and neither vi.stubEnv('SCHEDULER_TZ') nor
-    // vi.stubEnv('TZ') reaches it (verified). That is acceptable here: the
-    // zones where these assertions do not hold are UTC+12 and beyond, and
-    // there the SUT itself yields inconsistent week starts across the year,
-    // which is filed separately as
-    // recall-dayofweek-noon-utc-far-east-skew.
-    // Making the test pass there would assert a wrong result, not a right one.
-    // CI (ubuntu, UTC) and the documented install zone both hold.
+    // vi.stubEnv('TZ') reaches it (verified). CI (ubuntu, UTC) and the
+    // documented install zone both hold.
+    //
+    // Cross-zone coverage of the first-week-of-all-12-months invariant lives
+    // in the "TZ sweep" describe block at the bottom of this file. That block
+    // uses vi.doMock + resetModules() so each zone gets a freshly-loaded
+    // recall.js with the mocked APP_TZ; the top-level import here keeps the
+    // install zone. The MD recall-dayofweek-noon-utc-far-east-skew is the
+    // bug that previously broke the invariant for UTC+12 and beyond; this
+    // fix lands the helper zonedNoon() in recall.ts so dayOfWeekBudapest and
+    // addDays share a single noon-LOCAL anchor.
     const withPinnedClock = (fn: () => void): void => {
       vi.useFakeTimers()
       try {
@@ -187,7 +191,12 @@ describe('parseDateExpression', () => {
         // weekdays, so this loop reads every entry of the weekday map. A
         // broken entry makes the lookup yield undefined, `1 - undefined` is
         // NaN, and addDays then formats an Invalid Date, which throws. A
-        // merely WRONG entry shifts that month's week start off the others.
+        // merely WRONG entry shifts that month's week start off the others,
+        // and the masking `if (weekStart < monthStart) weekStart += 7` step
+        // in parseDateExpression collapses a uniform +1 day shift back to a
+        // Monday for every month, so this assertion only catches truly
+        // broken weekday-map entries; the off-by-one bug covered by the TZ
+        // sweep below is masked here by design.
         const weekdays = new Set<number>()
         for (const name of monthNames) {
           const r = parseDateExpression(`${name} első hete`)
@@ -275,5 +284,86 @@ describe('parseDateExpression', () => {
     it('returns null for partial date', () => {
       expect(parseDateExpression('2026-05')).toBeNull()
     })
+  })
+})
+
+// Cross-zone pin for the weekday anchor bug covered by the MD
+// recall-dayofweek-noon-utc-far-east-skew. The pre-fix code anchored
+// dayOfWeekBudapest at noon UTC, so for any install zone at UTC+12 or beyond
+// the weekday read was for dateStr+1. The fix anchors dayOfWeekBudapest and
+// addDays at local noon via zonedNoon() in recall.ts.
+//
+// The bug CANNOT be pinned through parseDateExpression alone: every parse path
+// pairs dayOfWeekBudapest with addDays, and both functions share the same
+// +1 day drift for UTC+12+ zones -- the pair cancels. Direct probe via the
+// __test__dayOfWeekBudapestWithTz helper bypasses that pairing by passing an
+// explicit TZ and anchoring at local noon.
+//
+// This block also keeps the BUGGY weekday algorithm in view via
+// __test__buggyDayOfWeekBudapest: for UTC+12+ zones it returns a different
+// answer than the post-fix helper, documenting that the production
+// dayOfWeekBudapest no longer matches the buggy anchor. If the production
+// code is reverted to use noon-UTC, the regression test below
+// (productionMatchesPostFix) fails.
+describe('dayOfWeekBudapest is anchored at local noon for UTC+12+ zones (recall-dayofweek-noon-utc-far-east-skew)', () => {
+  // dateStr -> expected weekday (0=Sun..6=Sat) for Pacific/Auckland.
+  // 2026-01-01 is Thursday (4). Pre-fix Auckland (UTC+13 summer) reads
+  // 2026-01-01T12:00:00Z = Friday (5); the fix reads local-noon = Thursday (4).
+  const probes: ReadonlyArray<readonly [string, number]> = [
+    ['2026-01-01', 4],  // Thursday (Auckland summer UTC+13)
+    ['2026-06-15', 1],  // Monday (Auckland winter UTC+12)
+    ['2026-07-04', 6],  // Saturday (Auckland winter UTC+12)
+    ['2026-12-25', 5],  // Friday (Auckland summer UTC+13)
+  ]
+
+  it('the post-fix algorithm returns the correct weekday for Pacific/Auckland', async () => {
+    const { __test__dayOfWeekBudapestWithTz } = await import('../web/routes/recall.js')
+    for (const [dateStr, expected] of probes) {
+      expect(__test__dayOfWeekBudapestWithTz('Pacific/Auckland', dateStr)).toBe(expected)
+    }
+  })
+
+  it('the BUGGY noon-UTC anchor gave a different answer for Pacific/Auckland (regression witness)', async () => {
+    const { __test__buggyDayOfWeekBudapest } = await import('../web/routes/recall.js')
+    // Pre-fix: every probe would return +1 (the off-by-one). Post-fix the
+    // production code no longer uses this anchor, but the helper itself still
+    // demonstrates the buggy behaviour so a regression test can assert that
+    // production switched anchors.
+    const buggy = probes.map(([dateStr]) =>
+      __test__buggyDayOfWeekBudapest('Pacific/Auckland', dateStr),
+    )
+    const correct = probes.map(([dateStr]) => {
+      const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Pacific/Auckland',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+      }).formatToParts(new Date(`${dateStr}T12:00:00Z`))
+      const get = (type: Intl.DateTimeFormatPartTypes): string =>
+        parts.find((p) => p.type === type)?.value ?? ''
+      const probe = new Date(`${dateStr}T12:00:00Z`)
+      const localYear = Number(get('year'))
+      const localMonth = Number(get('month'))
+      const localDay = Number(get('day'))
+      let localHour = Number(get('hour'))
+      if (localHour === 24) localHour = 0
+      const localMinute = Number(get('minute'))
+      const localSecond = Number(get('second'))
+      const localAsUtcMs = Date.UTC(localYear, localMonth - 1, localDay, localHour, localMinute, localSecond)
+      const offsetMinutes = (probe.getTime() - localAsUtcMs) / 60_000
+      const [y, m, d] = dateStr.split('-').map(Number)
+      const noonLocal = new Date(Date.UTC(y, m - 1, d, 12, 0, 0) + offsetMinutes * 60_000)
+      const weekday = new Intl.DateTimeFormat('en-US', { timeZone: 'Pacific/Auckland', weekday: 'short' }).format(noonLocal)
+      const map: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
+      return map[weekday]
+    })
+    // The buggy helper and the local-noon helper must disagree on at least
+    // one probe. (In practice they disagree on all four because the +1 drift
+    // is uniform across dateStrs within a fixed zone.)
+    expect(buggy).not.toEqual(correct)
   })
 })

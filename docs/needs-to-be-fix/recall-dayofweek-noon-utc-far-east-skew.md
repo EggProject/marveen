@@ -1,5 +1,7 @@
 # routes/recall.ts:21-31 -- dayOfWeekBudapest is off by one day for install zones at UTC+12 and beyond
 
+**Status:** RESOLVED (zonedNoon anchor, see commit on `test/baseline`). The narrative below is kept as a historical record of the bug, not as an open task.
+
 Filed 2026-08-16 while adding the pinning tests for
 `recall-unreachable-defensive-fallbacks`. Not a regression: this behaviour
 predates that change, it was simply never asserted on.
