@@ -1,5 +1,7 @@
 # channel-poller-reap.ts: `reapChannelOrphans` SIGKILLs the `bot.pid` pid without verifying it is still the poller
 
+**Status: FIXED 2026-08-20.** `reapChannelOrphans` now requires the env scan to corroborate `bot.pid` before signalling it; without the corroboration the pid is treated as null and the reaper refuses to signal it. See commit on `test/baseline` (Resolved SHA in `docs/needs-to-be-fix/INDEX.md`).
+
 ## Location
 
 `src/web/channel-poller-reap.ts`, lines 76-88 (`readBotPid`) and 202-230

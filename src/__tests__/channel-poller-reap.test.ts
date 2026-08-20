@@ -466,7 +466,10 @@ describe('readBotPid (via reapChannelOrphans source)', () => {
   it('trims whitespace around a valid pid', () => {
     const agentDir = mkAgentDir()
     try {
-      seedChanDir(agentDir, '  8001\n')
+      const chanDir = seedChanDir(agentDir, '  8001\n')
+      // Identity check (channel-poller-reap-botpid-killed-without-identity-check)
+      // requires the env scan to corroborate bot.pid, so seed the matching row.
+      script.psEnv = `  8001 s000 S+ 0:00.01 bun run start TELEGRAM_STATE_DIR=${chanDir}`
       const res = reapChannelOrphans('telegram', agentDir)
       expect(res.source.fromBotPid).toBe(8001)
     } finally {
@@ -600,25 +603,21 @@ describe('reapChannelOrphans', () => {
     }
   })
 
-  // PINNING reap-botpid-killed-without-identity-check:
-  // the bot.pid half of the reaper has NO identity check -- a pid that the live
-  // env scan does not corroborate is still SIGTERMed and SIGKILLed. With a
-  // stale bot.pid (nothing ever deletes it) plus pid reuse, that kills an
-  // unrelated process. When the identity check lands, this test MUST fail
-  // (expected reaped becomes []).
-  it('PINNING: SIGKILLs an uncorroborated bot.pid pid that the env scan does not see', () => {
+  // channel-poller-reap-botpid-killed-without-identity-check (FIXED):
+  // the bot.pid half of the reaper now requires identity corroboration -- a pid
+  // that the live env scan does not see is no longer SIGTERMed or SIGKILLed.
+  // With a stale bot.pid (nothing ever deletes it) plus pid reuse, the old
+  // behaviour killed an unrelated process; the identity check closes that hole
+  // by refusing to signal any pid the snapshot cannot confirm is still a poller.
+  it('drops a bot.pid pid that the env scan does not corroborate', () => {
     const agentDir = mkAgentDir()
     try {
       seedChanDir(agentDir, '9101')
       script.psEnv = '' // no process carries TELEGRAM_STATE_DIR=<chanDir>
       const res = reapChannelOrphans('telegram', agentDir)
-      expect(res.source).toEqual({ fromBotPid: 9101, fromEnvScan: [] })
-      expect(res.reaped).toEqual([9101])
-      expect(signals).toEqual([
-        { pid: 9101, signal: 'SIGTERM' },
-        { pid: 9101, signal: 0 },
-        { pid: 9101, signal: 'SIGKILL' },
-      ])
+      expect(res.source).toEqual({ fromBotPid: null, fromEnvScan: [] })
+      expect(res.reaped).toEqual([])
+      expect(signals).toEqual([])
     } finally {
       rmTempDir(agentDir)
     }

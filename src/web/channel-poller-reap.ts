@@ -204,8 +204,15 @@ export function reapChannelOrphans(
   const chanDir = channelStateDir(provider, agentDirPath)
   const envVar = STATE_ENV_VAR[provider]
 
-  const fromBotPid = readBotPid(chanDir)
   const fromEnvScan = listPollerPidsByStateDir(envVar, chanDir)
+  const botPid = readBotPid(chanDir)
+  // Only signal a bot.pid pid that the live snapshot still corroborates.
+  // The env scan is a superset by construction: any process still serving
+  // as the poller carries STATE_DIR=<chanDir> in its env. Without this
+  // check, a stale bot.pid that the OS has reused for an unrelated process
+  // is a silent kill-the-wrong-process hazard on pid-reuse.
+  // Bug: channel-poller-reap-botpid-killed-without-identity-check
+  const fromBotPid = botPid != null && fromEnvScan.includes(botPid) ? botPid : null
 
   // Deduplicate while preserving order so the bot.pid path is logged first.
   const all: number[] = []
