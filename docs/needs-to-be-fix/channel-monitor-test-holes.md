@@ -1,3 +1,5 @@
+**Status:** RESOLVED &lt;pending&gt;
+
 # channel-monitor.ts: pinned test holes in handleMarveenDown cascade + post-resume guard
 
 ## Location

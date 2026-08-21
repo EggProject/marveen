@@ -1,3 +1,5 @@
+**Status:** RESOLVED 2026-08-14 c2b4ea2
+
 # channel-monitor.ts:1647 -- `agentDownSince.get() ?? Date.now()` fallback is unreachable
 
 ## Location

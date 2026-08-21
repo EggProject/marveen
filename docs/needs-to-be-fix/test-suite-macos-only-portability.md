@@ -2,7 +2,7 @@
 
 **Filed:** 2026-08-14
 **Severity:** medium (a regression baseline that only held on one operating system)
-**Status:** fixed
+**Status:** RESOLVED 2026-08-14 69244f0
 
 ## What
 

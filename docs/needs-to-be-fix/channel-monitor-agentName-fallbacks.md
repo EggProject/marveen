@@ -1,3 +1,5 @@
+**Status:** RESOLVED 2026-08-14 08d7508
+
 # channel-monitor.ts:1455, 1494 -- `t.agentName ?? t.session` fallback is unreachable
 
 ## Location

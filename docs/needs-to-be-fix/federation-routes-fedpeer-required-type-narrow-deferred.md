@@ -1,3 +1,5 @@
+**Status:** RESOLVED (documented only)
+
 # federation routes/federation.ts:330 - fedPeer type-narrow deferred
 
 ## Context

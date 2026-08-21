@@ -1,6 +1,6 @@
 # test suite: assert-not-live-install guard marker-only design misses non-marker pollution
 
-**Status:** pinned, not fixed (az eredeti, marker-only implementacio rogbitve van a tesztek archivitasaban; a 2026-08-06-os whole-store patch csak forward-fix)
+**Status:** RESOLVED 2026-08-06 393b3b6 (whole-store detection shipped; original marker-only code is the regression-test target, not the live behavior)
 
 ## Location
 
