@@ -29,14 +29,18 @@ parser `{ fields: {} }`-t ad vissza csendben, mint egy ures multipart body.
 2. `parseMultipart` a `boundaryMatch[2]`-be `WRONG`-ot rak.
 3. `buf.toString('latin1').split('--WRONG')` egyetlen elemet ad (a
    valodi delimiter a `--REAL`, ami soha nem fordul elo).
-4. Az egesz buffer egy darabkent kerul feldolgozasra, nem talal
-   `Content-Disposition` headert, minden part `continue`-dik.
-5. A parser `{ fields: {} }`-t ad vissza, mint egy ures form.
+4. Az egesz buffer egyetlen part-kent kerul feldolgozasra; a
+   `Content-Disposition` header megtalalhato, igy a parser kinyeri a
+   `greeting` mezonevet, de a body-hoz hozzaadodik a `--REAL--` delimiter
+   szemet (`hello\r\n--REAL--`).
+5. A parser `{ fields: { greeting: 'hello\r\n--REAL--' } }`-t ad vissza,
+   `file` viszont `undefined` marad (nincs `filename=` parameter).
 
-Akovetkezmeny: `POST /api/agents/import` (`src/web/routes/agents.ts:1913`)
+Akovetkezmeny: `POST /api/agents/import` (`src/web/routes/agents.ts:1916`)
 a `No bundle uploaded` (400) uzenetet adja, pedig a bundle a body-ban
-volt. Ugyanez erinti `src/web/routes/marveen.ts:193`, `skills.ts:387`,
-`agents-skills.ts:79`-et.
+volt (a `file` kulcs hianya miatt a `bundle` lokalis valtozo soha nem
+kap erteket). Ugyanez erinti `src/web/routes/marveen.ts:193`,
+`skills.ts:387`, `agents-skills.ts:79`-et.
 
 ## Pinning test
 
