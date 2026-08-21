@@ -467,9 +467,6 @@ interface MarveenDownState {
   lastAlertAt: number
   softAttempts: number
   stageStartedAt?: number
-  // Set once we've issued the diagnostic getUpdates probe for this down-cycle,
-  // so we don't spam the upstream API every poll while recovery is running.
-  conflictProbed?: boolean
 }
 
 const SAVE_WINDOW_MS = 60_000
@@ -1283,7 +1280,6 @@ async function handleMarveenDown(): Promise<void> {
     // request" message, so dashboard.log carries hard evidence of the real
     // cause instead of leaving the operator to infer it from a pane scan.
     if (providerLabel === 'telegram') {
-      marveenDownState.conflictProbed = true
       const tokenPath = join(channelStateDir(providerLabel, PROJECT_ROOT), '.env')
       const tok = readChannelToken(providerLabel, tokenPath)
       if (tok) {
