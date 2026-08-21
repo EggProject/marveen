@@ -17,7 +17,7 @@ myboundary=WRONG; boundary=REAL` content-type-ot kuld, a parser a
 `WRONG`-ot fogja meg boundary-nek, a valodi `REAL` soha nem kerul kiertekelesre.
 
 A forditott eset (a valodi boundary jon eloszor) mukodik, mert
-`.match()` az elso illeszkedest adja vissza — de a WRONG boundaryvel
+`.match()` az elso illeszkedest adja vissza, de a WRONG boundaryvel
 feldolgozott buffer soha nem tartalmazza a `--REAL` delimitert, igy a
 parser `{ fields: {} }`-t ad vissza csendben, mint egy ures multipart body.
 
@@ -42,7 +42,7 @@ volt. Ugyanez erinti `src/web/routes/marveen.ts:193`, `skills.ts:387`,
 
 `src/__tests__/multipart.test.ts` ujonnan hozzaadott teszt a fix
 mellet (megtalalhato a `parseMultipart - boundary felismerés`
-describe blokkban, Commit 2 reszere kerul at):
+describe blokkban):
 
 ```ts
 it('a boundary-t csak akkor fogadja el, ha parameter-eleje boundary (nem myboundary)', () => {
@@ -57,7 +57,7 @@ a parameter-kozepepu illeszkedest.
 
 ## Suggested direction (mar alkalmazva)
 
-A fix a Commit 1 reszeben mar megtortent:
+A fix mar megtortent:
 
 ```ts
 const boundaryMatch = contentType.match(

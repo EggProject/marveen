@@ -281,7 +281,7 @@ describe('parseMultipart - kihagyott reszek', () => {
 // atirva aktiv korrekciora a 4 egykori defect eseten), masreszt ket
 // edge-case-t rogzit (case-insensitive Content-Disposition, forditott sorrendu
 // filename/name).
-describe('parseMultipart - pinning (ismert elteresek)', () => {
+describe('parseMultipart - ismert eltresek (pinning)', () => {
   it('a quoted-string boundary-rol leveszi az idezojeleket (RFC 2046)', () => {
     // RFC 2046 szerint a boundary lehet quoted-string. A regex a `boundary="..."`
     // formaban megadott boundary-rol levagja az idezojeleket, es csak a token-t
@@ -321,9 +321,7 @@ describe('parseMultipart - pinning (ismert elteresek)', () => {
     const name = parseMultipart(body, CT).file?.name
     expect(name).toBe(filename)
   })
-})
 
-describe('parseMultipart - boundary es parameter edge-casek', () => {
   it('a Content-Disposition header nevet case-insensitive modon fogadja el (RFC 9110)', () => {
     // A HTTP header nevek RFC 9110 szerint case-insensitive-ek, es a parser
     // a `part.toLowerCase().includes('content-disposition')` mintat koveti.
