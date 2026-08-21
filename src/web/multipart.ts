@@ -9,13 +9,23 @@ export function parseMultipart(buf: Buffer, contentType: string): ParsedForm {
   // Group 1 = quoted-string (RFC 2045 §5.1, inherited from RFC 822).
   // Group 2 = bare token, terminated by the next ';' or whitespace (RFC 2046 §5.1.1 bcharsnospace).
   // /i covers the case-insensitive parameter name per RFC 2045.
-  // NOTE: unanchored -- a parameter whose name ends in "boundary" would hijack the match.
-  const boundaryMatch = contentType.match(/boundary=(?:"([^"]+)"|([^;\s]+))/i)
+  // Lookbehind `(?<=^|[;,])` anchors the match to a parameter boundary (start of
+  // string or after `;` / `,`), so a parameter whose name happens to end in
+  // "boundary" (e.g. `myboundary=WRONG`) cannot hijack the real match
+  // (RFC 2045 §5.1, RFC 2046 §5.1.1).
+  // `\s*=\s*` allows optional linear-white-space around `=` per RFC 2045 §5.1.
+  const boundaryMatch = contentType.match(
+    /(?<=^|[;,])\s*boundary\s*=\s*(?:"([^"]+)"|([^;\s]+))/i,
+  )
   if (!boundaryMatch) return { fields: {} }
   const boundary = boundaryMatch[1] ?? boundaryMatch[2]
-  const parts = buf.toString('binary').split(`--${boundary}`)
+  // RFC 2045 §5.1: "the boundary value MUST be at most 70 characters".
+  // A non-conforming boundary returns an empty form rather than risking an
+  // unbounded split on attacker-supplied input.
+  if (boundary.length > 70) return { fields: {} }
+  const parts = buf.toString('latin1').split(`--${boundary}`)
 
-  const decodeUtf8 = (s: string): string => Buffer.from(s, 'binary').toString('utf8')
+  const decodeUtf8 = (s: string): string => Buffer.from(s, 'latin1').toString('utf8')
 
   const result: ParsedForm = { fields: {} }
 
@@ -26,16 +36,20 @@ export function parseMultipart(buf: Buffer, contentType: string): ParsedForm {
     const headers = part.slice(0, headerEnd)
     const body = part.slice(headerEnd + 4).replace(/\r\n$/, '')
 
-    const nameMatch = headers.match(/name="([^"]+)"/)
+    // `(?:^|;\s)` prefix anchors the parameter match to a parameter boundary
+    // (start of headers or after `;\s`), so the value cannot be captured from
+    // inside `filename="..."`. The `/i` flag covers case-insensitive parameter
+    // names per RFC 2045.
+    const nameMatch = headers.match(/(?:^|;\s)name="([^"]+)"/i)
     if (!nameMatch) continue
     const fieldName = nameMatch[1]
 
-    const filenameMatch = headers.match(/filename="([^"]+)"/)
+    const filenameMatch = headers.match(/(?:^|;\s)filename="([^"]+)"/i)
     if (filenameMatch) {
       const mimeMatch = headers.match(/Content-Type:\s*(.+)\r?\n?/i)
       result.file = {
         name: decodeUtf8(filenameMatch[1]),
-        data: Buffer.from(body, 'binary'),
+        data: Buffer.from(body, 'latin1'),
         mime: mimeMatch?.[1]?.trim() || 'application/octet-stream',
       }
     } else {
