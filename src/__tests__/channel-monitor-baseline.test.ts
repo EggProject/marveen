@@ -552,13 +552,19 @@ describe('baseline: handleMarveenDown first-time softReconnectMarveen() success 
 // ============================================================================
 // LINE 1285 -- `if (providerLabel === 'telegram' && !marveenDownState.conflictProbed)`
 // else branch. Fires when providerLabel !== 'telegram' OR conflictProbed is true.
-// We drive the else branch by triggering TWO consecutive cascade entries; the
-// first sets conflictProbed=true (probe fires), the second hits the else branch
-// because the flag is now true.
+// We drive the probe behaviour by triggering TWO consecutive cascade entries;
+// after the cycle 39 fix (line 1285 dropped the `&& !marveenDownState.conflictProbed`
+// guard), the IF branch fires unconditionally on every fresh handleMarveenDown
+// entry. The within-tick spam-guard no longer exists; each fresh down-spell
+// re-issues the diagnostic. This test verifies that the probe is dispatched
+// on the first cascade entry, and that the second simulated entry (after
+// recovery) does NOT re-fire the probe because shouldEscalateMarveenDown
+// requires MARVEEN_DOWN_CONFIRM_MS (120s) of continuous down before it
+// re-triggers handleMarveenDown within the test's tick window.
 // ============================================================================
 
-describe('baseline: handleMarveenDown telegram conflict-probe else (line 1285)', () => {
-  it('skips the conflict probe on the second down-spell (conflictProbed=true after recovery)', async () => {
+describe('baseline: handleMarveenDown telegram conflict-probe (line 1285)', () => {
+  it('fires the conflict probe once on the first cascade entry (no within-spell dedup needed)', async () => {
     const mod = await freshMod()
     m.getClaudePidForSession.mockReturnValue(null)
     m.listAgentNames.mockReturnValue([])
@@ -568,8 +574,8 @@ describe('baseline: handleMarveenDown telegram conflict-probe else (line 1285)',
     m.execFileSync.mockReturnValue('')
     vi.useFakeTimers()
     const handle = mod.startChannelPluginMonitor()
-    // First cascade entry: marveenDownState was null -> conflictProbed=false ->
-    // the IF branch fires and the probe is dispatched.
+    // First cascade entry: marveenDownState was null -> the unconditional IF
+    // branch fires and the probe is dispatched once.
     await vi.advanceTimersByTimeAsync(30_000)
     await vi.advanceTimersByTimeAsync(150_000 + 100)
     expect(m.probeTelegramConflict).toHaveBeenCalledTimes(1)
@@ -579,17 +585,14 @@ describe('baseline: handleMarveenDown telegram conflict-probe else (line 1285)',
     await vi.advanceTimersByTimeAsync(60_000)
     await vi.advanceTimersByTimeAsync(100)
     expect(m.probeTelegramConflict).toHaveBeenCalledTimes(1)
-    // Re-down: marveenDownState=null + conflictProbed is undefined (fresh state).
-    // To hit line 1285's ELSE branch, we need conflictProbed=true BEFORE the
-    // next cascade entry. The probe is async; its `.then(...)` sets conflictProbed
-    // synchronously, so by the time the cascade ticks again, conflictProbed=true.
+    // Re-down within 120s of recovery: shouldEscalateMarveenDown requires
+    // MARVEEN_DOWN_CONFIRM_MS (120s) of continuous down before re-triggering
+    // handleMarveenDown, so the probe is NOT called again in this window.
     m.probeChannelPluginLiveness.mockReturnValue('down')
     m.getClaudePidForSession.mockReturnValue(null)
     await vi.advanceTimersByTimeAsync(120_000 + 100)
     clearMonitorHandle(handle)
     vi.useRealTimers()
-    // The probe count stays at 1 because conflictProbed=true skips the probe
-    // dispatch on the second cascade entry.
     expect(m.probeTelegramConflict).toHaveBeenCalledTimes(1)
   })
 })

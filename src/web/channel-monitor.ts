@@ -402,7 +402,7 @@ async function performStuckInputAction(
     // submitLanded() handles a null capture internally (-> not landed). prevSig
     // is non-null here in practice (recover only fires on a parked signature),
     // but guard the type narrowing explicitly.
-    const landed = prevSig != null ? submitLanded(prevSig, captureParkedInputView(session)) : false
+    const landed = submitLanded(prevSig!, captureParkedInputView(session))
     logger.warn(
       { session, action, attempt, landed },
       landed
@@ -1245,7 +1245,7 @@ function checkMainKeepaliveStaleness(): void {
     logger.info({ paneState }, 'Keepalive stale but pane is busy -- deferring respawn')
     return
   }
-  const ageMin = Math.round((ageMs ?? 0) / 60000)
+  const ageMin = Math.round(ageMs! / 60000)
   logger.warn({ ageMs, paneState }, 'Channel keep-alive stale -- main session likely wedged/deaf, respawning via respawn-pane')
   sendAlert(`⚠️ A fő channel keep-alive ${ageMin} perce nem frissült -- respawn-pane a ${MAIN_CHANNELS_SESSION} session-on (a beszelgetes elveszik, memoria marad).`)
   if (respawnMarveenSessionFresh()) {
@@ -1282,7 +1282,7 @@ async function handleMarveenDown(): Promise<void> {
     // upstream returns the orphan-poller's "terminated by other getUpdates
     // request" message, so dashboard.log carries hard evidence of the real
     // cause instead of leaving the operator to infer it from a pane scan.
-    if (providerLabel === 'telegram' && !marveenDownState.conflictProbed) {
+    if (providerLabel === 'telegram') {
       marveenDownState.conflictProbed = true
       const tokenPath = join(channelStateDir(providerLabel, PROJECT_ROOT), '.env')
       const tok = readChannelToken(providerLabel, tokenPath)
@@ -1323,7 +1323,7 @@ async function handleMarveenDown(): Promise<void> {
     return
   }
   if (marveenDownState.stage === 'save') {
-    const saveStartedAt = marveenDownState.stageStartedAt ?? marveenDownState.downSince
+    const saveStartedAt = marveenDownState.stageStartedAt!
     if (now - saveStartedAt < SAVE_WINDOW_MS) return
     marveenDownState.stage = 'resume'
     marveenDownState.stageStartedAt = now
@@ -1333,7 +1333,7 @@ async function handleMarveenDown(): Promise<void> {
     return
   }
   if (marveenDownState.stage === 'resume') {
-    const resumeStartedAt = marveenDownState.stageStartedAt ?? marveenDownState.downSince
+    const resumeStartedAt = marveenDownState.stageStartedAt!
     if (now - resumeStartedAt < RESUME_GRACE_MS) return
     marveenDownState.stage = 'hard'
     marveenDownState.stageStartedAt = now
