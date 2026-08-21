@@ -64,16 +64,16 @@ dead code, doc issue).
 | `prompt-safety-origin-note-tab-strip` | `src/prompt-safety.ts:96-103` | `sanitizeOriginNote` strips tab/newline/NBSP instead of collapsing them | `src/__tests__/prompt-safety.test.ts` | Resolved: 2026-08-17 cdb771f |
 | `pane-state-defensive-branches` | `src/pane-state.ts:1065,1068,1107,1140,1166,1171,1504` | unreachable defensive branches block 100% branch coverage | `src/__tests__/pane-state.test.ts` | Resolved: 2026-08-19 84efdfe |
 | `store-watcher-sensitive-names-unreachable` | `src/store-watcher.ts:142` | `SENSITIVE_NAMES` branch is dead code (`is_sensitive` can never be 1) | `src/__tests__/store-watcher.test.ts` | Resolved: 2026-08-18 d79b787 |
-| `index-unreachable-coverage` | `src/index.ts:174,283` (was `174,283,382`) | two functions are unreachable from the test harness; the third site (382, the `heartbeatStarted` shutdown guard) was deleted as dead code in 221d5c8 | `src/__tests__/index.test.ts` | — |
+| `index-unreachable-coverage` | `src/index.ts:174,283` (was `174,283,382`) | two functions are unreachable from the test harness; the third site (382, the `heartbeatStarted` shutdown guard) was deleted as dead code in 221d5c8 | `src/__tests__/index.test.ts` | Resolved: 2026-08-21 a330462 — NO-OP, line 174 already covered by index.test.ts:2739-2796 |
 | `channel-invites-unreachable-defensive-branches` | `src/web/channel-invites.ts:108,236` | two defensive `if` guards are unreachable through public API; callers gate on the same property | `src/__tests__/channel-invites.test.ts` | Resolved: 2026-08-19 d48256c |
 | `web-worker-warmup-ignores-close` | `src/web.ts:339-364` (warm-up) vs `544` (close override) | agent-worker warm-up import has no `close()` cancel flag, unlike the liveness monitor | `src/__tests__/web-server.test.ts` | Resolved: 2026-08-21 6f1fd9a |
 | `auto-restart-parsehhmm-integer-guard` | `src/auto-restart.ts:63` | `parseHHMM`'s `Number.isInteger` guard is dead code | `src/__tests__/auto-restart.test.ts` | 2026-08-14 014f1de |
 | `agent-detect-linux-libc-redundant-guard` | `src/agent.ts:72-80` (line 73) | `detectLinuxLibc`'s platform check is unreachable in production | `src/__tests__/agent-run-paths.test.ts` | 2026-08-14 014f1de |
-| `channel-coordinator-internals-untestable` | `src/channel-coordinator.ts:117-441` | internal state-machine functions are not unit-testable | `src/__tests__/channel-coordinator.test.ts` | — |
+| `channel-coordinator-internals-untestable` | `src/channel-coordinator.ts:117-441` | internal state-machine functions are not unit-testable | `src/__tests__/channel-coordinator.test.ts` | Deferred to next cycle |
 | `heartbeat-brief-rundiceaysweep-not-applicable` | `src/heartbeat.ts` (no symbol) | task brief mentions `runDecaySweep` integration but the integration does not exist | `src/__tests__/heartbeat-cov.test.ts` | Documented only -- source unchanged |
 | `http-helpers-gzip-memo-evict-guard` | `src/web/http-helpers.ts:122` | gzip memo eviction guard is dead code (`oldest` can never be `undefined`) | `src/__tests__/http-helpers.test.ts` | Resolved: 2026-08-16 5a2a3a7 |
 | `stuck-tool-call-watcher-dead-ternary` | `src/web/stuck-tool-call-watcher.ts:192` | `sinceRespawnMs` ternary has a dead `null` arm (blocks 100% branch coverage) | `src/__tests__/stuck-tool-call-watcher.test.ts` | 2026-08-14 014f1de |
-| `keychain-store-insecure-acl` | `src/web/keychain.ts:19` | the master key is written with `-A`, the flag `security(1)` labels "insecure, not recommended" (empty ACL); low because the key is readable without `-A` too | `src/__tests__/keychain.test.ts` | Documented only -- source unchanged |
+| `keychain-store-insecure-acl` | `src/web/keychain.ts:19` | the master key is written with `-A`, the flag `security(1)` labels "insecure, not recommended" (empty ACL); low because the key is readable without `-A` too | `src/__tests__/keychain.test.ts` | Deferred to next cycle |
 | `vault-bindings-unreachable-coverage` | `src/web/vault-bindings.ts:163,236` | `maskValue`'s `<= 6` branch and `serverHasVaultRefs`'s `!env` branch are unreachable from any caller (`looksLikeSensitiveValue`'s 8-char gate and the `if (!serverCfg.env) continue` guard filter both inputs) | `src/__tests__/vault-bindings.test.ts` | Resolved: 2026-08-18 fa933c4 |
 | `agent-process-unreachable-defensive-branches` | `src/web/agent-process.ts:777,1384,1512` | three unreachable defensive branches (`runTmux` remote default timeout, `restartAgentProcess` `||` error fallback, `answerFirstRunGates` loop-exhaustion `'unchanged'` arm) cap branch coverage at 99.38% | `src/__tests__/agent-process.test.ts` | 2026-08-14 08d7508 |
 | `routes-ideas-body-parse-500` | `src/web/routes/ideas.ts:43,86,138,152,201` | unguarded `JSON.parse` + destructuring throws out of the handler, so a malformed or `null` body returns 500 "Szerver hiba" instead of 400 | `src/__tests__/ideas-routes.test.ts` | Resolved: 2026-08-17 943dba8 |
@@ -107,7 +107,7 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `agent-worker-runviaworker-afterloop` | agent-worker.ts: runViaWorker's after-loop `return` is dead code | Resolved: 2026-08-17 911de24 |
 | `agent-worker-seedworkercredentials-unreachable` | agent-worker.ts: seedWorkerCredentials mkdirSync arm is unreachable | Resolved: 2026-08-17 a58a811 |
 | `agent-worker-selfheal-catch-unreachable` | agent-worker.ts: ensureWorkerReady's self-heal catch arm is unreachable | Resolved: 2026-08-17 2e9ab6f |
-| `agent-worker-settings-symlink-preserve` | agent-worker.ts: ensureWorkerCwd drops the shared settings.json content when the link is replaced | — |
+| `agent-worker-settings-symlink-preserve` | agent-worker.ts: ensureWorkerCwd drops the shared settings.json content when the link is replaced | Deferred to next cycle |
 | `agent-worker-symlink-catch` | agent-worker.ts: ensureWorkerCwd's symlinkSync catch is unreachable from tests | Resolved: 2026-08-17 e16bc34 |
 | `approvals-raw-resolved-by-in-log` | approvals PATCH logger receives untrimmed resolved_by | Resolved: 2026-08-16 9173b54 |
 | `auto-restart-runner-unreachable-defensive-fallbacks` | auto-restart-runner.ts: two `??` fallbacks are unreachable defensive code | 2026-08-14 c2b4ea2 |
@@ -128,7 +128,7 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `federation-validator-refusal-paths` | federation.ts validator-refusal 400 paths are unreachable in practice | 2026-08-14 08d7508 |
 | `fleet-transfer-agents-nullish-coalesce-dead-code` | fleet-transfer.ts: `fleet.agents ?? []` nullish-coalesce right arm is unreachable | 2026-08-14 014f1de |
 | `fleet-transfer-fleet-agents-nullish-unreachable` | fleet-transfer.ts: `fleet.agents ?? []` nullish-coalesce right-arms are unreachable (7 sites) | 2026-08-14 014f1de |
-| `message-router-cache-fallback-unreachable` | message-router.ts: cached session-lookup `??` fallback arms are unreachable | — |
+| `message-router-cache-fallback-unreachable` | message-router.ts: cached session-lookup `??` fallback arms are unreachable | Deferred to next cycle |
 | `message-router-dead-defensive-branches` | message-router.ts: three dead defensive branches block 100% branch coverage | Partially resolved: 2026-08-19 ba6faf8 |
 | `message-router-unreachable-defensive-branches` | message-router.ts: four unreachable defensive branches block 100% branch coverage | Partially resolved: 2026-08-19 ba6faf8 |
 | `model-suggest-buildreason-preapplied-fallbacks-unreachable` | model-suggest.ts: `buildReason` `signals` and field-specific `?? 0` fallbacks are unreachable | 2026-08-14 c2b4ea2 |
@@ -146,7 +146,7 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `route-token-usage-nan-params` | NaN-via-parseInt: numeric query params silently default to NaN | Resolved: 2026-08-17 46e97a9ba973c094bd7f5c67cbd65a19254b66a3 |
 | `routes-agent-team-unreachable-branches` | routes/agent-team.ts: file path does not exist; coverage pin moved to web/agent-team.ts | Resolved: 2026-08-18 e5cfea6 |
 | `routes-agent-terminal-literalkeys-nullish` | agent-terminal.ts: unreachable `literalKeys ?? ''` on the audit-preview line blocks 100% branch coverage | 2026-08-14 c2b4ea2 |
-| `routes-agents-br-baseline-partial-coverage` | routes/agents.ts: remaining uncovered branches after baseline regression tests | — |
+| `routes-agents-br-baseline-partial-coverage` | routes/agents.ts: remaining uncovered branches after baseline regression tests | Deferred to next cycle |
 | `routes-agents-parse-channel-provider-dead-branches` | routes/agents.ts: parseChannelProvider / matchChannelProvider else branches are dead code | Resolved: 2026-08-16 3e1dd3f |
 | `routes-agents-parsechannelprovider-dead-branch` | routes/agents.ts: parseChannelProvider's `return null` branch is unreachable through the public API | Resolved: 2026-08-16 3e1dd3f |
 | `routes-agents-skills-unreachable-stat-throw` | agents-skills.ts: unreachable `catch { return false }` on the extracted-skills filter | 2026-08-14 c2b4ea2 |
@@ -189,10 +189,10 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `vault-ssh-keys-import-newline-trim-bug` | vault-ssh-keys.ts: the import handler's `endsWith('\n')` branch is unreachable | Resolved: 2026-08-16 9aa71e5 |
 | `voice-directive-json-quote-escape` | src/web/voice-directive.ts: only single quotes are escaped, so `"` / `\` in the state dir emits invalid JSON | Resolved: 2026-08-19 be2cfee |
 | `web-agent-bundle-single-line-trycatch` | agent-bundle.ts: single-line try-catch and defensive-guard branches block 100% branch coverage | 2026-08-14 68b94fe |
-| `web-agent-scaffold-defensive-coverage` | web/agent-scaffold.ts: 18 defensive nullish-coalesce / guard branches cap branch coverage at 93.61% | — |
-| `web-agent-worker-runviaworker-coverage` | agent-worker: runViaWorker / runWorkerAttempt / ensureWorkerReady integration paths lack 100% unit-test coverage | — |
+| `web-agent-scaffold-defensive-coverage` | web/agent-scaffold.ts: 18 defensive nullish-coalesce / guard branches cap branch coverage at 93.61% | Deferred to next cycle |
+| `web-agent-worker-runviaworker-coverage` | agent-worker: runViaWorker / runWorkerAttempt / ensureWorkerReady integration paths lack 100% unit-test coverage | Deferred to next cycle |
 | `web-inbound-probe-cache-sticky` | Redundant assignment (dead store): `_warnedChatIdAbsent = false` reset at line 246 has no behavioral effect | Resolved: 2026-08-20 3926df6 |
-| `web-inbound-probe-respawn-grace` | Defect: stuck mod-scope cache blocks coverage of `shouldTriggerDeafnessRespawn` respawn branches | — |
+| `web-inbound-probe-respawn-grace` | Defect: stuck mod-scope cache blocks coverage of `shouldTriggerDeafnessRespawn` respawn branches | Deferred to next cycle |
 
 ## Orphan addenda (2026-08-15 reconcile v3)
 
@@ -214,9 +214,9 @@ when a commit on `test/baseline` already deleted the buggy defensive guard, `-` 
 | `channel-invites-236-ts-strict-blocks-delete` | `src/web/channel-invites.ts:236` | TS strict blocks the safe-delete | - | Resolved: 2026-08-19 d48256c |
 | `channel-monitor-agentDownSince-fallback` | `src/web/channel-monitor.ts:1647` | agentDownSince.get() ?? Date.now() fallback is unreachable | - | 2026-08-14 c2b4ea2 |
 | `channel-monitor-agentName-fallbacks` | `src/web/channel-monitor.ts:1455,1494` | t.agentName ?? t.session fallback is unreachable | - | 2026-08-14 08d7508 |
-| `federation-inbox-fedPeer-null-fallback` | `src/web/routes/federation.ts:329` | ctx.fedPeer ?? null fallback is unreachable (MD heading off-by-one: line 330 in MD, actual code at line 329) | - | - |
+| `federation-inbox-fedPeer-null-fallback` | `src/web/routes/federation.ts:329` | ctx.fedPeer ?? null fallback is unreachable (MD heading off-by-one: line 330 in MD, actual code at line 329) | - | Resolved: 2026-08-21 858660f |
 | `federation-rememberRef-oldest-undefined` | `src/web/routes/federation.ts:93` | rememberRef's if (oldest !== undefined) falsy arm is unreachable | - | 2026-08-14 08d7508 |
-| `federation-routes-fedpeer-required-type-narrow-deferred` | `src/web/routes/federation.ts:298,329` | fedPeer type-narrow deferred | - | Resolved (documented only) |
+| `federation-routes-fedpeer-required-type-narrow-deferred` | `src/web/routes/federation.ts:298,329` | fedPeer type-narrow deferred | - | Resolved: 2026-08-21 858660f — narrowing now succeeds |
 | `index-283-test-pins-error-wiring` | `src/index.ts:283` | buildPidfileLockContext.log.error is pinned by TS strict (process-lock.ts:253 requires it) and a positive test (index.test.ts:1382 'forwards pidfile context errors to logger.error') | `src/__tests__/index.test.ts:1382` | Resolved: 2026-08-21 87cd76f21f5b -- contract documented via code comment in src/index.ts:282 |
 | `index-stopHeartbeat-throw` | `src/index.ts:382` | stopHeartbeat-throws-during-shutdown catch is unreachable | `src/__tests__/index.test.ts` | Resolved: 2026-08-16 221d5c8 |
 | `mcp-list-warn-execError-dead-branch` | `src/web/mcp-list.ts:135` | warn() payload's execError ? truthy arm is unreachable | `src/__tests__/mcp-list.test.ts` | Resolved: 2026-08-16 c1ee774 |
