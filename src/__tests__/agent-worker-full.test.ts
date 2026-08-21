@@ -13,7 +13,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest'
 import {
-  mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, symlinkSync, lstatSync, readlinkSync, readdirSync,
+  mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, symlinkSync, lstatSync, readdirSync,
 } from 'node:fs'
 import { join } from 'node:path'
 import { mkTempDir, rmTempDir, snapshotEnv } from './setup/temp-sandbox.js'
@@ -533,6 +533,25 @@ describe('ensureWorkerCwd', () => {
     expect(s.enabledPlugins.telegram).toBe(false)
     expect(s.enabledPlugins['slack-channel']).toBe(false)
     expect(s.skipDangerousModePermissionPrompt).toBe(true)
+  })
+
+  it('preserves the shared settings.json content when the symlink target is relative', () => {
+    // Regression test: a relative symlink (`../.claude/settings.json`) caused
+    // the prior `readlinkSync` + `readFileSync(target)` to mis-resolve target
+    // against process.cwd() and throw ENOENT, silently losing the user's hooks.
+    // realpathSync resolves the full path before reading.
+    seedSharedClaude({ settings: { hooks: { Stop: [] } } })
+    AW.ensureWorkerCwd()
+    const cfg = join(H.home, '.marveen-worker', '.claude-config')
+    rmSync(join(cfg, 'settings.json'))
+    // Relative target: ../../.claude/settings.json from cfg = ~/.claude/settings.json
+    symlinkSync('../.claude/settings.json', join(cfg, 'settings.json'))
+    expect(lstatSync(join(cfg, 'settings.json')).isSymbolicLink()).toBe(true)
+    AW.ensureWorkerCwd()
+    expect(lstatSync(join(cfg, 'settings.json')).isSymbolicLink()).toBe(false)
+    const s = JSON.parse(readFileSync(join(cfg, 'settings.json'), 'utf-8'))
+    expect(s.hooks).toEqual({ Stop: [] })
+    expect(s.enabledPlugins.telegram).toBe(false)
   })
 
   it('falls back to an empty settings object when the existing file is unparseable', () => {
