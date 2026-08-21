@@ -177,10 +177,9 @@ function stampTraceOnMessage(msg: AgentMessage, nowMs: number): { trace_id: stri
   const span_id  = generateSpanId()
   const parent_span_id = inherited?.span_id ?? null
   const stamped = stampMessageTrace(msg.id, trace_id, span_id, parent_span_id)
-  if (stamped) {
-    const operation = `${msg.from_agent}->${msg.to_agent}`
-    upsertOtelSpan({ trace_id, span_id, parent_span_id, agent_id: msg.from_agent, operation, start_ms: nowMs, attributes: null })
-  }
+  if (!stamped) return { trace_id, span_id, parent_span_id }
+  const operation = `${msg.from_agent}->${msg.to_agent}`
+  upsertOtelSpan({ trace_id, span_id, parent_span_id, agent_id: msg.from_agent, operation, start_ms: nowMs, attributes: null })
   return { trace_id, span_id, parent_span_id }
 }
 
