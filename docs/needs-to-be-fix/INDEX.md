@@ -35,7 +35,7 @@ dead code, doc issue).
 | Bug ID | File:Line | Title | Pinning test path | Resolved |
 | --- | --- | --- | --- | --- |
 | `web-watchdog-survives-close` | `src/web.ts:310-319` (arm) vs `539-562` (close override) | the not-listening watchdog survives `server.close()` and `exit(1)` afterwards | `src/__tests__/web-server.test.ts` | Resolved: 2026-08-21 6f1fd9a |
-| `web-port-reclaim-failure-leaves-unbound` | `src/web.ts:225-280` | a failing port-reclaim leaves the process alive with no listener and no retry | `src/__tests__/web-server.test.ts` | Resolved: &lt;pending&gt; |
+| `web-port-reclaim-failure-leaves-unbound` | `src/web.ts:225-280` | a failing port-reclaim leaves the process alive with no listener and no retry | `src/__tests__/web-server.test.ts` | Resolved: 2026-08-21 48e2126 |
 | `env-update-duplicate-key-lost` | `src/env.ts:68-80` | duplicate-key update of `updateEnvFile` is silently lost (reader uses last-occurrence) | `src/__tests__/env.test.ts` | Resolved: 2026-08-20 3d7e677 |
 | `kanban-dispatch-owner-case` | `src/kanban-dispatch.ts:34` | owner-guard is the only case-sensitive comparison (mismatched casing misroutes cards) | `src/__tests__/kanban-dispatch.test.ts` | Resolved: 2026-08-16 92612c5 |
 | `notify-fallback-hardcodes-telegram-limit` | `src/notify.ts:25` | fallback hardcodes Telegram 4096 limit for every provider | `src/__tests__/notify.test.ts` | Resolved: 2026-08-17 c49c793 |
@@ -114,8 +114,8 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `channel-health-monitor-spawndetach-inflight-redundant-guard` | channel-health-monitor.ts: spawnDetachedReconnect's in-flight guard is unreachable through public API | Resolved: 2026-08-18 8046287 |
 | `channel-monitor-agentdownsince-nullish-coalesce` | channel-monitor.ts: agentDownSince.get(t.session) ?? Date.now() at line 1647 is structurally dead | 2026-08-14 c2b4ea2 |
 | `channel-monitor-t-agentname-nullish-coalesce` | channel-monitor.ts: t.agentName ?? t.session at lines 1455 and 1494 is structurally dead | 2026-08-14 08d7508 |
-| `channel-monitor-test-holes` | channel-monitor.ts: pinned test holes in handleMarveenDown cascade + post-resume guard | Resolved: &lt;pending&gt; |
-| `channel-monitor-unreachable-defensive-branches` | channel-monitor.ts: seven unreachable defensive branches block 100% branch coverage | Resolved: &lt;pending&gt; |
+| `channel-monitor-test-holes` | channel-monitor.ts: pinned test holes in handleMarveenDown cascade + post-resume guard | Resolved: 2026-08-21 0ccf795 |
+| `channel-monitor-unreachable-defensive-branches` | channel-monitor.ts: seven unreachable defensive branches block 100% branch coverage | Resolved: 2026-08-21 0ccf795 |
 | `channel-plugin-unlock-unreachable-raw-nullish-fallback` | channel-plugin-unlock.ts: `raw ?? ''` nullish fallback is structurally unreachable | 2026-08-14 c2b4ea2 |
 | `channel-request-watcher-unreachable-provider-check` | channel-request-watcher.ts: lookupChannelName's `if (provider !== 'slack') return` is unreachable | — |
 | `claude-credentials-guard-line-224-dead-code` | claude-credentials-guard.ts: line 224 `?? ''` fallback is dead code | 2026-08-15 cd1bc00 |
