@@ -120,7 +120,7 @@ describe('web/routes/types.ts -- RouteHandler signature', () => {
         path: ctx.path,
         method: ctx.method,
         pathname: ctx.url.pathname,
-        fedPeer: ctx.fedPeer ?? null,
+        fedPeer: ctx.fedPeer,
         authKind: ctx.auth?.kind ?? null,
         authUser: ctx.auth?.user ?? null,
         authPeer: ctx.auth?.peer ?? null,
