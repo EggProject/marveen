@@ -242,7 +242,32 @@ Respond ONLY with JSON, nothing else:
     const id = parseInt(memUpdateMatch[1], 10)
     const body = await readBody(req)
     const { content, category, tier, agent_id, keywords } = JSON.parse(body.toString()) as { content: string; category?: string; tier?: string; agent_id?: string; keywords?: string }
-    if (updateMemory(id, content, category || tier, agent_id, keywords)) { json(res, { ok: true }); return true }
+
+    // --- Inline validation mirrors POST at lines 39-52. Inlined per
+    // fix-scope: no helper extraction, no POST refactor. ---
+    if (!content?.trim()) { json(res, { error: 'Content is required' }, 400); return true }
+    if (containsSuspiciousContent(content)) {
+      logger.warn({ agent: agent_id }, 'Memory content rejected: suspicious pattern')
+      json(res, { error: 'Content rejected by security filter' }, 400)
+      return true
+    }
+    // PUT may omit BOTH category and tier to leave the row's category unchanged.
+    // updateMemory treats a falsy category as "leave alone" (src/db.ts:1365), so
+    // defaulting here would silently reclassify every edit. The dashboard PUT
+    // (web/app.js:6581) sends `tier`, so mirror POST's deprecation log on tier-only.
+    if (tier && !category) {
+      logger.warn({ agent: agent_id }, '[DEPRECATED] /api/memories: use "category" instead of "tier"')
+    }
+    let resolvedCategory: string | undefined
+    if (category || tier) {
+      resolvedCategory = (category || tier).toLowerCase()
+      if (!MEMORY_CATEGORIES.has(resolvedCategory)) {
+        json(res, { error: `Invalid category "${resolvedCategory}". Allowed: ${[...MEMORY_CATEGORIES].join(', ')}` }, 400)
+        return true
+      }
+    }
+
+    if (updateMemory(id, content, resolvedCategory, agent_id, keywords)) { json(res, { ok: true }); return true }
     json(res, { error: 'Memory not found' }, 404)
     return true
   }
