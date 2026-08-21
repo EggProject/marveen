@@ -34,7 +34,7 @@ dead code, doc issue).
 
 | Bug ID | File:Line | Title | Pinning test path | Resolved |
 | --- | --- | --- | --- | --- |
-| `web-watchdog-survives-close` | `src/web.ts:310-319` (arm) vs `539-562` (close override) | the not-listening watchdog survives `server.close()` and `exit(1)` afterwards | `src/__tests__/web-server.test.ts` | — |
+| `web-watchdog-survives-close` | `src/web.ts:310-319` (arm) vs `539-562` (close override) | the not-listening watchdog survives `server.close()` and `exit(1)` afterwards | `src/__tests__/web-server.test.ts` | Resolved: 2026-08-21 6f1fd9a |
 | `web-port-reclaim-failure-leaves-unbound` | `src/web.ts:225-280` | a failing port-reclaim leaves the process alive with no listener and no retry | `src/__tests__/web-server.test.ts` | — |
 | `env-update-duplicate-key-lost` | `src/env.ts:68-80` | duplicate-key update of `updateEnvFile` is silently lost (reader uses last-occurrence) | `src/__tests__/env.test.ts` | Resolved: 2026-08-20 3d7e677 |
 | `kanban-dispatch-owner-case` | `src/kanban-dispatch.ts:34` | owner-guard is the only case-sensitive comparison (mismatched casing misroutes cards) | `src/__tests__/kanban-dispatch.test.ts` | Resolved: 2026-08-16 92612c5 |
@@ -65,7 +65,7 @@ dead code, doc issue).
 | `store-watcher-sensitive-names-unreachable` | `src/store-watcher.ts:142` | `SENSITIVE_NAMES` branch is dead code (`is_sensitive` can never be 1) | `src/__tests__/store-watcher.test.ts` | Resolved: 2026-08-18 d79b787 |
 | `index-unreachable-coverage` | `src/index.ts:174,283` (was `174,283,382`) | two functions are unreachable from the test harness; the third site (382, the `heartbeatStarted` shutdown guard) was deleted as dead code in 221d5c8 | `src/__tests__/index.test.ts` | — |
 | `channel-invites-unreachable-defensive-branches` | `src/web/channel-invites.ts:108,236` | two defensive `if` guards are unreachable through public API; callers gate on the same property | `src/__tests__/channel-invites.test.ts` | Resolved: 2026-08-19 d48256c |
-| `web-worker-warmup-ignores-close` | `src/web.ts:339-364` (warm-up) vs `544` (close override) | agent-worker warm-up import has no `close()` cancel flag, unlike the liveness monitor | `src/__tests__/web-server.test.ts` | — |
+| `web-worker-warmup-ignores-close` | `src/web.ts:339-364` (warm-up) vs `544` (close override) | agent-worker warm-up import has no `close()` cancel flag, unlike the liveness monitor | `src/__tests__/web-server.test.ts` | Resolved: 2026-08-21 6f1fd9a |
 | `auto-restart-parsehhmm-integer-guard` | `src/auto-restart.ts:63` | `parseHHMM`'s `Number.isInteger` guard is dead code | `src/__tests__/auto-restart.test.ts` | 2026-08-14 014f1de |
 | `agent-detect-linux-libc-redundant-guard` | `src/agent.ts:72-80` (line 73) | `detectLinuxLibc`'s platform check is unreachable in production | `src/__tests__/agent-run-paths.test.ts` | 2026-08-14 014f1de |
 | `channel-coordinator-internals-untestable` | `src/channel-coordinator.ts:117-441` | internal state-machine functions are not unit-testable | `src/__tests__/channel-coordinator.test.ts` | — |
