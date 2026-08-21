@@ -523,22 +523,15 @@ describe('worker warm-up', () => {
     )
   })
 
-  it('does not start the liveness monitor when close() ran before the import resolved', async () => {
+  it('does not start either worker when close() ran before the imports resolved', async () => {
     const srv = await boot()
     srv.close()
     await flush()
     expect(H.startWorkerLivenessMonitor).not.toHaveBeenCalled()
-    // PINS CURRENT BEHAVIOUR: the warm-up import has no equivalent cancel flag,
-    // so a close() before it resolves still spawns a worker session.
-    // See web-worker-warmup-ignores-close
-    expect(H.startWorkerSession).toHaveBeenCalled()
+    expect(H.startWorkerSession).not.toHaveBeenCalled()
   })
 
-  it('leaves the listener watchdog armed after close(), which then exits(1)', async () => {
-    // PINS CURRENT BEHAVIOUR: close() clears every background interval except
-    // the not-listening watchdog, so a deliberate close that keeps the process
-    // alive is treated as a silent listener failure.
-    // See web-watchdog-survives-close
+  it('clears the startup watchdog on close() (no spurious exit)', async () => {
     const srv = await boot()
     await flush()
     srv.close()
@@ -546,7 +539,7 @@ describe('worker warm-up', () => {
 
     vi.advanceTimersByTime(7 * 60 * 1000 + 60 * 1000)
 
-    expect(exitCalls).toEqual([1])
+    expect(exitCalls).toEqual([])
   })
 
   it('clears the liveness interval when close() runs after the import resolved', async () => {
