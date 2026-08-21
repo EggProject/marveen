@@ -114,7 +114,7 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `channel-health-monitor-spawndetach-inflight-redundant-guard` | channel-health-monitor.ts: spawnDetachedReconnect's in-flight guard is unreachable through public API | Resolved: 2026-08-18 8046287 |
 | `channel-monitor-agentdownsince-nullish-coalesce` | channel-monitor.ts: agentDownSince.get(t.session) ?? Date.now() at line 1647 is structurally dead | 2026-08-14 c2b4ea2 |
 | `channel-monitor-t-agentname-nullish-coalesce` | channel-monitor.ts: t.agentName ?? t.session at lines 1455 and 1494 is structurally dead | 2026-08-14 08d7508 |
-| `channel-monitor-test-holes` | channel-monitor.ts: pinned test holes in handleMarveenDown cascade + post-resume guard | Resolved: 2026-08-21 0ccf795 |
+| `channel-monitor-test-holes` | channel-monitor.ts: pinned test holes in handleMarveenDown cascade + post-resume guard | Resolved: 2026-08-21 28b37d9 |
 | `channel-monitor-unreachable-defensive-branches` | channel-monitor.ts: seven unreachable defensive branches block 100% branch coverage | Resolved: 2026-08-21 0ccf795 |
 | `channel-plugin-unlock-unreachable-raw-nullish-fallback` | channel-plugin-unlock.ts: `raw ?? ''` nullish fallback is structurally unreachable | 2026-08-14 c2b4ea2 |
 | `channel-request-watcher-unreachable-provider-check` | channel-request-watcher.ts: lookupChannelName's `if (provider !== 'slack') return` is unreachable | — |
@@ -215,7 +215,7 @@ when a commit on `test/baseline` already deleted the buggy defensive guard, `-` 
 | `channel-monitor-agentName-fallbacks` | `src/web/channel-monitor.ts:1455,1494` | t.agentName ?? t.session fallback is unreachable | - | 2026-08-14 08d7508 |
 | `federation-inbox-fedPeer-null-fallback` | `src/web/routes/federation.ts:329` | ctx.fedPeer ?? null fallback is unreachable (MD heading off-by-one: line 330 in MD, actual code at line 329) | - | - |
 | `federation-rememberRef-oldest-undefined` | `src/web/routes/federation.ts:93` | rememberRef's if (oldest !== undefined) falsy arm is unreachable | - | 2026-08-14 08d7508 |
-| `federation-routes-fedpeer-required-type-narrow-deferred` | `src/web/routes/federation.ts:298,329` | fedPeer type-narrow deferred | - | Resolved: &lt;pending&gt; (documented only) |
+| `federation-routes-fedpeer-required-type-narrow-deferred` | `src/web/routes/federation.ts:298,329` | fedPeer type-narrow deferred | - | Resolved (documented only) |
 | `index-283-test-pins-error-wiring` | `src/index.ts:283` | buildPidfileLockContext.log.error is pinned by TS strict (process-lock.ts:253 requires it) and a positive test (index.test.ts:1382 'forwards pidfile context errors to logger.error') | `src/__tests__/index.test.ts:1382` | Resolved: 2026-08-21 87cd76f21f5b -- contract documented via code comment in src/index.ts:282 |
 | `index-stopHeartbeat-throw` | `src/index.ts:382` | stopHeartbeat-throws-during-shutdown catch is unreachable | `src/__tests__/index.test.ts` | Resolved: 2026-08-16 221d5c8 |
 | `mcp-list-warn-execError-dead-branch` | `src/web/mcp-list.ts:135` | warn() payload's execError ? truthy arm is unreachable | `src/__tests__/mcp-list.test.ts` | Resolved: 2026-08-16 c1ee774 |

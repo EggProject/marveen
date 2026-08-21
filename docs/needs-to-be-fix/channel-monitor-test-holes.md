@@ -1,4 +1,4 @@
-**Status:** RESOLVED &lt;pending&gt;
+**Status:** RESOLVED 2026-08-21 28b37d9 (test holes filled by `test(channel-monitor): 100% coverage for src/web/channel-monitor.ts`; the MD body below is stale and lists the original `it.skip` snippets for historical context only)
 
 # channel-monitor.ts: pinned test holes in handleMarveenDown cascade + post-resume guard
 
