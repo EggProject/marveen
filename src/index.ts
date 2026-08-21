@@ -277,6 +277,9 @@ function buildPidfileLockContext(procCtx: ProcessLockContext): PidfileLockContex
       return new Promise((resolve) => setTimeout(resolve, ms))
     },
     log: {
+      // PidfileLockContext.log.error is forwarder-only: required by the interface
+      // (process-lock.ts:253) but never invoked by acquirePidfileLock (info/warn
+      // only at process-lock.ts:301/328/336/346/350/352). Pinned by index.test.ts:1382.
       info: (obj, msg) => logger.info(obj, msg),
       warn: (obj, msg) => logger.warn(obj, msg),
       error: (obj, msg) => logger.error(obj, msg),
