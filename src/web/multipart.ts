@@ -23,9 +23,13 @@ export function parseMultipart(buf: Buffer, contentType: string): ParsedForm {
   // A non-conforming boundary returns an empty form rather than risking an
   // unbounded split on attacker-supplied input.
   if (boundary.length > 70) return { fields: {} }
-  const parts = buf.toString('latin1').split(`--${boundary}`)
+  // Encoding: 'binary' (alias of 'latin1', byte-identical 0x00-0xFF).
+  // Intentional: wire bytes are not Latin-1 characters -- they are raw
+  // octets that we later re-encode as UTF-8 for textual fields. Keeping
+  // 'binary' here signals "raw bytes", not "ISO-8859-1 text".
+  const parts = buf.toString('binary').split(`--${boundary}`)
 
-  const decodeUtf8 = (s: string): string => Buffer.from(s, 'latin1').toString('utf8')
+  const decodeUtf8 = (s: string): string => Buffer.from(s, 'binary').toString('utf8')
 
   const result: ParsedForm = { fields: {} }
 
@@ -49,7 +53,7 @@ export function parseMultipart(buf: Buffer, contentType: string): ParsedForm {
       const mimeMatch = headers.match(/Content-Type:\s*(.+)\r?\n?/i)
       result.file = {
         name: decodeUtf8(filenameMatch[1]),
-        data: Buffer.from(body, 'latin1'),
+        data: Buffer.from(body, 'binary'),
         mime: mimeMatch?.[1]?.trim() || 'application/octet-stream',
       }
     } else {
