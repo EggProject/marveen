@@ -1012,7 +1012,7 @@ describe('PUT /api/memories/:id', () => {
     expect(H.updateMemory).not.toHaveBeenCalled()
     expect(H.loggerWarn).toHaveBeenCalledWith(
       { agent: 'agent-x' },
-      'Memory content rejected: suspicious pattern',
+      'Memory content rejected: suspicious pattern (PUT /api/memories/:id)',
     )
   })
 
@@ -1035,7 +1035,7 @@ describe('PUT /api/memories/:id', () => {
 
     expect(H.loggerWarn).toHaveBeenCalledWith(
       { agent: undefined },
-      '[DEPRECATED] /api/memories: use "category" instead of "tier"',
+      '[DEPRECATED] PUT /api/memories/:id: use "category" instead of "tier"',
     )
     expect(H.updateMemory).toHaveBeenCalledWith(42, 'x', 'cold', undefined, undefined)
   })
@@ -1044,6 +1044,60 @@ describe('PUT /api/memories/:id', () => {
     await call('PUT', '/api/memories/42', { content: 'x', tier: 'SHARED' })
 
     expect(H.updateMemory).toHaveBeenCalledWith(42, 'x', 'shared', undefined, undefined)
+  })
+
+  it('400s and does not throw when content is a number', async () => {
+    const r = await call('PUT', '/api/memories/1', { content: 123 })
+
+    expect(r.status).toBe(400)
+    expect(r.json()).toEqual({ error: 'Content is required' })
+    expect(H.updateMemory).not.toHaveBeenCalled()
+  })
+
+  it('400s when content is null', async () => {
+    const r = await call('PUT', '/api/memories/1', { content: null })
+
+    expect(r.status).toBe(400)
+    expect(r.json()).toEqual({ error: 'Content is required' })
+  })
+
+  it('does not throw when category is a number (silently ignored, mirrors POST resilience)', async () => {
+    const r = await call('PUT', '/api/memories/1', { content: 'x', category: 42 })
+
+    expect(r.status).toBe(200)
+    expect(H.updateMemory).toHaveBeenCalledWith(1, 'x', undefined, undefined, undefined)
+  })
+
+  it('does not throw when tier is an object (silently ignored, mirrors POST resilience)', async () => {
+    const r = await call('PUT', '/api/memories/1', { content: 'x', tier: { fake: 'value' } })
+
+    expect(r.status).toBe(200)
+    expect(H.updateMemory).toHaveBeenCalledWith(1, 'x', undefined, undefined, undefined)
+  })
+
+  it('trims content before persisting (matches POST semantics)', async () => {
+    await call('PUT', '/api/memories/42', { content: '  hello  ' })
+
+    expect(H.updateMemory).toHaveBeenCalledWith(42, 'hello', undefined, undefined, undefined)
+  })
+
+  it('normalizes empty keywords to undefined (matches POST semantics)', async () => {
+    await call('PUT', '/api/memories/42', { content: 'x', keywords: '' })
+
+    expect(H.updateMemory).toHaveBeenCalledWith(42, 'x', undefined, undefined, undefined)
+  })
+
+  it('does not warn deprecation when user explicitly sent empty category', async () => {
+    const r = await call('PUT', '/api/memories/42', { content: 'x', category: '', tier: 'hot' })
+
+    // Empty-string category is a string, so it reaches the MEMORY_CATEGORIES
+    // check and fails -> 400, never reaches updateMemory. Just assert no
+    // [DEPRECATED] log fired.
+    expect(r.status).toBe(400)
+    expect(H.loggerWarn).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.stringContaining('[DEPRECATED]'),
+    )
   })
 })
 
