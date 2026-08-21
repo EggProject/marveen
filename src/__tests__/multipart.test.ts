@@ -66,6 +66,12 @@ describe('parseMultipart - boundary felismerés', () => {
     const trailingWS = `multipart/form-data; boundary=${BOUNDARY} `
     expect(parseMultipart(body, trailingWS).fields).toEqual({ a: '1' })
   })
+
+  it('a boundary-t csak akkor fogadja el, ha parameter-eleje boundary (nem myboundary)', () => {
+    const body = buildBody([fieldPart('greeting', 'hello')])
+    const hijackCT = `multipart/form-data; myboundary=WRONG; boundary=${BOUNDARY}`
+    expect(parseMultipart(body, hijackCT).fields).toEqual({ greeting: 'hello' })
+  })
 })
 
 describe('parseMultipart - szoveges mezok', () => {
@@ -275,7 +281,7 @@ describe('parseMultipart - kihagyott reszek', () => {
 // atirva aktiv korrekciora a 4 egykori defect eseten), masreszt ket
 // edge-case-t rogzit (case-insensitive Content-Disposition, forditott sorrendu
 // filename/name).
-describe('parseMultipart - ismert eltresek (pinning)', () => {
+describe('parseMultipart - pinning (ismert elteresek)', () => {
   it('a quoted-string boundary-rol leveszi az idezojeleket (RFC 2046)', () => {
     // RFC 2046 szerint a boundary lehet quoted-string. A regex a `boundary="..."`
     // formaban megadott boundary-rol levagja az idezojeleket, es csak a token-t
@@ -315,7 +321,9 @@ describe('parseMultipart - ismert eltresek (pinning)', () => {
     const name = parseMultipart(body, CT).file?.name
     expect(name).toBe(filename)
   })
+})
 
+describe('parseMultipart - boundary es parameter edge-casek', () => {
   it('a Content-Disposition header nevet case-insensitive modon fogadja el (RFC 9110)', () => {
     // A HTTP header nevek RFC 9110 szerint case-insensitive-ek, es a parser
     // a `part.toLowerCase().includes('content-disposition')` mintat koveti.
@@ -324,8 +332,9 @@ describe('parseMultipart - ismert eltresek (pinning)', () => {
   })
 
   it('forditott sorrendu filename/name eseten a fajlnevbol lesz a mezonev', () => {
-    // A regex a name=" prefixet koveteli, igy a filename="..."-re nem illeszkedik;
-    // a fajl-ág eldobja a fieldName-et, ezert a file.name helyes marad.
+    // A nameMatch regex anchor-olt (^ vagy ;\s prefix), igy kizarolag a parameteres
+    // nevet fogja meg, a filename belsejébol ne. A fajl-ág eldobja a fieldName-et,
+    // ezert a file.name helyes marad.
     const part =
       'Content-Disposition: form-data; filename="a.png"; name="avatar"\r\nContent-Type: image/png\r\n\r\nD'
     const body = Buffer.from(`--${BOUNDARY}\r\n${part}\r\n--${BOUNDARY}--\r\n`, 'binary')
