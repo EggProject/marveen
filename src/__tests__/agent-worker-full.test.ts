@@ -517,15 +517,19 @@ describe('ensureWorkerCwd', () => {
     expect(s.skipDangerousModePermissionPrompt).toBe(true)
   })
 
-  it('replaces a symlinked settings.json (the shared copy) with an owned file', () => {
+  it('preserves the shared settings.json content (hooks) when replacing a symlink with an owned file', () => {
     seedSharedClaude({ settings: { hooks: { Stop: [] } } })
     AW.ensureWorkerCwd()
     const cfg = join(H.home, '.marveen-worker', '.claude-config')
+    // After the first call, settings.json is owned (not a symlink). Plant a
+    // symlink manually so the next ensureWorkerCwd hits the rmSync branch.
+    rmSync(join(cfg, 'settings.json'))
+    symlinkSync(join(H.home, '.claude', 'settings.json'), join(cfg, 'settings.json'))
+    expect(lstatSync(join(cfg, 'settings.json')).isSymbolicLink()).toBe(true)
+    AW.ensureWorkerCwd()
     expect(lstatSync(join(cfg, 'settings.json')).isSymbolicLink()).toBe(false)
     const s = JSON.parse(readFileSync(join(cfg, 'settings.json'), 'utf-8'))
-    // Pinning the CURRENT (buggy) behaviour: when the linked settings.json
-    // is a symlink, the rmSync branch deletes it without reading its
-    // content first, so the hooks key is lost. See bug MD for direction.
+    expect(s.hooks).toEqual({ Stop: [] })
     expect(s.enabledPlugins.telegram).toBe(false)
     expect(s.enabledPlugins['slack-channel']).toBe(false)
     expect(s.skipDangerousModePermissionPrompt).toBe(true)

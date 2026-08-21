@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, rmSync, readFileSync, writeFileSync, readdirSync, lstatSync, symlinkSync, realpathSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync, readFileSync, readlinkSync, writeFileSync, readdirSync, lstatSync, symlinkSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir, userInfo } from 'node:os'
 import { createHash } from 'node:crypto'
@@ -377,6 +377,11 @@ export function ensureWorkerCwd(ctx: WorkerCtx = ctxSlow): void {
   let current: WorkerSettings = {}
   const sst = lstatSyncSafe(settingsPath)
   if (sst?.isSymbolicLink()) {
+    try {
+      const target = readlinkSync(settingsPath)
+      const parsed = JSON.parse(readFileSync(target, 'utf-8'))
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) current = parsed as WorkerSettings
+    } catch { /* rewrite */ }
     rmSync(settingsPath, { force: true })
   } else if (existsSync(settingsPath)) {
     try {
