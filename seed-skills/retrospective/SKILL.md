@@ -40,17 +40,6 @@ Collect from the current conversation context:
 Also pull external state:
 
 ```bash
-AGENT_ID="$(echo $BOT_NAME | tr '[:upper:]' '[:lower:]')"
-
-# Recent memories written this session
-curl -s -H "Authorization: Bearer $(cat store/.dashboard-token)" \
-  "http://localhost:3420/api/memories?agent=$AGENT_ID&category=hot&limit=20"
-
-# Today's daily log entries
-DATE=$(date +%Y-%m-%d)
-curl -s -H "Authorization: Bearer $(cat store/.dashboard-token)" \
-  "http://localhost:3420/api/daily-log?agent=$AGENT_ID&date=$DATE"
-
 # Skills that were referenced or used
 ls ~/.claude/skills/ | head -30
 ```
@@ -142,14 +131,6 @@ On user approval:
 - Skills: create/patch SKILL.md files, regenerate `.skill-index.md`
 - Memory: write/update via the memory API
 - Workflow: update CLAUDE.md or inter-agent message to affected agents
-
-After execution, log the retrospective to the daily log:
-```bash
-curl -s -X POST -H "Authorization: Bearer $(cat store/.dashboard-token)" \
-  http://localhost:3420/api/daily-log \
-  -H "Content-Type: application/json" \
-  -d "{\"agent_id\":\"$AGENT_ID\",\"content\":\"## $(date +%H:%M) -- Retrospective\n[count] skill changes, [count] memory updates, [count] workflow changes applied.\"}"
-```
 
 ## Pitfalls
 
