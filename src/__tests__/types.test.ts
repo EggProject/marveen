@@ -44,11 +44,6 @@ describe('web/routes/types.ts -- RouteContext shape', () => {
     expect(ctx.auth).toBeUndefined()
   })
 
-  it('accepts fedPeer as undefined (dashboard caller)', () => {
-    const ctx = makeCtx({ fedPeer: undefined })
-    expect(ctx.fedPeer).toBeUndefined()
-  })
-
   it('accepts fedPeer as null (treated identically to undefined)', () => {
     const ctx = makeCtx({ fedPeer: null })
     // The documented contract says handlers MUST treat null and absent

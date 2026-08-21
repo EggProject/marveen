@@ -198,6 +198,7 @@ async function call(
     path,
     method,
     url: new URL(`http://127.0.0.1:3420${path}`),
+    fedPeer: null,
   }
   const handled = await tryHandleAgentTerminal(ctx)
   return { res, ctx, handled, json: () => JSON.parse(res.body || '{}') }
@@ -346,6 +347,7 @@ describe('POST /api/terminal-input', () => {
       path: '/api/terminal-input',
       method: 'POST',
       url: new URL('http://127.0.0.1:3420/api/terminal-input'),
+      fedPeer: null,
     }
     const handled = await tryHandleAgentTerminal(ctx)
     expect(handled).toBe(true)
@@ -512,6 +514,7 @@ describe('GET /api/agents/:name/pane/stream', () => {
       path: '/api/agents/zara/pane/stream',
       method: 'GET',
       url: new URL('http://127.0.0.1:3420/api/agents/zara/pane/stream'),
+      fedPeer: null,
     }
     H.execFile.mockImplementation((_f: string, args: string[], _o: unknown, cb?: (err: unknown, stdout?: string) => void) => {
       if (typeof cb === 'function' && args[0] === 'capture-pane') cb(null, 'frame')
@@ -619,6 +622,7 @@ describe('POST /api/agents/:name/keys', () => {
       path: '/api/agents/zara/keys',
       method: 'POST',
       url: new URL('http://127.0.0.1:3420/api/agents/zara/keys'),
+      fedPeer: null,
     }
     const handled = await tryHandleAgentTerminal(ctx)
     expect(handled).toBe(true)

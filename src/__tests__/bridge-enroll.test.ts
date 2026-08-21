@@ -197,6 +197,7 @@ async function call(
     path, method,
     url: new URL(`http://127.0.0.1:3420${path}`),
     auth: opts.auth,
+    fedPeer: null,
   })
   return { statusCode: res.statusCode, json: () => JSON.parse(res.body || '{}') }
 }

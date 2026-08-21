@@ -183,6 +183,7 @@ function mkCtx(): RouteContext {
     path: url.pathname,
     method: 'GET',
     url,
+    fedPeer: null,
   }
 }
 
@@ -278,6 +279,7 @@ describe('tryHandleOverview -- dispatcher surface', () => {
       path: url.pathname,
       method: 'GET',
       url,
+      fedPeer: null,
     }
     expect(await tryHandleOverview(ctx)).toBe(false)
     expect(res.statusCode).toBe(0)
@@ -294,6 +296,7 @@ describe('tryHandleOverview -- dispatcher surface', () => {
       path: url.pathname,
       method: 'POST',
       url,
+      fedPeer: null,
     }
     expect(await tryHandleOverview(ctx)).toBe(false)
     expect(res.statusCode).toBe(0)
@@ -309,6 +312,7 @@ describe('tryHandleOverview -- dispatcher surface', () => {
       path: url.pathname,
       method: 'PUT',
       url,
+      fedPeer: null,
     }
     expect(await tryHandleOverview(ctx)).toBe(false)
   })
@@ -323,6 +327,7 @@ describe('tryHandleOverview -- dispatcher surface', () => {
       path: url.pathname,
       method: 'DELETE',
       url,
+      fedPeer: null,
     }
     expect(await tryHandleOverview(ctx)).toBe(false)
   })
@@ -386,6 +391,7 @@ describe('tryHandleOverview -- GET /api/overview (baseline shape)', () => {
       path: url.pathname,
       method: 'GET',
       url,
+      fedPeer: null,
     }
     expect(await tryHandleOverview(ctx)).toBe(true)
     expect(res.headers['Content-Encoding']).toBe('gzip')
@@ -847,6 +853,7 @@ describe('tryHandleOverview -- countUserTurns branches', () => {
         path: url.pathname,
         method: 'GET',
         url,
+        fedPeer: null,
       }
       const handled = await reloaded(ctx)
       expect(handled).toBe(true)
@@ -889,6 +896,7 @@ describe('tryHandleOverview -- countUserTurns branches', () => {
         path: url.pathname,
         method: 'GET',
         url,
+        fedPeer: null,
       }
       const handled = await reloaded(ctx)
       expect(handled).toBe(true)
@@ -976,6 +984,7 @@ describe('tryHandleOverview -- skills', () => {
         path: url.pathname,
         method: 'GET',
         url,
+        fedPeer: null,
       }
       const handled = await reloaded(ctx)
       expect(handled).toBe(true)

@@ -25,7 +25,7 @@ function fakePost(path: string, body: unknown): { ctx: RouteContext; out: { stat
       if (event === 'end') cb()
     },
   }
-  return { ctx: { req, res, path: url.pathname, method: 'POST', url } as RouteContext, out }
+  return { ctx: { req, res, path: url.pathname, method: 'POST', url, fedPeer: null } as RouteContext, out }
 }
 
 function fakePatch(id: string, body: unknown): { ctx: RouteContext; out: { status: number; body: any } } {
@@ -43,7 +43,7 @@ function fakePatch(id: string, body: unknown): { ctx: RouteContext; out: { statu
       if (event === 'end') cb()
     },
   }
-  return { ctx: { req, res, path, method: 'PATCH', url } as RouteContext, out }
+  return { ctx: { req, res, path, method: 'PATCH', url, fedPeer: null } as RouteContext, out }
 }
 
 describe('approvals notification target', () => {

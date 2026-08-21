@@ -46,7 +46,7 @@ function fakeCtx(path: string, method = 'GET'): { ctx: RouteContext; out: { stat
     end(chunk?: string) { if (chunk) out.body = JSON.parse(chunk) },
   }
   const url = new URL(`http://localhost:3420${path}`)
-  const ctx = { req: {} as any, res, path: url.pathname, method, url } as RouteContext
+  const ctx = { req: {} as any, res, path: url.pathname, method, url, fedPeer: null } as RouteContext
   return { ctx, out }
 }
 
@@ -66,7 +66,7 @@ function fakeCtxWithBody(path: string, method: string, bodyObj: object): { ctx: 
     destroy() {},
   }
   const url = new URL(`http://localhost:3420${path}`)
-  const ctx = { req, res, path: url.pathname, method, url } as RouteContext
+  const ctx = { req, res, path: url.pathname, method, url, fedPeer: null } as RouteContext
   return { ctx, out }
 }
 

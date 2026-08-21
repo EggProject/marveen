@@ -182,6 +182,7 @@ async function call(opts: {
     path,
     method,
     url: new URL(urlStr),
+    fedPeer: null,
   }
   const handled = await tryHandleMessages(ctx)
   return {

@@ -140,6 +140,7 @@ function makeContext(method: string, fullPath: string): RouteContext {
     path: url.pathname,
     method,
     url,
+    fedPeer: null,
   } satisfies RouteContext
 }
 

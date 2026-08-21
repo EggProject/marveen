@@ -98,6 +98,7 @@ function mkCtx(method: string, fullPath: string): RouteContext {
     path: new URL(`http://127.0.0.1:3420${fullPath}`).pathname,
     method,
     url: new URL(`http://127.0.0.1:3420${fullPath}`),
+    fedPeer: null,
   }
 }
 

@@ -94,6 +94,7 @@ function call(method: string, fullPath: string): {
     path: url.pathname,
     method,
     url,
+    fedPeer: null,
   }
   const handled = tryHandleCosts(ctx) as unknown as boolean // Promise<boolean> awaited below
   return {
@@ -116,6 +117,7 @@ async function callAsync(method: string, fullPath: string): Promise<{
     path: url.pathname,
     method,
     url,
+    fedPeer: null,
   }
   const handled = await tryHandleCosts(ctx)
   return {

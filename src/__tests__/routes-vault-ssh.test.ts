@@ -219,6 +219,7 @@ async function call(method: string, path: string, opts: { body?: Buffer | string
     path,
     method,
     url: new URL(`http://127.0.0.1:3420${path}`),
+    fedPeer: null,
   }
   const handled = await tryHandleVaultSsh(ctx)
   return { res, handled, json: () => (res.body ? JSON.parse(res.body) : null), ctx }

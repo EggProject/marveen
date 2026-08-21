@@ -36,6 +36,7 @@ function mkCtx(path: string, method: string): RouteContext {
     path,
     method,
     url: new URL(`http://localhost:3420${path}`),
+    fedPeer: null,
   }
 }
 

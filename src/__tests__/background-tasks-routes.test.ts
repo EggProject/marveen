@@ -236,6 +236,7 @@ async function call(
     path,
     method,
     url: new URL(`http://127.0.0.1:3420${path}${opts.query ?? ''}`),
+    fedPeer: null,
   }
   const handled = await tryHandleBackgroundTasks(ctx)
   return { res, handled, json: <T,>() => JSON.parse(res.body || '{}') as T }

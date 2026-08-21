@@ -166,6 +166,7 @@ async function call(
     path,
     method,
     url: new URL(`http://127.0.0.1:3420${path}`),
+    fedPeer: null,
   }
   const handled = await tryHandleSettings(ctx)
   return { res, handled, json: () => (res.body ? JSON.parse(res.body) : {}) }
@@ -556,6 +557,7 @@ describe('POST /api/settings', () => {
       path: '/api/settings',
       method: 'POST',
       url: new URL('http://127.0.0.1:3420/api/settings'),
+      fedPeer: null,
     }
     const handled = await tryHandleSettings(ctx)
     expect(handled).toBe(true)

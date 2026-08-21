@@ -70,6 +70,7 @@ async function call(
     method,
     url: new URL(`http://127.0.0.1:3420${path}`),
     auth: opts.auth,
+    fedPeer: null,
   }
   const handled = await tryHandleAuth(ctx)
   return { res, handled, json: () => JSON.parse(res.body || '{}') }

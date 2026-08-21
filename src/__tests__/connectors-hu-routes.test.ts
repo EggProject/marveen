@@ -145,6 +145,7 @@ function call(method: string, fullPath: string, body?: Buffer): {
     path: url.pathname,
     method,
     url,
+    fedPeer: null,
   }
   const handled = tryHandleConnectorsHu(ctx)
   return {
@@ -806,6 +807,7 @@ describe('connectors-hu with PATH unset (covers the || \'\')', () => {
         path: '/api/connectors-hu/status',
         method: 'GET',
         url: new URL('http://127.0.0.1:3420/api/connectors-hu/status'),
+        fedPeer: null,
       }
       const handled = await sut.tryHandleConnectorsHu(ctx)
       expect(handled).toBe(true)

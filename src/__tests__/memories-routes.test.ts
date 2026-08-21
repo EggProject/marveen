@@ -182,6 +182,7 @@ async function call(
     path: url.pathname,
     method,
     url,
+    fedPeer: null,
   }
   const handled = await tryHandleMemories(ctx)
   return {
@@ -732,6 +733,7 @@ describe('POST /api/memories/import', () => {
         path: url.pathname,
         method: 'POST',
         url,
+        fedPeer: null,
       }
       const pending = tryHandleMemories(ctx)
       await vi.runAllTimersAsync()
