@@ -272,7 +272,8 @@ export function startWebServer(port = 3420): http.Server {
           process.exit(1)
         }
       } catch (e) {
-        logger.error({ err: e }, 'Port-reclaim failed')
+        logger.error({ err: e }, 'Port-reclaim failed -- kilepes')
+        process.exit(1)
       }
     } else {
       logger.error({ err }, 'Web szerver hiba')

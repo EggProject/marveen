@@ -918,7 +918,7 @@ describe('EADDRINUSE reclaim', () => {
     expect(exitCalls).toEqual([1])
   })
 
-  it('logs when the reclaim itself throws', async () => {
+  it('logs and exits(1) when the reclaim itself throws', async () => {
     const srv = await boot()
     H.execSync.mockImplementation(() => { throw new Error('lsof boom') })
 
@@ -926,8 +926,9 @@ describe('EADDRINUSE reclaim', () => {
 
     expect(H.logger.error).toHaveBeenCalledWith(
       expect.objectContaining({ err: expect.any(Error) }),
-      'Port-reclaim failed',
+      'Port-reclaim failed -- kilepes',
     )
+    expect(exitCalls).toEqual([1])
   })
 
   it('logs any other listener error without reclaiming', async () => {
