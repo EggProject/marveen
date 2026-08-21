@@ -544,8 +544,10 @@ describe('ensureWorkerCwd', () => {
     AW.ensureWorkerCwd()
     const cfg = join(H.home, '.marveen-worker', '.claude-config')
     rmSync(join(cfg, 'settings.json'))
-    // Relative target: ../../.claude/settings.json from cfg = ~/.claude/settings.json
-    symlinkSync('../.claude/settings.json', join(cfg, 'settings.json'))
+    // Relative target from cfg: ../../.claude/settings.json (two levels up
+    // through .claude-config and .marveen-worker) resolves to the shared
+    // ~/.claude/settings.json that seedSharedClaude wrote.
+    symlinkSync('../../.claude/settings.json', join(cfg, 'settings.json'))
     expect(lstatSync(join(cfg, 'settings.json')).isSymbolicLink()).toBe(true)
     AW.ensureWorkerCwd()
     expect(lstatSync(join(cfg, 'settings.json')).isSymbolicLink()).toBe(false)
