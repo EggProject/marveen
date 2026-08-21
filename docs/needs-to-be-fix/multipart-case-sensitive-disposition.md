@@ -8,6 +8,8 @@
 if (part === '--\r\n' || part === '--' || !part.includes('Content-Disposition')) continue
 ```
 
+(Two later fixes also touch this file as part of the same cycle: the parameter-name `/i` flag and the `(?:^|;\s)` anchor on `name=` / `filename=` were applied in 2026-08-21 `be69fc8cf4e36a1a6025c4282da45ae36c4937f6`. The header-name fix on this very line already landed in 2026-08-16 `b5baca3`.)
+
 ## Excerpt
 
 `String.prototype.includes` is a literal, case-sensitive substring test.
@@ -103,3 +105,7 @@ Anchoring the parameter match (`/(?:^|[;\s])name="([^"]+)"/`) would fix both
 at once.
 
 Per the task rule "NEVER modify src/web/multipart.ts" this was not applied.
+
+**Status:** RESOLVED 2026-08-21 be69fc8cf4e36a1a6025c4282da45ae36c4937f6 -- parameter-name /i flag and
+nameMatch anchoring applied. Header-name fix already landed in
+2026-08-16 b5baca3.
