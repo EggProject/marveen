@@ -94,6 +94,7 @@ async function call(method: string, fullPath: string, opts: { body?: Buffer | st
     path: url.pathname,
     method,
     url,
+    fedPeer: null,
   }
   const handled = await tryHandleSkillUsage(ctx)
   return { res, handled, json: () => (res.body ? JSON.parse(res.body) : null) }

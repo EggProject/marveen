@@ -102,6 +102,7 @@ async function call(method: string, fullPath: string): Promise<{
     path: url.pathname,
     method,
     url,
+    fedPeer: null,
   }
   const handled = await tryHandleDocs(ctx)
   return { res, handled, json: () => (res.body ? JSON.parse(res.body) : null) }

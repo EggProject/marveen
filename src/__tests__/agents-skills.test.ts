@@ -173,6 +173,7 @@ async function call(method: string, path: string, opts: {
     path,
     method,
     url: new URL(`http://127.0.0.1:3420${path}`),
+    fedPeer: null,
   }
   const handled = await tryHandleAgentsSkills(ctx)
   return { res, handled, json: () => JSON.parse(res.body || '{}') }

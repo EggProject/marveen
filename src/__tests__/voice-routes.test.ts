@@ -290,6 +290,7 @@ async function call(
     path,
     method,
     url: new URL(`http://127.0.0.1:3420${path}${qs}`),
+    fedPeer: null,
   }
   // Always use the freshest voice module import so vi.resetModules() in
   // an earlier test does not leave _installInProgress stuck on TRUE.

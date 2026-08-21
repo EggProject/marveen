@@ -109,6 +109,7 @@ async function call(
     path: url.pathname,
     method,
     url,
+    fedPeer: null,
   }
   const handled = await tryHandleSpans(ctx)
   return { res, handled, json: () => (res.body ? JSON.parse(res.body) : null) }
@@ -380,6 +381,7 @@ describe('POST /api/spans', () => {
       path: url.pathname,
       method: 'POST',
       url,
+      fedPeer: null,
     }
     await expect(tryHandleSpans(ctx)).rejects.toBeInstanceOf(Error)
   })

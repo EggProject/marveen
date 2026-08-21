@@ -668,6 +668,7 @@ async function call(
     path: url.pathname,
     method,
     url,
+    fedPeer: null,
   }
   // Make every mocked agent dir exist on disk so existsSync() checks
   // pass; otherwise the 404-on-missing-agent path fires before the test
@@ -4398,7 +4399,7 @@ describe('baseline: req.url falsy fallback in export / import', () => {
     req.headers = {}
     // A `r.url` nincs beállítva, tehát a `req.url || ''` fallback tüzel.
     const res = mkRes()
-    const ctx = { req, res: res as unknown as http.ServerResponse, path: url.pathname, method: 'GET', url }
+    const ctx = { req, res: res as unknown as http.ServerResponse, path: url.pathname, method: 'GET', url, fedPeer: null }
     ensureAgentDirs()
     const handled = await tryHandleAgents(ctx, H.webDir)
     expect(handled).toBe(true)
@@ -4417,7 +4418,7 @@ describe('baseline: req.url falsy fallback in export / import', () => {
     const req = Readable.from([]) as unknown as http.IncomingMessage & Record<string, unknown>
     req.headers = {}
     const res = mkRes()
-    const ctx = { req, res: res as unknown as http.ServerResponse, path: url.pathname, method: 'GET', url }
+    const ctx = { req, res: res as unknown as http.ServerResponse, path: url.pathname, method: 'GET', url, fedPeer: null }
     ensureAgentDirs()
     const handled = await tryHandleAgents(ctx, H.webDir)
     expect(handled).toBe(true)
@@ -4440,7 +4441,7 @@ describe('baseline: req.url falsy fallback in export / import', () => {
     const req = Readable.from([Buffer.from('gzdata')]) as unknown as http.IncomingMessage & Record<string, unknown>
     req.headers = { 'content-type': 'application/octet-stream' }
     const res = mkRes()
-    const ctx = { req, res: res as unknown as http.ServerResponse, path: url.pathname, method: 'POST', url }
+    const ctx = { req, res: res as unknown as http.ServerResponse, path: url.pathname, method: 'POST', url, fedPeer: null }
     ensureAgentDirs()
     const handled = await tryHandleAgents(ctx, H.webDir)
     expect(handled).toBe(true)

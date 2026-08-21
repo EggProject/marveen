@@ -160,6 +160,7 @@ async function call(method: string, rawPath: string, body?: string): Promise<Cal
     path: url.pathname,
     method,
     url,
+    fedPeer: null,
   })
   return {
     handled,

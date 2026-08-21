@@ -119,6 +119,7 @@ async function call(method: string, path: string, opts: { body?: Buffer | string
     path,
     method,
     url,
+    fedPeer: null,
   }
   const handled = await tryHandleAutonomy(ctx)
   return { res, handled, json: () => (res.body ? JSON.parse(res.body) : null) }

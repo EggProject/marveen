@@ -303,6 +303,7 @@ async function call(method: string, path: string, opts: {
     path: url.pathname,
     method,
     url,
+    fedPeer: null,
   }
   const handled = await tryHandleSkills(ctx)
   return { res, handled, json: () => JSON.parse(res.body || 'null') as Record<string, unknown> | unknown[] }

@@ -174,6 +174,7 @@ async function call(
     path,
     method,
     url,
+    fedPeer: null,
   }
   const handled = await tryHandleOnboarding(ctx)
   return { res, handled, json: () => (res.body ? JSON.parse(res.body) : null) }

@@ -102,6 +102,7 @@ function mkCtx(opts: {
     path: opts.path,
     method: opts.method,
     url,
+    fedPeer: null,
   }
 }
 

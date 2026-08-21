@@ -187,6 +187,7 @@ async function call(
     path,
     method,
     url: new URL(`http://127.0.0.1:3420${path}`),
+    fedPeer: null,
   }
   const handled = await tryHandleMigrate(ctx)
   return {
@@ -285,6 +286,7 @@ describe('tryHandleMigrate -- POST /api/migrate/scan input validation', () => {
       path: '/api/migrate/scan',
       method: 'POST',
       url: new URL('http://127.0.0.1:3420/api/migrate/scan'),
+      fedPeer: null,
     }
     await expect(tryHandleMigrate(ctx)).rejects.toBeInstanceOf(Error)
   })

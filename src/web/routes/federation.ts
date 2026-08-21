@@ -295,7 +295,7 @@ export async function tryHandleFederation(ctx: RouteContext): Promise<boolean> {
   if (path === '/api/federation/manifest' && method === 'GET') {
     const cfg = getFederationConfig()
     if (!cfg.enabled) { json(res, { error: 'Federation disabled' }, 403); return true }
-    json(res, buildManifest(cfg, ctx.fedPeer ?? null))
+    json(res, buildManifest(cfg, ctx.fedPeer))
     return true
   }
 
@@ -326,7 +326,7 @@ export async function tryHandleFederation(ctx: RouteContext): Promise<boolean> {
     let payload: unknown
     try { payload = JSON.parse(body.toString()) } catch { json(res, { error: 'Invalid JSON' }, 400); return true }
 
-    const callerPeerId = ctx.fedPeer ?? null
+    const callerPeerId = ctx.fedPeer
     const verdict = validateInboxPayload(payload, cfg, { isKnownAgent, mainAgentId: MAIN_AGENT_ID }, callerPeerId)
     if ('status' in verdict) {
       logger.warn({ fedIn: true, callerPeer: callerPeerId, reason: verdict.error, status: verdict.status }, 'federation inbox: rejected message')

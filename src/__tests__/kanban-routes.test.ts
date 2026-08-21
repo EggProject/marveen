@@ -237,6 +237,7 @@ async function call(
     path: url.pathname,
     method,
     url,
+    fedPeer: null,
   }
   const handled = await tryHandleKanban(ctx)
   return { res, handled, json: () => (res.body ? JSON.parse(res.body) : null) }

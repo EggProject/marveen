@@ -383,7 +383,7 @@ describe('tryHandleTokenUsage route handler', () => {
     }
 
     return {
-      ctx: { req: {} as any, res: res as any, path, method, url },
+      ctx: { req: {} as any, res: res as any, path, method, url, fedPeer: null },
       getResponse: () => ({ status: responseStatus, body: responseBody ? JSON.parse(responseBody) : null }),
     }
   }

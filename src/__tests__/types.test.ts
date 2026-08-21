@@ -30,6 +30,7 @@ function makeCtx(overrides: Partial<RouteContext> = {}): RouteContext {
     path: '/x',
     method: 'GET',
     url: new URL('http://localhost/x'),
+    fedPeer: null,
   }
   return { ...base, ...overrides }
 }
@@ -40,7 +41,7 @@ describe('web/routes/types.ts -- RouteContext shape', () => {
     expect(ctx.path).toBe('/x')
     expect(ctx.method).toBe('GET')
     expect(ctx.url.pathname).toBe('/x')
-    expect(ctx.fedPeer).toBeUndefined()
+    expect(ctx.fedPeer).toBeNull()
     expect(ctx.auth).toBeUndefined()
   })
 

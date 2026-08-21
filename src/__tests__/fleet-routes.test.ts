@@ -151,6 +151,7 @@ async function call(opts: CallOpts): Promise<{
     path,
     method,
     url,
+    fedPeer: null,
   }
   const promise = tryHandleFleet(ctx)
   // If the caller supplied a body or bodyError, drive the EventEmitter on

@@ -119,6 +119,7 @@ async function call(opts: {
     path,
     method,
     url: new URL(`http://127.0.0.1:3420${path}`),
+    fedPeer: null,
   }
   const handled = await tryHandleAuditLog(ctx)
   return {

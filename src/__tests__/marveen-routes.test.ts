@@ -286,6 +286,7 @@ async function call(
     path,
     method,
     url: new URL(`http://127.0.0.1:3420${path}`),
+    fedPeer: null,
   }
   const handled = await tryHandleMarveen(ctx, H.webDir)
   return { res, handled, json: () => (res.body ? JSON.parse(res.body) : {}) }
