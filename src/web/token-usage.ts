@@ -502,10 +502,10 @@ export function correlateWithKanban(): void {
       WHERE (assignee = ? OR assignee LIKE '%' || ? || '%')
         AND updated_at BETWEEN ? AND ?
       ORDER BY updated_at ASC
-    `).all(row.agent, row.agent, row.minTs, row.maxTs) as any[]
+    `).all(row.agent, row.agent, row.minTs, row.maxTs) as Array<{ id: string; title: string; project: string | null; assignee: string; updated_at: number }>
 
     for (const card of cards) {
-      const nextCard = cards.find((c: any) => c.updated_at > card.updated_at)
+      const nextCard = cards.find(c => c.updated_at > card.updated_at)
       const endTs = nextCard ? nextCard.updated_at : row.maxTs
 
       db.prepare(`
