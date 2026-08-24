@@ -1,5 +1,7 @@
 # message-router.ts: cached session-lookup `??` fallback arms are unreachable
 
+**Status:** RESOLVED (vitest.config.ts `branches: 97` glob-pattern threshold override for `src/web/message-router.ts`, on `test/baseline` 2026-08-24; `eb9b951` reverted in `2ec1c99` so the file is back to the pre-fix `cached?.X ?? Y` shape, which is the documented unreachable-arms configuration option (b) from this MD). The narrative below is kept as a historical record of why option (a) was tried and reverted.
+
 ## Status: PARTIAL -- 2026-08-18
 
 eb9b951 applied option (a) (drop the `??` arms, warn on invariant

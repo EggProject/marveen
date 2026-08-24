@@ -1,5 +1,7 @@
 # v8 coverage reports unreachable binary-expr branches in federation.ts
 
+**Status:** RESOLVED (provider switched from v8 to istanbul in commit `1496c00` on `test/baseline`; the v8 inspector is unsupported in bun, so the istanbul provider was the project default after the migration. `src/web/routes/federation.ts` is now at 100% branches (327/327). Lines 93 and 330 (current 92 and 329) were also independently resolved by `08d7508` and `858660f` respectively. The narrative below is kept as a historical record of the v8-phantom branches the istanbul switch made moot.)
+
 ## Symptom
 
 Running the new federation coverage suite
