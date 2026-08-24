@@ -9,7 +9,7 @@
 //   (b) ensureAgentHooks / scaffold never emits /tmp-rooted commands
 //   (c) boot-time prune detects and removes a planted /tmp hook
 //   (d) fail-open wrapper: a missing hook script exits 0, not non-zero
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
