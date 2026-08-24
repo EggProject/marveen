@@ -74,6 +74,12 @@ async function lookupChannelName(agent: string, channelId: string): Promise<void
   // Authorization: Bearer to slack.com/api/conversations.info. That is a real
   // cross-vendor token leak, not a coverage-only defect. See
   // docs/needs-to-be-fix/channel-request-watcher-unreachable-provider-check.md.
+  // Defensive guard: HOLT A PUBLIKUS API-N (mindkét hívó a slack-only ágban
+  // fut, lásd scanAuditLog:46 és runScanTick:105), de NE töröld: védi a
+  // mid-tick provider flip esetén a readChannelToken(telegram, ...) →
+  // slack.com/api hívást, ami a TELEGRAM_BOT_TOKEN-t Bearer tokenként
+  // küldené egy idegen vendor felé. A jövőbeli javítás a `provider` paraméter
+  // hoistolása, hogy a rossz-provider út strukturálisan lehetetlenné váljon.
   if (provider !== 'slack') return
   const stateDir = channelStateDir(provider, agentDir(agent))
   const token = readChannelToken(provider, join(stateDir, '.env'))
