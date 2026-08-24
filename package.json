@@ -13,6 +13,8 @@
     "remote-enroll": "bun run scripts/remote-access-enroll.ts",
     "dashboard-user": "bun run scripts/dashboard-user.ts",
     "test": "bun --bun vitest run",
+    "test:integration": "MARVEEN_TEST_ALLOW_CHILD_PROCESS=1 MARVEEN_TEST_ALLOW_PROCESS_KILL=1 bun --bun vitest run",
+    "test:integration:real-world": "MARVEEN_TEST_DISABLE_FORBID=1 bun --bun vitest run",
     "coverage": "bun --bun vitest run --coverage",
     "lint": "NODE_OPTIONS=--max-old-space-size=8192 eslint . --max-warnings 0",
     "lint:fix": "NODE_OPTIONS=--max-old-space-size=8192 eslint . --fix",
