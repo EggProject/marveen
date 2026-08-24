@@ -23,6 +23,17 @@ const STALENESS_HOOK = join(ROOT, 'scripts', 'hooks', 'staleness-guard.py')
 
 import { isUnsafeHookCommand, upgradeLegacyHookCommands } from '../web/agent-scaffold.js'
 
+// Global forbid-system-calls setupFile (vitest.config.ts) blanket-forbids
+// node:child_process across the suite. This file's pinning tests in
+// describe blocks (c) and (d) actually run real `python3 scripts/boot-hook-prune.py`
+// and real `spawnSync('bash', ['-c', ...])` -- the test logic depends on
+// observing real exit codes. The simplest zero-behavior-change opt-out is
+// `vi.importActual`, which restores the real child_process module for this
+// file only. Per-test-file mock wins over the global forbid.
+vi.mock('node:child_process', async () => {
+  return await vi.importActual<typeof import('node:child_process')>('node:child_process')
+})
+
 // ---------------------------------------------------------------------------
 // (a) Registration guard rejects /tmp and non-existent paths
 // ---------------------------------------------------------------------------
