@@ -1667,10 +1667,10 @@ export function listKanbanCards(): KanbanCard[] {
     .all() as KanbanCard[]
 }
 
-export function listKanbanCardsSummary(): { status: string; title: string; assignee: string | null; priority: string; id: string }[] {
+export function listKanbanCardsSummary(): { status: string; title: string; assignee: string | null; priority: KanbanCard['priority']; id: string }[] {
   return db
     .prepare("SELECT id, title, status, assignee, priority FROM kanban_cards WHERE archived_at IS NULL ORDER BY status, sort_order ASC")
-    .all() as { status: string; title: string; assignee: string | null; priority: string; id: string }[]
+    .all() as { status: string; title: string; assignee: string | null; priority: KanbanCard['priority']; id: string }[]
 }
 
 export function getKanbanCard(id: string): KanbanCard | undefined {

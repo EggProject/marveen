@@ -1250,6 +1250,22 @@ describe('POST /api/kanban/:id/breakdown/accept', () => {
       priority: 'normal',
     }))
   })
+
+  it('coerces an invalid priority string to the default ("normal") instead of letting it reach the DB', async () => {
+    // Regression: the narrowed priority literal-union type cast on the parsed
+    // body lies at runtime -- an untrusted client could send anything. Without
+    // the runtime Set.has guard, "critical" reaches createKanbanCard and the
+    // kanban_cards.priority CHECK constraint throws a 500.
+    H.getKanbanCard.mockReturnValue({ id: 'parent', title: 'P', project: 'alpha' })
+    await call('POST', '/api/kanban/parent/breakdown/accept', {
+      body: {
+        subtasks: [{ title: 't', description: 'd', assignee: 'alice', priority: 'critical' }],
+      },
+    })
+    expect(H.createKanbanCard).toHaveBeenCalledWith(expect.objectContaining({
+      priority: 'normal',
+    }))
+  })
 })
 
 // ===========================================================================
