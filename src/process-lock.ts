@@ -359,6 +359,6 @@ export async function acquirePidfileLock(
     // peer's legitimate lock and let two dashboards run concurrently.
     ctx.unlinkIfMatches(path, recorded)
   }
-  ctx.log.error({ path, maxAttempts, selfPid }, 'Failed to acquire pidfile lock after maxAttempts')
+  ctx.log.error({ path, maxAttempts, selfPid }, `Failed to acquire pidfile lock after ${maxAttempts} attempts`)
   throw new Error(`Failed to acquire pidfile lock at ${path} after ${maxAttempts} attempts`)
 }

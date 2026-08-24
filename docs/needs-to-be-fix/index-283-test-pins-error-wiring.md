@@ -152,8 +152,8 @@ asymmetry) left the forwarder live but unused. A targeted audit of
 process-lock.ts:363 after the retry loop is exhausted. That throw happened with
 zero observability -- operators saw only the uncaught exception.
 
-Fix: add `ctx.log.error({ path, maxAttempts, selfPid }, 'Failed to acquire
-pidfile lock after maxAttempts')` at process-lock.ts:362, immediately before
+Fix: add `` ctx.log.error({ path, maxAttempts, selfPid }, `Failed to acquire
+pidfile lock after ${maxAttempts} attempts`) `` at process-lock.ts:362, immediately before
 the existing `throw` at process-lock.ts:363. This makes the existing forwarder
 at index.ts:285 actively used, exercises the `error: LogFn` type contract, and
 gives operators a structured log entry before the exception bubbles. No type

@@ -592,7 +592,7 @@ describe('acquirePidfileLock', () => {
     ).rejects.toThrow(/Failed to acquire pidfile lock/)
     expect(state.logs).toContainEqual(expect.objectContaining({
       level: 'error',
-      msg: 'Failed to acquire pidfile lock after maxAttempts',
+      msg: 'Failed to acquire pidfile lock after 3 attempts',
       obj: expect.objectContaining({ path: state.path, maxAttempts: 3, selfPid: 100 }),
     }))
   })
