@@ -182,4 +182,4 @@ Per task rule "NEVER modify src/web/message-router.ts" the source edits
 are blocked until the user overrides; the test suite documents the gap
 and pins every reachable sibling branch.
 
-Partially resolved: 2026-08-19 ba6faf8 (lines 81, 317 deleted; line 180 deferred as stylistic inversion, not dead code)
+Partially resolved: 2026-08-19 ba6faf8 (lines 81, 317 deleted; line 180 deferred as stylistic inversion, not dead code). File-level branch coverage still at 97.82% (3 uncovered `??` arms at lines 481-483); see message-router-cache-fallback-unreachable.md.

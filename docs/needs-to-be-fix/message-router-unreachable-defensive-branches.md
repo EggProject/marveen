@@ -112,4 +112,4 @@ surface without source modifications.
   called with non-empty `agentPending`. The partition loop never produces an
   empty `old` if `agentPending` is non-empty, so the guard is not needed.
 
-Partially resolved: 2026-08-19 ba6faf8 (lines 81, 317 deleted; lines 478-480 remain open due to TS strict blocking)
+Partially resolved: 2026-08-19 ba6faf8 (lines 81, 317 deleted); UNRESOLVED on lines 481-483 -- see message-router-cache-fallback-unreachable.md
