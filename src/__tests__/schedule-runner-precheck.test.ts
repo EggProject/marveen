@@ -1,10 +1,53 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { writeFileSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { runPreCheck } from '../web/schedule-runner.js'
 import type { ScheduledTask } from '../web/scheduled-tasks-io.js'
+
+// Global forbid-system-calls setupFile (vitest.config.ts) blocks all
+// child_process calls. This suite writes real bash scripts and reads
+// their output via runPreCheck (which calls spawnSync('bash', ...)). To
+// keep the test GREEN under the default `test` script (no opt-out env),
+// we install a per-file mock that simulates bash for the small subset
+// of patterns exercised here: `echo "..."` and `exit N`. The mock reads
+// the actual script file from disk (the test wrote it seconds earlier),
+// so the test logic stays "write a bash script, call runPreCheck, assert
+// result" -- only the bash execution is virtualized.
+// For real-bash integration coverage, run `bun run test:integration`.
+const { spawnSyncMock } = vi.hoisted(() => ({
+  spawnSyncMock: vi.fn((_cmd: string, args: readonly string[]) => {
+    const scriptPath = args[0]
+    try {
+      const content = readFileSync(scriptPath, 'utf-8')
+      const stdoutParts: string[] = []
+      let exitCode = 0
+      for (const line of content.split('\n')) {
+        const trimmed = line.trim()
+        if (trimmed.startsWith('echo ')) {
+          const m = trimmed.match(/^echo\s+["'](.+?)["']\s*$/)
+          if (m && m[1]) stdoutParts.push(m[1])
+        } else if (trimmed.startsWith('exit ')) {
+          const m = trimmed.match(/^exit\s+(\d+)\s*$/)
+          if (m && m[1]) exitCode = parseInt(m[1], 10)
+        }
+      }
+      return { status: exitCode, stdout: stdoutParts.join('\n') + '\n', stderr: '' }
+    } catch (err) {
+      return { status: 0, stdout: '', stderr: '', error: err as Error }
+    }
+  }),
+}))
+vi.mock('node:child_process', () => ({
+  execSync: vi.fn(),
+  execFileSync: vi.fn(),
+  spawnSync: spawnSyncMock,
+  spawn: vi.fn(),
+  exec: vi.fn(),
+  execFile: vi.fn(),
+  fork: vi.fn(),
+}))
 
 // Tests for the heartbeat pre-check mechanism (#234).
 //

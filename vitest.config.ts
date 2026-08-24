@@ -20,6 +20,7 @@ export default defineConfig({
     // the channel-monitor / respawn-stamp incident that motivated this.
     setupFiles: [
       './src/__tests__/setup/assert-not-live-install.ts',
+      './src/__tests__/setup/forbid-system-calls.ts',
       './src/__tests__/setup/test-sandbox-setup.ts',
       './src/__tests__/setup/clean-empty-store.ts',
     ],
