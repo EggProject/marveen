@@ -590,6 +590,11 @@ describe('acquirePidfileLock', () => {
     await expect(
       acquirePidfileLock(state.path, 100, ctx, { graceMs: 5, maxAttempts: 3 }),
     ).rejects.toThrow(/Failed to acquire pidfile lock/)
+    expect(state.logs).toContainEqual(expect.objectContaining({
+      level: 'error',
+      msg: 'Failed to acquire pidfile lock after maxAttempts',
+      obj: expect.objectContaining({ path: state.path, maxAttempts: 3, selfPid: 100 }),
+    }))
   })
 
   it('treats a probeAlive throw as "still alive" (conservative)', async () => {

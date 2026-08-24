@@ -142,3 +142,26 @@ safe.
 - `docs/needs-to-be-fix/agent-terminal-218-ts-strict-blocks-delete.md` and
   `channel-invites-108-ts-strict-blocks-delete.md` -- sibling cases where
   TS strict blocks the same shape of safe-delete.
+
+## Update 2026-08-24 -- forwarder now exercised in production
+
+The contract chosen in commit 87cd76f (option 2: keep the wiring, document the
+asymmetry) left the forwarder live but unused. A targeted audit of
+`acquirePidfileLock` (process-lock.ts:289-363) found exactly one site where
+`ctx.log.error` should have been called but was absent: the final `throw` at
+process-lock.ts:363 after the retry loop is exhausted. That throw happened with
+zero observability -- operators saw only the uncaught exception.
+
+Fix: add `ctx.log.error({ path, maxAttempts, selfPid }, 'Failed to acquire
+pidfile lock after maxAttempts')` at process-lock.ts:362, immediately before
+the existing `throw` at process-lock.ts:363. This makes the existing forwarder
+at index.ts:285 actively used, exercises the `error: LogFn` type contract, and
+gives operators a structured log entry before the exception bubbles. No type
+change needed; the existing forwarder and the existing synthetic pinning test
+(index.test.ts:1382-1394) both stay.
+
+Test: the existing "gives up after maxAttempts" case at
+`src/__tests__/process-lock.test.ts:570` (the `it(...)` block opener) is the
+regression sentinel. The new assertion sits at lines 593-597 inside that
+block: it asserts the throw AND the error log was emitted with the expected
+level, message, and structured fields.
