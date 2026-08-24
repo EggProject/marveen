@@ -1188,7 +1188,7 @@ describe('runMessageRouterTick', () => {
   })
 
   // ----- fallback path: cached lookup misses -> direct call -----
-  it('falls back to a direct sessionExistsOnHost when the receiver is not in the cache', async () => {
+  it('does NOT send when the cached sessionExists is false', async () => {
     // Pinning test. The source's `pending` slice always carries the message's
     // own to_agent into receiversInTick, so the per-receiver cache is always
     // populated for the message's target. The "cache miss -> direct

@@ -81,19 +81,21 @@ input.
 ## Pinning test
 
 `src/__tests__/message-router-full.test.ts:1191` is the
-`describe('runMessageRouterTick')` pinning test whose label still reads
-`'falls back to a direct sessionExistsOnHost when the receiver is not
-in the cache'`. The label was renamed once (2026-08-18, 8209fb3) to
-`'reads session existence directly from the pre-pass cache (no ?? fallback)'`
-but the rename was reverted in `f67efca` after the source-side option (a)
-it documented (`eb9b951`) was itself reverted in `2ec1c99`. The test BODY
+`describe('runMessageRouterTick')` pinning test whose label was renamed
+on 2026-08-24 (this batch) to
+`'does NOT send when the cached sessionExists is false'`. The previous
+label, `'falls back to a direct sessionExistsOnHost when the receiver is
+not in the cache'`, described the intent of the unreachable `??` fallback
+arms and the test BODY's first assertion is the opposite; the new label
+describes the actual behavior. An earlier rename (2026-08-18, 8209fb3)
+to `'reads session existence directly from the pre-pass cache (no ?? fallback)'`
+was reverted in `f67efca` after the source-side option (a) it documented
+(`eb9b951`) was itself reverted in `2ec1c99`. The test BODY
 (lines 1192-1219) remains the canonical pinning test for the cache-wins
 path: the mock makes `sessionExistsOnHost` return absent on the first
 call and present on subsequent calls, then the assertion that
 `sendPromptToSession` is NOT called and `logWarn` fires with the "target
 session not running, will retry" payload confirms the cache always wins.
-The body is correct under either label; the gap between label intent and
-actual source state is preserved here as the historical record.
 
 ## Suggested direction
 
