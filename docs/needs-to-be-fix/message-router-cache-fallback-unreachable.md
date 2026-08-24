@@ -1,6 +1,6 @@
 # message-router.ts: cached session-lookup `??` fallback arms are unreachable
 
-**Status:** RESOLVED (vitest.config.ts `branches: 97` glob-pattern threshold override for `src/web/message-router.ts`, on `test/baseline` 2026-08-24; `eb9b951` reverted in `2ec1c99` so the file is back to the pre-fix `cached?.X ?? Y` shape, which is the documented unreachable-arms configuration option (b) from this MD). The narrative below is kept as a historical record of why option (a) was tried and reverted.
+**Status:** UNRESOLVED. The 2026-08-24 attempt (commit `6e08cf4`) to apply option (b) via a vitest per-glob threshold override (`'src/web/message-router.ts': { branches: 97 }`) was verified empirically to be a structural no-op: with `perFile: true`, vitest still checks every file against the global 100% threshold regardless of glob membership (vitest source `node_modules/vitest/dist/chunks/coverage.DM_a_rWm.js:837`: "Global threshold is for all files, even if they are included by glob patterns"), so message-router.ts at 97.82% branches still fails the 100% global check and `bun run coverage` exits non-zero. The per-glob entry only ADDS a second, looser check; it never relaxes the global one. `eb9b951` reverted in `2ec1c99` so the file is back to the pre-fix `cached?.X ?? Y` shape, but neither option (a) nor option (b) has actually been made to work. The narrative below is preserved as the historical record of option (a).
 
 ## Status: PARTIAL -- 2026-08-18
 

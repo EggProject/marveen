@@ -1,6 +1,6 @@
 # v8 coverage reports unreachable binary-expr branches in federation.ts
 
-**Status:** RESOLVED (provider switched from v8 to istanbul in commit `1496c00` on `test/baseline`; the v8 inspector is unsupported in bun, so the istanbul provider was the project default after the migration. `src/web/routes/federation.ts` is now at 100% branches (327/327). Lines 93 and 330 (current 92 and 329) were also independently resolved by `08d7508` and `858660f` respectively. The narrative below is kept as a historical record of the v8-phantom branches the istanbul switch made moot.)
+**Status:** RESOLVED (provider switched from v8 to istanbul in commit `1496c00` on `test/baseline`; the v8 inspector is unsupported in bun, so the istanbul provider was the project default after the migration. `src/web/routes/federation.ts` is now at 100% branches (327/327). Of the four phantom-branch sites the MD flagged at lines 93, 261, 330, and 419 (now lines 91-92, 260, 329, and 418): lines 91 (the `if (seenRefs.size >= DEDUP_CAP)` block) and 329 (`const callerPeerId = ctx.fedPeer` were source-resolved by `08d7508` and `858660f` respectively; lines 260 (`routingMode: cfg.routingMode ?? DEFAULT_ROUTING_MODE`) and 418 (the `DIRECTORY_MAX_AGENTS_PER_PEER` constant slice argument) remain in place but are istanbul-invisible. The narrative below is kept as a historical record of the v8-phantom branches the istanbul switch made moot.)
 
 ## Symptom
 

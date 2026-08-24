@@ -44,16 +44,24 @@ export default defineConfig({
         branches: 100,
         statements: 100,
         perFile: true,
-        // message-router.ts carries 3 structurally-unreachable `??` arms on the
-        // agentSessionCache lookup (lines 481-483 of src/web/message-router.ts:
-        // `cached?.session ?? agentSessionName(...)` etc.). The outer loop
-        // populates the cache for every receiver in `receiversInTick` before the
-        // loop body iterates, so `cached` is never undefined through the public
-        // API; istanbul still reports each `??` RHS as an uncovered branch.
-        // Threshold floor at 97 (3-of-100) matches the documented unreachable
-        // count, with one-branch headroom so the gate stays green if the count
-        // drifts to 4. See docs/needs-to-be-fix/message-router-cache-fallback-unreachable.md.
-        'src/web/message-router.ts': { branches: 97 },
+        // NOTE: a prior commit (6e08cf4) tried `'src/web/message-router.ts':
+        // { branches: 97 }` as a per-glob override for the 3 structurally-
+        // unreachable `??` RHS arms at lines 481-483. It is a structural no-op
+        // with `perFile: true`: vitest runs the global 100% check against
+        // every file regardless of glob membership (see vitest source
+        // coverage.DM_a_rWm.js line 837: "Global threshold is for all files,
+        // even if they are included by glob patterns"), so message-router.ts at
+        // 97.82% still fails the 100% global check and `bun run coverage`
+        // still exits non-zero. The per-glob entry only ADDS a second, looser
+        // check; it never relaxes the global one. Verified empirically: running
+        // `bun --bun vitest run --coverage` on HEAD emits
+        // `ERROR: Coverage for branches (97.82%) does not meet global threshold
+        // (100%) for src/web/message-router.ts`. Until either the source cache
+        // type changes so the 3 RHS arms disappear (the MD's option (a),
+        // blocked by task rule "NEVER modify src/web/message-router.ts"), or
+        // vitest adds an exclude-from-global knob, the message-router coverage
+        // gate cannot be made green from config alone. MD left open at
+        // docs/needs-to-be-fix/message-router-cache-fallback-unreachable.md.
       },
       // json-summary + json are both required by the CI coverage PR comment
       // (davelosert/vitest-coverage-report-action): the summary drives the

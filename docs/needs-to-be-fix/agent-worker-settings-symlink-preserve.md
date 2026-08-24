@@ -1,6 +1,6 @@
 # agent-worker.ts: ensureWorkerCwd drops the shared settings.json content when the link is replaced
 
-**Status:** RESOLVED (commits `e40c7f0` + `b70a1f7` on `test/baseline`, with regression test in `agent-worker-full.test.ts` updated in `24bea87`). The fix reads the symlinked target via `realpathSync` BEFORE `rmSync`, so the shared `~/.claude/settings.json` content (Stop hooks, custom permissions, model field) is preserved. `realpathSync` was preferred over the MD's option (a) `readlinkSync` to handle relative symlinks like `../.claude/settings.json` correctly. The narrative below is kept as a historical record.)
+**Status:** RESOLVED (commits `e40c7f0` + `b70a1f7` on `test/baseline`). The initial commit `e40c7f0` applied the MD's option (a) verbatim with `readlinkSync` + `readFileSync`; `b70a1f7` then replaced `readlinkSync` with `realpathSync` after the relative-symlink failure (`../.claude/settings.json`) was observed. The regression test in `agent-worker-full.test.ts` was renamed and assertion-inverted in `e40c7f0`, a new relative-symlink case was added in `b70a1f7`, and the relative path was corrected to `../../.claude/settings.json` in `24bea87`. The fix reads the symlinked target via `realpathSync` BEFORE `rmSync`, so the shared `~/.claude/settings.json` content (Stop hooks, custom permissions, model field) is preserved. The narrative below is kept as a historical record.)
 
 ## Location
 
