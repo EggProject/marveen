@@ -22,8 +22,23 @@
 //   MARVEEN_TEST_ALLOW_FETCH=1            (un-mock globalThis.fetch)
 //   MARVEEN_TEST_ALLOW_PROCESS_KILL=1     (un-mock process.kill)
 //
-// Master kill switch (for the test:integration:real-world script):
-//   MARVEEN_TEST_DISABLE_FORBID=1         (disable ALL three forbids)
+// Script wiring (see package.json):
+//   bun run test                          -> no opt-outs, all forbids ON
+//   bun run test:integration              -> CHILD_PROCESS + PROCESS_KILL on,
+//                                            FETCH still forbidden (real-bash /
+//                                            real-git / real-tar / real-python3
+//                                            style tests; mocked HTTP)
+//   bun run test:integration:real-world   -> DISABLE_FORBID=1, every gate open.
+//                                            Real node:child_process, original
+//                                            globalThis.fetch, real process.kill.
+//                                            NOT meant for the regular dev loop:
+//                                            a real Telegram bot in .env will
+//                                            send real alerts (see 2026-07-27),
+//                                            a macOS keychain entry will be read,
+//                                            and any fetch with a real URL hits
+//                                            the live network. Use only in a
+//                                            disposable worktree AND only when
+//                                            you accept the cleanup burden.
 //
 // Per-test-file vi.mock / vi.stubGlobal still wins: a file that wants
 // to test the wrapper around execFileSync (e.g. keychain.test.ts) keeps
