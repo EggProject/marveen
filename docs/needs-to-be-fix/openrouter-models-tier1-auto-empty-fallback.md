@@ -52,18 +52,17 @@ tier.auto`) so an empty / falsy `tier1.auto` triggers the hardcoded
 fallback. The accompanying branch inventory in
 `src/__tests__/openrouter-models.test.ts` already documents the
 currently-buggy behaviour with a TODO comment in the "ervenytelen
-tierKey es tier1.auto ures" case; that test should be flipped to expect
-`'deepseek/deepseek-chat-v3.1'` once the fix lands.
+tierKey es tier1.auto ures" case; the test was flipped to expect
+`'deepseek/deepseek-chat-v3.1'` when the fix landed.
 
 ## Pinning test
 
 `src/__tests__/openrouter-models.test.ts`, `resolveOpenRouterModel`
 suite, the case tagged "jelenleg ures stringet ad (defect: a ?? nem
 kapja el az ures stringet)". The case writes a catalog with only an
-empty-`auto` `tier1`, resolves an unknown tier, and asserts the current
-empty-string return value. Once the fix lands, the assertion must be
-updated to `'deepseek/deepseek-chat-v3.1'` to lock the corrected
-behaviour in.
+empty-`auto` `tier1`, resolves an unknown tier, and asserts `'deepseek/deepseek-chat-v3.1'`
+-- the corrected post-fix behaviour. The case was renamed and
+re-asserted when `63d62da` landed.
 
 ## Suggested direction
 

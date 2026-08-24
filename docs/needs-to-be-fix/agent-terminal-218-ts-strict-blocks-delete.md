@@ -14,13 +14,6 @@ non-null, not `literalKeys` -- `literalKeys` could still be null when
 `literalKeys` only on the literal branch, so TypeScript cannot narrow
 it across the ternary).
 
-## Resolution
-
-Edit reverted. The defensive coalesce is left in place. Synthetic test
-that pinned the non-string-keys branch (`ignores a non-string keys
-(sanitizeLiteralKeys is bypassed -> null literalKeys -> 400)`) stays
-in place alongside the source.
-
 ## See also
 
 `docs/needs-to-be-fix/agent-terminal-keys-preview-literalKeys-fallback.md`

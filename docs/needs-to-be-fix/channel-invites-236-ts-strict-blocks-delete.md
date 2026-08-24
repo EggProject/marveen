@@ -8,12 +8,6 @@ trips TS18048 because `access.pending` is typed as
 `Record<string, ...> | undefined` and the strict TS settings reject
 `delete` on a possibly-undefined object.
 
-## Resolution
-
-Edit reverted. The defensive guard is left in place. Synthetic test that
-pinned the falsy branch (`drives the defensive if (access.pending) falsy
-branch inside the approve path`) stays in place alongside the source.
-
 ## See also
 
 `docs/needs-to-be-fix/channel-invites-unreachable-defensive-branches.md`

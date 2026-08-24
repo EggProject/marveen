@@ -71,10 +71,6 @@ digest produced", and the caller can treat both as `null`. The function
 already logs the run either way, so the only behavioural change is the
 empty-digest suppression and the return-type guarantee.
 
-Per task rule "NEVER modify src/memory.ts" this requires an explicit
-override from the user; the test suite documents the gap and the pinning
-case above should be added when the fix is applied.
-
 ## Resolution
 
 Replaced the `!text` early-return with a post-trim guard at

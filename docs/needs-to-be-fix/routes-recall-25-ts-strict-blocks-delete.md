@@ -8,7 +8,12 @@ Attempted to drop `?? 0` from `return map[weekday] ?? 0` in
 return type `number` trips TS2769 ("Type 'number | undefined' is not
 assignable to type 'number'").
 
-## Resolution (superseded, see below)
+## Resolution (superseded by `## Resolution (2026-08-16, 3bec823)` below)
+
+> The premise in this section was wrong -- see the bottom-of-file note
+> "The premise recorded in this MD was wrong" for details. The fix
+> landed in commit `3bec823` and removed both `?? 0` fallbacks. The
+> "Edit reverted" prose below is kept for historical record only.
 
 Edit reverted. `?? 0` fallback restored. Even though
 `Intl.DateTimeFormat('en-US', { weekday: 'short' })` is documented to

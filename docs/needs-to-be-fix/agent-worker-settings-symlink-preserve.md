@@ -106,6 +106,12 @@ Two independent fixes; either is sufficient.
 Option (a) is the more surgical change and matches the existing pattern
 in the symlink loop.
 
-Per task rule "NEVER modify src/web/agent-worker.ts" the source edits
-are blocked until the user overrides; the test suite pins the current
-behaviour and documents the direction.
+## Resolution
+
+The fix described above landed in three commits: `e40c7f0` applied
+option (a) verbatim using `readlinkSync` + `readFileSync`; `b70a1f7`
+replaced `readlinkSync` with `realpathSync` after the relative-symlink
+failure (`../.claude/settings.json`) was observed; `24bea87` corrected
+the regression test's relative path to `../../.claude/settings.json`.
+The "NEVER modify src/web/agent-worker.ts" guard from the original
+task rule no longer applies.

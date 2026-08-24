@@ -1,10 +1,10 @@
-**Status:** RESOLVED (documented only)
+**Status:** RESOLVED -- narrowing succeeded (commit `8e11043` on `test/baseline`). The narrative below describes the original "deferred" state and is preserved for historical context only. **The `?? null` fallbacks at `federation.ts:298,329` are gone, and `RouteContext.fedPeer` is now `string | null` (required, not optional).** Do not act on the "Forward path" section below.
 
 # federation routes/federation.ts:330 - fedPeer type-narrow deferred
 
 ## Context
 
-Two `ctx.fedPeer ?? null` calls in `src/web/routes/federation.ts:299,330`.
+Two `ctx.fedPeer ?? null` calls in `src/web/routes/federation.ts:298,329`.
 Strategy: tighten `RouteContext.fedPeer: string | null | undefined` to
 `string` (required), then drop the `?? null` fallbacks.
 
@@ -67,12 +67,12 @@ unauthenticated public path). A narrowing commit would require:
 4. Re-run typecheck.
 
 Until step 1 is decided, defer the narrowing and keep the `?? null` in
-`federation.ts:299,330`.
+`federation.ts:298,329`.
 
 ## Files inspected
 
 - `src/web/routes/types.ts:7-25`
-- `src/web/routes/federation.ts:299,330`
+- `src/web/routes/federation.ts:298,329`
 - `src/web.ts:153,171`
 - `src/__tests__/types.test.ts`
 - 5 other test files listed above

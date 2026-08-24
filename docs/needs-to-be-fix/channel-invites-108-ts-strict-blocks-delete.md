@@ -8,11 +8,6 @@ After the removal, `Object.values(store.invites)` (where `store.invites` is
 `Object.values` requires a non-undefined argument under the project's strict
 TS settings.
 
-## Resolution
-
-Edit reverted. Source branch left intact. Synthetic test that pinned this
-branch stays in place alongside the source.
-
 ## See also
 
 `docs/needs-to-be-fix/channel-invites-unreachable-defensive-branches.md`

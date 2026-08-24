@@ -7,7 +7,12 @@ in the HU_MONTHS week-of-month loop. After removal, `weekMap[weekMatch[1]]`
 returns `number | undefined`, which propagates through `weekIdx * 7` and
 breaks the arithmetic assignment to `from` (TS errors compound by 12).
 
-## Resolution (superseded, see below)
+## Resolution (superseded by `## Resolution (2026-08-16, 3bec823)` below)
+
+> The premise in this section was wrong -- see the bottom-of-file note
+> "The premise recorded in this MD was wrong" for details. The fix
+> landed in commit `3bec823` and removed both `?? 0` fallbacks. The
+> "Edit reverted" prose below is kept for historical record only.
 
 Edit reverted. `?? 0` fallback restored. Although `utolso` early-returns
 at line 148-152 and only `elso|masodik|harmadik|negyedik` reach line 153,

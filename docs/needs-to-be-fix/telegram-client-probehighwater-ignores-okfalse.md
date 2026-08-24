@@ -99,14 +99,12 @@ it('PIN: probeHighWater returns 99999 from a 200 OK with ok: false (defect: shou
 })
 ```
 
-The test currently **passes** by documenting the buggy behaviour. It
-follows the same pattern as `env-update-mode-downgrade` /
-`db-missing-telegram-history-table`: pin the current shape so the
-suite is green at 100% coverage, and leave a one-line TODO that flips
-the assertion to the post-fix expectation. Once the fix lands, swap
-the final `expect(result).toBe(99999)` for
-`expect(result).toBeInstanceOf(TelegramApiError)` and the test will
-continue to pass while locking the corrected behaviour in.
+The original pinning test asserted the buggy shape (`expect(result).toBe(99999)`).
+When `1672bf5` landed, the assertion was flipped to
+`expect(result).toBeInstanceOf(TelegramApiError)` and a second test
+(`falls back to "unknown" when ok: false omits description`) was added
+to cover the no-description branch. The suite stays green at 100%
+coverage and now locks the corrected behaviour in.
 
 ## Suggested direction
 

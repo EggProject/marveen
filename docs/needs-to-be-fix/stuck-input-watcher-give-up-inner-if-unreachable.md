@@ -109,7 +109,20 @@ This doc itself is a needs-to-be-fix entry -- until a resolution is
 chosen, the test suite cannot reach 100% branch coverage on
 `src/web/stuck-input-watcher.ts` without modifying the source.
 
-## Resolution (cycle 32, superseded -- DO NOT RELY ON)
+## Resolution (cycle 32, **DEPRECATED** -- do not apply)
+
+> **WARNING -- DO NOT REVERT TO THIS APPROACH.**
+>
+> The cycle 32 commit `1e58ebd` is **superseded** by the per-spell gate
+> resolution below (`## Resolution`, commit `edae3f1` + `53490cd` +
+> `f47a60f`). The cycle 32 fix removed only the inner guard without
+> adding a per-spell gate, which caused `sendAlert` (the sub-agent
+> escalation path) to fire on **every tick** of a stuck spell, at
+> roughly 15s intervals, for the full duration of the spell -- that is
+> user-facing Telegram/Slack notification spam. Reverting to this
+> resolution re-introduces the spam regression.
+>
+> **Use the `## Resolution` (per-spell gate) approach below.**
 
 This MD was originally resolved by cycle 32 commit `1e58ebd` (test/baseline,
 "fix(stuck-input-watcher): drop dead prev-attempts guards in three recovery

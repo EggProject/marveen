@@ -130,10 +130,6 @@ If a future second caller appears (e.g. an out-of-band reconnect path
 that does its own dedup), the guard can be re-added alongside that caller
 with a corresponding test.
 
-Per task rule "NEVER modify src/" the source edit is blocked until the
-user overrides; the test suite documents the gap and pins every reachable
-sibling branch.
-
 ## Resolution
 
 Dropped the dead `if (inFlightReconnects.has(agentName)) return false` arm
