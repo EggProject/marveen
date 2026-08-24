@@ -1187,7 +1187,7 @@ describe('runMessageRouterTick', () => {
     vi.useRealTimers()
   })
 
-  // ----- fallback path: cached lookup misses -> direct call -----
+  // ----- cache-wins path: sessionExists=false -> park for retry -----
   it('does NOT send when the cached sessionExists is false', async () => {
     // Pinning test. The source's `pending` slice always carries the message's
     // own to_agent into receiversInTick, so the per-receiver cache is always
@@ -1195,10 +1195,9 @@ describe('runMessageRouterTick', () => {
     // sessionExistsOnHost" fallback in the runMessageRouterTick loop is
     // therefore dead code in the current implementation, and the assertion
     // `sessionExists = cached?.exists ?? sessionExistsOnHost(host, session)`
-    // always takes the cached branch. The test name describes the intent of
-    // the fallback, but the actual behavior is: the cache lookup wins, the
-    // session is reported as absent, and the message is parked in the
-    // "target session not running, will retry" branch.
+    // always takes the cached branch. The actual behavior: the cache lookup
+    // wins, the session is reported as absent, and the message is parked in
+    // the "target session not running, will retry" branch.
     vi.useFakeTimers()
     vi.setSystemTime(NOW_MS)
     const freshMs = Math.floor(NOW_MS / 1000)
