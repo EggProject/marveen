@@ -21,5 +21,4 @@ Resolved: 2026-08-19 d48256c -- the safe-delete that this MD claimed
 was TS-strict-blocked actually landed in d48256c ("fix(channel-invites):
 drop 2 dead defensive guards (lines 108, 236)"). The `if (!store.invites)
 return 0` guard was dropped and `Object.values(store.invites ?? {})`
-was substituted to satisfy strict TS. The MD's "Edit reverted. Source
-branch left intact." prose is now stale -- the edit landed.
+was substituted to satisfy strict TS. The edit landed.

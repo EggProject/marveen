@@ -25,5 +25,4 @@ Resolved: 2026-08-20 c8ce4a4 -- agent-terminal.ts:218 `?? ''` replaced
 with nested-ternary narrowing (`literalKeys ? ... : ''`) so TS narrows
 `literalKeys` to `string` and the `?? ''` arms become unreachable in
 the type system too. Branch count: 2 dead `??` arms -> 1 dead ternary
-arm (net -1 dead branch). The orphaned "Edit reverted." prose above is
-now stale -- the fix landed.
+arm (net -1 dead branch). The fix landed.

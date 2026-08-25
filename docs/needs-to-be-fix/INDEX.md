@@ -2,7 +2,7 @@
 
 Every bug MD filed in this session. Total count: 178
 (`find docs/needs-to-be-fix -name '*.md' ! -name 'INDEX.md' | wc -l`;
-the unfiltered command returns 178 because it counts this index too).
+the unfiltered command returns 179 because it counts this index too).
 The index has one table row per MD, so the two counts must stay equal.
 
 The original 50 entries below were filed during the first coverage pass.
