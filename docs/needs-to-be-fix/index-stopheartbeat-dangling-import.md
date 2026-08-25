@@ -81,7 +81,7 @@ Verbatim shape of the existing three siblings.
 
 ## Resolution
 
-Wired 2026-08-26, <placeholder>. `src/index.ts:383` now calls `stopHeartbeat()`
+Wired 2026-08-26, 642b883. `src/index.ts:383` now calls `stopHeartbeat()`
 inside the same try/catch wrapper pattern as `stopInviteMonitor` /
 `stopChannelRequestWatcher` / `stopStoreWatcher`. Negative regression
 pins at `src/__tests__/index.test.ts:1142-1148` and `:2592-2609` are
