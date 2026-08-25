@@ -125,13 +125,20 @@ regression risk -- is strictly worse than the pre-fix state.
 
 ## Resolution (2026-08-25, commit 900cdb6)
 
-All three cache-fallback unreachable branches were removed at lines
-481-483: the `?? agentSessionName(...)`, `?? readAgentRemoteHost(...)`,
-and `?? sessionExistsOnHost(...)` RHS arms were dropped, and a non-null
-assertion (`!`) was added to the `agentSessionCache.get(msg.to_agent)`
-result (a TS type assertion, not a branch). The source comment at lines
-477-480 was reworded to describe the cache-wins invariant without
-referencing the removed fallback.
+All three cache-fallback `??` operators at lines 481-483 were dropped:
+the `?? agentSessionName(...)`, `?? readAgentRemoteHost(...)`, and
+`?? sessionExistsOnHost(...)` RHS arms. Per the pre-fix
+`coverage-final.json` (Istanbul branch pairs 33, 35, 36 at these lines):
+two had unreachable RHS arms (branches 33 and 36 at lines 481, 483);
+one (branch 35 at line 482, the `cached?.host ?? readAgentRemoteHost`
+fallback) was fully covered by the existing test suite (both arms hit
+119 times each). Istanbul's instrumenter does NOT count `a?.b` optional
+chaining as a separate branch, so the `cached?.X` falsy arms do not
+contribute to the branch count. A non-null assertion (`!`) was added
+to the `agentSessionCache.get(msg.to_agent)` result (a TS type
+assertion, not a branch). The source comment at lines 477-480 was
+reworded to describe the cache-wins invariant without referencing the
+removed fallback.
 
 Post-edit measurement on the worktree (full suite, istanbul coverage):
 
