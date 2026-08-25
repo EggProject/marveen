@@ -1,17 +1,17 @@
-# message-router.ts: four unreachable defensive branches block 100% branch coverage
+# message-router.ts: five unreachable defensive branches block 100% branch coverage
 
 ## Location
-`src/web/message-router.ts`, lines 81, 317, 478-480.
+`src/web/message-router.ts`, lines 81, 317, 481-483.
 
 The 5 originally-uncovered branches are all structurally dead code:
 
 1. `if (msg.to_agent === MAIN_AGENT_ID) return` (line 81) -- the IF body
 2. `if (old.length === 0) return` (line 317) -- the IF body
-3. `cached?.session ?? agentSessionName(msg.to_agent)` (line 478) -- the
+3. `cached?.session ?? agentSessionName(msg.to_agent)` (line 481) -- the
    `agentSessionName` fallback
-4. `cached?.host ?? readAgentRemoteHost(msg.to_agent)` (line 479) -- the
+4. `cached?.host ?? readAgentRemoteHost(msg.to_agent)` (line 482) -- the
    `readAgentRemoteHost` fallback
-5. `cached?.exists ?? sessionExistsOnHost(host, session)` (line 480) --
+5. `cached?.exists ?? sessionExistsOnHost(host, session)` (line 483) --
    the `sessionExistsOnHost` fallback
 
 ## Excerpt
@@ -33,11 +33,11 @@ function batchDeliverBacklog(agent: string, agentPending: AgentMessage[], now: n
   ...
 }
 
-// Routing loop -- lines 478-480
+// Routing loop -- lines 481-483
 const cached = agentSessionCache.get(msg.to_agent)
-const session = cached?.session ?? agentSessionName(msg.to_agent)           // <-- line 478
-const host = isMainAgent ? null : cached?.host ?? readAgentRemoteHost(msg.to_agent)  // <-- line 479
-const sessionExists = cached?.exists ?? sessionExistsOnHost(host, session)  // <-- line 480
+const session = cached?.session ?? agentSessionName(msg.to_agent)           // <-- line 481
+const host = isMainAgent ? null : cached?.host ?? readAgentRemoteHost(msg.to_agent)  // <-- line 482
+const sessionExists = cached?.exists ?? sessionExistsOnHost(host, session)  // <-- line 483
 ```
 
 ## Why these are dead code
@@ -68,7 +68,7 @@ age < RECONNECT_BATCH_AGE_MS. No existing test covers this exact path; the
 pre-existing 96.47% baseline was reached without it, and adding the test
 requires state-machine setup that adds little real coverage value.
 
-**3-5. Lines 478-480 (cache fallbacks):**
+**3-5. Lines 481-483 (cache fallbacks):**
 The `agentSessionCache` is populated in the pre-pass at lines 392-402 by
 iterating over `receiversInTick` (line 384), which is built from the same
 `pending` array (line 377, derived from `localPending.slice(0,
@@ -88,7 +88,7 @@ Coverage-only. No runtime misbehaviour is reachable through public input.
 1. The cache build loop (line 392) covers every receiver in `pending`.
 2. The routing loop (line 434) iterates over the same `pending` array.
 3. So `agentSessionCache.get(msg.to_agent)` returns a value for every
-   `msg.to_agent` that reaches lines 478-480.
+   `msg.to_agent` that reaches lines 481-483.
 
 For line 81, the routing loop's main-agent `continue` (line 472) prevents
 the function from ever receiving a main-agent message.
@@ -97,11 +97,11 @@ For line 317, the only way to fire the early return is to construct a
 specific state machine that has never been observed in production.
 
 ## Pinning test
-N/A -- all four branches are structurally unreachable from the public SUT
+N/A -- all five branches are structurally unreachable from the public SUT
 surface without source modifications.
 
 ## Suggested direction
-- For lines 478-480: drop the `??` fallbacks and read `cached.session`,
+- For lines 481-483: drop the `??` fallbacks and read `cached.session`,
   `cached.host`, `cached.exists` directly. The type system already proves
   they are non-null for the reachable `pending` set. (The current `??`
   fallbacks are TypeScript-defensive, not runtime-relevant.)
