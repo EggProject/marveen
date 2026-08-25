@@ -1,55 +1,18 @@
-# web/agent-scaffold.ts: 18 defensive nullish-coalesce / guard branches cap branch coverage at 93.61%
+# web/agent-scaffold.ts: 1 residual defensive branch caps branch coverage at 99.63%
 
 ## Location
 
-`src/web/agent-scaffold.ts`. After closing every reachable branch in
-`upgradeLegacyHookCommands` and `ensureAgentHooks`, 18 branches remain
-uncovered at lines 183-184, 244, 248, 256, 259, 277-278, 487, 574-576,
-581, 602, 611-612, 735, 809, 833. They are all defensive guards of the
-shape `?? []`, `?? 0`, `?? ''`, or `if (x === null) ... else ...` that
-cannot be reached through any input the public API accepts.
+`src/web/agent-scaffold.ts`. After the 2026-08-13..2026-08-25 cleanup pass,
+1 branch remains uncovered at line 602 (the `else {}` arm of the
+`settings.hooks && typeof settings.hooks === 'object'` ternary in
+`injectEgressGate`'s caller). It is a defensive guard of the shape
+`(settings.hooks && typeof settings.hooks === 'object') ? ... : {}` that
+cannot be reached through any input the public API accepts. The earlier
+defensive branches at the 18 formerly-cited line ranges (183-184, 244, 248,
+256, 259, 277, 487, 575-576, 581, 611-612, 735, 809, 833) have been
+removed in subsequent cleanup commits; only the 602 site survives.
 
 ## Excerpt (representative)
-
-```ts
-// Line 183-184 (upgradeLegacyHookCommands): inner existHook loop
-for (const existHook of existEntry.hooks ?? []) {  // 183
-  if (!existHook.command) continue                 // 184
-```
-
-The inner `for` loop's `?? []` fallback is unreachable because:
-
-- The outer loop already gates on `Array.isArray(existEntries)` (line 176).
-- Every `HookEntry` produced upstream by `JSON.parse(tpl).hooks[*]` has its
-  `hooks` array set by the parser. The parser cannot produce `hooks:
-  undefined` because the surrounding code reads `entry.hooks ?? []` at the
-  injection sites (lines 244, 248, 277, 256, 259) before any handler runs.
-
-```ts
-// Line 487: mkdirSync only for sub-agents
-if (name !== MAIN_AGENT_ID) mkdirSync(join(agentDir(name), '.claude'), { recursive: true })
-```
-
-The branch is `name === MAIN_AGENT_ID` which skips the mkdir for the main
-agent (whose settings.json lives under `~/.claude/`). The existing test
-"does NOT create a subdir for MAIN_AGENT_ID" (line 251) only asserts the
-boolean outcome; the false arm (`name === MAIN_AGENT_ID` -> skip mkdir)
-is the reachable one. The true arm IS exercised by every sub-agent test.
-
-```ts
-// Line 574-576: section regex extraction
-const sectionStart = heading ? (heading.index ?? 0) + heading[0].length : 0
-const nextHeading = /^##\s+/m.exec(stripped.slice(sectionStart))
-const sectionEnd = nextHeading ? sectionStart + (nextHeading.index ?? 0) : stripped.length
-```
-
-The `?: 0` / `?: stripped.length` fallbacks fire when the regex returns
-`null`. For `headingRx` (the `## Domain restriction` heading), a missing
-match is the legitimate "no section present" case the caller already
-handles via `if (!bullets.length) return stripped`. For `nextHeading`, the
-fallback fires only when there is NO second heading after the section
-start -- i.e. when the section is the last block in the file. Existing
-tests only cover the "section followed by another heading" shape.
 
 ```ts
 // Line 602: hook dictionary guard
@@ -63,25 +26,14 @@ object (e.g. a string or number). The injection functions are reached
 only from `ensureAgentHooks` which never produces such a shape; the
 test fixtures all use `Record<string, unknown>` for `settings.hooks`.
 
-```ts
-// Line 809: prepending MAIN_AGENT_ID
-const names = agentNames.includes(MAIN_AGENT_ID)
-  ? agentNames
-  : [MAIN_AGENT_ID, ...agentNames]
-```
-
-The true arm is hit by every test that puts MAIN_AGENT_ID in the
-agentNames mock; the false arm is the prepending path. The existing
-`getAgentRoster` tests cover both via separate mock setups.
-
 ## Coverage impact
 
-v8 branch coverage reports 93.61% (264/282) on `src/web/agent-scaffold.ts`.
-Statements 99.76% (421/422); the missing statement is one of these
-branches' body that the truthy arm never visits. Functions 100% (55/55),
-lines 100% (350/350). The 18 uncovered branches fall into the four
-shapes listed above; none are reachable through any combination of
-inputs the public API accepts.
+Istanbul branch coverage reports 99.63% (273/274) on
+`src/web/agent-scaffold.ts`. Statements 99.76% (421/422); the missing
+statement is the body of the single remaining defensive ternary's
+`else {}` arm. Functions 100% (55/55), lines 100% (350/350). The 1
+uncovered branch is the shape listed above; it is not reachable through
+any combination of inputs the public API accepts.
 
 ## Pinning test
 
@@ -132,9 +84,10 @@ branch of the file:
   path
 
 177 tests passing in the full file alone, 178 with the sibling
-catch-test file. Statements 99.76% (421/422), branches 93.61%
-(264/282), functions 100% (55/55), lines 100% (350/350). The gap is
-exactly the 18 defensive nullish-coalesce / guard branches above.
+catch-test file. Statements 99.76% (421/422), branches 99.63%
+(273/274), functions 100% (55/55), lines 100% (350/350). The gap is
+the single defensive `else {}` arm of the `settings.hooks` guard at
+line 602.
 
 ## Suggested direction
 

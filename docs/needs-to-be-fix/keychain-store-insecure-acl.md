@@ -109,7 +109,7 @@ unresolved in `974f46a`.
 ## Path to a real fix
 
 The MD's "Suggested direction" step 1 can be applied **only after**
-`docs/needs-to-be-fix/keychain-retrieve-swillows-locked-keychain.md` is fixed:
+`docs/needs-to-be-fix/keychain-retrieve-swallows-locked-keychain.md` is fixed:
 
 1. Fix `keychainRetrieve` to surface prompts as actionable errors (exit 36 →
    specific error class) instead of returning `null`. After this fix, a
