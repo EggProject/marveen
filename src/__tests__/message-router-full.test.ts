@@ -1191,7 +1191,7 @@ describe('runMessageRouterTick', () => {
   it('does NOT send when the cached sessionExists is false', async () => {
     // Pinning test. The source's `pending` slice always carries the message's
     // own to_agent into receiversInTick, so the per-receiver cache is always
-    // populated for the message's target. The cache lookup at line 480 of
+    // populated for the message's target. The cache lookup at line 481 of
     // message-router.ts always wins. The actual behavior: the cache lookup
     // wins, the session is reported as absent, and the message is parked in
     // the "target session not running, will retry" branch.

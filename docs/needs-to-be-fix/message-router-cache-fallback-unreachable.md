@@ -154,7 +154,7 @@ TS errors in the test file at lines 151/179/366/etc.) are unchanged.
 The 0.76% residual is a single uncovered branch: the `isMainAgent ===
 true` arm of the `isMainAgent ? null : cached.host` ternary at line
 483. This arm is structurally unreachable through the public SUT --
-main-agent messages short-circuit at lines 464-476 with `continue`
+main-agent messages short-circuit at lines 464-475 with `continue`
 before reaching line 483. The `!` non-null assertion on the preceding
 `agentSessionCache.get(msg.to_agent)!` is a TS type assertion (erased
 at compile time); the actual runtime crash in any bypass scenario
@@ -182,7 +182,7 @@ below for the line 482 edit narrative.
 The remaining uncovered branch was the `isMainAgent === true` arm of
 `const host = isMainAgent ? null : cached.host` at line 482. This arm
 is structurally unreachable through the public SUT -- main-agent
-messages short-circuit at lines 464-476 with `continue` before reaching
+messages short-circuit at lines 464-475 with `continue` before reaching
 line 482 -- but Istanbul's branch-count is sensitive to the ternary's
 shape, not to reachability. The `!` non-null assertion on the preceding
 `agentSessionCache.get(msg.to_agent)!` is a TS type assertion (erased at
@@ -198,8 +198,8 @@ The edit:
 +      const host = cached.host
 ```
 
-The `isMainAgent` const (declared at line 449) remains live for the
-wakeup branch at lines 462-474 and is read nowhere else after line 482.
+The `isMainAgent` const (declared at line 451) remains live for the
+wakeup branch at lines 464-475 and is read nowhere else after line 483.
 Per-line behaviour for sub-agent messages is unchanged because
 `cached.host` is what the false arm produced anyway. The 100% branch
 coverage gate on `src/web/message-router.ts` clears as a result of this
