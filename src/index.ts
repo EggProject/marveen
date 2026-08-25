@@ -13,6 +13,7 @@ import type { Server as HttpServer } from 'node:http'
 import { PROJECT_ROOT, STORE_DIR, PID_FILENAME, WEB_PORT, ALLOWED_CHAT_ID, MAIN_AGENT_ID, RESPAWN_ENABLED, HEARTBEAT_AGENT_ENABLED } from './config.js'
 import { initDatabase, backfillEmbeddings } from './db.js'
 import { runDecaySweep, runDailyDigest } from './memory.js'
+import { initHeartbeat, stopHeartbeat } from './heartbeat.js'
 import { ensureHeartbeatAgent, shouldBootHeartbeatAgent, HEARTBEAT_AGENT_NAME } from './web/heartbeat-agent-scaffold.js'
 import { startAgentProcess } from './web/agent-process.js'
 import { renameSharedCredentialsIfSafe, fleetTokenBootPass } from './web/claude-credentials-guard.js'
@@ -470,14 +471,21 @@ async function main(): Promise<void> {
   }
   scheduleDailyDigest()
 
-  // Heartbeat -- 2026-06-02 architecture switch: the dedicated channel-less
-  // `heartbeat` sub-agent now handles the hourly summary via the scheduled-
-  // task runner. The legacy native scheduler (initHeartbeat) was the source
-  // of the Marveen self-poll loop that caused channel-disconnect every fire
-  // (see commit history #237/#250/#252/#253/#255 for the abandoned
-  // isolation-chain attempt). We keep the native module imported so other
-  // code paths that reference its exports still compile, but we do NOT
-  // start its scheduler.
+  // Heartbeat -- 2026-08-25 PARTIAL REVERSAL of the 2026-06-02 architecture
+  // switch: the legacy native scheduler (initHeartbeat) is now started
+  // alongside the heartbeat-agent scaffold. The original 2026-06-02 switch
+  // removed the native scheduler because it was the source of the Marveen
+  // self-poll loop that caused channel-disconnect every fire (commit history
+  // #237/#250/#252/#253/#255). The reversal is justified because the
+  // runDecaySweep opportunistic integration in heartbeat.ts depends on the
+  // native scheduler running; without this wire-up the integration is dead
+  // code in production (see heartbeat-brief-rundiceaysweep-not-applicable.md
+  // Resolution 2026-08-25 + the CRITICAL finding in the code-review of
+  // 2026-08-25). The self-poll loop risk remains latent -- if the channel-
+  // disconnect problem recurs, the next move is to revert this wire-up and
+  // move the runDecaySweep integration to the heartbeat-agent sub-agent
+  // path instead.
+  initHeartbeat()
   // The heartbeat sub-agent is OFF by default. It auto-starts only when it
   // is explicitly opted in (HEARTBEAT_AGENT_ENABLED) AND this host owns the
   // respawn gate -- a fresh or upgrading install must not silently spawn a

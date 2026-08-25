@@ -97,6 +97,65 @@ heartbeat still resolves normally. Both rely on the `vi.mock` of
 `../memory.js` (newly added; the file previously did not import from
 memory.js).
 
+## Wire-up reversal (2026-08-25 follow-up)
+
+Code-review of the Batch D range (`/code-review max --fix
+a329173b..HEAD`) flagged a CRITICAL finding: `executeHeartbeat()` is
+dead code in production. The native scheduler `initHeartbeat()` was
+NEVER called anywhere outside the test suite (verified by grep -- the
+only call site was `src/__tests__/heartbeat-cov.test.ts` via direct
+import). Without the wire-up, the runDecaySweep opportunistic
+integration is documentation fraud -- the MD claimed it provides an
+"opportunistic supplement that catches decay work" but in production
+the only decay-sweep path was the 24h `setInterval` in `src/index.ts`.
+
+User decision (Opció 1, 2026-08-25): wire `initHeartbeat()` up in
+production so the integration is no longer dead code. Implemented in
+the parallel commit `fix(index): wire up initHeartbeat for runDecaySweep
+production path`.
+
+This is a **partial reversal of the 2026-06-02 architecture switch**:
+the original switch removed the native scheduler because it was the
+source of the Marveen self-poll loop that caused channel-disconnect
+every fire (commit history #237/#250/#252/#253/#255). The reversal
+brings the native scheduler back alongside the heartbeat-agent scaffold;
+both paths now run.
+
+**Latent risks introduced by the reversal** (none blocking, all
+documented for future regression investigation):
+1. The self-poll loop that motivated the original switch is now
+   latent again. If channel-disconnect recurs in production, the
+   first move is to revert this wire-up (drop the `initHeartbeat()`
+   call in `src/index.ts:475`) and move the runDecaySweep integration
+   into the heartbeat-agent sub-agent path instead -- e.g. into the
+   `heartbeat-agent-scaffold.ts` boot path or as a `CLAUDE.md`
+   instruction for the heartbeat sub-agent.
+2. The native scheduler fires every hour in the active window (default
+   9-23, ~14 calls/day), each running `runDecaySweep()` which calls
+   `decayMemories()` which executes SQL `UPDATE memories SET salience
+   = MAX(salience * 0.995, 0.01) WHERE created_at < (now - 7d)`. The
+   0.5%/day decay rate is implicit in calling this once per 24h via
+   the setInterval. With ~14 calls/day, a 1-week-old memory at
+   salience 0.5 reaches the 0.01 floor in ~36 days instead of the
+   designed ~917 days. Ranking/recall of older memories will degrade
+   unexpectedly. **Mitigation deferred**: would require either
+   (a) skipping the opportunistic sweep on subsequent in-window ticks
+   within the same 24h window, or (b) tightening the multiplier to
+   ~0.9996 (~0.04%/call to preserve the 0.5%/day aggregate rate across
+   14 calls/day).
+3. The opportunistic sweep runs synchronously before `collectData()`
+   at `src/heartbeat.ts:504`, adding latency to every in-window
+   heartbeat tick. Defensible design choice (better a slow tick than
+   a missed sweep) but worth flagging for ops review.
+
+**INVARIANT** for future maintainers: `runDecaySweep()` MUST remain a
+synchronous function (current signature: `export function runDecaySweep(): void`).
+If you change it to `async`, you MUST add `await` at the call site in
+`src/heartbeat.ts:500` AND convert the try/catch into a `.then().catch()`
+fire-and-forget pattern (see `src/index.ts:443` `backfillEmbeddings` for
+the reference shape), or the unhandled-rejection bypass will silently
+re-introduce a heartbeat-prompt blocker.
+
 ## Reopen note (2026-08-25)
 
 Previously marked "Documented only -- source unchanged" in the
