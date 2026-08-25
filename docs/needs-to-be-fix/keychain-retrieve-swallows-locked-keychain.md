@@ -174,3 +174,7 @@ Per the task rule "NEVER modify src/web/keychain.ts" this was not applied.
 - <https://forums.docker.com/t/docker-login-fails-with-error-message-error-saving-credentials-error-storing-credentials-err-exit-status-1-out-user-interaction-is-not-allowed/117006>
   -- same error from a CLI keychain write; resolved with
   `security unlock-keychain`.
+
+## Scope note (2026-08-25)
+
+Any `NEVER modify src/...` task rule asserted in this MD was scoped to the 2026-08-09..2026-08-13 baseline closure cycle and is NOT a general project rule. The user corrected this on 2026-08-24: "never modify nem igaz, csak needs to fix felmeresnel volt" (translation: NEVER modify is not true as a general rule, only valid during the needs-to-be-fix survey). Outside the baseline cycle, the referenced source file may be modified when the fix is justified; a per-fix user override is still required before any source edit is committed.

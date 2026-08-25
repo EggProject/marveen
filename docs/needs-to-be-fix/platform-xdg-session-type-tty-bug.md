@@ -95,3 +95,6 @@ Replaced the truthy-XDG branch with an explicit allowlist (`x11`, `wayland`,
 `linux-server`. Flipped the regression pin in `platform.test.ts` to assert
 `linux-server` and removed the "currently buggy" framing. DISPLAY and
 WAYLAND_DISPLAY paths are unchanged. Fix committed in cb68aad.
+## Scope note (2026-08-25)
+
+Any `NEVER modify src/...` task rule asserted in this MD was scoped to the 2026-08-09..2026-08-13 baseline closure cycle and is NOT a general project rule. The user corrected this on 2026-08-24: "never modify nem igaz, csak needs to fix felmeresnel volt" (translation: NEVER modify is not true as a general rule, only valid during the needs-to-be-fix survey). Outside the baseline cycle, the referenced source file may be modified when the fix is justified; a per-fix user override is still required before any source edit is committed.

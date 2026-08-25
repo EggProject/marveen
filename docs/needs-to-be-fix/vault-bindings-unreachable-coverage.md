@@ -77,3 +77,6 @@ Either:
 3. **Export the helpers for unit testing** — `maskValue` and `serverHasVaultRefs` are not exported. Exporting them would let a unit test construct inputs that bypass the internal guards (a 6-char string for `maskValue`, an explicit `undefined` for `serverHasVaultRefs`) and reach 100% without depending on the internal `looksLikeSensitiveValue` / `removeBindingsForSecret` flow.
 
 Per task rule "NEVER modify src/web/vault-bindings.ts" all three are blocked until the user overrides; the test suite documents the gap and the pinning cases above should be added alongside the fix.
+## Scope note (2026-08-25)
+
+Any `NEVER modify src/...` task rule asserted in this MD was scoped to the 2026-08-09..2026-08-13 baseline closure cycle and is NOT a general project rule. The user corrected this on 2026-08-24: "never modify nem igaz, csak needs to fix felmeresnel volt" (translation: NEVER modify is not true as a general rule, only valid during the needs-to-be-fix survey). Outside the baseline cycle, the referenced source file may be modified when the fix is justified; a per-fix user override is still required before any source edit is committed.

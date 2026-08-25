@@ -123,3 +123,7 @@ degenerated into no-ops documenting the unreachability: one whose body was
 src/index.ts: lines 99.55% -> 100%, statements 98.51% -> 99.62%, branches
 98.09% -> 99.02%. The remaining gap belongs to `index-unreachable-coverage`
 (sites 174 and 283), whose INDEX row was updated to drop site 382.
+
+## Scope note (2026-08-25)
+
+Any `NEVER modify src/...` task rule asserted in this MD was scoped to the 2026-08-09..2026-08-13 baseline closure cycle and is NOT a general project rule. The user corrected this on 2026-08-24: "never modify nem igaz, csak needs to fix felmeresnel volt" (translation: NEVER modify is not true as a general rule, only valid during the needs-to-be-fix survey). Outside the baseline cycle, the referenced source file may be modified when the fix is justified; a per-fix user override is still required before any source edit is committed.

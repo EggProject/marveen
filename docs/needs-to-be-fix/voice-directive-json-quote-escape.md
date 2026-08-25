@@ -127,3 +127,7 @@ the shell layer is handled by a single existing `replace(/'/g, "'\\''")`. The
 pinning test in `src/__tests__/voice-directive.test.ts` was flipped to a
 positive assertion: it now expects the embedded `"` to be JSON-escaped and
 the emitted filter to parse as valid JSON.
+
+## Scope note (2026-08-25)
+
+Any `NEVER modify src/...` task rule asserted in this MD was scoped to the 2026-08-09..2026-08-13 baseline closure cycle and is NOT a general project rule. The user corrected this on 2026-08-24: "never modify nem igaz, csak needs to fix felmeresnel volt" (translation: NEVER modify is not true as a general rule, only valid during the needs-to-be-fix survey). Outside the baseline cycle, the referenced source file may be modified when the fix is justified; a per-fix user override is still required before any source edit is committed.

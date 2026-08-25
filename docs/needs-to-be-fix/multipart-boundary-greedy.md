@@ -110,3 +110,7 @@ the pinning tests above document the current contract.
 6b82c2f6 (the regex fix itself) and again by c423c61 (in-source comment that
 documents the new regex). Both MD and INDEX were updated to reflect the
 resolution; future fixes to this file are no longer gated by that rule.
+
+## Scope note (2026-08-25)
+
+Any `NEVER modify src/...` task rule asserted in this MD was scoped to the 2026-08-09..2026-08-13 baseline closure cycle and is NOT a general project rule. The user corrected this on 2026-08-24: "never modify nem igaz, csak needs to fix felmeresnel volt" (translation: NEVER modify is not true as a general rule, only valid during the needs-to-be-fix survey). Outside the baseline cycle, the referenced source file may be modified when the fix is justified; a per-fix user override is still required before any source edit is committed.
