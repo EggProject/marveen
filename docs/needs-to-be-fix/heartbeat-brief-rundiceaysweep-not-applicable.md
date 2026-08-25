@@ -76,6 +76,18 @@ This doc itself is a needs-to-be-fix entry -- it should be either
 deleted (if the brief is corrected) or acted on (if the integration is
 actually wanted).
 
+## Reopen note (2026-08-25)
+
+Reopened from "Documented only -- source unchanged" status: the prior
+closure was the consequence of the `NEVER modify src/heartbeat.ts` task
+rule, which the user scoped out as a baseline-cycle-only constraint on
+2026-08-24. Since the brief this MD references lives in chat/Honcho
+memory (not a tracked file), no in-repo src/ edit was ever possible for
+this entry -- the rule-blockage was incidental, not structural. Item
+is now `Deferred to next cycle` so the user can decide whether to delete
+the MD (brief is corrected), act on the brief (integration is wanted),
+or leave it open.
+
 ## Scope note (2026-08-25)
 
 Any `NEVER modify src/...` task rule asserted in this MD was scoped to the 2026-08-09..2026-08-13 baseline closure cycle and is NOT a general project rule. The user corrected this on 2026-08-24: "never modify nem igaz, csak needs to fix felmeresnel volt" (translation: NEVER modify is not true as a general rule, only valid during the needs-to-be-fix survey). Outside the baseline cycle, the referenced source file may be modified when the fix is justified; a per-fix user override is still required before any source edit is committed.

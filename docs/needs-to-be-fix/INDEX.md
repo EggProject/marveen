@@ -70,7 +70,7 @@ dead code, doc issue).
 | `auto-restart-parsehhmm-integer-guard` | `src/auto-restart.ts:63` | `parseHHMM`'s `Number.isInteger` guard is dead code | `src/__tests__/auto-restart.test.ts` | 2026-08-14 014f1de |
 | `agent-detect-linux-libc-redundant-guard` | `src/agent.ts:72-80` (line 73) | `detectLinuxLibc`'s platform check is unreachable in production | `src/__tests__/agent-run-paths.test.ts` | 2026-08-14 014f1de |
 | `channel-coordinator-internals-untestable` | `src/channel-coordinator.ts:117-441` | internal state-machine functions are not unit-testable | `src/__tests__/channel-coordinator.test.ts` | Deferred to next cycle |
-| `heartbeat-brief-rundiceaysweep-not-applicable` | `src/heartbeat.ts` (no symbol) | task brief mentions `runDecaySweep` integration but the integration does not exist | `src/__tests__/heartbeat-cov.test.ts` | Documented only -- source unchanged |
+| `heartbeat-brief-rundiceaysweep-not-applicable` | `src/heartbeat.ts` (no symbol) | task brief mentions `runDecaySweep` integration but the integration does not exist | `src/__tests__/heartbeat-cov.test.ts` | Reopened 2026-08-25 (Deferred to next cycle): prior closure was due to the now-scoped-out NEVER-modify rule |
 | `http-helpers-gzip-memo-evict-guard` | `src/web/http-helpers.ts:122` | gzip memo eviction guard is dead code (`oldest` can never be `undefined`) | `src/__tests__/http-helpers.test.ts` | Resolved: 2026-08-16 5a2a3a7 |
 | `stuck-tool-call-watcher-dead-ternary` | `src/web/stuck-tool-call-watcher.ts:192` | `sinceRespawnMs` ternary has a dead `null` arm (blocks 100% branch coverage) | `src/__tests__/stuck-tool-call-watcher.test.ts` | 2026-08-14 014f1de |
 | `keychain-store-insecure-acl` | `src/web/keychain.ts:19` | the master key is written with `-A`, the flag `security(1)` labels "insecure, not recommended" (empty ACL); low because the key is readable without `-A` too | `src/__tests__/keychain.test.ts` | Deferred to next cycle |
@@ -177,7 +177,7 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `routes-update-checker-path-mismatch` | Task prompt referenced a path that does not exist | Resolved: 2026-08-18 e5cfea6 |
 | `routes-updates-release-lock-unreachable-defensive-branch` | routes/updates.ts: releaseLock's `if (!lockHeld) return` is structurally unreachable | Resolved: 2026-08-14 c2b4ea20f52bd8ed2efeb43c298b8b9668d1d6c3 |
 | `routes-voice-runproc-stdin-dead` | src/web/routes/voice.ts: runProc has two unreachable defensive branches | Resolved: 2026-08-18 e5cfea6 |
-| `schedule-mcp-precheck-subtree-cycle-defensive` | schedule-mcp-precheck.ts: collectSubtreeCmdlines cycle guard is only reachable through malformed ps output | Documented only — source unchanged |
+| `schedule-mcp-precheck-subtree-cycle-defensive` | schedule-mcp-precheck.ts: collectSubtreeCmdlines cycle guard is only reachable through malformed ps output | Reopened 2026-08-25 (Deferred to next cycle): prior closure was due to the now-scoped-out NEVER-modify rule |
 | `schedule-runner-mcpmissingreason-cache-miss-unreachable` | schedule-runner: `mcpMissingReason` cache-miss branch is unreachable | Resolved: 2026-08-18 2c36e37 |
 | `schedules-expand-prompt-missing-answers` | Expand-prompt crashes when answers is omitted | Resolved: 2026-08-17 d99f171 |
 | `skills-import-seg-truthy-guard` | skills.ts:409 -- `if (seg)` truthy guard is unreachable | 2026-08-14 c2b4ea2 |

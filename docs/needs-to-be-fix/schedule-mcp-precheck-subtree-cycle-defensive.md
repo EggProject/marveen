@@ -74,15 +74,17 @@ source edit is blocked until the user overrides; the test suite
 documents the gap and the test that exercises the cycle stays in
 place alongside the (no-op) fix.
 
-## Resolution
+## Reopen note (2026-08-25)
 
-MD retired as a documented-only record. The MD's own recommendation
-is to "leave the source unchanged and keep the test as a regression
-sentinel for the cycle guard" -- nothing in that posture has
-changed, and no source edit is being made. The pinning test
-(`schedule-mcp-precheck-full.test.ts`, "collectSubtreeCmdlines --
-defensive duplicate-pid branch") remains in place as the
-regression sentinel.
+The prior `## Resolution` section above retired this MD as a
+documented-only record on the assumption that the `NEVER modify`
+constraint was project-wide. The user scoped that rule out as a
+baseline-cycle-only constraint on 2026-08-24. Reopened as `Deferred
+to next cycle`: the test suite (back-edge PS snapshot) already
+exercises the cycle guard, so the source-side fix is unnecessary;
+the user may decide whether to (a) delete this MD entirely, (b) add
+additional malformed-PS scenarios to the test, or (c) leave the
+existing single test in place as a regression sentinel.
 
 ## Scope note (2026-08-25)
 
