@@ -1113,10 +1113,11 @@ describe('shutdown() signal-handler paths', () => {
     )
   })
 
-  it('catches stopInviteMonitor / stopChannelRequestWatcher / stopStoreWatcher throws individually', async () => {
+  it('catches stopInviteMonitor / stopChannelRequestWatcher / stopStoreWatcher / stopHeartbeat throws individually', async () => {
     mockStopInviteMonitor.mockImplementation(() => { throw new Error('invite') })
     mockStopChannelRequestWatcher.mockImplementation(() => { throw new Error('chanreq') })
     mockStopStoreWatcher.mockImplementation(() => { throw new Error('storewatch') })
+    mockStopHeartbeat.mockImplementation(() => { throw new Error('hb') })
     mockStartWebServer.mockReturnValue(null)
     await loadIndexFresh()
     emitShutdownSignal('SIGTERM')
@@ -1132,19 +1133,19 @@ describe('shutdown() signal-handler paths', () => {
       expect.objectContaining({}),
       expect.stringContaining('stopStoreWatcher threw'),
     )
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({}),
+      expect.stringContaining('stopHeartbeat threw'),
+    )
   })
 
-  // Regression pin for index-stopHeartbeat-throw.
-  // The legacy native scheduler was retired: index.ts no longer imports
-  // heartbeat.js at all, so shutdown() can never reach stopHeartbeat().
-  // If someone re-wires initHeartbeat/stopHeartbeat into index.ts without
-  // also re-adding a started-flag guard, this assertion catches it.
-  it('never calls stopHeartbeat on shutdown (native scheduler is retired)', async () => {
+  // Positive pin: shutdown() tears down the heartbeat scheduler that initHeartbeat() set up at src/index.ts:488.
+  it('calls stopHeartbeat on shutdown when initHeartbeat was called', async () => {
     mockStartWebServer.mockReturnValue(null)
     await loadIndexFresh()
     emitShutdownSignal('SIGTERM')
-    expect(mockStopHeartbeat).not.toHaveBeenCalled()
-    expect(mockInitHeartbeat).not.toHaveBeenCalled()
+    expect(mockStopHeartbeat).toHaveBeenCalled()
+    expect(mockInitHeartbeat).toHaveBeenCalled()
   })
 })
 
@@ -2590,21 +2591,17 @@ describe('sendTerm rethrows non-ESRCH errors (covers line 271)', () => {
 })
 
 describe('stopHeartbeat throws during shutdown', () => {
-  it('catches the throw and logs a warn (covers line 382)', async () => {
-    // The heartbeatStarted flag is set inside main() ONLY when initHeartbeat
-    // is called -- which main() does NOT do in this codebase (it was retired).
-    // The `if (heartbeatStarted)` branch is therefore unreachable in
-    // production code. To exercise the catch wrapper at line 382 anyway we
-    // make mockStopHeartbeat throw and rely on shutdown being a no-op for
-    // that branch (it never gets called). This test documents the gap and
-    // asserts that shutdown() does not blow up if the helper is invoked.
-    //
-    // Since heartbeatStarted cannot be flipped from tests, the catch
-    // wrapper is genuinely unreachable. We assert the related assumption.
+  it('catches the throw and logs a warn (covers line 383)', async () => {
+    // Exercises the new try/catch wrapper added to src/index.ts:383.
+    mockStopHeartbeat.mockImplementation(() => { throw new Error('hb') })
     mockStartWebServer.mockReturnValue(null)
     await loadIndexFresh()
     emitShutdownSignal('SIGTERM')
-    expect(mockStopHeartbeat).not.toHaveBeenCalled()
+    expect(mockStopHeartbeat).toHaveBeenCalled()
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      expect.stringContaining('stopHeartbeat threw during shutdown'),
+    )
   })
 })
 

@@ -140,9 +140,9 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `reauth-healer-sweep-callsite-dead-arms` | reauth-healer.ts: two structurally unreachable arms at lines 391 and 395 | 2026-08-14 c2b4ea2 |
 | `recall-dayofweek-noon-utc-far-east-skew` | routes/recall.ts: dayOfWeekBudapest anchors at noon UTC but reads the weekday in APP_TZ, so every week-range is off by a day for install zones at UTC+12 and beyond | Resolved: 2026-08-20 482a9ea |
 | `recall-unreachable-defensive-fallbacks` | recall.ts: two unreachable defensive `?? 0` fallbacks block 100% branch coverage | Resolved: 2026-08-16 3bec823 |
-| `remote-enroll-core-merge-trailing-newline-skip` | `mergeAuthorizedKeys` trailing-newline guard (description corrected; no code change needed) | Documented only — source unchanged |
+| `remote-enroll-core-merge-trailing-newline-skip` | `mergeAuthorizedKeys` trailing-newline guard (description corrected; no code change needed) | MD retired -- original framing wrong; no code change needed |
 | `remote-enroll-fs-lock-vanish-spin` | `acquireLock` spins forever when statSync throws but the lock file is still there | Resolved: 2026-08-19 7d76d14 |
-| `remote-enroll-fs-rename-failure-cleanup-untestable` | `writeAtomic` rename-failure cleanup is unreachable in the type system | Documented only — source unchanged |
+| `remote-enroll-fs-rename-failure-cleanup-untestable` | `writeAtomic` rename-failure cleanup is unreachable in the type system | MD retired -- original framing wrong; no code change needed |
 | `route-token-usage-nan-params` | NaN-via-parseInt: numeric query params silently default to NaN | Resolved: 2026-08-17 46e97a9ba973c094bd7f5c67cbd65a19254b66a3 |
 | `routes-agent-team-unreachable-branches` | routes/agent-team.ts: file path does not exist; coverage pin moved to web/agent-team.ts | Resolved: 2026-08-18 e5cfea6 |
 | `routes-agent-terminal-literalkeys-nullish` | agent-terminal.ts: unreachable `literalKeys ?? ''` on the audit-preview line blocks 100% branch coverage | 2026-08-14 c2b4ea2 |
@@ -188,7 +188,7 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `vault-ssh-keys-import-newline-trim-bug` | vault-ssh-keys.ts: the import handler's `endsWith('\n')` branch is unreachable | Resolved: 2026-08-16 9aa71e5 |
 | `voice-directive-json-quote-escape` | src/web/voice-directive.ts: only single quotes are escaped, so `"` / `\` in the state dir emits invalid JSON | Resolved: 2026-08-19 be2cfee |
 | `web-agent-bundle-single-line-trycatch` | agent-bundle.ts: single-line try-catch and defensive-guard branches block 100% branch coverage | 2026-08-14 68b94fe |
-| `web-agent-scaffold-defensive-coverage` | web/agent-scaffold.ts: 18 defensive nullish-coalesce / guard branches cap branch coverage at 93.61% | Deferred to next cycle |
+| `web-agent-scaffold-defensive-coverage` | web/agent-scaffold.ts: 18 defensive nullish-coalesce / guard branches cap branch coverage at 93.61% | Resolved: 2026-08-26 <placeholder> (line 602 defensive ternary dropped; branch coverage 99.63% -> 100%; 17 sibling sites resolved in c2b4ea2, the line 602 site was the only survivor) |
 | `web-agent-worker-runviaworker-coverage` | agent-worker: runViaWorker / runWorkerAttempt / ensureWorkerReady integration paths lack 100% unit-test coverage | Deferred to next cycle |
 | `web-inbound-probe-cache-sticky` | Redundant assignment (dead store): `_warnedChatIdAbsent = false` reset at line 246 has no behavioral effect | Resolved: 2026-08-20 3926df6 |
 | `web-inbound-probe-respawn-grace` | Defect: stuck mod-scope cache blocks coverage of `shouldTriggerDeafnessRespawn` respawn branches | Deferred to next cycle |
@@ -226,3 +226,4 @@ when a commit on `test/baseline` already deleted the buggy defensive guard, `-` 
 | `routes-recall-25-ts-strict-blocks-delete` | `src/web/routes/recall.ts:25` | TS strict blocks the safe-delete | - | Resolved: 2026-08-16 3bec823 |
 | `vault-ssh-keys-endsWith-newline` | `src/web/routes/vault-ssh-keys.ts:126` | privateKey.endsWith('\n') IF branch is unreachable | `src/__tests__/routes-vault-ssh-keys.test.ts` | Resolved: 2026-08-16 9aa71e5 |
 | `voice-timer-stdinData-fallbacks` | `src/web/routes/voice.ts:74,79` | runProc timer and stdinData fallbacks are unreachable | - | 2026-08-14 c2b4ea2 |
+| `index-stopheartbeat-dangling-import` | `src/index.ts:16,380-415` | stopHeartbeat imported but never wired into shutdown() after commit 2e33344 wired initHeartbeat into main() | `src/__tests__/index.test.ts` (positive pin :1142-1148, throw pin :2592-2609, extended throws :1116-1135) | Resolved: 2026-08-26 <placeholder> |

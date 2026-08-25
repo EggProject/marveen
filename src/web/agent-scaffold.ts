@@ -599,9 +599,7 @@ export function ensureGovernanceGateCommands(name: string): boolean {
   try { settings = JSON.parse(readFileSync(settingsPath, 'utf-8')) } catch { return false }
   const emailCmd = hookCommand(join(PROJECT_ROOT, 'scripts', 'email-send-gate.mjs'))
   const paceCmd = hookCommand(join(PROJECT_ROOT, 'scripts', 'self-pace-gate.mjs'))
-  const hooks = (settings.hooks && typeof settings.hooks === 'object')
-    ? settings.hooks as Record<string, unknown>
-    : {}
+  const hooks = (settings.hooks ?? {}) as Record<string, unknown>
   const ptuJson = JSON.stringify(Array.isArray(hooks.PreToolUse) ? hooks.PreToolUse : [])
   const needEmail = agentGetsEmailGate(name) && !hookCommandWired(ptuJson, emailCmd)
   const needPace = agentGetsGovernanceGates(name) && !hookCommandWired(ptuJson, paceCmd)
