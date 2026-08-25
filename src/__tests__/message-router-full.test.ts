@@ -1191,11 +1191,8 @@ describe('runMessageRouterTick', () => {
   it('does NOT send when the cached sessionExists is false', async () => {
     // Pinning test. The source's `pending` slice always carries the message's
     // own to_agent into receiversInTick, so the per-receiver cache is always
-    // populated for the message's target. The "cache miss -> direct
-    // sessionExistsOnHost" fallback in the runMessageRouterTick loop is
-    // therefore dead code in the current implementation, and the assertion
-    // `sessionExists = cached?.exists ?? sessionExistsOnHost(host, session)`
-    // always takes the cached branch. The actual behavior: the cache lookup
+    // populated for the message's target. The cache lookup at line 480 of
+    // message-router.ts always wins. The actual behavior: the cache lookup
     // wins, the session is reported as absent, and the message is parked in
     // the "target session not running, will retry" branch.
     vi.useFakeTimers()
@@ -1207,7 +1204,7 @@ describe('runMessageRouterTick', () => {
     H.isSessionReadyForPrompt.mockResolvedValue(true)
     H.classifyAgentMessage.mockReturnValue({ category: 'trusted-peer', safeFrom: 'orin' })
     await runMessageRouterTick()
-    // The cache wins, so the second mock call never triggers the fallback.
+    // The cache wins, so the second mock call is never made by the loop body.
     // The message is parked to retry -- sendPromptToSession is NOT called.
     expect(H.sendPromptToSession).not.toHaveBeenCalled()
     expect(H.logWarn).toHaveBeenCalledWith(
