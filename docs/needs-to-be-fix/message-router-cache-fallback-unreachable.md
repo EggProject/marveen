@@ -1,6 +1,6 @@
 # message-router.ts: cached session-lookup `??` fallback arms are unreachable
 
-**Status:** UNRESOLVED. The 2026-08-24 attempt (commit `6e08cf4`) to apply option (b) via a vitest per-glob threshold override (`'src/web/message-router.ts': { branches: 97 }`) was verified empirically to be a structural no-op: with `perFile: true`, vitest still checks every file against the global 100% threshold regardless of glob membership (vitest source `node_modules/vitest/dist/chunks/coverage.DM_a_rWm.js:837`: "Global threshold is for all files, even if they are included by glob patterns"), so message-router.ts at 97.82% branches still fails the 100% global check and `bun run coverage` exits non-zero. The per-glob entry only ADDS a second, looser check; it never relaxes the global one. `eb9b951` reverted in `2ec1c99` so the file is back to the pre-fix `cached?.X ?? Y` shape, but neither option (a) nor option (b) has actually been made to work. The narrative below is preserved as the historical record of option (a).
+**Status:** PARTIALLY RESOLVED. The 2026-08-24 attempt (commit `6e08cf4`) to apply option (b) via a vitest per-glob threshold override (`'src/web/message-router.ts': { branches: 97 }`) was verified empirically to be a structural no-op: with `perFile: true`, vitest still checks every file against the global 100% threshold regardless of glob membership (vitest source `node_modules/vitest/dist/chunks/coverage.DM_a_rWm.js:837`: "Global threshold is for all files, even if they are included by glob patterns"), so message-router.ts at 97.82% branches still fails the 100% global check and `bun run coverage` exits non-zero. The per-glob entry only ADDS a second, looser check; it never relaxes the global one. `eb9b951` reverted in `2ec1c99` so the file is back to the pre-fix `cached?.X ?? Y` shape, then on 2026-08-25 commit `900cdb6` applied the minimal fix (drop the 3 `??` RHS arms, add a `!` non-null assertion on `agentSessionCache.get(...)`); see "## Resolution (2026-08-25, commit 900cdb6)" below. The narrative between this header and the Resolution section is preserved as the historical record of option (a) and option (b).
 
 ## Status: PARTIAL -- 2026-08-18
 
@@ -123,13 +123,10 @@ Either way, the current state -- three uncovered branches replaced by
 an uncovered `if` with worse statement/line coverage and a silent-drop
 regression risk -- is strictly worse than the pre-fix state.
 
-Per task rule "NEVER modify src/web/message-router.ts" the deeper
-refactor is blocked until the user overrides.
-
 ## Resolution (2026-08-25, commit 900cdb6)
 
-Three of the four cache-fallback unreachable branches were removed at
-lines 481-483: the `?? agentSessionName(...)`, `?? readAgentRemoteHost(...)`,
+All three cache-fallback unreachable branches were removed at lines
+481-483: the `?? agentSessionName(...)`, `?? readAgentRemoteHost(...)`,
 and `?? sessionExistsOnHost(...)` RHS arms were dropped, and a non-null
 assertion (`!`) was added to the `agentSessionCache.get(msg.to_agent)`
 result (a TS type assertion, not a branch). The source comment at lines
@@ -150,23 +147,29 @@ TS errors in the test file at lines 151/179/366/etc.) are unchanged.
 The 0.76% residual is a single uncovered branch: the `isMainAgent ===
 true` arm of the `isMainAgent ? null : cached.host` ternary at line
 483. This arm is structurally unreachable through the public SUT --
-main-agent messages short-circuit at lines 464-475 with `continue`
-before reaching line 483 -- but removing it would either drop the
-defensive `null` (risky: a future caller that bypasses the short-
-circuit would crash on `cached!`) or shift the unreachable path into
-a comment (out of scope for this batch).
+main-agent messages short-circuit at lines 464-476 with `continue`
+before reaching line 483. The `!` non-null assertion on the preceding
+`agentSessionCache.get(msg.to_agent)!` is a TS type assertion (erased
+at compile time); the actual runtime crash in any bypass scenario
+would occur at `cached.session` on line 482 before the ternary at line
+483 even runs, so removing the ternary's `null` arm cannot introduce
+any new runtime crash risk -- it is purely cosmetic dead code. The
+ternary is deferred (not in this batch) to keep the diff minimal.
 
-The deeper refactor (option (a) in this MD's "Suggested direction"
-section) was applied in the minimal form: drop the `??` arms, accept
-the `isMainAgent` ternary as a load-bearing defensive guard, leave the
-per-glob override absent (it is a structural no-op with `perFile:
-true` per `vitest.config.ts:48-65`).
+The applied fix is closer to option (b) (drop the `??` arms and accept
+the residual threshold gap) than to option (a): option (a) prescribed
+a helper function plus inlining plus a plain-object cache in place of
+the `Map`; the actual change keeps the `Map` and adds a `!` type
+assertion. The per-glob override was actively removed in 29c5103
+(it was a structural no-op with `perFile: true` per
+`vitest.config.ts:48-65`).
 
-Status: **Partially resolved** (3 of 4 cache-fallback unreachable
-branches removed; 1 `isMainAgent` ternary branch deferred; file-level
-branch coverage 97.82% -> 99.24%). Full closure of the 100% branch-
-coverage gate requires a separate edit to address the `isMainAgent`
-ternary.
+Status: **Partially resolved** (3 of 3 cache-fallback `??` RHS arms
+removed at lines 481-483; 1 `isMainAgent` ternary arm at line 483
+deferred; file-level branch coverage 97.82% -> 99.24%). Full closure
+of the 100% branch-coverage gate requires a separate edit to address
+the `isMainAgent` ternary.
+
 ## Scope note (2026-08-25)
 
 Any `NEVER modify src/...` task rule asserted in this MD was scoped to the 2026-08-09..2026-08-13 baseline closure cycle and is NOT a general project rule. The user corrected this on 2026-08-24: "never modify nem igaz, csak needs to fix felmeresnel volt" (translation: NEVER modify is not true as a general rule, only valid during the needs-to-be-fix survey). Outside the baseline cycle, the referenced source file may be modified when the fix is justified; a per-fix user override is still required before any source edit is committed.
