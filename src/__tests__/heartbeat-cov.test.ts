@@ -20,6 +20,7 @@ import { join } from 'node:path'
 
 const mockState = vi.hoisted(() => ({
   runAgent: vi.fn(),
+  runDecaySweep: vi.fn(),
   getHeartbeatKanbanSummary: vi.fn(),
   getActiveScheduledTaskCount: vi.fn(),
   getCalendarEvents: vi.fn(),
@@ -51,6 +52,7 @@ vi.mock('node:child_process', () => ({
 }))
 
 vi.mock('../agent.js', () => ({ runAgent: mockState.runAgent }))
+vi.mock('../memory.js', () => ({ runDecaySweep: mockState.runDecaySweep }))
 vi.mock('../db.js', () => ({
   getHeartbeatKanbanSummary: mockState.getHeartbeatKanbanSummary,
   getActiveScheduledTaskCount: mockState.getActiveScheduledTaskCount,
@@ -95,6 +97,7 @@ async function loadHeartbeatFresh(): Promise<typeof import('../heartbeat.js')> {
   })
   vi.doMock('node:child_process', () => ({ execFileSync: mockState.execFileSync }))
   vi.doMock('../agent.js', () => ({ runAgent: mockState.runAgent }))
+  vi.doMock('../memory.js', () => ({ runDecaySweep: mockState.runDecaySweep }))
   vi.doMock('../db.js', () => ({
     getHeartbeatKanbanSummary: mockState.getHeartbeatKanbanSummary,
     getActiveScheduledTaskCount: mockState.getActiveScheduledTaskCount,
@@ -129,6 +132,8 @@ async function loadHeartbeatFresh(): Promise<typeof import('../heartbeat.js')> {
 function setupMocks(): void {
   mockState.runAgent.mockReset()
   mockState.runAgent.mockResolvedValue({ text: 'agent-text' })
+  mockState.runDecaySweep.mockReset()
+  mockState.runDecaySweep.mockReturnValue(undefined)
   mockState.getCalendarEvents.mockReset()
   mockState.getCalendarEvents.mockResolvedValue([])
   mockState.getHeartbeatKanbanSummary.mockReset()
@@ -415,5 +420,39 @@ describe('scheduleNext body .catch handler (line 549)', () => {
     const errorCalls = (loggerMock.error as unknown as { mock: { calls: unknown[][] } }).mock.calls
       .filter((c) => typeof c[1] === 'string' && c[1] === 'Heartbeat hiba')
     expect(errorCalls.length).toBeGreaterThanOrEqual(1)
+  })
+})
+
+// =============================================================================
+// opportunistic runDecaySweep integration (added 2026-08-25, closes
+// heartbeat-brief-rundiceaysweep-not-applicable)
+// =============================================================================
+
+describe('executeHeartbeat calls runDecaySweep opportunistically', () => {
+  it('invokes runDecaySweep at the start of every in-window tick', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-25T14:00:00Z'))
+    setupMocks()
+    mockState.runDecaySweep.mockClear()
+
+    const hb = await loadHeartbeatFresh()
+    await hb.executeHeartbeat()
+
+    expect(mockState.runDecaySweep).toHaveBeenCalledTimes(1)
+  })
+
+  it('swallows runDecaySweep errors and still completes the heartbeat', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-25T14:00:00Z'))
+    setupMocks()
+    mockState.runDecaySweep.mockImplementation(() => {
+      throw new Error('synthetic decay sweep failure')
+    })
+
+    const hb = await loadHeartbeatFresh()
+
+    // Should resolve (not throw) despite the runDecaySweep failure.
+    await expect(hb.executeHeartbeat()).resolves.toBeUndefined()
+    expect(mockState.runDecaySweep).toHaveBeenCalledTimes(1)
   })
 })

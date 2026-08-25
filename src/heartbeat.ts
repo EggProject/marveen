@@ -14,6 +14,7 @@ import {
 import { getHeartbeatKanbanSummary, getActiveScheduledTaskCount } from './db.js'
 import { getCalendarEvents, type CalendarEvent } from './google-api.js'
 import { runAgent } from './agent.js'
+import { runDecaySweep } from './memory.js'
 import { notifyTelegram } from './notify.js'
 import { logger } from './logger.js'
 import { wrapUntrusted, UNTRUSTED_PREAMBLE } from './prompt-safety.js'
@@ -489,6 +490,17 @@ async function executeHeartbeat(): Promise<void> {
   }
 
   logger.info('Heartbeat ellenorzes indul...')
+  // Opportunistic decay sweep: piggy-back the daily memory decay onto the
+  // hourly heartbeat tick so the 24h setInterval in index.ts is supplemented
+  // by an opportunistic path that catches decay work within an hour of any
+  // installed memory going stale (regardless of which tick of the day the
+  // setInterval happens to land on). Failure is logged and swallowed -- the
+  // decay sweep is best-effort and must never block the heartbeat prompt.
+  try {
+    runDecaySweep()
+  } catch (err) {
+    logger.warn({ err }, 'Heartbeat: opportunistic runDecaySweep failed, continuing')
+  }
   const data = await collectData()
 
   if (!shouldNotify(data)) {

@@ -76,6 +76,26 @@ This doc itself is a needs-to-be-fix entry -- it should be either
 deleted (if the brief is corrected) or acted on (if the integration is
 actually wanted).
 
+## Resolution (2026-08-25 batch)
+
+Option 2 implemented. `src/heartbeat.ts` now imports `runDecaySweep`
+from `./memory.js` and calls it opportunistically at the start of every
+in-window `executeHeartbeat()` tick. The call is wrapped in a try/catch
+that swallows failures (logged via `logger.warn`) so a decay-sweep
+regression cannot block the heartbeat prompt. The 24h setInterval in
+`src/index.ts` still drives the canonical cadence; the heartbeat path
+now provides an opportunistic supplement that catches decay work
+within an hour of any installed memory going stale, regardless of
+which tick of the day the setInterval happens to land on.
+
+Two new tests in `src/__tests__/heartbeat-cov.test.ts` under the
+"executeHeartbeat calls runDecaySweep opportunistically" describe
+block: one asserts the sweep is invoked exactly once per in-window
+tick, the other asserts a synthetic sweep failure is swallowed and the
+heartbeat still resolves normally. Both rely on the `vi.mock` of
+`../memory.js` (newly added; the file previously did not import from
+memory.js).
+
 ## Reopen note (2026-08-25)
 
 Previously marked "Documented only -- source unchanged" in the
