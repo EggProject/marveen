@@ -182,7 +182,7 @@ Per task rule "NEVER modify src/web/message-router.ts" the source edits
 are blocked until the user overrides; the test suite documents the gap
 and pins every reachable sibling branch.
 
-Partially resolved: 2026-08-19 ba6faf8 (lines 81, 317 deleted; line 180 deferred as stylistic inversion, not dead code). File-level branch coverage still at 97.82% (3 uncovered `??` arms at lines 481-483); see message-router-cache-fallback-unreachable.md.
+Partially resolved: 2026-08-19 ba6faf8 (lines 81, 317 deleted; line 180 deferred as stylistic inversion, not dead code); 2026-08-25 900cdb6 (lines 481-483: 3 of 4 `??` RHS arms dropped via non-null assertion on `agentSessionCache.get`). File-level branch coverage moved 97.82% -> 99.24%; 1 uncovered branch remains (`isMainAgent === true` arm of the ternary at line 483, structurally unreachable -- main-agent short-circuits at lines 464-475 before reaching line 483). See message-router-cache-fallback-unreachable.md for the full resolution narrative.
 
 ## Scope note (2026-08-25)
 

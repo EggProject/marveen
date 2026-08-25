@@ -125,6 +125,48 @@ regression risk -- is strictly worse than the pre-fix state.
 
 Per task rule "NEVER modify src/web/message-router.ts" the deeper
 refactor is blocked until the user overrides.
+
+## Resolution (2026-08-25, commit 900cdb6)
+
+Three of the four cache-fallback unreachable branches were removed at
+lines 481-483: the `?? agentSessionName(...)`, `?? readAgentRemoteHost(...)`,
+and `?? sessionExistsOnHost(...)` RHS arms were dropped, and a non-null
+assertion (`!`) was added to the `agentSessionCache.get(msg.to_agent)`
+result (a TS type assertion, not a branch). The source comment at lines
+477-480 was reworded to describe the cache-wins invariant without
+referencing the removed fallback.
+
+Post-edit measurement on the worktree (full suite, istanbul coverage):
+
+```
+src/web/message-router.ts | branches 97.82% -> 99.24%
+```
+
+72 of 72 targeted tests in `src/__tests__/message-router-full.test.ts`
+pass; no new failures introduced. Pre-existing failures on `bb879a8`
+(75 across 18 files from the global `forbid-system-calls` setup, plus
+TS errors in the test file at lines 151/179/366/etc.) are unchanged.
+
+The 0.76% residual is a single uncovered branch: the `isMainAgent ===
+true` arm of the `isMainAgent ? null : cached.host` ternary at line
+483. This arm is structurally unreachable through the public SUT --
+main-agent messages short-circuit at lines 464-475 with `continue`
+before reaching line 483 -- but removing it would either drop the
+defensive `null` (risky: a future caller that bypasses the short-
+circuit would crash on `cached!`) or shift the unreachable path into
+a comment (out of scope for this batch).
+
+The deeper refactor (option (a) in this MD's "Suggested direction"
+section) was applied in the minimal form: drop the `??` arms, accept
+the `isMainAgent` ternary as a load-bearing defensive guard, leave the
+per-glob override absent (it is a structural no-op with `perFile:
+true` per `vitest.config.ts:48-65`).
+
+Status: **Partially resolved** (3 of 4 cache-fallback unreachable
+branches removed; 1 `isMainAgent` ternary branch deferred; file-level
+branch coverage 97.82% -> 99.24%). Full closure of the 100% branch-
+coverage gate requires a separate edit to address the `isMainAgent`
+ternary.
 ## Scope note (2026-08-25)
 
 Any `NEVER modify src/...` task rule asserted in this MD was scoped to the 2026-08-09..2026-08-13 baseline closure cycle and is NOT a general project rule. The user corrected this on 2026-08-24: "never modify nem igaz, csak needs to fix felmeresnel volt" (translation: NEVER modify is not true as a general rule, only valid during the needs-to-be-fix survey). Outside the baseline cycle, the referenced source file may be modified when the fix is justified; a per-fix user override is still required before any source edit is committed.
