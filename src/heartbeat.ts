@@ -492,10 +492,18 @@ async function executeHeartbeat(): Promise<void> {
   logger.info('Heartbeat ellenorzes indul...')
   // Opportunistic decay sweep: piggy-back the daily memory decay onto the
   // hourly heartbeat tick so the 24h setInterval in index.ts is supplemented
-  // by an opportunistic path that catches decay work within an hour of any
-  // installed memory going stale (regardless of which tick of the day the
-  // setInterval happens to land on). Failure is logged and swallowed -- the
-  // decay sweep is best-effort and must never block the heartbeat prompt.
+  // by an opportunistic path that catches decay work at the NEXT in-window
+  // heartbeat tick (capped by HEARTBEAT_START_HOUR..HEARTBEAT_END_HOUR).
+  // Latency for memories installed off-window can therefore be up to
+  // 24 - (endH - startH) hours (default: 10h for a 9-23 window); the
+  // setInterval in index.ts remains the deterministic 24h cadence.
+  // Failure is logged and swallowed -- the decay sweep is best-effort and
+  // must never block the heartbeat prompt.
+  //
+  // INVARIANT: runDecaySweep must remain a sync `void` function. The try/catch
+  // below only catches SYNCHRONOUS throws -- if runDecaySweep ever becomes
+  // `async` and is not awaited, a rejected Promise escapes the block as an
+  // unhandled rejection. Reject if anyone proposes that change.
   try {
     runDecaySweep()
   } catch (err) {

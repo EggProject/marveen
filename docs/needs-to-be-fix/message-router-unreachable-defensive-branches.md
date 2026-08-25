@@ -116,9 +116,9 @@ Partially resolved: 2026-08-19 ba6faf8 (lines 81, 317 deleted); 2026-08-25 900cd
 
 ## Full resolution (2026-08-25 batch)
 
-The residual `isMainAgent === true` arm of the ternary at line 482 was
+The residual `isMainAgent === true` arm of the ternary at line 483 was
 removed via the 2026-08-25 batch (`fix(message-router): drop
-isMainAgent ? null : prefix from line 482 host assignment`). The
+isMainAgent ? null : prefix from line 483 host assignment`). The
 ternary collapsed to `const host = cached.host`. Combined with the
 prior `ba6faf8` (lines 81, 317 deleted) and `900cdb6` (lines 481-483
 `??` RHS arms dropped), all 5 originally-uncovered branches across

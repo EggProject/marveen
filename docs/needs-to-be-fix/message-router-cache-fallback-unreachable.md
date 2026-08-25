@@ -180,16 +180,17 @@ below for the line 482 edit narrative.
 ## Full resolution (2026-08-25 batch)
 
 The remaining uncovered branch was the `isMainAgent === true` arm of
-`const host = isMainAgent ? null : cached.host` at line 482. This arm
+`const host = isMainAgent ? null : cached.host` at line 483. This arm
 is structurally unreachable through the public SUT -- main-agent
 messages short-circuit at lines 464-475 with `continue` before reaching
-line 482 -- but Istanbul's branch-count is sensitive to the ternary's
+line 483 -- but Istanbul's branch-count is sensitive to the ternary's
 shape, not to reachability. The `!` non-null assertion on the preceding
 `agentSessionCache.get(msg.to_agent)!` is a TS type assertion (erased at
 compile time); the actual runtime crash in any bypass scenario would
-occur at `cached.session` on line 482 before the ternary on the same
-line even runs, so removing the ternary's `null` arm cannot introduce
-any new runtime crash risk -- it is purely cosmetic dead code.
+occur at `cached.session` on line 482 (one line above the ternary at
+line 483) before the ternary even runs, so removing the ternary's `null`
+arm cannot introduce any new runtime crash risk -- it is purely cosmetic
+dead code.
 
 The edit:
 
@@ -198,12 +199,11 @@ The edit:
 +      const host = cached.host
 ```
 
-The `isMainAgent` const (declared at line 451) remains live for the
-wakeup branch at lines 464-475 and is read nowhere else after line 483.
-Per-line behaviour for sub-agent messages is unchanged because
-`cached.host` is what the false arm produced anyway. The 100% branch
-coverage gate on `src/web/message-router.ts` clears as a result of this
-edit.
+The `isMainAgent` const (declared at line 451) is read only by the
+wakeup branch at line 464; nothing after line 483 references it. Per-line
+behaviour for sub-agent messages is unchanged because `cached.host` is
+what the false arm produced anyway. The 100% branch coverage gate on
+`src/web/message-router.ts` clears as a result of this edit.
 
 ## Scope note (2026-08-25)
 

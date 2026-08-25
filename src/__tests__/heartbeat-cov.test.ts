@@ -429,11 +429,14 @@ describe('scheduleNext body .catch handler (line 549)', () => {
 // =============================================================================
 
 describe('executeHeartbeat calls runDecaySweep opportunistically', () => {
-  it('invokes runDecaySweep at the start of every in-window tick', async () => {
+  // Local-time constructor matches file convention (heartbeat.ts:484 uses
+  // `new Date().getHours()` which is LOCAL -- a UTC ISO `Z`-suffixed string
+  // here would push getHours() below startHour=9 on west-of-UTC TZs and
+  // the test would short-circuit at line 487-490 before runDecaySweep fires).
+  it('invokes runDecaySweep exactly once during a single in-window tick', async () => {
     vi.useFakeTimers()
-    vi.setSystemTime(new Date('2026-08-25T14:00:00Z'))
+    vi.setSystemTime(new Date(2026, 7, 25, 14, 0, 0))
     setupMocks()
-    mockState.runDecaySweep.mockClear()
 
     const hb = await loadHeartbeatFresh()
     await hb.executeHeartbeat()
@@ -443,7 +446,7 @@ describe('executeHeartbeat calls runDecaySweep opportunistically', () => {
 
   it('swallows runDecaySweep errors and still completes the heartbeat', async () => {
     vi.useFakeTimers()
-    vi.setSystemTime(new Date('2026-08-25T14:00:00Z'))
+    vi.setSystemTime(new Date(2026, 7, 25, 14, 0, 0))
     setupMocks()
     mockState.runDecaySweep.mockImplementation(() => {
       throw new Error('synthetic decay sweep failure')

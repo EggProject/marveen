@@ -186,9 +186,9 @@ Partially resolved: 2026-08-19 ba6faf8 (lines 81, 317 deleted; line 180 deferred
 
 ## Full resolution (2026-08-25 batch)
 
-The residual `isMainAgent === true` arm of the ternary at line 482 was
+The residual `isMainAgent === true` arm of the ternary at line 483 was
 removed via the 2026-08-25 batch (`fix(message-router): drop
-isMainAgent ? null : prefix from line 482 host assignment`). The
+isMainAgent ? null : prefix from line 483 host assignment`). The
 ternary collapsed to `const host = cached.host`. The `isMainAgent`
 const remains live for the wakeup branch at lines 464-475; per-line
 behaviour for sub-agent messages is unchanged. File-level branch
