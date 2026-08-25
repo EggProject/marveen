@@ -184,6 +184,18 @@ and pins every reachable sibling branch.
 
 Partially resolved: 2026-08-19 ba6faf8 (lines 81, 317 deleted; line 180 deferred as stylistic inversion, not dead code); 2026-08-25 900cdb6 (lines 481-483: all 3 `??` RHS arms dropped via non-null assertion on `agentSessionCache.get`). File-level branch coverage moved 97.82% -> 99.24%; 1 uncovered branch remains (`isMainAgent === true` arm of the ternary at line 483, structurally unreachable -- main-agent short-circuits at lines 464-476 before reaching line 483). See message-router-cache-fallback-unreachable.md for the full resolution narrative.
 
+## Full resolution (2026-08-25 batch)
+
+The residual `isMainAgent === true` arm of the ternary at line 482 was
+removed via the 2026-08-25 batch (`fix(message-router): drop
+isMainAgent ? null : prefix from line 482 host assignment`). The
+ternary collapsed to `const host = cached.host`. The `isMainAgent`
+const remains live for the wakeup branch at lines 462-474; per-line
+behaviour for sub-agent messages is unchanged. File-level branch
+coverage now reaches 100%. All 5 originally-uncovered branches across
+this MD and its two siblings (`cache-fallback-unreachable`,
+`unreachable-defensive-branches`) are now closed in aggregate.
+
 ## Scope note (2026-08-25)
 
 Any `NEVER modify src/...` task rule asserted in this MD was scoped to the 2026-08-09..2026-08-13 baseline closure cycle and is NOT a general project rule. The user corrected this on 2026-08-24: "never modify nem igaz, csak needs to fix felmeresnel volt" (translation: NEVER modify is not true as a general rule, only valid during the needs-to-be-fix survey). Outside the baseline cycle, the referenced source file may be modified when the fix is justified; a per-fix user override is still required before any source edit is committed.

@@ -113,3 +113,14 @@ surface without source modifications.
   empty `old` if `agentPending` is non-empty, so the guard is not needed.
 
 Partially resolved: 2026-08-19 ba6faf8 (lines 81, 317 deleted); 2026-08-25 900cdb6 (lines 481-483: all 3 `??` RHS arms dropped via non-null assertion on `agentSessionCache.get`). File-level branch coverage moved 97.82% -> 99.24%; 1 uncovered branch remains (`isMainAgent === true` arm of the ternary at line 483, structurally unreachable -- main-agent short-circuits at lines 464-476 before reaching line 483). See message-router-cache-fallback-unreachable.md for the full resolution narrative.
+
+## Full resolution (2026-08-25 batch)
+
+The residual `isMainAgent === true` arm of the ternary at line 482 was
+removed via the 2026-08-25 batch (`fix(message-router): drop
+isMainAgent ? null : prefix from line 482 host assignment`). The
+ternary collapsed to `const host = cached.host`. Combined with the
+prior `ba6faf8` (lines 81, 317 deleted) and `900cdb6` (lines 481-483
+`??` RHS arms dropped), all 5 originally-uncovered branches across
+this MD and its two siblings are now closed in aggregate. File-level
+branch coverage on `src/web/message-router.ts` reaches 100%.

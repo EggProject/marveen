@@ -480,7 +480,7 @@ export async function runMessageRouterTick(): Promise<void> {
       // lookup always wins.
       const cached = agentSessionCache.get(msg.to_agent)!
       const session = cached.session
-      const host = isMainAgent ? null : cached.host
+      const host = cached.host
       const sessionExists = cached.exists
 
       if (shouldAbandon(sessionExists, ageMs, MESSAGE_ABANDON_WINDOW_MS)) {
