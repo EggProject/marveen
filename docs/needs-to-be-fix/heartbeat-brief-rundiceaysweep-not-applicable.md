@@ -78,15 +78,15 @@ actually wanted).
 
 ## Reopen note (2026-08-25)
 
-Reopened from "Documented only -- source unchanged" status: the prior
-closure was the consequence of the `NEVER modify src/heartbeat.ts` task
-rule, which the user scoped out as a baseline-cycle-only constraint on
-2026-08-24. Since the brief this MD references lives in chat/Honcho
-memory (not a tracked file), no in-repo src/ edit was ever possible for
-this entry -- the rule-blockage was incidental, not structural. Item
-is now `Deferred to next cycle` so the user can decide whether to delete
-the MD (brief is corrected), act on the brief (integration is wanted),
-or leave it open.
+Previously marked "Documented only -- source unchanged" in the
+index; the prior status did not cite a specific closure reason.
+With the `NEVER modify src/...` constraint now scoped to the
+2026-08-09..2026-08-13 baseline cycle (see `## Scope note` below
+for the 2026-08-24 scope-out rationale), the item is reopened as
+`Deferred to next cycle` so the user can decide whether to (a)
+delete the MD (brief is corrected), (b) act on the brief (wire the
+integration into `src/heartbeat.ts` and add a covering test), or
+(c) leave it open.
 
 ## Scope note (2026-08-25)
 

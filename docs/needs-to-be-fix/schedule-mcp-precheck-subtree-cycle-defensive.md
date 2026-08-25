@@ -76,15 +76,14 @@ place alongside the (no-op) fix.
 
 ## Reopen note (2026-08-25)
 
-The prior `## Resolution` section above retired this MD as a
-documented-only record on the assumption that the `NEVER modify`
-constraint was project-wide. The user scoped that rule out as a
-baseline-cycle-only constraint on 2026-08-24. Reopened as `Deferred
-to next cycle`: the test suite (back-edge PS snapshot) already
-exercises the cycle guard, so the source-side fix is unnecessary;
-the user may decide whether to (a) delete this MD entirely, (b) add
-additional malformed-PS scenarios to the test, or (c) leave the
-existing single test in place as a regression sentinel.
+Previously retired as a documented-only record; the prior closure
+was driven by the (now-scoped-out) `NEVER modify` constraint (see
+`## Scope note` below for the 2026-08-24 scope-out rationale).
+Reopened as `Deferred to next cycle`. The test suite's back-edge PS
+snapshot already exercises the cycle guard, so no source-side fix
+is required; the user may decide whether to (a) delete this MD
+entirely, or (b) add additional malformed-PS scenarios to broaden
+test coverage.
 
 ## Scope note (2026-08-25)
 
