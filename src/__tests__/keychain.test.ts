@@ -2,7 +2,7 @@
 //
 // The module is a thin `/usr/bin/security` wrapper with four exports:
 //   isKeychainAvailable  -- platform() === 'darwin'
-//   keychainStore        -- add-generic-password -U ... -A  (no try/catch)
+//   keychainStore        -- add-generic-password -U ... -T SECURITY  (no try/catch)
 //   keychainRetrieve     -- find-generic-password -w, catch -> null
 //   keychainDelete       -- delete-generic-password, catch -> false
 //
@@ -294,33 +294,29 @@ describe('keychainDelete - delete-generic-password', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Known deviations (pinning). These lock in current behavior and MUST fail
-// once the corresponding entry is fixed.
+// Regression pins. Each test asserts a fix for a documented bug; the tag
+// above the it() is the bug ID, and the comment inside documents why the
+// assertion exists. Removing the assertion reopens the bug.
 // ---------------------------------------------------------------------------
-describe('keychain.ts - known deviations (pinning)', () => {
+describe('keychain.ts - regression pins', () => {
   // keychain-store-insecure-acl
-  it('uses -T SECURITY, narrowing the trusted-app list to /usr/bin/security', () => {
-    // security(1): "-T app_path  Allow the specified application to access
-    // this item without warning (multiple -T options are allowed)". -A
-    // ("Allow any application to access this item without warning
-    // (insecure, not recommended!)") left the item's ACL empty, so the
-    // vault master key was readable through the SecKeychain C API
-    // directly -- not only by way of an exec of /usr/bin/security.
-    // -T SECURITY (where SECURITY = /usr/bin/security) narrows the
-    // trusted-app list to the binary itself, which matches the default
-    // ACL for items created by `security add-generic-password` per the
-    // Silverfort write-up. The unblocking prerequisite was
-    // keychain-retrieve-swallows-locked-keychain (resolved 6e5bdd7,
-    // 2026-08-17): KeychainUnavailableError prevents a prompt cascade
-    // from triggering a vault re-key, so removing -A in favour of -T
-    // SECURITY is now safe. The argv shape must still pin the value
-    // (not just the flag), and the trusted app path must be the
-    // /usr/bin/security literal, not a wildcard.
+  it('uses -T SECURITY (and only -T SECURITY) for the trusted-app list', () => {
+    // security(1) add-generic-password: "-T appPath  Specify an application
+    // which may access this item (multiple -T options are allowed)".
+    // `-A` ("Allow any application to access this item without warning
+    // (insecure, not recommended!)") leaves the ACL empty, so the master
+    // key was readable through the SecKeychain C API directly. The
+    // explicit -T SECURITY pins the trusted-app list to the security
+    // binary itself. The unblocking prerequisite was
+    // keychain-retrieve-swallows-locked-keychain: KeychainUnavailableError
+    // prevents a prompt cascade from triggering a vault re-key, so
+    // removing -A in favour of -T SECURITY is now safe.
     mocks.execFileSync.mockReturnValue('')
     keychainStore('master')
-    expect(onlyCall().args).not.toContain('-A')
-    expect(onlyCall().args).toContain('-T')
-    expect(argAfter(onlyCall().args, '-T')).toBe(SECURITY)
+    const { args } = onlyCall()
+    expect(args).not.toContain('-A')
+    expect(args.filter(a => a === '-T')).toEqual(['-T'])
+    expect(argAfter(args, '-T')).toBe(SECURITY)
   })
 
   // keychain-retrieve-swallows-locked-keychain (resolved)
