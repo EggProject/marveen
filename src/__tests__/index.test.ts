@@ -1139,7 +1139,7 @@ describe('shutdown() signal-handler paths', () => {
     )
   })
 
-  // Positive pin: shutdown() tears down the heartbeat scheduler that initHeartbeat() set up at src/index.ts:488.
+  // Positive pin: shutdown() tears down the heartbeat scheduler that initHeartbeat() set up at src/index.ts:489.
   it('calls stopHeartbeat on shutdown when initHeartbeat was called', async () => {
     mockStartWebServer.mockReturnValue(null)
     await loadIndexFresh()

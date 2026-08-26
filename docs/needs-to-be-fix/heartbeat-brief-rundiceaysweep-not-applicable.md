@@ -126,7 +126,7 @@ documented for future regression investigation):
 1. The self-poll loop that motivated the original switch is now
    latent again. If channel-disconnect recurs in production, the
    first move is to revert this wire-up (drop the `initHeartbeat()`
-   call in `src/index.ts:475`) and move the runDecaySweep integration
+   call in `src/index.ts:489`) and move the runDecaySweep integration
    into the heartbeat-agent sub-agent path instead -- e.g. into the
    `heartbeat-agent-scaffold.ts` boot path or as a `CLAUDE.md`
    instruction for the heartbeat sub-agent.
@@ -144,17 +144,17 @@ documented for future regression investigation):
    ~0.9996 (~0.04%/call to preserve the 0.5%/day aggregate rate across
    14 calls/day).
 3. The opportunistic sweep runs synchronously before `collectData()`
-   at `src/heartbeat.ts:504`, adding latency to every in-window
+   at `src/heartbeat.ts:508`, adding latency to every in-window
    heartbeat tick. Defensible design choice (better a slow tick than
    a missed sweep) but worth flagging for ops review.
 
-**INVARIANT** for future maintainers: `runDecaySweep()` MUST remain a
-synchronous function (current signature: `export function runDecaySweep(): void`).
-If you change it to `async`, you MUST add `await` at the call site in
-`src/heartbeat.ts:500` AND convert the try/catch into a `.then().catch()`
-fire-and-forget pattern (see `src/index.ts:443` `backfillEmbeddings` for
-the reference shape), or the unhandled-rejection bypass will silently
-re-introduce a heartbeat-prompt blocker.
+**INVARIANT** for future maintainers: the opportunistic call site in
+`src/heartbeat.ts:507` invokes `runDecaySweep()` synchronously. If you
+change `runDecaySweep()` to `async`, you MUST add `await` at the call
+site AND convert the try/catch into a `.then().catch()` fire-and-forget
+pattern (see `src/index.ts:445` `backfillEmbeddings` for the reference
+shape), or the unhandled-rejection bypass will silently re-introduce a
+heartbeat-prompt blocker.
 
 ## Reopen note (2026-08-25)
 

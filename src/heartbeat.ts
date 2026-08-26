@@ -500,10 +500,11 @@ async function executeHeartbeat(): Promise<void> {
   // Failure is logged and swallowed -- the decay sweep is best-effort and
   // must never block the heartbeat prompt.
   //
-  // INVARIANT: runDecaySweep must remain a sync `void` function. The try/catch
-  // below only catches SYNCHRONOUS throws -- if runDecaySweep ever becomes
-  // `async` and is not awaited, a rejected Promise escapes the block as an
-  // unhandled rejection. Reject if anyone proposes that change.
+  // INVARIANT (call-site only): this try/catch wraps a SYNCHRONOUS call --
+  // it cannot catch a rejected Promise. If runDecaySweep becomes async,
+  // await it AND convert the try/catch to a `.then().catch()` fire-and-forget
+  // pattern (see backfillEmbeddings at src/index.ts:445 for the shape), or
+  // an unhandled rejection will escape and reintroduce a heartbeat blocker.
   try {
     runDecaySweep()
   } catch (err) {
