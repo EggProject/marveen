@@ -9,20 +9,20 @@
 categories. **All four are now covered** (see "Pinning test" and
 "Suggested direction" below for evidence).
 
-1. `parseChannelProvider` `throw new Error` at line 232 (the `return null`
+1. `parseChannelProvider` `throw new Error` arm (the `return null`
    arm was deleted by `3e1dd3f`; see
    `routes-agents-parse-channel-provider-dead-branches.md` and
    `routes-agents-parsechannelprovider-dead-branch.md`). **Resolved in
    81ef7f6**: the throw arm was structurally unreachable (only call site
-   is line 244 `parseChannelProvider(newMatch[2])`, where `newMatch[2]`
+   is line 239 `parseChannelProvider(newMatch[2])`, where `newMatch[2]`
    is captured by the regex literal `(telegram|slack|discord|googlechat|teams)`
-   at line 240 and is always a valid provider). The arm and the
+   at line 235 and is always a valid provider). The arm and the
    accompanying `VALID_PROVIDERS` const were deleted; the function
    reduced to `return raw as ChannelProviderType`.
-2. `extractBotId` non-numeric branch at line 346 -- unreachable through
+2. `extractBotId` non-numeric branch at line 341 -- unreachable through
    the route dispatch because `parseTelegramToken` is mocked to
    `() => null` in the test harness. **Covered** by
-   `agents-routes.test.ts:4207` (`baseline: extractBotId regex-fail
+   `agents-routes.test.ts:4208` (`baseline: extractBotId regex-fail
    branch`) which posts `botToken: 'abc:secret'` and asserts `ok: true`.
 3. Several `?? null` / `?? ''` / `?? []` / `?? {}` / `?? false` defensive
    fallbacks that the existing test suite does not exercise. **All
@@ -30,13 +30,13 @@ categories. **All four are now covered** (see "Pinning test" and
 4. The `if (!existsSync(agentDir(name)))` 404 guards for several routes
    remain partially uncovered because the test harness's `ensureAgentDirs()`
    pre-creates the agent dir name in `listAgentNames()`. **Covered** by
-   `agents-routes.test.ts:4315` (`baseline: PUT /api/agents/:name/security
+   `agents-routes.test.ts:4316` (`baseline: PUT /api/agents/:name/security
    404 branch`).
 
 ## Excerpts
 
 ```ts
-// src/web/routes/agents.ts:342-347
+// src/web/routes/agents.ts:337-342
 function extractBotId(token: string): string | null {
   const colon = token.indexOf(':')
   if (colon < 1) return null
@@ -50,12 +50,14 @@ The `return null` arm fires when `id` is non-numeric. The
 `extractBotId` is never invoked with a real token.
 
 ```ts
-// src/web/routes/agents.ts:460-465 -- agent detail's `running` branches
+// src/web/routes/agents.ts:455-470 -- agent detail's `running` branches
 const session = running ? agentSessionName(name) : undefined
 const runningSince = running ? getAgentRunningSince(name) : null
 const reauth = running
   ? detectReauthNeeded(capturePane(agentSessionName(name)))
   : { needsReauth: false }
+// ...
+activeModel: running ? readActiveModelFromProjectDir(dir, runningSince ?? undefined, resolveAgentConfigDir(name).configDir ?? undefined) : null,
 ```
 
 The `branch-0` (running=true) arms are NOT covered -- the test harness
@@ -87,20 +89,20 @@ The "baseline" `describe` blocks in `src/__tests__/agents-routes.test.ts`
 cover every reachable defensive fallback shape, plus the two
 branches that survived the baseline pass and required this fix:
 
-- `agents-routes.test.ts:4207` -- `baseline: extractBotId regex-fail
-  branch` (covers extractBotId non-numeric arm at line 346)
-- `agents-routes.test.ts:4315` -- `baseline: PUT
+- `agents-routes.test.ts:4208` -- `baseline: extractBotId regex-fail
+  branch` (covers extractBotId non-numeric arm at line 341)
+- `agents-routes.test.ts:4316` -- `baseline: PUT
   /api/agents/:name/security 404 branch` (covers the `existsSync`
   404 guard)
-- `agents-routes.test.ts:1090-1105` -- `uses the kanban map for
+- `agents-routes.test.ts:1090-1106` -- `uses the kanban map for
   open/urgent counts` (extended in 81ef7f6 with a 4th row
   `{ assignee: 'dev', priority: 'low', cnt: 3 }` at line 1100 that
-  bypasses `if (!row.assignee) continue` at line 748 and exercises
+  bypasses `if (!row.assignee) continue` at line 743 and exercises
   the else-arm of `if (row.priority === 'urgent' || row.priority ===
-  'high')` at line 751)
-- The `running: true` arms at lines 460, 461, 465 of `getAgentSummary`
+  'high')` at line 746)
+- The `running: true` arms at lines 455, 456, 460, 470 of `getAgentSummary`
   are covered by the activity-list tests at
-  `agents-routes.test.ts:3427-3446` and `4001-4015`.
+  `agents-routes.test.ts:3428-3447` and `4002-4016`.
 
 Other branches are covered because:
 
@@ -128,7 +130,7 @@ Other branches are covered because:
     that drives `GET /api/agents/<name>` with `isAgentRunning=true`
     once the harness's `ensureAgentDirs()` is updated to handle
     this case. **DONE**: covered by the activity-list tests at
-    `agents-routes.test.ts:3427-3446` and `4001-4015`; no harness
+    `agents-routes.test.ts:3428-3447` and `4002-4016`; no harness
     change was needed.
 
 The source edits were blocked under the 2026-08-09..2026-08-13
