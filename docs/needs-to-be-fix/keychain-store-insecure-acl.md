@@ -80,7 +80,7 @@ and the vendor-flagged ACL.
 
 The fix in commit `0c81522` (2026-08-16) removed `-A` from the args array and
 inverted the pinning test (asserted `not.toContain('-A')`). Local vitest passed
-because the test mocks `execFileSync` — it does not exercise real keychain
+because the test mocks `execFileSync` -- it does not exercise real keychain
 behavior.
 
 In a headless install (Marveen runs as a background daemon; the operator
@@ -97,7 +97,7 @@ This is exactly the cascade the MD's own "Suggested direction" calls out:
 > until that is fixed, a prompt introduced here would be silently swallowed
 > as null and would trigger a vault re-key. **Fix that one first.**"
 
-The MD's hypothesis was that `-A` is redundant — that the prompt should not
+The MD's hypothesis was that `-A` is redundant -- that the prompt should not
 occur without it because `/usr/bin/security` is already in the default ACL.
 In this install the hypothesis does not hold: a real prompt is raised on
 first access, and `-A` is the only thing suppressing it.
@@ -106,15 +106,65 @@ The fix was reverted in `725b1a1`. The pinning test was restored to its
 original `toContain('-A')` assertion, and the INDEX row was re-marked as
 unresolved in `974f46a`.
 
+## Second attempted fix (2026-08-26, `b28e951`) and reason for revert (`94650ef`)
+
+After the Cycle 16 revert, the unblocking prerequisite identified in the
+MD's own "Path to a real fix" step 1 was implemented in commit `6e5bdd7`
+(2026-08-17): `keychainRetrieve` now discriminates exit 44 (genuine absence
+-> `null`) from any other exit / ENOENT / non-Error throw, and raises a new
+`KeychainUnavailableError` in the latter case. With that fix in place, a
+prompt cascade from a missing `-A` could no longer trigger a vault re-key.
+
+Building on the cleared prerequisite, commit `b28e951` (2026-08-26 11:54)
+attempted the MD's "Suggested direction" step 1 and replaced `-A` with
+`-T, SECURITY` at `src/web/keychain.ts:32`:
+
+```diff
+-    '-A',
++    '-T', SECURITY,
+```
+
+`security(1)` is in the trusted-app list by default, so the replacement
+should have been a no-op semantically -- no prompt should have been
+raised. On this headless macOS install the hypothesis did not hold. The
+empirical observation (Honcho HOT memory, 2026-08-26):
+`add-generic-password -U -s com.marveen.vault -a master-key -T /usr/bin/security -w ...`
+exited with status **45** ("User canceled.") on the first call over an
+SSH session because the login keychain was locked and the daemon could
+not satisfy the keychain-unlock prompt invisibly. `keychainRetrieve` did
+the right thing with the result (threw `KeychainUnavailableError` instead
+of returning `null`), and `vault.getMasterKey` correctly refused to
+re-key. But `vault.getMasterKey` then fell through to its pre-existing
+file-based-key fallback at `vault.ts:73-81`, writing `store/.vault-key`
+(mode `0600`). That file is readable by any same-uid process on the host
+-- a security **downgrade** relative to the `-A` keychain ACL, which at
+least keeps the `SecKeychain` C-API direct-read vector blocked. (Same-uid
+readers still need to exec `/usr/bin/security find-generic-password` or
+call the `SecKeychain` C API directly; both are observable chokepoints a
+defender can monitor.)
+
+The fix was reverted in `94650ef` (2026-08-26 13:08). This second revert
+restored `src/web/keychain.ts:32` to `-A`, restored the pin test's
+`toContain('-A')` assertion, and re-marked the INDEX row as Deferred.
+The unblocking prerequisite from cycle 47
+(`keychain-retrieve-swallows-locked-keychain.md`, `6e5bdd7`) is
+**preserved** -- a prompt cascade over SSH still cannot re-key the vault.
+The blocker is no longer the missing throw: it is the file-based
+fallback that the throw cascades into.
+
+Refs: `b28e951`, `94650ef`, HOT memory "-T SECURITY + -U exit-45
+reproduction (2026-08-26)".
+
 ## Path to a real fix
 
-The MD's "Suggested direction" step 1 can be applied **only after**
-`docs/needs-to-be-fix/keychain-retrieve-swallows-locked-keychain.md` is fixed:
+The MD's "Suggested direction" step 1 was applied **only after**
+`docs/needs-to-be-fix/keychain-retrieve-swallows-locked-keychain.md` was
+fixed:
 
 1. Fix `keychainRetrieve` to surface prompts as actionable errors (exit 36 →
    specific error class) instead of returning `null`. After this fix, a
    missing key and a locked keychain are distinguishable.
-   — **Done (2026-08-17, commit `6e5bdd7`).** `keychainRetrieve` now
+   -- **Done (2026-08-17, commit `6e5bdd7`).** `keychainRetrieve` now
    discriminates exit 44 (genuine absence → `null`) from any other exit /
    ENOENT / non-Error throw, and raises a new `KeychainUnavailableError`
    in the latter case. `vault.getMasterKey` catches the throw, marks the
@@ -122,24 +172,36 @@ The MD's "Suggested direction" step 1 can be applied **only after**
      already holds secrets. First-run (vault empty + unreachable keychain)
      still mints, per the MD's "worth pairing with" note. The
    `keychain-retrieve-swallows-locked-keychain.md` row is closed.
-2. Then replace `-A` with `-T, SECURITY` (explicit trusted application list
-   limited to `/usr/bin/security` itself). Verify on a real host that reads
-   still complete without a prompt in a non-interactive session. A prompt at
-   this stage must surface as a real error, not as a vault re-key. This is
-   now unblocked: removing `-A` after step 1 cannot trigger a vault re-key,
-   because the keychain prompt (if any) raises `KeychainUnavailableError`,
-   which `getMasterKey` treats as fatal when the vault is non-empty.
-3. Optionally tighten further with `SecAccessControl` / native binding, but
-   that is a much larger change and a separate decision.
+2. Replace `-A` with `-T, SECURITY` (explicit trusted application list
+   limited to `/usr/bin/security` itself).
+   -- **Empirically tested (2026-08-26, commit `b28e951`) and reverted
+   (`94650ef`).** On this host the replacement still surfaces a
+   keychain-unlock prompt the daemon cannot satisfy silently over SSH.
+   `keychainRetrieve` throws `KeychainUnavailableError` correctly, but
+   `vault.getMasterKey` then falls through to its file-based-key fallback
+   (`vault.ts:73-81`, writes `store/.vault-key` mode `0600`), which is a
+   security **downgrade** relative to the `-A` keychain ACL (the file is
+   same-uid-readable; `-A` at least blocks the `SecKeychain` C-API direct-
+   read vector). Step 2 is therefore **not viable on this host** in its
+   current form -- see "Second attempted fix" above for details.
+3. **The only remaining viable path** is to wrap `keychainStore` in
+   `try/catch` and surface the prompt as a user-facing error the operator
+   can interactively resolve (unlock the keychain, then retry), OR arrange
+   for the daemon to start **after** the login keychain is unlocked in the
+   launchd session bootstrap. Both are larger changes and are separate
+   decisions. The `SecAccessControl` / native-binding option (the original
+   step 3) also remains viable but is a much larger change of a different
+   shape.
 
-Until step 1 lands, `-A` must stay and the row remains open.
+Until one of the options in step 3 lands, `-A` must stay and the row
+remains Deferred.
 
 ## Pinning test
 
 `src/__tests__/keychain.test.ts`, describe block
 `keychain.ts - known deviations (pinning)`:
 
-- `passes -A, granting every process on the box read access`
+- `passes -A, the flag security(1) itself calls insecure`
 
 ```ts
 mocks.execFileSync.mockReturnValue('')
@@ -147,34 +209,48 @@ keychainStore('master')
 expect(onlyCall().args).toContain('-A')
 ```
 
-This MUST fail once the flag is removed; delete the assertion (or invert it to
-`not.toContain('-A')`) as part of the fix.
+This MUST fail once the flag is removed; delete the assertion (or invert
+it to `not.toContain('-A')`) as part of any fix that successfully
+replaces `-A`. Note: the test's inline comment (lines 305-320 of the test
+file) was rewritten in `a5e2318` (2026-08-26) to remove stale claims from
+the Cycle 16 era (specifically, the claim that "a prompt would be
+silently swallowed as null by keychainRetrieve" is no longer true since
+`6e5bdd7`, and the line-number reference `vault.ts:44-49` was moved to
+`vault.ts:65-71` / `:73-81`). The MD's "Pinning test" excerpt above
+matches the assertion; it does not transcribe the comment block.
 
 ## Suggested direction
 
-Two steps, in order:
+The MD's original step 1 (`-T, SECURITY`) has been **empirically tested
+on this host** and shown to fail (see "Second attempted fix" above). The
+viable paths are now two larger changes:
 
-1. Replace `-A` with an explicit trusted application:
+1. **Wrap `keychainStore` in `try/catch` and surface the prompt as a
+   user-facing error.** The current implementation has no `try/catch`
+   (`keychain.ts:25-34`); `execFileSync` throws on a prompt, the throw
+   propagates up through `vault.getMasterKey`, and the file-based-key
+   fallback at `vault.ts:73-81` writes `store/.vault-key` mode `0600`. The
+   operator then has no signal that anything went wrong. A `try/catch`
+   that converts the throw into a recoverable, user-facing error (e.g.
+   "Login keychain is locked; please unlock it and retry") lets the
+   operator satisfy the prompt interactively and retry, eliminating the
+   file-fallback cascade. This is the smallest viable fix on this host.
 
-   ```ts
-   '-T', SECURITY,
-   ```
-
-   Verify on a real host first that reads still complete without a prompt --
-   over SSH a prompt manifests as exit 36, so
-   `keychainStore` + `keychainRetrieve` in one non-interactive session is a
-   sufficient check. Note the interaction with
-   `keychain-retrieve-swallows-locked-keychain`: until that is fixed, a
-   prompt introduced here would be silently swallowed as `null` and would
-   trigger a vault re-key. **Fix that one first.**
-
-2. If the master key genuinely needs to resist same-uid reads, the CLI
+2. **If the master key genuinely needs to resist same-uid reads**, the CLI
    wrapper is the wrong primitive entirely -- `security(1)` cannot express
-   `kSecAccessControlUserPresence`. That requires the `SecAccessControl` API
-   via a native binding, which is a much larger change and should be its own
-   decision.
+   `kSecAccessControlUserPresence`, and as the `b28e951`/`94650ef` cycle
+   showed, the prompt-cascade into a file-based fallback is a security
+   downgrade rather than an improvement. That requires the
+   `SecAccessControl` API via a native binding, which is a much larger
+   change and should be its own decision. Alternatively, **launch the
+   daemon after the login keychain is unlocked** in the launchd session
+   bootstrap, so the prompt never fires in production; this is also a
+   separate decision and out of scope for a code-only fix.
 
-Per the task rule "NEVER modify src/web/keychain.ts" this was not applied.
+Per the task rule "NEVER modify src/web/keychain.ts" this was not applied
+during the original survey (Cycle 16). Outside the baseline closure
+cycle (see the "Scope note" at the bottom of this MD) source edits are
+permitted when the fix is justified.
 
 ## Sources
 

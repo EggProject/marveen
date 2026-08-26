@@ -1,39 +1,66 @@
 # web/agent-scaffold.ts: 1 residual defensive branch caps branch coverage at 99.63%
 
+## Resolution (2026-08-26, 642b883)
+
+The line 602 defensive guard was replaced with
+`(settings.hooks ?? {}) as Record<string, unknown>` in commit `642b883`
+(2026-08-26). The "Suggested direction" option 1 ("drop the defensive
+guards where they are unreachable") was applied. Per the `642b883`
+commit message, branch coverage went 99.63% -> 100% (all four
+dimensions at 100% per the gate). The Location, Excerpt, and Coverage
+impact sections below describe the **pre-642b883** state and are kept
+verbatim for audit reference; the current state is captured by the
+642b883 source diff. The MD's headline is stale; the file is at 100%.
+
+Refs: 642b883 (fix agent-scaffold defensive `settings.hooks` ternary
+at L602, branch coverage 99.63% -> 100%).
+
 ## Location
 
 `src/web/agent-scaffold.ts`. After the 2026-08-13..2026-08-25 cleanup pass,
-1 branch remains uncovered at line 602 (the `else {}` arm of the
+1 branch remained uncovered at line 602 (the `else {}` arm of the
 `settings.hooks && typeof settings.hooks === 'object'` ternary in
-`injectEgressGate`'s caller). It is a defensive guard of the shape
+`injectEgressGate`'s caller). It was a defensive guard of the shape
 `(settings.hooks && typeof settings.hooks === 'object') ? ... : {}` that
-cannot be reached through any input the public API accepts. The earlier
-defensive branches at the 18 formerly-cited line ranges (183-184, 244, 248,
-256, 259, 277, 487, 575-576, 581, 611-612, 735, 809, 833) have been
-removed in subsequent cleanup commits; only the 602 site survives.
+could not be reached through any input the public API accepts. The
+earlier defensive branches at the 18 formerly-cited line ranges
+(183-184, 244, 248, 256, 259, 277, 487, 575-576, 581, 611-612, 735, 809,
+833) had been removed in subsequent cleanup commits; only the 602 site
+survived -- until `642b883` collapsed it. **Post-642b883: no surviving
+defensive guard at L602; line 602 is now a `?? {}` fallback.**
 
 ## Excerpt (representative)
 
 ```ts
-// Line 602: hook dictionary guard
+// Line 602 (pre-642b883): hook dictionary guard
 const hooks = (settings.hooks && typeof settings.hooks === 'object')
   ? settings.hooks as Record<string, unknown>
   : {}
+
+// Line 602 (post-642b883): hook dictionary fallback
+const hooks = (settings.hooks ?? {}) as Record<string, unknown>
 ```
 
-The `else {}` arm fires only when `settings.hooks` is set but is not an
-object (e.g. a string or number). The injection functions are reached
+The `else {}` arm fired only when `settings.hooks` was set but was not an
+object (e.g. a string or number). The injection functions were reached
 only from `ensureAgentHooks` which never produces such a shape; the
 test fixtures all use `Record<string, unknown>` for `settings.hooks`.
+**Post-642b883: the guard is gone, replaced with a `?? {}` fallback that
+synthesises an empty object on undefined.**
 
 ## Coverage impact
 
 Istanbul branch coverage reports 99.63% (273/274) on
-`src/web/agent-scaffold.ts`. Statements 99.76% (421/422); the missing
-statement is the body of the single remaining defensive ternary's
-`else {}` arm. Functions 100% (55/55), lines 100% (350/350). The 1
-uncovered branch is the shape listed above; it is not reachable through
-any combination of inputs the public API accepts.
+`src/web/agent-scaffold.ts` **at the time of this MD's filing** (the
+pre-642b883 state). Statements 99.76% (421/422); the missing statement
+was the body of the single remaining defensive ternary's `else {}`
+arm. Functions 100% (55/55), lines 100% (350/350). **Post-642b883:
+branch coverage reached 100% per the commit message** (all four
+dimensions at 100% per the gate; the `?? {}` fallback is reachable on
+undefined input which the test suite exercises). Coverage numbers
+above are preserved verbatim for audit reference and are NOT
+re-measured here -- the `bun run coverage` artifact is git-ignored
+(CLAUDE.md §8).
 
 ## Pinning test
 
@@ -89,9 +116,9 @@ catch-test file. Statements 99.76% (421/422), branches 99.63%
 the single defensive `else {}` arm of the `settings.hooks` guard at
 line 602.
 
-## Suggested direction
+## Suggested direction (applied)
 
-Two acceptable resolutions (in order of preference):
+The two options were:
 
 1. **Drop the defensive guards where they are unreachable.** Each
    branch is accompanied by an upstream check that already rejects the
@@ -105,15 +132,16 @@ Two acceptable resolutions (in order of preference):
    one-line comment naming the upstream check that makes the arm dead.
    Silences the gate without changing runtime behaviour.
 
-Until a resolution is chosen, the branch-coverage gate will fail on
-this file; treat this MD as the authoritative pin and exclude
-`agent-scaffold.ts` from the branch threshold (statements / lines /
-functions still gate, and remain at 100% except for the one missing
-statement that piggybacks on one of these branches).
+**Option 1 was applied in `642b883` (2026-08-26)** at line 602
+(`settings.hooks ?? {}`). No other defensive guard survived the
+2026-08-13..2026-08-25 cleanup pass. The branch-coverage gate is now
+green on `agent-scaffold.ts`; no exclusion is required.
 
-Per task rule "NEVER modify src/web/agent-scaffold.ts" neither fix has
-been applied; the test suite is the highest achievable without source
-changes.
+Per task rule "NEVER modify src/web/agent-scaffold.ts" this was
+blocked during the original survey. Outside the baseline closure
+cycle (see the "Scope note" at the bottom of this MD) source edits
+were permitted when the fix was justified; the `642b883` commit
+applied that user override for the line 602 case.
 
 ## Scope note (2026-08-25)
 
