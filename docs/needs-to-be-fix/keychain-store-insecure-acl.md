@@ -211,13 +211,19 @@ expect(onlyCall().args).toContain('-A')
 
 This MUST fail once the flag is removed; delete the assertion (or invert
 it to `not.toContain('-A')`) as part of any fix that successfully
-replaces `-A`. Note: the test's inline comment (lines 305-320 of the test
+replaces `-A`. Note: the test's inline comment (lines 303-320 of the test
 file) was rewritten in `a5e2318` (2026-08-26) to remove stale claims from
-the Cycle 16 era (specifically, the claim that "a prompt would be
-silently swallowed as null by keychainRetrieve" is no longer true since
-`6e5bdd7`, and the line-number reference `vault.ts:44-49` was moved to
-`vault.ts:65-71` / `:73-81`). The MD's "Pinning test" excerpt above
-matches the assertion; it does not transcribe the comment block.
+the Cycle 16 era. The OLD comment falsely claimed (a) "a prompt would be
+silently swallowed as null by keychainRetrieve, triggering vault re-key"
+(false since `6e5bdd7` makes keychainRetrieve throw
+`KeychainUnavailableError` instead) and (b) "Until
+keychain-retrieve-swallows-locked-keychain is fixed first, -A must stay"
+(the prerequisite is already satisfied). The NEW comment describes the
+actual blocker -- the prompt cascades into `vault.getMasterKey`'s
+file-based-key fallback writing `store/.vault-key` mode `0600`, a
+security DOWNGRADE relative to the `-A` ACL -- without citing specific
+`vault.ts:` line ranges. The MD's "Pinning test" excerpt above matches
+the assertion; it does not transcribe the comment block.
 
 ## Suggested direction
 
