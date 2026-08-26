@@ -1,6 +1,6 @@
 # routes/agents.ts: remaining uncovered branches after baseline regression tests
 
-**Resolved: 2026-08-26 81ef7f6** (`fix(routes-agents): delete unreachable parseChannelProvider throw arm + cover kanban priority else-arm`)
+**Resolved: 2026-08-26 cf85135** (`fix(routes-agents): restore parseChannelProvider throw arm via __test_* export pattern`)
 
 ## Location
 
@@ -12,13 +12,21 @@ categories. **All four are now covered** (see "Pinning test" and
 1. `parseChannelProvider` `throw new Error` arm (the `return null`
    arm was deleted by `3e1dd3f`; see
    `routes-agents-parse-channel-provider-dead-branches.md` and
-   `routes-agents-parsechannelprovider-dead-branch.md`). **Resolved in
-   81ef7f6**: the throw arm was structurally unreachable (only call site
-   is line 239 `parseChannelProvider(newMatch[2])`, where `newMatch[2]`
-   is captured by the regex literal `(telegram|slack|discord|googlechat|teams)`
-   at line 235 and is always a valid provider). The arm and the
-   accompanying `VALID_PROVIDERS` const were deleted; the function
-   reduced to `return raw as ChannelProviderType`.
+   `routes-agents-parsechannelprovider-dead-branch.md`). **First
+   attempted in 81ef7f6** (throw arm + `VALID_PROVIDERS` const
+   deleted, function reduced to 1-line cast). **Reversed and
+   refined in cf85135** at the user's request ("vedve legyen"):
+   the function is now `export function __test_parseChannelProvider`
+   (with cycle 47-48 `__test_` test-only prefix convention),
+   `VALID_PROVIDERS` const restored at line 228, throw arm restored
+   at lines 231-233. Only production call site is
+   `__test_parseChannelProvider(newMatch[2])` at line 244 inside
+   `matchChannelRoute`, where `newMatch[2]` is captured by the
+   regex literal `(telegram|slack|discord|googlechat|teams)` at
+   line 242 -- structurally guaranteed to be a valid provider. The
+   throw arm is unreachable through the public API but functions
+   as a tripwire for future API extensions that bypass the
+   regex-gate.
 2. `extractBotId` non-numeric branch at line 341 -- unreachable through
    the route dispatch because `parseTelegramToken` is mocked to
    `() => null` in the test harness. **Covered** by
@@ -36,7 +44,7 @@ categories. **All four are now covered** (see "Pinning test" and
 ## Excerpts
 
 ```ts
-// src/web/routes/agents.ts:337-342
+// src/web/routes/agents.ts:342-347
 function extractBotId(token: string): string | null {
   const colon = token.indexOf(':')
   if (colon < 1) return null
@@ -50,7 +58,7 @@ The `return null` arm fires when `id` is non-numeric. The
 `extractBotId` is never invoked with a real token.
 
 ```ts
-// src/web/routes/agents.ts:455-470 -- agent detail's `running` branches
+// src/web/routes/agents.ts:460-475 -- agent detail's `running` branches
 const session = running ? agentSessionName(name) : undefined
 const runningSince = running ? getAgentRunningSince(name) : null
 const reauth = running
@@ -60,8 +68,8 @@ const reauth = running
 activeModel: running ? readActiveModelFromProjectDir(dir, runningSince ?? undefined, resolveAgentConfigDir(name).configDir ?? undefined) : null,
 ```
 
-The `branch-0` (running=true) arms are NOT covered -- the test harness
-sets `isAgentRunning` to `false`, so the truthy branch never runs.
+The `branch-0` (running=true) arms are covered by the activity-list
+tests at `agents-routes.test.ts:3428-3447` and `4002-4016`.
 
 ## Failure scenario
 
@@ -72,16 +80,20 @@ Coverage-only. No runtime misbehaviour is reachable through public input.
 2. The `parseChannelProvider` `return null` and `extractBotId`
    `return null` arms are unreachable through the route dispatch
    because the only caller (`parseTelegramToken`) is mocked out.
-3. (Stale at filing; corrected at resolution 81ef7f6.) At the time this
-   MD was filed v8 reported 67 branches uncovered (out of 860 total)
-   for 92.2% branch coverage. By `a5e2318` (the pre-fix HEAD) the
-   baseline regression suites collapsed this to 2 branches uncovered
-   (out of 858 total) for 99.76% branch coverage. After 81ef7f6 both
-   remaining branches are covered; `src/web/routes/agents.ts` reaches
-   100% lines (979/979), 100% branches (856/856), 100% statements
-   (1177/1177), 94.11% functions (48/51; the 3 uncovered functions
-   are pre-existing `.catch(() => {})` arrow handlers at lines 939,
-   948, 1175, unrelated to this fix).
+3. (Stale at filing; corrected at resolution 81ef7f6, then refined
+   in cf85135.) At the time this MD was filed v8 reported 67
+   branches uncovered (out of 860 total) for 92.2% branch coverage.
+   By `a5e2318` (the pre-fix HEAD) the baseline regression suites
+   collapsed this to 2 branches uncovered (out of 858 total) for
+   99.76% branch coverage. After 81ef7f6 both remaining branches
+   were covered; `src/web/routes/agents.ts` reached 100% lines
+   (979/979), 100% branches (856/856), 100% statements (1177/1177),
+   94.11% functions (48/51; the 3 uncovered functions are
+   pre-existing `.catch(() => {})` arrow handlers at lines 944,
+   953, 1180, unrelated to this fix). cf85135 restored the throw
+   arm via the `__test_*` export pattern; coverage is maintained
+   at 100% branches / 100% lines via a direct-call test that
+   exercises the throw arm.
 
 ## Pinning test
 
@@ -97,26 +109,37 @@ branches that survived the baseline pass and required this fix:
 - `agents-routes.test.ts:1090-1106` -- `uses the kanban map for
   open/urgent counts` (extended in 81ef7f6 with a 4th row
   `{ assignee: 'dev', priority: 'low', cnt: 3 }` at line 1100 that
-  bypasses `if (!row.assignee) continue` at line 743 and exercises
+  bypasses `if (!row.assignee) continue` at line 748 and exercises
   the else-arm of `if (row.priority === 'urgent' || row.priority ===
-  'high')` at line 746)
-- The `running: true` arms at lines 455, 456, 460, 470 of `getAgentSummary`
+  'high')` at line 751)
+- The `running: true` arms at lines 460, 461, 465, 475 of `getAgentSummary`
   are covered by the activity-list tests at
   `agents-routes.test.ts:3428-3447` and `4002-4016`.
+- `agents-routes.test.ts:3951-3962` -- `throws on invalid channel
+  provider string` (added in cf85135, exercises the restored throw
+  arm at `agents.ts:231-233` via direct call to
+  `__test_parseChannelProvider('invalid')` and `('foo')`)
 
 Other branches are covered because:
 
-- `parseChannelProvider` was structurally unreachable-through-API
-  before this fix and was reduced to `return raw as ChannelProviderType`
-  in 81ef7f6; the throw arm + `VALID_PROVIDERS` const were removed.
+- `parseChannelProvider` (now `__test_parseChannelProvider`) is
+  unreachable-through-API for invalid input (the regex-gate at
+  `agents.ts:242` captures only the 5 valid providers). The throw
+  arm was first deleted in 81ef7f6, then restored in cf85135 with
+  the `__test_*` test-only prefix convention; it is now both
+  runtime-protected AND testable.
 
 ## Suggested direction
 
 (a) For `parseChannelProvider` `return null` and `extractBotId`
     `return null`: remove the dead branches (the regex / caller
-    contract already gates the input). **DONE in 81ef7f6**: the
-    throw arm + `VALID_PROVIDERS` const were deleted; the function
-    reduced to a 1-line cast.
+    contract already gates the input). **DONE in 81ef7f6 (deletion)
+    + REVERSED+RESTORED in cf85135 via `__test_*` test-only export
+    pattern**: the function is now `export function
+    __test_parseChannelProvider` (line 230), `VALID_PROVIDERS`
+    const restored (line 228), throw arm restored (lines 231-233).
+    The throw arm is exercised by the new direct-call test at
+    `agents-routes.test.ts:3951-3962`.
 
 (b) For the `?? null` / `?? ''` defensive fallbacks: keep them as
     safety nets but add a single test that exercises one tuple of
@@ -136,7 +159,10 @@ Other branches are covered because:
 The source edits were blocked under the 2026-08-09..2026-08-13
 baseline closure cycle. That scope was lifted on 2026-08-24 (per
 `ab4dc09 docs(needs-to-be-fix): re-open 2 MDs closed under the now-scoped-out
-NEVER-modify rule`) and 81ef7f6 landed the fix on 2026-08-26.
+NEVER-modify rule`). 81ef7f6 landed the deletion-based fix on
+2026-08-26; the user then requested the protection back, and
+cf85135 landed the restoration via the `__test_*` export pattern
+on 2026-08-26.
 
 ## Scope note (2026-08-25)
 
