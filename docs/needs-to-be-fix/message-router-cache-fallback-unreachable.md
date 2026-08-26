@@ -173,9 +173,9 @@ assertion. The per-glob override was actively removed in 29c5103
 
 Status: **Resolved** (3 of 3 cache-fallback `??` RHS arms removed at
 lines 481-483 via commit 900cdb6; 1 `isMainAgent` ternary arm at line
-482 removed via the 2026-08-25 batch; file-level branch coverage
+483 removed via the 2026-08-25 batch; file-level branch coverage
 97.82% -> 99.24% -> 100%). See "Full resolution (2026-08-25 batch)"
-below for the line 482 edit narrative.
+below for the line 483 edit narrative.
 
 ## Full resolution (2026-08-25 batch)
 
