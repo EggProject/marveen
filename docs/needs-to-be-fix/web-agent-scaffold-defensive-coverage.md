@@ -26,8 +26,15 @@ could not be reached through any input the public API accepts. The
 earlier defensive branches at the 18 formerly-cited line ranges
 (183-184, 244, 248, 256, 259, 277, 487, 575-576, 581, 611-612, 735, 809,
 833) had been removed in subsequent cleanup commits; only the 602 site
-survived -- until `642b883` collapsed it. **Post-642b883: no surviving
-defensive guard at L602; line 602 is now a `?? {}` fallback.**
+remained as a coverage gap. Two other defensive ternaries of the same
+shape survive at L314-316 (`ensureAgentStalenessHook`) and L475-477
+(`ensureEgressGate`), but both are reachable from tests -- the L1466
+"creates a fresh settings.json when none exists" test exercises
+`ensureEgressGate` with `settings.hooks === undefined` -- so they do
+not register as coverage gaps. `642b883` collapsed the L602 ternary.
+**Post-642b883: no surviving defensive guard at L602; line 602 is now a
+`?? {}` fallback; the file is at 100% per the `642b883` commit
+message.**
 
 ## Excerpt (representative)
 
