@@ -189,7 +189,7 @@ for the baseline phase; these MDs are handoffs to the future-fix phase.
 | `voice-directive-json-quote-escape` | src/web/voice-directive.ts: only single quotes are escaped, so `"` / `\` in the state dir emits invalid JSON | Resolved: 2026-08-19 be2cfee |
 | `web-agent-bundle-single-line-trycatch` | agent-bundle.ts: single-line try-catch and defensive-guard branches block 100% branch coverage | 2026-08-14 68b94fe |
 | `web-agent-scaffold-defensive-coverage` | web/agent-scaffold.ts: 18 defensive nullish-coalesce / guard branches cap branch coverage at 93.61% | Resolved: 2026-08-26 642b883 (line 602 defensive ternary dropped; branch coverage 99.63% -> 100%; 17 sibling sites resolved in c2b4ea2, the line 602 site was the only survivor) |
-| `web-agent-worker-runviaworker-coverage` | agent-worker: runViaWorker / runWorkerAttempt / ensureWorkerReady integration paths lack 100% unit-test coverage | Deferred to next cycle |
+| `web-agent-worker-runviaworker-coverage` | agent-worker: runViaWorker / runWorkerAttempt / ensureWorkerReady integration paths lack 100% unit-test coverage | Resolved: 2026-08-26 (this commit) |
 | `web-inbound-probe-cache-sticky` | Redundant assignment (dead store): `_warnedChatIdAbsent = false` reset at line 246 has no behavioral effect | Resolved: 2026-08-20 3926df6 |
 | `web-inbound-probe-respawn-grace` | Defect: stuck mod-scope cache blocks coverage of `shouldTriggerDeafnessRespawn` respawn branches | Deferred to next cycle |
 
