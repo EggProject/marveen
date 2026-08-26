@@ -47,7 +47,7 @@ Why not 100% in the test file we shipped:
    `runViaWorker`, which forces the test to also drive the integration
    timing.
 
-Applied remediation (2026-08-26, this commit):
+Applied remediation (2026-08-26, f75caf6):
 
 A. The 6 private helpers were renamed to `export function __test_*` (per the
    cf85135 routes-agents pattern from cycle 50): `__test_ensureWorkerReady`,
@@ -78,7 +78,7 @@ buildWorkerPrompt x3, makeWorkerCtx, workerContexts, isWorkerSessionAlive,
 workerHomeFor x3, workerStartAllowed x3, plus 3 smoke runViaWorker paths
 that DO drive the integration under 5s).
 
-## Resolution (2026-08-26, this commit)
+## Resolution (2026-08-26, f75caf6)
 
 Applied Option A from the remediation list above:
 
