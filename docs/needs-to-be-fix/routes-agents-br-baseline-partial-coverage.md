@@ -30,7 +30,7 @@ categories. **All four are now covered** (see "Pinning test" and
 2. `extractBotId` non-numeric branch at line 341 -- unreachable through
    the route dispatch because `parseTelegramToken` is mocked to
    `() => null` in the test harness. **Covered** by
-   `agents-routes.test.ts:4208` (`baseline: extractBotId regex-fail
+   `agents-routes.test.ts:4221` (`baseline: extractBotId regex-fail
    branch`) which posts `botToken: 'abc:secret'` and asserts `ok: true`.
 3. Several `?? null` / `?? ''` / `?? []` / `?? {}` / `?? false` defensive
    fallbacks that the existing test suite does not exercise. **All
@@ -38,7 +38,7 @@ categories. **All four are now covered** (see "Pinning test" and
 4. The `if (!existsSync(agentDir(name)))` 404 guards for several routes
    remain partially uncovered because the test harness's `ensureAgentDirs()`
    pre-creates the agent dir name in `listAgentNames()`. **Covered** by
-   `agents-routes.test.ts:4316` (`baseline: PUT /api/agents/:name/security
+   `agents-routes.test.ts:4329` (`baseline: PUT /api/agents/:name/security
    404 branch`).
 
 ## Excerpts
@@ -103,9 +103,9 @@ The "baseline" `describe` blocks in `src/__tests__/agents-routes.test.ts`
 cover every reachable defensive fallback shape, plus the two
 branches that survived the baseline pass and required this fix:
 
-- `agents-routes.test.ts:4208` -- `baseline: extractBotId regex-fail
+- `agents-routes.test.ts:4221` -- `baseline: extractBotId regex-fail
   branch` (covers extractBotId non-numeric arm at line 341)
-- `agents-routes.test.ts:4316` -- `baseline: PUT
+- `agents-routes.test.ts:4329` -- `baseline: PUT
   /api/agents/:name/security 404 branch` (covers the `existsSync`
   404 guard)
 - `agents-routes.test.ts:1090-1106` -- `uses the kanban map for
@@ -155,8 +155,8 @@ Other branches are covered because:
 (c) For the `running: true` arms in agent detail: add a single test
     that drives `GET /api/agents/<name>` with `isAgentRunning=true`
     once the harness's `ensureAgentDirs()` is updated to handle
-    this case. **DONE**: covered by the activity-list tests at
-    `agents-routes.test.ts:3428-3447` and `4002-4016`; no harness
+    this case. **DONE**: covered by the `baseline: running=true agent summary branches` and `baseline: getAgentSummary activeModel / contextTokens branches` tests at
+    `agents-routes.test.ts:3428-3447` and `4015-4029`; no harness
     change was needed.
 
 The source edits were blocked under the 2026-08-09..2026-08-13
