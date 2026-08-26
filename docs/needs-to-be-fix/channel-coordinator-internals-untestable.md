@@ -208,7 +208,7 @@ runLoop refactor direction (suggested option 2 above) is similarly
 moot -- there is nothing left to refactor toward. See the
 Resolution section below for the timeline and the rationale.
 
-## Resolution (2026-08-26, this commit)
+## Resolution (2026-08-26, dbc25ab)
 
 The gate is GREEN. Measured 2026-08-26 (flag-free run, 11 test files
 passed, 0 test failures) on `src/channel-coordinator.ts`: 100%

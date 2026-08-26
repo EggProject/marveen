@@ -87,7 +87,7 @@ Combined coverage is 100% (145/145 lines, 74/74 branches, 16/16
 functions, 158/158 statements) -- the 64% figure was the pre-fix
 `inbound-probe.test.ts`-only snapshot.
 
-## Resolution (2026-08-26, this commit)
+## Resolution (2026-08-26, dbc25ab)
 - The defect was closed by commit `c333a6f` (2026-08-08), which landed
   `src/__tests__/inbound-probe-full.test.ts` (1149 lines).
 - Option 3 was applied with the `vi.mock` + `loadInboundProbeFresh()` +
