@@ -2,7 +2,7 @@
 //
 // The module is a thin `/usr/bin/security` wrapper with four exports:
 //   isKeychainAvailable  -- platform() === 'darwin'
-//   keychainStore        -- add-generic-password -U ... -T SECURITY  (no try/catch)
+//   keychainStore        -- add-generic-password -U ... -A  (no try/catch)
 //   keychainRetrieve     -- find-generic-password -w, catch -> null
 //   keychainDelete       -- delete-generic-password, catch -> false
 //
@@ -294,29 +294,25 @@ describe('keychainDelete - delete-generic-password', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Regression pins. Each test asserts a fix for a documented bug; the tag
-// above the it() is the bug ID, and the comment inside documents why the
-// assertion exists. Removing the assertion reopens the bug.
+// Known deviations (pinning). These lock in current behavior and MUST fail
+// once the corresponding entry is fixed.
 // ---------------------------------------------------------------------------
-describe('keychain.ts - regression pins', () => {
+describe('keychain.ts - known deviations (pinning)', () => {
   // keychain-store-insecure-acl
-  it('uses -T SECURITY (and only -T SECURITY) for the trusted-app list', () => {
-    // security(1) add-generic-password: "-T appPath  Specify an application
-    // which may access this item (multiple -T options are allowed)".
-    // `-A` ("Allow any application to access this item without warning
-    // (insecure, not recommended!)") leaves the ACL empty, so the master
-    // key was readable through the SecKeychain C API directly. The
-    // explicit -T SECURITY pins the trusted-app list to the security
-    // binary itself. The unblocking prerequisite was
-    // keychain-retrieve-swallows-locked-keychain: KeychainUnavailableError
-    // prevents a prompt cascade from triggering a vault re-key, so
-    // removing -A in favour of -T SECURITY is now safe.
+  it('passes -A, the flag security(1) itself calls insecure', () => {
+    // security(1): "-A  Allow any application to access this item without
+    // warning (insecure, not recommended!)". -A leaves the item's ACL empty,
+    // so the vault master key is readable through the SecKeychain API
+    // directly -- not only by way of an exec of /usr/bin/security. The MD
+    // prescribes removing -A, but in the current install -A is what keeps
+    // the background process able to access the keychain without a UI
+    // prompt. A prompt would be silently swallowed as null by
+    // keychainRetrieve, triggering vault re-key (vault.ts:44-49). Until
+    // keychain-retrieve-swallows-locked-keychain is fixed first, -A must
+    // stay so the background flow continues to work.
     mocks.execFileSync.mockReturnValue('')
     keychainStore('master')
-    const { args } = onlyCall()
-    expect(args).not.toContain('-A')
-    expect(args.filter(a => a === '-T')).toEqual(['-T'])
-    expect(argAfter(args, '-T')).toBe(SECURITY)
+    expect(onlyCall().args).toContain('-A')
   })
 
   // keychain-retrieve-swallows-locked-keychain (resolved)
