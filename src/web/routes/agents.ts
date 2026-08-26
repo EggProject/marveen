@@ -225,12 +225,7 @@ export function validateDiscordChannelId(cid: string | undefined): { ok: boolean
   return { ok: true }
 }
 
-const VALID_PROVIDERS = new Set<ChannelProviderType>(['telegram', 'slack', 'discord', 'googlechat', 'teams'])
-
 function parseChannelProvider(raw: string): ChannelProviderType {
-  if (!VALID_PROVIDERS.has(raw as ChannelProviderType)) {
-    throw new Error(`unknown channel provider: ${raw}`)
-  }
   return raw as ChannelProviderType
 }
 

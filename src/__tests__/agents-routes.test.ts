@@ -1097,6 +1097,7 @@ describe('POST /api/agents/model-suggest', () => {
           { assignee: 'dev', priority: 'urgent', cnt: 2 },
           { assignee: 'dev', priority: 'high', cnt: 1 },
           { assignee: null, priority: 'low', cnt: 5 },
+          { assignee: 'dev', priority: 'low', cnt: 3 },
         ]),
       })),
     })
