@@ -521,7 +521,7 @@ export function isWorkerSessionAlive(session: string): boolean {
  * latency across first requests. Idempotent -- a running session is a no-op.
  * tmux errors are logged at WARN and swallowed: server boot must not crash
  * because one of the two worker pre-starts could not launch (the lazy
- * runViaWorker path retries on first use; cf. ensureWorkerReady).
+ * runViaWorker path retries on first use; cf. __test_ensureWorkerReady).
  */
 export function startWorkerSession(): void {
   try { startWorkerSessionFor(ctxSlow) } catch (err) { logger.warn({ err }, 'agent-worker: pre-start slow session failed') }
@@ -603,15 +603,15 @@ export function __test_alertWorkerStuck(ctx: WorkerCtx, paneTail: string): void 
 
 export async function __test_ensureWorkerReady(ctx: WorkerCtx): Promise<boolean> {
   // Fail fast in WEB_ONLY: without this the 90s readiness poll would spin on a
-  // session that the gated start never created, then alertWorkerStuck would
+  // session that the gated start never created, then __test_alertWorkerStuck would
   // notifyChannel the LIVE channel from a staging instance.
   if (!workerStartAllowed()) {
     logger.warn({ session: ctx.session }, 'agent-worker: WEB_ONLY mode -- worker disabled, failing the request fast')
     return false
   }
-  // Same shape as restartWorkerSession's catch below: a tmux outage during the
+  // Same shape as __test_restartWorkerSession's catch below: a tmux outage during the
   // boot poll must degrade to a not-ready result, not reject the caller's
-  // await with a raw tmux error. runWorkerAttempt turns false into a
+  // await with a raw tmux error. __test_runWorkerAttempt turns false into a
   // structured 'worker session not ready' that runViaWorker retries once.
   try { startWorkerSessionFor(ctx) } catch (err) { logger.warn({ err, session: ctx.session }, 'agent-worker: startWorkerSessionFor failed; treating as not-ready'); return false }
   const start = Date.now()

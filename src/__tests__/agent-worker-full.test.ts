@@ -1650,9 +1650,8 @@ describe('__test_alertWorkerStuck (direct)', () => {
     AW.__test_alertWorkerStuck(ctx, 'tail line')
     expect(H.logs.filter((l) => l.level === 'error' && String(l.msg).includes('never became ready')).length).toBe(1)
     expect(H.notifyChannel.mock.calls.length).toBe(1)
-    const payload = H.logs.find((l) => l.level === 'error' && String(l.msg).includes('never became ready'))!.obj as { paneTail: string; session: string }
-    expect(payload.paneTail).toBe('tail line')
-    expect(payload.session).toBe('direct-stuck')
+    const log = H.logs.find((l) => l.level === 'error' && String(l.msg).includes('never became ready'))!
+    expect(log.obj).toMatchObject({ paneTail: 'tail line', session: 'direct-stuck' })
   })
 
   it('rate-limits within the cooldown window', () => {
