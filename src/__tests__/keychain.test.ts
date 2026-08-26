@@ -302,14 +302,22 @@ describe('keychain.ts - known deviations (pinning)', () => {
   it('passes -A, the flag security(1) itself calls insecure', () => {
     // security(1): "-A  Allow any application to access this item without
     // warning (insecure, not recommended!)". -A leaves the item's ACL empty,
-    // so the vault master key is readable through the SecKeychain API
+    // so the vault master key is readable through the SecKeychain C API
     // directly -- not only by way of an exec of /usr/bin/security. The MD
-    // prescribes removing -A, but in the current install -A is what keeps
-    // the background process able to access the keychain without a UI
-    // prompt. A prompt would be silently swallowed as null by
-    // keychainRetrieve, triggering vault re-key (vault.ts:44-49). Until
-    // keychain-retrieve-swallows-locked-keychain is fixed first, -A must
-    // stay so the background flow continues to work.
+    // prescribes removing -A, but on a real headless macOS install the
+    // -T SECURITY replacement still surfaces a keychain-unlock prompt the
+    // daemon cannot satisfy silently. keychain-retrieve-swallows-locked-
+    // keychain is ALREADY resolved (2026-08-17 6e5bdd7): keychainRetrieve
+    // throws KeychainUnavailableError on prompts instead of returning null,
+    // so the prompt no longer re-keys the vault. The remaining failure
+    // mode is vault.getMasterKey's fallback writing a file-based master
+    // key to store/.vault-key (mode 0600) -- a security DOWNGRADE relative
+    // to the -A ACL (the file is same-uid-readable by anything on the
+    // host, while -A at least leaves the SecKeychain C API chokepoint
+    // intact). Until keychainStore surfaces the prompt as a user-facing
+    // error the operator can interactively resolve, or the daemon is
+    // launched after the login keychain is unlocked, -A must stay so the
+    // headless-keychain-read guarantee holds.
     mocks.execFileSync.mockReturnValue('')
     keychainStore('master')
     expect(onlyCall().args).toContain('-A')
