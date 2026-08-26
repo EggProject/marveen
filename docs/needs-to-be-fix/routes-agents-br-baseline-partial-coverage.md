@@ -6,10 +6,11 @@
 (`011efb0`, `dfc961c`) the uncovered branches fall into the following
 categories:
 
-1. `parseChannelProvider` `return null` at line 232 (already documented
-   in `routes-agents-parseChannelProvider-dead-code.md` and
+1. `parseChannelProvider` `throw new Error` at line 232 (the `return null`
+   arm was deleted by `3e1dd3f`; see
+   `routes-agents-parse-channel-provider-dead-branches.md` and
    `routes-agents-parsechannelprovider-dead-branch.md`).
-2. `extractBotId` non-numeric branch at line 343 — unreachable through
+2. `extractBotId` non-numeric branch at line 346 — unreachable through
    the route dispatch because `parseTelegramToken` is mocked to
    `() => null` in the test harness.
 3. Several `?? null` / `?? ''` / `?? []` / `?? {}` / `?? false` defensive
@@ -21,7 +22,7 @@ categories:
 ## Excerpts
 
 ```ts
-// src/web/routes/agents.ts:339-344
+// src/web/routes/agents.ts:342-347
 function extractBotId(token: string): string | null {
   const colon = token.indexOf(':')
   if (colon < 1) return null
