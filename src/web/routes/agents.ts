@@ -225,7 +225,12 @@ export function validateDiscordChannelId(cid: string | undefined): { ok: boolean
   return { ok: true }
 }
 
-function parseChannelProvider(raw: string): ChannelProviderType {
+const VALID_PROVIDERS = new Set<ChannelProviderType>(['telegram', 'slack', 'discord', 'googlechat', 'teams'])
+
+export function __test_parseChannelProvider(raw: string): ChannelProviderType {
+  if (!VALID_PROVIDERS.has(raw as ChannelProviderType)) {
+    throw new Error(`unknown channel provider: ${raw}`)
+  }
   return raw as ChannelProviderType
 }
 
@@ -236,7 +241,7 @@ function matchChannelRoute(path: string, suffix: string): [string, ChannelProvid
   const newMatch = path.match(newPattern)
   if (newMatch) {
     const name = decodeURIComponent(newMatch[1])
-    const provider = parseChannelProvider(newMatch[2])
+    const provider = __test_parseChannelProvider(newMatch[2])
     return [name, provider]
   }
   const legacyPattern = new RegExp(`^/api/agents/([^/]+)/telegram${suffix}$`)

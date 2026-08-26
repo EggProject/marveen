@@ -23,6 +23,7 @@ import { Readable } from 'node:stream'
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { __test_parseChannelProvider } from '../web/routes/agents.js'
 
 // --- hoisted harness --------------------------------------------------------
 
@@ -3945,6 +3946,18 @@ describe('baseline: parseChannelProvider / matchChannelRoute branches', () => {
     H.getProvider.mockReturnValue({ validateToken: vi.fn(async () => ({ ok: true, botName: 'b' })) })
     const { res } = await call('POST', '/api/agents/a/telegram/test')
     expect(res.statusCode).toBe(200)
+  })
+
+  it('throws on invalid channel provider string', () => {
+    // A throw arm tripwire: ha egy jovobeli API-bovites raw user inputot adna
+    // __test_parseChannelProvider-nak (a matchChannelRoute regex-gate megkerulesevel),
+    // a throw azonnal jelzi a tipus-szintu garancia seruleset.
+    expect(() => __test_parseChannelProvider('invalid')).toThrow(
+      'unknown channel provider: invalid',
+    )
+    expect(() => __test_parseChannelProvider('foo')).toThrow(
+      'unknown channel provider: foo',
+    )
   })
 })
 
