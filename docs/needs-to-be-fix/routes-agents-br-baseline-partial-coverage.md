@@ -35,7 +35,7 @@ The `return null` arm fires when `id` is non-numeric. The
 `extractBotId` is never invoked with a real token.
 
 ```ts
-// src/web/routes/agents.ts:4756-4761 -- agent detail's `running` branches
+// src/web/routes/agents.ts:460-465 -- agent detail's `running` branches
 const session = running ? agentSessionName(name) : undefined
 const runningSince = running ? getAgentRunningSince(name) : null
 const reauth = running
