@@ -23,7 +23,7 @@ categories. **All four are now covered** (see "Pinning test" and
    `__test_parseChannelProvider(newMatch[2])` at line 244 inside
    `matchChannelRoute`, where `newMatch[2]` is captured by the
    regex literal `(telegram|slack|discord|googlechat|teams)` at
-   line 242 -- structurally guaranteed to be a valid provider. The
+   line 240 -- structurally guaranteed to be a valid provider. The
    throw arm is unreachable through the public API but functions
    as a tripwire for future API extensions that bypass the
    regex-gate.
@@ -68,8 +68,10 @@ const reauth = running
 activeModel: running ? readActiveModelFromProjectDir(dir, runningSince ?? undefined, resolveAgentConfigDir(name).configDir ?? undefined) : null,
 ```
 
-The `branch-0` (running=true) arms are covered by the activity-list
-tests at `agents-routes.test.ts:3428-3447` and `4002-4016`.
+The `branch-0` (running=true) arms are covered by the
+`baseline: running=true agent summary branches` and
+`baseline: getAgentSummary activeModel / contextTokens branches`
+tests at `agents-routes.test.ts:3428-3447` and `4015-4029`.
 
 ## Failure scenario
 
@@ -113,8 +115,9 @@ branches that survived the baseline pass and required this fix:
   the else-arm of `if (row.priority === 'urgent' || row.priority ===
   'high')` at line 751)
 - The `running: true` arms at lines 460, 461, 465, 475 of `getAgentSummary`
-  are covered by the activity-list tests at
-  `agents-routes.test.ts:3428-3447` and `4002-4016`.
+  are covered by the `baseline: running=true agent summary branches`
+  and `baseline: getAgentSummary activeModel / contextTokens branches`
+  tests at `agents-routes.test.ts:3428-3447` and `4015-4029`.
 - `agents-routes.test.ts:3951-3962` -- `throws on invalid channel
   provider string` (added in cf85135, exercises the restored throw
   arm at `agents.ts:231-233` via direct call to
@@ -124,7 +127,7 @@ Other branches are covered because:
 
 - `parseChannelProvider` (now `__test_parseChannelProvider`) is
   unreachable-through-API for invalid input (the regex-gate at
-  `agents.ts:242` captures only the 5 valid providers). The throw
+  `agents.ts:240` captures only the 5 valid providers). The throw
   arm was first deleted in 81ef7f6, then restored in cf85135 with
   the `__test_*` test-only prefix convention; it is now both
   runtime-protected AND testable.
