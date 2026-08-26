@@ -299,20 +299,28 @@ describe('keychainDelete - delete-generic-password', () => {
 // ---------------------------------------------------------------------------
 describe('keychain.ts - known deviations (pinning)', () => {
   // keychain-store-insecure-acl
-  it('passes -A, the flag security(1) itself calls insecure', () => {
-    // security(1): "-A  Allow any application to access this item without
-    // warning (insecure, not recommended!)". -A leaves the item's ACL empty,
-    // so the vault master key is readable through the SecKeychain API
-    // directly -- not only by way of an exec of /usr/bin/security. The MD
-    // prescribes removing -A, but in the current install -A is what keeps
-    // the background process able to access the keychain without a UI
-    // prompt. A prompt would be silently swallowed as null by
-    // keychainRetrieve, triggering vault re-key (vault.ts:44-49). Until
-    // keychain-retrieve-swallows-locked-keychain is fixed first, -A must
-    // stay so the background flow continues to work.
+  it('uses -T SECURITY, narrowing the trusted-app list to /usr/bin/security', () => {
+    // security(1): "-T app_path  Allow the specified application to access
+    // this item without warning (multiple -T options are allowed)". -A
+    // ("Allow any application to access this item without warning
+    // (insecure, not recommended!)") left the item's ACL empty, so the
+    // vault master key was readable through the SecKeychain C API
+    // directly -- not only by way of an exec of /usr/bin/security.
+    // -T SECURITY (where SECURITY = /usr/bin/security) narrows the
+    // trusted-app list to the binary itself, which matches the default
+    // ACL for items created by `security add-generic-password` per the
+    // Silverfort write-up. The unblocking prerequisite was
+    // keychain-retrieve-swallows-locked-keychain (resolved 6e5bdd7,
+    // 2026-08-17): KeychainUnavailableError prevents a prompt cascade
+    // from triggering a vault re-key, so removing -A in favour of -T
+    // SECURITY is now safe. The argv shape must still pin the value
+    // (not just the flag), and the trusted app path must be the
+    // /usr/bin/security literal, not a wildcard.
     mocks.execFileSync.mockReturnValue('')
     keychainStore('master')
-    expect(onlyCall().args).toContain('-A')
+    expect(onlyCall().args).not.toContain('-A')
+    expect(onlyCall().args).toContain('-T')
+    expect(argAfter(onlyCall().args, '-T')).toBe(SECURITY)
   })
 
   // keychain-retrieve-swallows-locked-keychain (resolved)

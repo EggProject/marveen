@@ -29,7 +29,7 @@ export function keychainStore(value: string): void {
     '-s', SERVICE,
     '-a', ACCOUNT,
     '-w', value,
-    '-A',
+    '-T', SECURITY,
   ], { stdio: ['ignore', 'ignore', 'ignore'] })
 }
 
