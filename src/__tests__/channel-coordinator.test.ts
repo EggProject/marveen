@@ -549,7 +549,7 @@ describe('main() entry-point bootstrap (one-shot)', () => {
       await new Promise((r) => setTimeout(r, 6000))
       expect(existsSync(join(tmpDir, 'coordinator.pid'))).toBe(true)
       // SIGTERM triggers the installed handler; onSignal sets stopping=true.
-      process.kill(process.pid, 'SIGTERM')
+      process.emit('SIGTERM')
       // The handler's setTimeout(...,3000) lets main() clean up before exit.
       await new Promise((r) => setTimeout(r, 4000))
       // After releaseLock(), the pid file is removed.
