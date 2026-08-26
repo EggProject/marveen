@@ -58,20 +58,32 @@ also fails because the mock factory is called before the test file's
 `H.projectRoot` is finalized.
 
 ## Fix (applied -- see Resolution)
-The chosen approach was option 3, with a twist: the dynamic channel-monitor
-mock was registered on the absolute path the source uses
-(`vi.mock('../web/channel-monitor.js', ...)` at line 124 of
-`src/__tests__/inbound-probe-full.test.ts`), and a per-test
-`loadInboundProbeFresh()` helper at line 145 calls `vi.resetModules()`
-(line 146) before re-applying `vi.doMock('../web/channel-monitor.js', ...)`
-at lines 196-199 and re-doing the dynamic `import('../web/inbound-probe.js')`
-at line 200. This drops the cached dynamic import between tests without
-needing a separate worker. The mock state (closures held by `mockState`)
-survives `vi.resetModules()` because it lives in a hoisted `vi.hoisted(...)`
-factory rather than in the SUT module scope.
+The three options originally proposed here were:
 
-Options 1 (refactor to static import) and 2 (vitest mock-resolution change)
-were not taken.
+1. Refactor the SUT to use a static import instead of the dynamic
+   `import('./channel-monitor.js')` (the source comment says the dynamic
+   import is there to avoid a circular dep -- this would need a separate
+   refactor), OR
+2. Configure Vite/Vitest to key the mock on the resolved file path rather
+   than the call-site import string, OR
+3. Split the respawn tests into a separate suite with its own worker so
+   that `vi.resetModules()` can be used to drop the cached dynamic import.
+
+What actually landed is option 3's `vi.resetModules()` half WITHOUT its
+separate-worker half. In `src/__tests__/inbound-probe-full.test.ts` the
+channel-monitor mock is registered once at line 124
+(`vi.mock('../web/channel-monitor.js', ...)`), and a per-test
+`loadInboundProbeFresh()` helper at line 145 calls `vi.resetModules()`
+(line 146), re-applies `vi.doMock('../web/channel-monitor.js', ...)` at
+lines 196-199, and re-does the dynamic `import('../web/inbound-probe.js')`
+at line 200. Resetting the module registry per test is enough to drop the
+cached dynamic import, so no separate worker was needed. The mock state
+(closures held by `mockState`) survives `vi.resetModules()` because it is
+declared in a `vi.hoisted(...)` factory at line 37, in test-file scope
+rather than in the SUT module scope.
+
+Options 1 and 2 were not taken: `src/web/inbound-probe.ts` is unchanged and
+no vitest mock-resolution config was added.
 
 ## Workaround in the suite (historical, now obsolete)
 The original MD referenced `src/__tests__/web-inbound-probe.test.ts` -- that
@@ -90,7 +102,8 @@ functions, 158/158 statements) -- the 64% figure was the pre-fix
 ## Resolution (2026-08-26, dbc25ab)
 - The defect was closed by commit `c333a6f` (2026-08-08), which landed
   `src/__tests__/inbound-probe-full.test.ts` (1149 lines).
-- Option 3 was applied with the `vi.mock` + `loadInboundProbeFresh()` +
+- Option 3's `vi.resetModules()` half was applied (its separate-worker half
+  was not needed) via the `vi.mock` + `loadInboundProbeFresh()` +
   `vi.doMock` re-application pattern. Verified line numbers in
   `src/__tests__/inbound-probe-full.test.ts`:
     - `vi.mock('../web/channel-monitor.js', ...)` at line 124

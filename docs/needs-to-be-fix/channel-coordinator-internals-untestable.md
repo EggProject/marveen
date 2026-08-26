@@ -252,7 +252,7 @@ blocks unless `MARVEEN_TEST_ALLOW_PROCESS_KILL=1` is set. Under the
 CI command `bun run coverage` the env flag is unset, so the test
 failed. It now uses `process.emit('SIGTERM')` -- the pattern the
 sibling `src/__tests__/channel-coordinator-lock.test.ts` already
-uses at lines 235, 256, 275, 293, 312 and 313 --
+uses at lines 235, 256, 275, 293 (SIGINT), 312 and 313 --
 which the forbid hook does not intercept (it only intercepts
 `process.kill`, not arbitrary event emission on the global process
 object). The test's behaviour under the entry-point guard is
