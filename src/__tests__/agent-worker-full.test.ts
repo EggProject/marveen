@@ -1580,3 +1580,257 @@ describe('runWorkerAttempt -- poll wait branch (line 692 if-false, decision !== 
     expect(out.text).toBe('late text')
   })
 })
+
+// ===========================================================================
+// __test_* helpers (direct unit coverage via __test_ exports)
+// ===========================================================================
+// These describe blocks exercise the 6 helpers exported via the __test_
+// prefix. The indirect paths through runViaWorker still cover the integration
+// wiring; the direct paths prove the helper's own control flow without
+// driving the full polling loop (90s boot deadline + 2-attempt retry).
+
+describe('__test_selfHealWorkerOnce (direct)', () => {
+  let ctx: ReturnType<typeof AW.makeWorkerCtx>
+
+  beforeEach(() => {
+    ctx = AW.makeWorkerCtx('direct-selfheal', join(H.home, 'direct-selfheal'))
+  })
+
+  it('returns false when shouldSelfHeal is false (idle pane)', () => {
+    H.detectPaneState.mockReturnValue('idle')
+    H.capturePane.mockReturnValue('idle pane')
+    expect(AW.__test_selfHealWorkerOnce(ctx)).toBe(false)
+    expect(calls().filter((c) => c.args[0] === 'send-keys' && c.args[3] === 'Escape')).toEqual([])
+  })
+
+  it('on a modal pane, fires bounded Escape presses then a full restart when chrome persists', () => {
+    H.detectPaneState.mockReturnValue('modal')
+    H.capturePane.mockReturnValue('Enter to confirm\nEsc to cancel')
+    H.sessionExistsOnHost.mockReturnValue(true)
+    const acted = AW.__test_selfHealWorkerOnce(ctx)
+    expect(acted).toBe(true)
+    const escapes = calls().filter((c) => c.args[0] === 'send-keys' && c.args[3] === 'Escape')
+    expect(escapes.length).toBeGreaterThanOrEqual(1)
+    expect(calls().some((c) => c.args[0] === 'kill-session')).toBe(true)
+  })
+
+  it('returns true after a single Escape clears the parked chrome', () => {
+    let n = 0
+    H.detectPaneState.mockImplementation((p: string) => p.includes('Esc') ? 'modal' : 'idle')
+    H.capturePane.mockImplementation(() => {
+      n++
+      return n === 1 ? 'Enter to confirm\nEsc to cancel' : 'idle pane'
+    })
+    H.sessionExistsOnHost.mockReturnValue(true)
+    expect(AW.__test_selfHealWorkerOnce(ctx)).toBe(true)
+    expect(calls().filter((c) => c.args[0] === 'send-keys' && c.args[3] === 'Escape').length).toBe(1)
+  })
+
+  it('swallows a tmux send-keys failure and breaks out of the bounded Escape loop', () => {
+    H.detectPaneState.mockReturnValue('modal')
+    H.capturePane.mockReturnValue('Enter to confirm\nEsc to cancel')
+    H.sessionExistsOnHost.mockReturnValue(true)
+    H.execFileSync.mockImplementation((file: string, args: string[]) => {
+      if (String(args[0]) === 'send-keys' && args[3] === 'Escape') throw new Error('tmux dead')
+      return ''
+    })
+    expect(() => AW.__test_selfHealWorkerOnce(ctx)).not.toThrow()
+  })
+})
+
+describe('__test_alertWorkerStuck (direct)', () => {
+  let ctx: ReturnType<typeof AW.makeWorkerCtx>
+
+  beforeEach(() => {
+    ctx = AW.makeWorkerCtx('direct-stuck', join(H.home, 'direct-stuck'))
+    ctx.lastStuckAlert = 0
+  })
+
+  it('logs error and notifies on first call', () => {
+    AW.__test_alertWorkerStuck(ctx, 'tail line')
+    expect(H.logs.filter((l) => l.level === 'error' && String(l.msg).includes('never became ready')).length).toBe(1)
+    expect(H.notifyChannel.mock.calls.length).toBe(1)
+    const payload = H.logs.find((l) => l.level === 'error' && String(l.msg).includes('never became ready'))!.obj as { paneTail: string; session: string }
+    expect(payload.paneTail).toBe('tail line')
+    expect(payload.session).toBe('direct-stuck')
+  })
+
+  it('rate-limits within the cooldown window', () => {
+    AW.__test_alertWorkerStuck(ctx, 'tail 1')
+    CLOCK += 1000
+    AW.__test_alertWorkerStuck(ctx, 'tail 2')
+    expect(H.notifyChannel.mock.calls.length).toBe(1)
+  })
+
+  it('re-arms after the cooldown elapses', () => {
+    AW.__test_alertWorkerStuck(ctx, 'tail 1')
+    CLOCK += 60 * 60 * 1000 + 1
+    AW.__test_alertWorkerStuck(ctx, 'tail 2')
+    expect(H.notifyChannel.mock.calls.length).toBe(2)
+  })
+
+  it('swallows a notifyChannel rejection', async () => {
+    H.notifyChannel.mockRejectedValue(new Error('telegram down'))
+    AW.__test_alertWorkerStuck(ctx, 'tail')
+    await flush()
+  })
+})
+
+describe('__test_ensureWorkerReady (direct)', () => {
+  let ctx: ReturnType<typeof AW.makeWorkerCtx>
+
+  beforeEach(() => {
+    ctx = AW.makeWorkerCtx('direct-ready', join(H.home, 'direct-ready'))
+  })
+
+  it('returns false fast in WEB_ONLY mode (does not boot the session)', async () => {
+    process.env.WEB_ONLY = 'true'
+    const ready = await AW.__test_ensureWorkerReady(ctx)
+    expect(ready).toBe(false)
+    expect(H.logs.some((l) => l.level === 'warn' && String(l.msg).includes('WEB_ONLY'))).toBe(true)
+  })
+
+  it('returns true when isSessionReadyForPrompt succeeds on first poll', async () => {
+    H.isSessionReadyForPrompt.mockResolvedValue(true)
+    H.sessionExistsOnHost.mockReturnValue(false)
+    expect(await AW.__test_ensureWorkerReady(ctx)).toBe(true)
+  })
+
+  it('returns false after the boot deadline elapses without readiness', async () => {
+    H.isSessionReadyForPrompt.mockResolvedValue(false)
+    H.capturePane.mockReturnValue('idle')
+    H.detectPaneState.mockReturnValue('idle')
+    H.sessionExistsOnHost.mockReturnValue(true)
+    expect(await AW.__test_ensureWorkerReady(ctx)).toBe(false)
+    expect(H.notifyChannel.mock.calls.length).toBe(1)
+  })
+
+  it('returns false when startWorkerSessionFor throws (tmux outage during boot)', async () => {
+    H.sessionExistsOnHost.mockReturnValue(false)
+    H.execFileSync.mockImplementation((file: string, args: string[]) => {
+      if (String(args[0]) === 'new-session') throw new Error('tmux gone')
+      return ''
+    })
+    expect(await AW.__test_ensureWorkerReady(ctx)).toBe(false)
+    expect(H.logs.some((l) => String(l.msg).includes('treating as not-ready'))).toBe(true)
+  })
+})
+
+describe('__test_restartWorkerSession (direct)', () => {
+  let ctx: ReturnType<typeof AW.makeWorkerCtx>
+
+  beforeEach(() => {
+    ctx = AW.makeWorkerCtx('direct-restart', join(H.home, 'direct-restart'))
+  })
+
+  it('WEB_ONLY gate: does not kill-session (would kill a live worker from staging)', () => {
+    process.env.WEB_ONLY = 'true'
+    AW.__test_restartWorkerSession(ctx)
+    expect(calls().filter((c) => c.args[0] === 'kill-session')).toEqual([])
+    expect(H.logs.some((l) => l.level === 'warn' && String(l.msg).includes('WEB_ONLY'))).toBe(true)
+  })
+
+  it('kills the session then starts a fresh one (happy path)', () => {
+    H.sessionExistsOnHost.mockReturnValue(false)
+    AW.__test_restartWorkerSession(ctx)
+    expect(calls().some((c) => c.args[0] === 'kill-session' && c.args.includes('direct-restart'))).toBe(true)
+    expect(calls().filter((c) => c.args[0] === 'new-session' && c.args.includes('direct-restart')).length).toBe(1)
+  })
+
+  it('warns and continues when the restart start throws', () => {
+    H.sessionExistsOnHost.mockReturnValue(false)
+    H.execFileSync.mockImplementation((file: string, args: string[]) => {
+      if (String(args[0]) === 'new-session') throw new Error('tmux gone')
+      return ''
+    })
+    expect(() => AW.__test_restartWorkerSession(ctx)).not.toThrow()
+    expect(H.logs.some((l) => String(l.msg).includes('restart failed'))).toBe(true)
+  })
+
+  it('swallows a kill-session failure (session already gone)', () => {
+    H.execFileSync.mockImplementation((file: string, args: string[]) => {
+      if (String(args[0]) === 'kill-session') throw new Error('no such session')
+      return ''
+    })
+    expect(() => AW.__test_restartWorkerSession(ctx)).not.toThrow()
+  })
+})
+
+describe('__test_clearWorkerContext (direct)', () => {
+  let ctx: ReturnType<typeof AW.makeWorkerCtx>
+
+  beforeEach(() => {
+    ctx = AW.makeWorkerCtx('direct-clear', join(H.home, 'direct-clear'))
+  })
+
+  it('sends /clear + Enter to the worker session', () => {
+    AW.__test_clearWorkerContext(ctx)
+    const clearKeys = calls().filter((c) => c.args[0] === 'send-keys' && c.args.includes('-l') && c.args.includes('/clear'))
+    const enterKeys = calls().filter((c) => c.args[0] === 'send-keys' && c.args[3] === 'Enter')
+    expect(clearKeys.length).toBe(1)
+    expect(enterKeys.length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('warns and continues when /clear fails (the four tmux calls are not all-or-nothing)', () => {
+    H.execFileSync.mockImplementation((file: string, args: string[]) => {
+      if (String(args[0]) === 'send-keys' && args.includes('-l') && args.includes('/clear')) throw new Error('send failed')
+      return ''
+    })
+    expect(() => AW.__test_clearWorkerContext(ctx)).not.toThrow()
+    expect(H.logs.some((l) => String(l.msg).includes('/clear failed'))).toBe(true)
+  })
+})
+
+describe('__test_runWorkerAttempt (direct)', () => {
+  let ctx: ReturnType<typeof AW.makeWorkerCtx>
+
+  beforeEach(() => {
+    ctx = AW.makeWorkerCtx('direct-attempt', join(H.home, 'direct-attempt'))
+    mkdirSync(ctx.scratchDir, { recursive: true })
+  })
+
+  it('returns kind=ok when the worker is ready and the sentinel files appear', async () => {
+    H.isSessionReadyForPrompt.mockResolvedValue(true)
+    H.sessionExistsOnHost.mockReturnValue(true)
+    H.sendPromptToSession.mockImplementation(async (_s: string, prompt: string) => {
+      const { outPath, donePath } = extractPaths(prompt)
+      mkdirSync(join(outPath, '..'), { recursive: true })
+      writeFileSync(donePath, 'done')
+      writeFileSync(outPath, 'direct-result')
+      return 'sent'
+    })
+    const r = await AW.__test_runWorkerAttempt(ctx, 'hi', 5000)
+    expect(r.kind).toBe('ok')
+    if (r.kind === 'ok') expect(r.text).toBe('direct-result')
+  })
+
+  it('returns kind=fail with "worker session not ready" when the worker never becomes ready', async () => {
+    H.isSessionReadyForPrompt.mockResolvedValue(false)
+    H.capturePane.mockReturnValue('idle')
+    H.detectPaneState.mockReturnValue('idle')
+    H.sessionExistsOnHost.mockReturnValue(true)
+    const r = await AW.__test_runWorkerAttempt(ctx, 'hi', 100)
+    expect(r.kind).toBe('fail')
+    if (r.kind === 'fail') expect(r.error).toBe('worker session not ready')
+  })
+
+  it('returns kind=auth when the worker is not ready and the pane shows auth-failure chrome', async () => {
+    H.isSessionReadyForPrompt.mockResolvedValue(false)
+    H.capturePane.mockReturnValue(
+      Array.from({ length: 35 }, (_, i) => i === 34 ? 'Please run /login' : 'x').join('\n'),
+    )
+    H.sessionExistsOnHost.mockReturnValue(true)
+    const r = await AW.__test_runWorkerAttempt(ctx, 'hi', 100)
+    expect(r.kind).toBe('auth')
+  })
+
+  it('returns kind=fail with timeout error when the poll runs past timeoutMs', async () => {
+    H.isSessionReadyForPrompt.mockResolvedValue(true)
+    H.sessionExistsOnHost.mockReturnValue(true)
+    H.capturePane.mockReturnValue('idle pane')
+    H.sendPromptToSession.mockResolvedValue('sent')
+    const r = await AW.__test_runWorkerAttempt(ctx, 'hi', 1500)
+    expect(r.kind).toBe('fail')
+    if (r.kind === 'fail') expect(r.error).toMatch(/timeout/)
+  })
+})

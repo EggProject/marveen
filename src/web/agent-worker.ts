@@ -573,7 +573,7 @@ const WORKER_STUCK_ALERT_COOLDOWN_MS = 60 * 60 * 1000
  * the pane still is not healthy. Never touches a busy/idle/auth pane.
  * Returns true if it acted.
  */
-function selfHealWorkerOnce(ctx: WorkerCtx): boolean {
+export function __test_selfHealWorkerOnce(ctx: WorkerCtx): boolean {
   const cls = classifyWorkerPane(capturePane(ctx.session))
   if (!shouldSelfHeal(cls)) return false
   logger.warn({ cls, session: ctx.session }, 'agent-worker: pane parked on unexpected chrome -- bounded Escape self-heal')
@@ -587,12 +587,12 @@ function selfHealWorkerOnce(ctx: WorkerCtx): boolean {
     }
   }
   logger.warn({ session: ctx.session }, 'agent-worker: Escape did not clear the parked chrome -- restarting the worker session')
-  restartWorkerSession(ctx)
+  __test_restartWorkerSession(ctx)
   return true
 }
 
 /** Loud, rate-limited operator signal: the worker never became ready. */
-function alertWorkerStuck(ctx: WorkerCtx, paneTail: string): void {
+export function __test_alertWorkerStuck(ctx: WorkerCtx, paneTail: string): void {
   logger.error({ paneTail, session: ctx.session }, 'agent-worker: worker never became ready (agent-gen / capability-summary / heartbeat / digest consumers will fail)')
   if (Date.now() - ctx.lastStuckAlert < WORKER_STUCK_ALERT_COOLDOWN_MS) return
   ctx.lastStuckAlert = Date.now()
@@ -601,7 +601,7 @@ function alertWorkerStuck(ctx: WorkerCtx, paneTail: string): void {
   ).catch(() => { /* notifyChannel logs internally */ })
 }
 
-async function ensureWorkerReady(ctx: WorkerCtx): Promise<boolean> {
+export async function __test_ensureWorkerReady(ctx: WorkerCtx): Promise<boolean> {
   // Fail fast in WEB_ONLY: without this the 90s readiness poll would spin on a
   // session that the gated start never created, then alertWorkerStuck would
   // notifyChannel the LIVE channel from a staging instance.
@@ -621,16 +621,16 @@ async function ensureWorkerReady(ctx: WorkerCtx): Promise<boolean> {
     if (await isSessionReadyForPrompt(ctx.session)) return true
     if (!healed && Date.now() - start > WORKER_SELF_HEAL_GRACE_MS) {
       healed = true
-      selfHealWorkerOnce(ctx)
+      __test_selfHealWorkerOnce(ctx)
     }
     await sleepMs(2000)
   }
   const pane = capturePane(ctx.session)
-  alertWorkerStuck(ctx, (pane ?? '').split('\n').slice(-12).join('\n'))
+  __test_alertWorkerStuck(ctx, (pane ?? '').split('\n').slice(-12).join('\n'))
   return false
 }
 
-function restartWorkerSession(ctx: WorkerCtx): void {
+export function __test_restartWorkerSession(ctx: WorkerCtx): void {
   // Defense-in-depth (WORKERHOME1): every WEB_ONLY-reachable path is already
   // gated upstream, but a restart here would kill-session a LIVE worker from a
   // staging instance -- never do that.
@@ -643,7 +643,7 @@ function restartWorkerSession(ctx: WorkerCtx): void {
 }
 
 // Reset context between requests so unrelated one-shots never share/grow context.
-function clearWorkerContext(ctx: WorkerCtx): void {
+export function __test_clearWorkerContext(ctx: WorkerCtx): void {
   try {
     execFileSync(tmuxBin(), ['send-keys', '-t', ctx.session, '-l', '/clear'], { timeout: 5000 })
     execFileSync('/bin/sleep', ['0.2'], { timeout: 2000 })
@@ -667,8 +667,8 @@ type AttemptResult =
   | { kind: 'auth' }
   | { kind: 'fail'; error: string }
 
-async function runWorkerAttempt(ctx: WorkerCtx, message: string, timeoutMs: number): Promise<AttemptResult> {
-  const ready = await ensureWorkerReady(ctx)
+export async function __test_runWorkerAttempt(ctx: WorkerCtx, message: string, timeoutMs: number): Promise<AttemptResult> {
+  const ready = await __test_ensureWorkerReady(ctx)
   if (!ready) {
     // A non-ready worker can be a dead auth (the session boots, prints the
     // login/401 chrome, never reaches an idle prompt) -- distinguish it.
@@ -682,7 +682,7 @@ async function runWorkerAttempt(ctx: WorkerCtx, message: string, timeoutMs: numb
   const donePath = join(ctx.scratchDir, `${reqId}.done`)
   for (const p of [outPath, donePath]) { try { rmSync(p, { force: true }) } catch { /* none */ } }
 
-  clearWorkerContext(ctx)
+  __test_clearWorkerContext(ctx)
   await sendPromptToSession(ctx.session, buildWorkerPrompt(message, outPath, donePath))
 
   const start = Date.now()
@@ -711,7 +711,7 @@ async function runWorkerAttempt(ctx: WorkerCtx, message: string, timeoutMs: numb
       }
       if (decision === 'dead') {
         logger.warn({ reqId, session: ctx.session }, 'agent-worker: session died mid-request, restarting (fail-fast)')
-        restartWorkerSession(ctx)
+        __test_restartWorkerSession(ctx)
         return { kind: 'fail', error: 'worker session died mid-request' }
       }
     }
@@ -743,7 +743,7 @@ export async function runViaWorker(
   const ctx = p === 'fast' ? ctxFast : ctxSlow
   return withWorkerLockFor(ctx, async () => {
     for (let attempt = 0; attempt < 2; attempt++) {
-      const r = await runWorkerAttempt(ctx, message, timeoutMs)
+      const r = await __test_runWorkerAttempt(ctx, message, timeoutMs)
       if (r.kind === 'ok') return { text: r.text, error: r.error }
       if (r.kind === 'fail') {
         // A momentary not-ready is TRANSIENT, not terminal: the boot-time
@@ -753,7 +753,7 @@ export async function runViaWorker(
         // fixes them all. Mirrors the auth-recovery retry-once shape above.
         if (r.error === 'worker session not ready' && attempt === 0) {
           logger.warn({ session: ctx.session }, 'agent-worker: worker not ready -- restarting once and retrying the request')
-          restartWorkerSession(ctx)
+          __test_restartWorkerSession(ctx)
           continue
         }
         return { text: null, error: r.error }
@@ -762,7 +762,7 @@ export async function runViaWorker(
       if (attempt === 0) {
         logger.warn({ session: ctx.session }, 'agent-worker: auth failure -> recovering (reseed creds + clear keychain + restart)')
         seedWorkerCredentials(ctx)
-        restartWorkerSession(ctx)
+        __test_restartWorkerSession(ctx)
         continue
       }
       logger.error({ session: ctx.session }, 'agent-worker: auth failure persists after recovery -> signalling SDK fallback (authFailed)')
