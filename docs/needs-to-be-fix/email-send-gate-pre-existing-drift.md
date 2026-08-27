@@ -8,6 +8,8 @@
 
 These three tests were already failing on the `a330462` baseline (which does NOT have the `53a9f6c` global forbid). After the 16 per-file opt-in commits of 2026-08-27 closed the blanket-driven 74 fails, these 3 remain as the only `email-send-gate` failures.
 
+Scope correction (cycle 58, see `## Phase-1 re-measurement (2026-08-28)` below): that statement holds only when the checkout is under `/tmp/`. In a non-`/tmp/` checkout all 10 tests pass.
+
 None of the 3 failure stack traces includes `src/__tests__/setup/forbid-system-calls.ts:67:5`. They are pure in-memory `injectEmailSendGate` assertions; the test imports `injectEmailSendGate` from `../web/agent-scaffold.js`, a function that uses no `node:child_process` API at all.
 
 ## Empirical baseline evidence
@@ -26,29 +28,46 @@ No source edit attempted. The drift is in the test assertion expectations vs the
 
 ## Phase-1 re-measurement (2026-08-28)
 
-Re-measured at HEAD `f48ef7d` in two non-`/tmp/` locations and one
-`/tmp/` worktree:
+Three of the four rows below are at HEAD `f48ef7d`, so the `/tmp/` vs
+non-`/tmp/` location is the ONLY variable between them. The fourth row
+repeats the original `4ed3519` baseline run, which differs from the
+others in both location and commit and therefore cannot on its own
+attribute the failures to either:
 
 | Setup | Result |
 | --- | --- |
-| `/Users/eggp/marveen-develop/test-baseline` (main checkout, `PROJECT_ROOT` not under `/tmp/`) | 10 passed, 0 failed |
-| `/Users/eggp/claw-test-58-notmp` (worktree under `/Users/eggp/`, not under `/tmp/`) | 10 passed, 0 failed |
-| `/private/tmp/claw-test-58-baseline` (worktree under `/tmp/`) at `4ed3519` baseline | 3 failed, 7 passed (matches the 3 fails cited below) |
+| main checkout, `PROJECT_ROOT` not under `/tmp/`, at HEAD `f48ef7d` | 10 passed, 0 failed |
+| worktree under `$HOME`, not under `/tmp/`, at HEAD `f48ef7d` | 10 passed, 0 failed |
+| worktree under `/tmp/`, at HEAD `f48ef7d` | 3 failed, 7 passed |
+| worktree under `/tmp/`, at `4ed3519` baseline | 3 failed, 7 passed (matches the 3 fails cited below) |
+
+The `/tmp/`-at-HEAD row is the load-bearing one: the same 3 fails
+reproduce at HEAD purely by moving the checkout under `/tmp/`, which
+is what isolates location from commit.
 
 Root cause of the 3 fails in the `/tmp/` worktree:
-`src/web/agent-scaffold.ts:144` `isUnsafeHookCommand` checks
+`isUnsafeHookCommand` (`src/web/agent-scaffold.ts:143`) rejects any
+command containing one of
 `_TMP_PREFIXES = ['/tmp/', '/var/tmp/', '/private/tmp/', '/dev/shm/']`
-(`src/web/agent-scaffold.ts:129`). When the test runs in a worktree
-under `/tmp/`, `PROJECT_ROOT = join(__dirname, '..')`
-(`src/config.ts:10-12`) resolves to that worktree path, so
+(declared at `src/web/agent-scaffold.ts:129`, checked at `:144`). When
+the test runs in a worktree under `/tmp/`,
+`PROJECT_ROOT = join(__dirname, '..')` (`src/config.ts:12`) resolves to
+that worktree path, so
 `hookCommand(join(PROJECT_ROOT, 'scripts', 'email-send-gate.mjs'))`
-produces a command containing `/private/tmp/...`, which
-`isUnsafeHookCommand` correctly refuses to register (per its stated
-purpose: "volatile tmpfs prefixes", see `agent-scaffold.ts:134-141`).
-The `injectEmailSendGate` function then returns without adding the
-entry, so `hooks.PreToolUse.length` is 0 (or contains only the
-original WebFetch entry), and the test's `toHaveLength(1)` /
-`toHaveLength(2)` assertion fails.
+(`agent-scaffold.ts:389`) produces a command containing
+`/private/tmp/...`, which `isUnsafeHookCommand` correctly refuses to
+register (per its stated purpose, "Volatile tmpfs prefixes", see the
+comment at `agent-scaffold.ts:124-128`).
+
+`injectEmailSendGate` then returns at `agent-scaffold.ts:391` BEFORE it
+assigns `hooks.PreToolUse`. So `s.hooks` is `{}` and
+`s.hooks.PreToolUse` is `undefined` -- not a zero-length array. The
+observed failures are:
+
+- lines 72 and 84: `expect(hooks).toHaveLength(1)` where `hooks` is
+  `undefined`.
+- line 99: the pre-seeded `WebFetch` entry survives untouched, so `pre`
+  has length 1 and `expect(pre).toHaveLength(2)` fails on a real array.
 
 The original empirical evidence (3 fail at
 `/tmp/claw-test-baseline-a330462`) was correct ONLY for that worktree
@@ -64,14 +83,15 @@ rejection.
 
 ## Pinning test
 
-The 3 failures in `describe('injectEmailSendGate')`:
+The 3 failures, reproducible only in a `/tmp/` checkout, were in `describe('injectEmailSendGate')`:
 - line 72: "adds the PreToolUse email-gate hook"
 - line 84: "is idempotent (no duplicate entries on re-apply / respawn)"
 - line 99: "preserves existing hooks (e.g. PreCompact) and other PreToolUse entries"
 
 ## Suggested direction
 
-Read the test file lines 60-110 to see the expected hook-command string, and the current `injectEmailSendGate` implementation in `src/web/agent-scaffold.ts` to see what it actually emits. Update one or the other to match.
+Superseded by `## Resolution` below: no test or implementation change is
+needed. Run the suite from a checkout that is not under `/tmp/`.
 
 ## Resolution
 

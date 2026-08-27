@@ -44,6 +44,10 @@ per-file factory AFTER the setupFile.
    (20 of 382 files). On the `a330462` baseline the same gate shows 19 of
    11132 tests failing (4 of 382 files), confirming the 74-test delta is the
    `53a9f6c` forbid net effect.
+   (Cycle 58 scope note: both of those runs were taken in `/tmp/`
+   worktrees. In a non-`/tmp/` checkout at HEAD the test-failure component
+   is 0. The coverage job stays red regardless, on the separate 100%
+   `perFile` threshold -- see `## Resolution (Partial, 2026-08-28)`.)
 
 ## Affected test files (20 files on 4ed3519: 16 net new since a330462, 4 pre-existing)
 
@@ -81,7 +85,7 @@ from the saved vitest output at `/tmp/vitest-4ed3519-failures.txt`
 (timestamp 2026-08-27 13:11, on `4ed3519` with `2a28a54`'s
 `vi.importActual` mock in place at `hook-path-guard.test.ts:33-35`).
 
-## Suggested direction
+## Suggested direction (implemented 2026-08-27, see Resolution below)
 
 Per-test-file opt-in following the `2a28a54` pattern. The exact insertion
 template (lifted from `2a28a54`):
@@ -147,6 +151,9 @@ Resolved.
   the runtime shape these tests need (real `python3` script exec + spawn,
   not just the `child_process` module surface). Re-investigation deferred
   to the next cycle along with the other 16 net-new affected files.
+  (Cycle 58 closed this: the mock IS effective, and the 7 fails were a
+  `/tmp/` location artifact -- see `## Verification (cycle 58)` below and
+  `hook-path-guard-pre-existing-drift.md`.)
 - `6558b4d` (2026-08-26): `channel-coordinator` test switched from
   `process.kill` to `process.emit` to dodge the global forbid (a
   per-test fix, not a per-file `vi.mock`).
@@ -158,45 +165,70 @@ Resolved.
 
 ## Verification (cycle 58)
 
-Re-measured at HEAD `f48ef7d` in two non-`/tmp/` locations and one
-`/tmp/` worktree (2026-08-28). The 16 per-file opt-in commits cover the
-left 16 files; the right 4 CAT-D files are pre-existing drift on the
-`a330462` baseline.
+Re-measured 2026-08-28. The 16 per-file opt-in commits cover the left 16
+files; the right 4 CAT-D files are pre-existing drift on the `a330462`
+baseline.
+
+The first three rows are all at HEAD `f48ef7d`, so the `/tmp/` vs
+non-`/tmp/` location is the ONLY variable between them. The fourth row
+repeats the `4ed3519` baseline run, which differs in both location and
+commit and therefore cannot on its own attribute anything to either:
 
 | Setup | 16 opt-in files | 4 CAT-D files |
 | --- | --- | --- |
-| `/Users/eggp/marveen-develop/test-baseline` (main checkout, `PROJECT_ROOT` not under `/tmp/`) | 297 passed, 0 failed | 105 passed, 0 failed |
-| `/Users/eggp/claw-test-58-notmp` (worktree under `/Users/eggp/`, not under `/tmp/`) | 297 passed, 0 failed | 105 passed, 0 failed |
-| `/private/tmp/claw-test-58-baseline` (worktree under `/tmp/`, `PROJECT_ROOT=/tmp/claw-test-58-baseline`) at `4ed3519` baseline | (74 fails per MD claim, not re-measured) | 19 failed, 86 passed (105 total) |
+| main checkout, `PROJECT_ROOT` not under `/tmp/`, at HEAD `f48ef7d` | 297 passed, 0 failed | 105 passed, 0 failed |
+| worktree under `$HOME`, not under `/tmp/`, at HEAD `f48ef7d` | 297 passed, 0 failed | 105 passed, 0 failed |
+| worktree under `/tmp/`, at HEAD `f48ef7d` | 297 passed, 0 failed | 19 failed, 86 passed (105 total) |
+| worktree under `/tmp/`, at `4ed3519` baseline | 74 failed | 19 failed, 86 passed (105 total) |
+
+The third row is the load-bearing one. It shows the two effects are
+independent: the 74 opt-in fails are commit-driven (they disappear at
+HEAD regardless of location), while the 19 CAT-D fails are
+location-driven (they persist at HEAD as soon as the checkout moves
+under `/tmp/`).
 
 Root cause of the 19 "fail" count in the `/tmp/` worktree:
-`src/web/agent-scaffold.ts:144` `isUnsafeHookCommand` checks
+`isUnsafeHookCommand` (`src/web/agent-scaffold.ts:143`) rejects any
+command containing one of
 `_TMP_PREFIXES = ['/tmp/', '/var/tmp/', '/private/tmp/', '/dev/shm/']`
-(`src/web/agent-scaffold.ts:129`). When the test runs in a worktree
-under `/tmp/`, `PROJECT_ROOT = join(__dirname, '..')`
-(`src/config.ts:10-12`) resolves to that worktree path, so
-`hookCommand(join(PROJECT_ROOT, 'scripts', 'email-send-gate.mjs'))`
-produces a command containing `/private/tmp/...`, which
-`isUnsafeHookCommand` correctly refuses to register (per its stated
-purpose: "volatile tmpfs prefixes", see `agent-scaffold.ts:134-141`).
-The `injectEmailSendGate` / `injectSelfPaceGate` / `injectEgressGate` /
-`ensureEgressGate` functions then return without adding the entry, so
-`hooks.PreToolUse.length` is 0 (or contains only the original WebFetch
-entry), and the test's `toHaveLength(1)` or `toHaveLength(2)` assertion
-fails.
+(declared at `src/web/agent-scaffold.ts:129`, checked at `:144`; stated
+purpose "Volatile tmpfs prefixes" in the comment at
+`agent-scaffold.ts:124-128`). When the test runs in a worktree under
+`/tmp/`, `PROJECT_ROOT = join(__dirname, '..')` (`src/config.ts:12`)
+resolves to that worktree path, so
+`hookCommand(join(PROJECT_ROOT, 'scripts', 'email-send-gate.mjs'))` and
+its siblings produce commands containing `/private/tmp/...`, which the
+guard refuses to register.
 
-The 4 CAT-D MDs' empirical evidence was measured in `/tmp/` worktrees
-(the MDs show `git -C /tmp/claw-test-baseline-a330462`). CLAUDE.md §8
-says: "use `/tmp/claw-test`" only when the main checkout has
-`ls store/` non-empty. In our case the main checkout is clean, so the
-non-`/tmp/` measurement is authoritative. The 4 CAT-D files pass
-cleanly outside `/tmp/`.
+The failure MODE varies by call site, and is not uniformly a
+`toHaveLength` mismatch. `injectEmailSendGate` / `injectSelfPaceGate` /
+`injectEgressGate` return BEFORE assigning `hooks.PreToolUse`, so that
+key stays `undefined` rather than becoming an empty array -- the tests
+then fail on `toHaveLength` against `undefined`, or throw `TypeError`
+from `.filter` / `.find` / `.some` on `undefined`. `ensureEgressGate`
+returns `false` from its own guard at `agent-scaffold.ts:485`, and
+`ensureGovernanceGateCommands` ignores the injectors' outcome and
+returns `true` on both invocations; both of those fail on `.toBe(...)`.
+`hook-path-guard.test.ts` is a separate case again: it derives its own
+`ROOT` instead of importing `PROJECT_ROOT`, and two of its seven fails
+come from the independent Python implementation of the same prefix list
+in `scripts/boot-hook-prune.py:27`. See
+`hook-path-guard-pre-existing-drift.md` for the per-block breakdown.
 
-## Resolution
+The 4 CAT-D MDs' original empirical evidence was measured in `/tmp/`
+worktrees (the MDs show `git -C /tmp/claw-test-baseline-a330462`).
+CLAUDE.md §8 prescribes a `/tmp/claw-test` worktree only as a fallback
+for when the main checkout has a non-empty `store/` and the
+`assert-not-live-install.ts` guard would block the suite. Our main
+checkout is clean, so the non-`/tmp/` measurement is the one that
+reflects CI. The 4 CAT-D files pass cleanly outside `/tmp/`.
 
-Superseded by `## Resolution (Partial, 2026-08-27)` below.
+Note that CLAUDE.md §8's fallback is itself the trap: an agent that
+follows it lands under `/tmp/` and reproduces all 19 fails. That is a
+standing workflow hazard, not a defect in these 4 files -- see the
+caveat under `## Resolution (Partial, 2026-08-28)`.
 
-## Resolution (Partial, 2026-08-27)
+## Resolution (Partial, 2026-08-28)
 
 Partial: 16 of the 20 originally-failing files got per-file opt-in
 mocks (74 of 93 fails removed; commit SHAs verified against the test
@@ -204,16 +236,13 @@ file they touch). The remaining 4 files (`email-send-gate.test.ts`,
 `governance-gates.test.ts`, `hook-command-quoting.test.ts`,
 `hook-path-guard.test.ts`) appear in the `a330462` baseline as 19
 pre-existing fails. Cycle 58 re-measured them in a non-`/tmp/`
-checkout and confirmed 0 fail in both the main checkout
-`/Users/eggp/marveen-develop/test-baseline` and the non-`/tmp/`
-worktree `/Users/eggp/claw-test-58-notmp` (105 passed, 0 failed in
-each). The 19 "fail" count is a `/tmp/` worktree artifact rooted in
-`src/web/agent-scaffold.ts:144` `_TMP_PREFIXES` refusing to register a
-hook whose script path lives under a volatile tmpfs prefix. When the
-test runs in a worktree whose `PROJECT_ROOT` is under `/tmp/` (e.g.
-`/private/tmp/claw-test-58-baseline`), `inject*Gate` returns without
-adding the entry and `toHaveLength(1)` / `toHaveLength(2)` assertions
-fail. In a standard non-`/tmp/` checkout the bug does not exist.
+checkout and confirmed 0 fail in both the main checkout and a
+non-`/tmp/` worktree (105 passed, 0 failed in each), and separately
+confirmed that the same 19 fails DO reproduce at HEAD `f48ef7d` once
+the checkout is moved under `/tmp/`. The 19 "fail" count is therefore a
+`/tmp/` location artifact rooted in the tmpfs prefix checks refusing a
+hook whose script path lives under a volatile tmpfs prefix. In a
+standard non-`/tmp/` checkout it does not occur.
 
 Net fail delta:
 
@@ -223,22 +252,22 @@ Net fail delta:
 
 16 opt-in commit SHAs (each verified to touch its claimed test file):
 
-- `64385ab` — `src/__tests__/agent-bundle.test.ts`
-- `6d5f7e7` — `src/__tests__/bridge-enroll.test.ts`
-- `1c45480` — `src/__tests__/channel-coordinator-liveness.test.ts`
-- `a022de5` — `src/__tests__/channel-inbound-tee.test.ts`
-- `aa833eb` — `src/__tests__/channels-reap-scope.test.ts`
-- `c295a7c` — `src/__tests__/installer-apt-lock-set-e.test.ts`
-- `26d2ee1` — `src/__tests__/installer-service-auth-gate.test.ts`
-- `16f77e2` — `src/__tests__/installer-start-and-fallback.test.ts`
-- `cbc7d14` — `src/__tests__/managed-settings.test.ts`
-- `a28c544` — `src/__tests__/memory-boundary.test.ts`
-- `70cb8b4` — `src/__tests__/package-syntax-check.test.ts`
-- `a691f10` — `src/__tests__/port-chain-no-hardcode.test.ts`
-- `a16d054` — `src/__tests__/routes-updates.test.ts`
-- `58fc51d` — `src/__tests__/skill-index.test.ts`
-- `8856374` — `src/__tests__/staleness-guard.test.ts`
-- `af5cb7d` — `src/__tests__/update-checker-branch.test.ts`
+- `64385ab` -- `src/__tests__/agent-bundle.test.ts`
+- `6d5f7e7` -- `src/__tests__/bridge-enroll.test.ts`
+- `1c45480` -- `src/__tests__/channel-coordinator-liveness.test.ts`
+- `a022de5` -- `src/__tests__/channel-inbound-tee.test.ts`
+- `aa833eb` -- `src/__tests__/channels-reap-scope.test.ts`
+- `c295a7c` -- `src/__tests__/installer-apt-lock-set-e.test.ts`
+- `26d2ee1` -- `src/__tests__/installer-service-auth-gate.test.ts`
+- `16f77e2` -- `src/__tests__/installer-start-and-fallback.test.ts`
+- `cbc7d14` -- `src/__tests__/managed-settings.test.ts`
+- `a28c544` -- `src/__tests__/memory-boundary.test.ts`
+- `70cb8b4` -- `src/__tests__/package-syntax-check.test.ts`
+- `a691f10` -- `src/__tests__/port-chain-no-hardcode.test.ts`
+- `a16d054` -- `src/__tests__/routes-updates.test.ts`
+- `58fc51d` -- `src/__tests__/skill-index.test.ts`
+- `8856374` -- `src/__tests__/staleness-guard.test.ts`
+- `af5cb7d` -- `src/__tests__/update-checker-branch.test.ts`
 
 Sum of pre-fix fail counts from the table above for these 16 files:
 7 + 1 + 1 + 1 + 4 + 3 + 9 + 13 + 4 + 4 + 3 + 8 + 2 + 10 + 2 + 2 = 74
@@ -257,9 +286,17 @@ under a volatile tmpfs prefix); the test files are correct as
 written. This is not a fix candidate, it is a documentation
 reconciliation only.
 
+Second caveat, carried forward from the superseded `## Resolution`:
+closing this row does NOT turn the CI `bun run coverage` job green. That
+job is red for an unrelated reason -- `vitest.config.ts` pins a 100%
+`perFile` coverage threshold and 44 files sit below it (see
+`.github/workflows/CLAUDE.md`, "Why coverage is red"). The 16 opt-in
+commits removed test FAILURES; they did not move the coverage
+threshold. Do not read "Resolved (Partial)" as "the gate passes".
+
 The `low.md` row for `test-suite-forbid-incomplete-coverage` is
-updated to reflect the partial resolution and the `/tmp/` worktree
-caveat.
+updated to reflect the partial resolution, the `/tmp/` worktree
+caveat, and the still-red coverage gate.
 
 ## Scope note
 

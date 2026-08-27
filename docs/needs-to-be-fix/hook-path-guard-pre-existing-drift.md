@@ -8,17 +8,24 @@
 
 These seven tests were already failing on the `a330462` baseline (which does NOT have the `53a9f6c` global forbid). The `2a28a54` commit (which added `vi.importActual<typeof import('node:child_process')>('node:child_process')` at line 33-35) was claimed to fix 6 of these, but empirical re-measurement on `4ed3519` shows all 7 still fail. The BETA verifier on the 2026-08-27 cycle found that NONE of the 7 failure stack traces includes `src/__tests__/setup/forbid-system-calls.ts:67:5`, meaning the vi.importActual mock IS effective and the failures are not blanket-driven.
 
-## Three distinct root causes
+Scope correction (cycle 58, see `## Phase-1 re-measurement (2026-08-28)` below): every measurement quoted in this section was taken in a `/tmp/` worktree. In a non-`/tmp/` checkout all 18 tests pass, and the `2a28a54` fix does hold.
 
-### Block (a) at lines 56:62, 61:38 — `isUnsafeHookCommand` path resolution
+## Three distinct root causes (superseded, kept as the original hypothesis)
+
+The three hypotheses below were written before the cycle-58
+re-measurement and are retained only as history. Blocks (a) and (e) are
+correctly located but misdiagnosed, and block (c) is wrong outright.
+The verified analysis is in `## Phase-1 re-measurement (2026-08-28)`.
+
+### Block (a) at lines 56:62, 61:38 -- `isUnsafeHookCommand` path resolution
 
 The tests use `existsSync(STALENESS_HOOK)` where `STALENESS_HOOK` is resolved via `fileURLToPath(import.meta.url)` (test file line 13-14). Under vitest's module loader, the resolved path differs from the test author's expectation at write-time, so `existsSync` returns false and the assertion fails.
 
-### Block (c) at lines 130:76, 175:49 — `boot-hook-prune.py` python3 invocation
+### Block (c) at lines 130:76, 175:49 -- `boot-hook-prune.py` python3 invocation
 
 The tests use `execFileSync('python3', [STALENESS_HOOK])` to run real `scripts/boot-hook-prune.py`. Real `python3` is required on the test host's PATH, AND the script's output must match the assertion. Either `python3` is missing or the fixture script's output diverged from the test expectation.
 
-### Block (e) at lines 243:21, 280:21, 317:73 — `upgradeLegacyHookCommands` mutations
+### Block (e) at lines 243:21, 280:21, 317:73 -- `upgradeLegacyHookCommands` mutations
 
 These are pure in-memory `upgradeLegacyHookCommands` calls + `isUnsafeHookCommand` checks. No subprocess. The implementation's behaviour diverged from the test expectations.
 
@@ -42,47 +49,83 @@ $ git -C /tmp/claw-test-baseline bun --bun vitest run src/__tests__/hook-path-gu
 
 ## Phase-1 re-measurement (2026-08-28)
 
-Re-measured at HEAD `f48ef7d` in two non-`/tmp/` locations and one
-`/tmp/` worktree:
+Three of the four rows below are at HEAD `f48ef7d`, so the `/tmp/` vs
+non-`/tmp/` location is the ONLY variable between them. The fourth row
+repeats the original `4ed3519` baseline run, which differs from the
+others in both location and commit and therefore cannot on its own
+attribute the failures to either:
 
 | Setup | Result |
 | --- | --- |
-| `/Users/eggp/marveen-develop/test-baseline` (main checkout, `PROJECT_ROOT` not under `/tmp/`) | 18 passed, 0 failed |
-| `/Users/eggp/claw-test-58-notmp` (worktree under `/Users/eggp/`, not under `/tmp/`) | 18 passed, 0 failed |
-| `/private/tmp/claw-test-58-baseline` (worktree under `/tmp/`) at `4ed3519` baseline | 7 failed, 11 passed (matches the 7 fails cited below) |
+| main checkout, not under `/tmp/`, at HEAD `f48ef7d` | 18 passed, 0 failed |
+| worktree under `$HOME`, not under `/tmp/`, at HEAD `f48ef7d` | 18 passed, 0 failed |
+| worktree under `/tmp/`, at HEAD `f48ef7d` | 7 failed, 11 passed |
+| worktree under `/tmp/`, at `4ed3519` baseline | 7 failed, 11 passed (matches the 7 fails cited below) |
 
-Root cause of all 7 fails in the `/tmp/` worktree:
-`src/web/agent-scaffold.ts:144` `isUnsafeHookCommand` checks
-`_TMP_PREFIXES = ['/tmp/', '/var/tmp/', '/private/tmp/', '/dev/shm/']`
-(`src/web/agent-scaffold.ts:129`). When the test runs in a worktree
-under `/tmp/`, `PROJECT_ROOT = join(__dirname, '..')`
-(`src/config.ts:10-12`) resolves to that worktree path, so
-`hookCommand(join(PROJECT_ROOT, 'scripts', '<gate>.mjs'))` and
-`hookCommand(join(PROJECT_ROOT, 'scripts', 'boot-hook-prune.py'))`
-both produce commands containing `/private/tmp/...`, which
-`isUnsafeHookCommand` correctly refuses to register (per its stated
-purpose: "volatile tmpfs prefixes", see `agent-scaffold.ts:134-141`).
+The `/tmp/`-at-HEAD row is the load-bearing one: the same 7 fails
+reproduce at HEAD purely by moving the checkout under `/tmp/`, which
+is what isolates location from commit.
 
-This explains why all three blocks (a: lines 56, 61 --
-`isUnsafeHookCommand` registration guard; c: lines 130, 175 --
-`boot-hook-prune.py` invocation that depends on a registered hook;
-e: lines 243, 280, 317 -- `upgradeLegacyHookCommands` mutations that
-consult `isUnsafeHookCommand`) fail uniformly in the `/tmp/` worktree:
-each one depends on a registered hook command whose path includes
-`/private/tmp/`. The three-block "three distinct root causes" claim
-in the original MD was based on the assumption that the failures were
-not blanket-driven, which is true at the `forbid-system-calls.ts:67:5`
-stack-frame level but not at the `isUnsafeHookCommand`
-registration-guard level. The guard fires before any test body runs,
-so the per-block analysis loses resolution.
+The shared trigger is the path this test file computes for itself. It
+does NOT import `PROJECT_ROOT` from `src/config.ts`; it derives its own
+root at test file lines 19-22:
+
+```ts
+const ROOT = join(__dirname, '..', '..')
+const PRUNE_SCRIPT = join(ROOT, 'scripts', 'boot-hook-prune.py')
+const STALENESS_HOOK = join(ROOT, 'scripts', 'hooks', 'staleness-guard.py')
+```
+
+In a worktree under `/tmp/`, `STALENESS_HOOK` resolves to
+`/private/tmp/.../scripts/hooks/staleness-guard.py`. Two SEPARATE
+implementations then reject that path, both keyed on the same
+`['/tmp/', '/var/tmp/', '/private/tmp/', '/dev/shm/']` prefix list:
+
+1. `isUnsafeHookCommand` in TypeScript
+   (`src/web/agent-scaffold.ts:143`, `_TMP_PREFIXES` declared at `:129`
+   and checked at `:144`; stated purpose "Volatile tmpfs prefixes" in
+   the comment at `agent-scaffold.ts:124-128`).
+2. `_is_stale_command` in Python
+   (`scripts/boot-hook-prune.py:30`, its own `_TMP_PREFIXES` tuple at
+   `scripts/boot-hook-prune.py:27`, applied at `:33`).
+
+Per-block attribution:
+
+- Block (a), lines 56 and 61: these assert the guard ACCEPTS a valid
+  existing script, i.e. `isUnsafeHookCommand` applied to a
+  `python3 <STALENESS_HOOK>` command is expected to be `false`.
+  Under `/tmp/` the guard returns `true` on the tmpfs arm, so both
+  assertions fail. Mechanism (1).
+- Block (c), lines 130 and 175: these do NOT go through
+  `isUnsafeHookCommand` and do not register anything. The tests write a
+  synthetic `settings.json` into a `mkdtempSync` HOME and then run
+  `execFileSync('python3', [PRUNE_SCRIPT], ...)` (test file lines 120,
+  149, 171). The real `scripts/boot-hook-prune.py` prunes the
+  `STALENESS_HOOK` entry because its own `_is_stale_command` matches
+  `/private/tmp/`, so line 130's
+  `expect(commands.some((c) => c.includes('staleness-guard.py'))).toBe(true)`
+  and line 175's "file left unchanged" assertion both fail.
+  Mechanism (2).
+- Block (e), lines 243, 280 and 317: `upgradeLegacyHookCommands`
+  consults `isUnsafeHookCommand` before rewriting an entry, so under
+  `/tmp/` the upgrade is skipped and `expect(changed).toBe(true)` (and
+  the follow-on command/timeout assertions) fail. Mechanism (1).
+
+This supersedes the "Three distinct root causes" section above: the
+three blocks share ONE environmental trigger (the checkout living under
+a volatile tmpfs prefix), but they reach it through two different
+implementations of the same prefix check, not one. In particular the
+original block (c) hypothesis (missing `python3`, or a drifted script
+fixture) is wrong -- `python3` runs fine and the script behaves exactly
+as designed.
 
 The MD's claim "the `2a28a54` commit's '6 tests went from fail to
-pass' is not reproducible" is correct as written: in a `/tmp/`
-worktree the `vi.importActual` mock is in place but the registration
-guard still fires before the test body, so the 6-test fix does not
-survive the worktree location. In a non-`/tmp/` worktree (this cycle
-58 measurement) the 6 tests pass without further change, which is the
-intended outcome of `2a28a54` when run from a non-`/tmp/` checkout.
+pass' is not reproducible" is correct as written, but only because
+every measurement behind it was taken in a `/tmp/` worktree: there the
+`vi.importActual` mock is in place and effective, yet the tmpfs prefix
+checks reject the paths regardless, so the 6-test fix is masked. In a
+non-`/tmp/` worktree (this cycle 58 measurement) the 6 tests pass
+without further change, which is the intended outcome of `2a28a54`.
 
 The original empirical evidence (7 fail at
 `/tmp/claw-test-baseline-a330462`) was correct ONLY for that worktree
@@ -92,13 +135,16 @@ production bug to fix.
 
 ## Pinning test
 
-`src/__tests__/hook-path-guard.test.ts`, describe blocks `isUnsafeHookCommand (registration guard)` (a), `boot-hook-prune.py` (c), `upgradeLegacyHookCommands (automatic migration)` (e).
+The 7 failures, reproducible only in a `/tmp/` checkout, were in `src/__tests__/hook-path-guard.test.ts`, describe blocks `isUnsafeHookCommand (registration guard)` (a), `boot-hook-prune.py` (c), `upgradeLegacyHookCommands (automatic migration)` (e).
 
 ## Suggested direction
 
-Block (a): fix `STALENESS_HOOK` path resolution to be vitest-loader-agnostic (e.g., use `path.resolve(__dirname, ...)` instead of `fileURLToPath(import.meta.url)`).
-Block (c): verify `python3` is available on the test host's PATH, AND verify the boot-hook-prune.py output matches the assertion (run it manually and compare).
-Block (e): read `src/web/agent-scaffold.ts:upgradeLegacyHookCommands` and the test expectations; update one to match the other.
+Superseded by `## Resolution` below: no test or implementation change is
+needed for any of the three blocks. Run the suite from a checkout that
+is not under `/tmp/`. (The per-block advice previously given here -- fix
+`STALENESS_HOOK` resolution, check `python3` on PATH, reconcile
+`upgradeLegacyHookCommands` -- all followed from the superseded
+hypotheses and would have been wasted work.)
 
 ## Resolution
 
@@ -106,17 +152,20 @@ Closed by re-measurement (cycle 58, 2026-08-28). The 7 fails cited in
 this MD were a `/tmp/` worktree artifact, not pre-existing drift in
 the production code or the test expectations. In a standard
 non-`/tmp/` checkout the test passes cleanly (18 passed, 0 failed at
-HEAD `f48ef7d` in both the main checkout and a non-`/tmp/` worktree).
+HEAD `f48ef7d` in both the main checkout and a non-`/tmp/` worktree);
+the same 7 fails reproduce at that same HEAD once the checkout is moved
+under `/tmp/`, which is what isolates location from commit.
 See `## Phase-1 re-measurement (2026-08-28)` above for the empirical
-table and the `isUnsafeHookCommand` registration-guard root cause.
+table and the two-mechanism root cause.
 
 ## Scope
 
 Pre-existing on `a330462` baseline when measured in `/tmp/` worktrees;
 absent on the same baseline when measured in non-`/tmp/` checkouts.
 NOT introduced by `53a9f6c`. The `vi.importActual` mock at
-`src/__tests__/hook-path-guard.test.ts:33-35` is effective; it is the
-`isUnsafeHookCommand` registration guard (not the
-`forbid-system-calls` blanket) that produces the 7 fails in the
-`/tmp/` worktree. Original filing as a separate needs-fix item
-stands; the re-measurement closes it without a source edit.
+`src/__tests__/hook-path-guard.test.ts:33-35` is effective; the 7 fails
+in the `/tmp/` worktree come from the tmpfs prefix checks in
+`src/web/agent-scaffold.ts` (blocks a, e) and
+`scripts/boot-hook-prune.py` (block c), not from the
+`forbid-system-calls` blanket. Original filing as a separate needs-fix
+item stands; the re-measurement closes it without a source edit.
