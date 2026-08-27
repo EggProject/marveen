@@ -4,6 +4,16 @@ import { readFileSync, mkdtempSync, writeFileSync, chmodSync, rmSync } from 'nod
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
+// Global forbid-system-calls setupFile (vitest.config.ts) blanket-forbids
+// node:child_process across the suite. This file's pinning tests run real
+// subprocesses (see header for the specific API surface); the simplest
+// zero-behavior-change opt-out is `vi.importActual`, which restores the real
+// child_process module for this file only. Per-test-file mock wins over the
+// global forbid (hoisting order: setupFile first, per-file factory second).
+vi.mock('node:child_process', async () => {
+  return await vi.importActual<typeof import('node:child_process')>('node:child_process')
+})
+
 /** Run a real script FILE (not `bash -c`) and return its output + exit code.
  *  The distinction matters: $LINENO inside an ERR trap numbers a file the way
  *  the installer is numbered, while `bash -c` numbers the -c string. */
