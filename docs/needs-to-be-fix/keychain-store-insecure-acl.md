@@ -200,6 +200,38 @@ fixed:
 Until one of the options in step 3 lands, `-A` must stay and the row
 remains Deferred.
 
+## Resolution (Option A cascade prevention, this commit)
+
+As of `(this commit)` (see the `fix(keychain+vault)` commit on `test/baseline`), the
+file-fallback cascade described in the "Second attempted fix" section above is
+**eliminated**:
+
+- `src/web/keychain.ts` `keychainStore` now wraps its `execFileSync` call in
+  `try`/`catch`, throwing `KeychainUnavailableError` with a descriptive message
+  that preserves `err.status` (so the operator can distinguish a locked-keychain
+  prompt at exit 45 from an ENOENT / spawn failure).
+- `src/web/vault.ts` mint branch (lines 73-81) now **propagates**
+  `KeychainUnavailableError` instead of falling back to writing
+  `store/.vault-key` mode 0600. The migration branch (lines 30-42) is unchanged
+  because the file is the source of truth there — the keychain push is
+  best-effort, and the existing `logger.warn` already surfaces the prompt in
+  the logs.
+- The regression pin in `src/__tests__/vault.test.ts` (test 5 + new test 6)
+  exercises the new invariant: a `keychainStore` throw on first mint
+  propagates and does **not** write the file.
+
+**`-A` removal remains deferred.** This resolution eliminates the file-fallback
+cascade but does NOT close the `SecKeychain` C API direct-read vector; `-A`
+stays in argv at `src/web/keychain.ts:33` because the operator-side prompt
+behavior on headless macOS still requires `-A` to suppress the prompt cascade
+that the daemon cannot satisfy silently over SSH. Removing `-A` is a separate
+decision that requires operator-side validation per the MD's "Path to a real
+fix" step 3.
+
+The `low.md` row for `keychain-store-insecure-acl` is updated to
+`Partial — Option A cascade prevention (this commit); -A removal still deferred`,
+preserving self-consistency with the test that asserts `toContain('-A')`.
+
 ## Pinning test
 
 `src/__tests__/keychain.test.ts`, describe block
