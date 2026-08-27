@@ -11,6 +11,17 @@ import { execFileSync } from 'node:child_process'
 import { trackedBranch } from '../web/update-checker.js'
 import { PROJECT_ROOT } from '../config.js'
 
+// Global forbid-system-calls setupFile (vitest.config.ts) blanket-forbids
+// node:child_process across the suite. This file's pinning tests run real
+// subprocesses (see header for the specific API surface); the simplest
+// zero-behavior-change opt-out is `vi.importActual`, which restores the real
+// child_process module for this file only. Per-test-file mock wins over the
+// global forbid (hoisting order: setupFile first, per-file factory second).
+vi.mock('node:child_process', async () => {
+  return await vi.importActual<typeof import('node:child_process')>('node:child_process')
+})
+
+
 function gitBranch(): string {
   return execFileSync('/usr/bin/git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
     cwd: PROJECT_ROOT, timeout: 3000, encoding: 'utf-8',
