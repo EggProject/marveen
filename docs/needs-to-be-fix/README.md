@@ -2,7 +2,7 @@
 
 Total count: 178
 
-(`find docs/needs-to-be-fix -name '*.md' ! -name 'INDEX.md' ! -name 'README.md' | wc -l` returns 178)
+(`find docs/needs-to-be-fix -name '*.md' ! -name 'INDEX.md' ! -name 'README.md' ! -name 'high.md' ! -name 'medium.md' ! -name 'low.md' ! -name 'baseline-unreachable.md' ! -name 'orphan.md' | wc -l` returns 178)
 
 Split into per-severity files for easier back-annotation:
 

@@ -210,7 +210,7 @@ file-fallback cascade described in the "Second attempted fix" section above is
   `try`/`catch`, throwing `KeychainUnavailableError` with a descriptive message
   that preserves `err.status` (so the operator can distinguish a locked-keychain
   prompt at exit 45 from an ENOENT / spawn failure).
-- `src/web/vault.ts` mint branch (lines 73-81) now **propagates**
+- `src/web/vault.ts` mint branch (lines 77-84) now **propagates**
   `KeychainUnavailableError` instead of falling back to writing
   `store/.vault-key` mode 0600. The migration branch (lines 30-42) is unchanged
   because the file is the source of truth there — the keychain push is
@@ -261,15 +261,26 @@ security DOWNGRADE relative to the `-A` ACL -- without citing specific
 `vault.ts:` line ranges. The MD's "Pinning test" excerpt above matches
 the assertion; it does not transcribe the comment block.
 
-## Suggested direction
+## Suggested direction (post-Resolution update)
+
+Step 1 below was implemented as part of the Option A cascade-prevention
+fix (see "Resolution (Option A cascade prevention, this commit)" above).
+`-T, SECURITY` is no longer the next thing to try; instead, it would now
+be the OPTION B continuation (separate decision, see "Path to a real fix"
+step 3 above). The text below is preserved for historical context.
+
+---
 
 The MD's original step 1 (`-T, SECURITY`) has been **empirically tested
 on this host** and shown to fail (see "Second attempted fix" above). The
 viable paths are now two larger changes:
 
 1. **Wrap `keychainStore` in `try/catch` and surface the prompt as a
-   user-facing error.** The current implementation has no `try/catch`
-   (`keychain.ts:25-34`); `execFileSync` throws on a prompt, the throw
+   user-facing error.** (Implemented as Option A in `(this commit)` —
+   see the "Resolution (Option A cascade prevention, this commit)"
+   section above.) The current implementation previously had no
+   `try/catch` (`keychain.ts:25-34`; now implemented at `keychain.ts:25-48`
+   per the Resolution section); `execFileSync` throws on a prompt, the throw
    propagates up through `vault.getMasterKey`, and the file-based-key
    fallback at `vault.ts:73-81` writes `store/.vault-key` mode `0600`. The
    operator then has no signal that anything went wrong. A `try/catch`
