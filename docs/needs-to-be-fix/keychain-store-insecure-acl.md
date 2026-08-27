@@ -232,7 +232,7 @@ The `low.md` row for `keychain-store-insecure-acl` is updated to
 `Partial — Option A cascade prevention (`c54317e`); -A removal still deferred`,
 preserving self-consistency with the test that asserts `toContain('-A')`.
 
-## Final status: Closed by design (this commit)
+## Final status: Closed by design (596d2e2)
 
 The row status moves from `Partial` to `Closed by design` (see `low.md:22`,
 updated 2026-08-27). Rationale:
