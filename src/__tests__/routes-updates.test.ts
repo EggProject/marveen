@@ -1303,7 +1303,14 @@ describe('POST /api/updates/apply -- PidfileRunner via real checkNoConcurrentUpd
     expect(res.statusCode).toBe(200)
   })
 
-  it('real checkNoConcurrentUpdate: legacy pidfile format (no second line, alive PID) returns ok=false', async () => {
+  it('real checkNoConcurrentUpdate: legacy pidfile format (no second line, alive PID) returns ok=false', async () => {    const killSpy = vi.spyOn(process, 'kill').mockImplementation(((
+      pid: number, sig?: NodeJS.Signals | number,
+    ) => {
+      if (sig === 0 && pid === process.pid) return true
+      if (sig === 0) { const e = new Error('ESRCH') as NodeJS.ErrnoException; e.code = 'ESRCH'; throw e }
+      return true
+    }) as never)
+    try {
     const real = await loadRealCNU()
     H.checkNoConcurrentUpdate.mockImplementation((pf) => real(pf))
     fsWriteFileSync(UPDATE_PIDFILE, `${process.pid}\n`)
@@ -1311,9 +1318,16 @@ describe('POST /api/updates/apply -- PidfileRunner via real checkNoConcurrentUpd
     expect(handled).toBe(true)
     expect(res.statusCode).toBe(409)
     expect(json()).toMatchObject({ reason: 'already-running' })
-  })
+      } finally { killSpy.mockRestore() }})
 
-  it('real checkNoConcurrentUpdate: alive PID with stale-but-not-stale-enough second line returns ok=false', async () => {
+  it('real checkNoConcurrentUpdate: alive PID with stale-but-not-stale-enough second line returns ok=false', async () => {    const killSpy = vi.spyOn(process, 'kill').mockImplementation(((
+      pid: number, sig?: NodeJS.Signals | number,
+    ) => {
+      if (sig === 0 && pid === process.pid) return true
+      if (sig === 0) { const e = new Error('ESRCH') as NodeJS.ErrnoException; e.code = 'ESRCH'; throw e }
+      return true
+    }) as never)
+    try {
     const real = await loadRealCNU()
     H.checkNoConcurrentUpdate.mockImplementation((pf) => real(pf))
     const start = Date.now() - 60_000
@@ -1322,7 +1336,7 @@ describe('POST /api/updates/apply -- PidfileRunner via real checkNoConcurrentUpd
     expect(handled).toBe(true)
     expect(res.statusCode).toBe(409)
     expect(json()).toMatchObject({ reason: 'already-running', pid: process.pid })
-  })
+      } finally { killSpy.mockRestore() }})
 
   it('readPidfile catch arm: statSync throws inside readPidfile -> returns null', async () => {
     // Make statSync throw for UPDATE_PIDFILE only -- exercises the catch
