@@ -202,7 +202,7 @@ remains Deferred.
 
 ## Resolution (Option A cascade prevention, this commit)
 
-As of `(this commit)` (see the `fix(keychain+vault)` commit on `test/baseline`), the
+As of `c54317e` (see the `fix(keychain+vault)` commit on `test/baseline`), the
 file-fallback cascade described in the "Second attempted fix" section above is
 **eliminated**:
 
@@ -229,7 +229,7 @@ decision that requires operator-side validation per the MD's "Path to a real
 fix" step 3.
 
 The `low.md` row for `keychain-store-insecure-acl` is updated to
-`Partial — Option A cascade prevention (this commit); -A removal still deferred`,
+`Partial — Option A cascade prevention (`c54317e`); -A removal still deferred`,
 preserving self-consistency with the test that asserts `toContain('-A')`.
 
 ## Pinning test
@@ -276,7 +276,7 @@ on this host** and shown to fail (see "Second attempted fix" above). The
 viable paths are now two larger changes:
 
 1. **Wrap `keychainStore` in `try/catch` and surface the prompt as a
-   user-facing error.** (Implemented as Option A in `(this commit)` —
+   user-facing error.** (Implemented as Option A in `c54317e` —
    see the "Resolution (Option A cascade prevention, this commit)"
    section above.) The current implementation previously had no
    `try/catch` (`keychain.ts:25-34`; now implemented at `keychain.ts:25-48`

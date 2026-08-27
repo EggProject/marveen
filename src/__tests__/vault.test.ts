@@ -304,7 +304,7 @@ describe('getMasterKey via setSecret/getSecret round-trip', () => {
 
   // (5) darwin + keychain available + VAULT_KEY_PATH missing + keychainRetrieve null
   //     + keychainStore throws -> propagates KeychainUnavailableError; NO file written.
-  // Pin for the keychain-store-insecure-acl Option A cascade prevention (this commit):
+  // Pin for the keychain-store-insecure-acl Option A cascade prevention (`c54317e`):
   // vault.ts:73-81 must now throw rather than silently downgrading to a
   // same-uid-readable file at store/.vault-key (mode 0600).
   it('propagates KeychainUnavailableError when keychainStore throws on first mint', () => {

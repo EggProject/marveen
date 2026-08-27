@@ -166,7 +166,7 @@ describe('keychainStore - add-generic-password', () => {
     expect(argAfter(onlyCall().args, '-w')).toBe(raw)
   })
 
-  // keychainStore wraps execFileSync in try/catch (this commit): every failure,
+  // keychainStore wraps execFileSync in try/catch (`c54317e`): every failure,
   // including generic Error throws, surfaces as KeychainUnavailableError so
   // vault.ts can distinguish a prompt / locked keychain / missing binary from
   // a benign "key not present" and refuse the silent file-fallback cascade.
@@ -323,7 +323,7 @@ describe('keychain.ts - known deviations (pinning)', () => {
     // store/.vault-key (mode 0600) -- a security DOWNGRADE relative to the
     // -A ACL (the file is same-uid-readable by anything on the host, while
     // -A at least leaves the SecKeychain C API chokepoint intact). Option A
-    // cascade prevention (this commit): keychainStore now wraps execFileSync
+    // cascade prevention (`c54317e`): keychainStore now wraps execFileSync
     // in try/catch and re-throws as KeychainUnavailableError; vault.ts:73-81
     // propagates instead of file-falling-back. The migration branch
     // (vault.ts:30-42) stays best-effort because there the file IS the
