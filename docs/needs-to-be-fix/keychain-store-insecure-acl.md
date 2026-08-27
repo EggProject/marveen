@@ -232,6 +232,41 @@ The `low.md` row for `keychain-store-insecure-acl` is updated to
 `Partial — Option A cascade prevention (`c54317e`); -A removal still deferred`,
 preserving self-consistency with the test that asserts `toContain('-A')`.
 
+## Final status: Closed by design (this commit)
+
+The row status moves from `Partial` to `Closed by design` (see `low.md:22`,
+updated 2026-08-27). Rationale:
+
+- **The code defect is documented and contained.** `keychainStore` wraps
+  `execFileSync` in `try/catch` (`c54317e`) and throws
+  `KeychainUnavailableError` instead of letting the prompt cascade into the
+  file-based-key fallback at `vault.ts:73-81`. The vault re-key vector
+  documented in the "Attempted fix in Cycle 16" and "Second attempted fix
+  (2026-08-26, `b28e951`)" sections above is therefore closed. `-A`
+  itself remains in argv at `src/web/keychain.ts:33` and the pinning test at
+  `src/__tests__/keychain.test.ts:310` (`expect(onlyCall().args).toContain('-A')`)
+  stays in place to lock the empirical behaviour.
+- **The `SecKeychain` C API direct-read vector is a separate, operator-side
+  decision.** Two paths can close it, both outside the scope of a code-only
+  fix: (a) a native `SecAccessControl` binding (N-API) that expresses
+  `kSecAccessControlUserPresence`, or (b) launchd session-bootstrap ordering
+  so the daemon starts after the login keychain is unlocked. Neither is a
+  small change; both require operator-side validation. Until one of them
+  lands, `-A` must stay because removing it triggers the headless-macOS
+  prompt cascade documented in the "Second attempted fix" section.
+- **No follow-up source edit is planned for this MD.** The empirical record
+  (Cycle 16 revert, `b28e951` revert) is preserved here for any future
+  operator-side decision. The pinning test stays as a tripwire: removing
+  `-A` requires deleting or inverting the assertion, and the new test code
+  would force a re-validation of the prompt-cascade invariant.
+
+The `low.md` row text:
+
+> Closed by design — Option A cascade prevention (`c54317e`); `-A` kept because
+> removal triggers a keychain-unlock prompt the headless macOS daemon cannot
+> satisfy silently (operator-side decision required: SecAccessControl native
+> binding or launchd keychain-unlock ordering).
+
 ## Pinning test
 
 `src/__tests__/keychain.test.ts`, describe block
