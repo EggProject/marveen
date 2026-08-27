@@ -17,6 +17,17 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+// Global forbid-system-calls setupFile (vitest.config.ts) blanket-forbids
+// node:child_process across the suite. This file's pinning tests run real
+// subprocesses (see header for the specific API surface); the simplest
+// zero-behavior-change opt-out is `vi.importActual`, which restores the real
+// child_process module for this file only. Per-test-file mock wins over the
+// global forbid (hoisting order: setupFile first, per-file factory second).
+vi.mock('node:child_process', async () => {
+  return await vi.importActual<typeof import('node:child_process')>('node:child_process')
+})
+
+
 // Under `bun --bun vitest`, the `node` on PATH is a Bun shim that ignores
 // `--check` and treats the file as an entrypoint to run (the exact failure
 // the source fix removes). Strip the bun-shim entries so the system `node`
