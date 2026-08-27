@@ -91,6 +91,6 @@ test stays in place (we don't have one today, so this is the no-op).
 
 ## Resolution
 
-Applied 2026-08-18 in e62eb87 (`fix(routes-research): drop redundant basename check at research.ts:63`). The `basename(name) !== name` disjunct was removed from the `/api/research/<agent>/<name>` handler, leaving a single `NAME_RE.test(name)` guard. The `basename` import was also dropped from the `node:path` import line as it became unused. Tracked entry in `INDEX.md` was flipped to "Resolved: 2026-08-18 e62eb87".
+Applied 2026-08-18 in e62eb87 (`fix(routes-research): drop redundant basename check at research.ts:63`). The `basename(name) !== name` disjunct was removed from the `/api/research/<agent>/<name>` handler, leaving a single `NAME_RE.test(name)` guard. The `basename` import was also dropped from the `node:path` import line as it became unused. Tracked entry in `baseline-unreachable.md` was flipped to "Resolved: 2026-08-18 e62eb87".
 
 The companion `routes-docs-basename-redundant` MD (closed 2026-08-18 in e4ec60b) was retired in the same cycle. The `profiles-traversal-id` high-severity sibling remains open; this fix does not affect that handler's `loadProfileTemplate` validation gap.

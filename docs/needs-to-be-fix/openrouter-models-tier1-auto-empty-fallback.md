@@ -85,7 +85,7 @@ Applied 2026-08-18 in 63d62da (`fix(openrouter-models): use || so empty
 tier1.auto falls back to deepseek default`). The `??` on the final
 return of `resolveOpenRouterModel` was swapped for `||`, the pinning
 test was updated to expect the hardcoded fallback, and the stale defect
-comment was dropped. Tracked entry in `INDEX.md` was also flipped to
+comment was dropped. Tracked entry in `baseline-unreachable.md` was also flipped to
 "Resolved: 2026-08-18 63d62da".
 
 A follow-up regression test was added that exercises the symmetric

@@ -2,7 +2,7 @@
 
 **Filed:** 2026-08-13
 **Severity:** medium (a CI gate that has never checked anything and can never pass)
-**Status:** open, fix proposed but not applied
+**Status:** resolved (commit 45bb024, 2026-08-17)
 
 ## What
 

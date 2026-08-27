@@ -89,7 +89,7 @@ The subagent verified production deadness correctly
 `acquirePidfileLock`) and then ran the full test suite. The test pin at
 `index.test.ts:1382` failed (1 fail / 123 pass), and a follow-up `bun run typecheck`
 showed `+1` error (TS2741). The subagent reverted the change with
-`git checkout -- src/index.ts docs/needs-to-be-fix/INDEX.md` and reported the
+`git checkout -- src/index.ts docs/needs-to-be-fix/orphan.md` and reported the
 situation back instead of forcing a broken commit.
 
 ## Forward path

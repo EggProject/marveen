@@ -98,4 +98,4 @@ Meg egy megfontolas: a `countUserTurns` `fromMs`/`toMs` parameterei abszolut ido
 
 ## Applied
 
-Applied: 2026-08-17 9be7a59 — test code already updated; INDEX.md row closed.
+Applied: 2026-08-17 9be7a59 — test code already updated; low.md row closed.

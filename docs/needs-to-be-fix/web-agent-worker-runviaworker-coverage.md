@@ -104,4 +104,4 @@ Applied Option A from the remediation list above:
 
 2 unrelated scope items remain on the deferred list:
 `channel-coordinator-internals-untestable` and
-`web-inbound-probe-respawn-grace` (see INDEX.md).
+`web-inbound-probe-respawn-grace` (see baseline-unreachable.md).

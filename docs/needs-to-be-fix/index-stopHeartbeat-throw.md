@@ -122,7 +122,7 @@ degenerated into no-ops documenting the unreachability: one whose body was
 
 src/index.ts: lines 99.55% -> 100%, statements 98.51% -> 99.62%, branches
 98.09% -> 99.02%. The remaining gap belongs to `index-unreachable-coverage`
-(sites 174 and 283), whose INDEX row was updated to drop site 382.
+(sites 174 and 283), whose orphan.md row was updated to drop site 382.
 
 ## Scope note (2026-08-25)
 

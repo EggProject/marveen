@@ -103,7 +103,7 @@ In this install the hypothesis does not hold: a real prompt is raised on
 first access, and `-A` is the only thing suppressing it.
 
 The fix was reverted in `725b1a1`. The pinning test was restored to its
-original `toContain('-A')` assertion, and the INDEX row was re-marked as
+original `toContain('-A')` assertion, and the low.md row was re-marked as
 unresolved in `974f46a`.
 
 ## Second attempted fix (2026-08-26, `b28e951`) and reason for revert (`94650ef`)
@@ -146,7 +146,7 @@ defender can monitor.)
 
 The fix was reverted in `94650ef` (2026-08-26 13:08). This second revert
 restored `src/web/keychain.ts:32` to `-A`, restored the pin test's
-`toContain('-A')` assertion, and re-marked the INDEX row as Deferred.
+`toContain('-A')` assertion, and re-marked the low.md row as Deferred.
 The unblocking prerequisite from cycle 47
 (`keychain-retrieve-swallows-locked-keychain.md`, `6e5bdd7`) is
 **preserved** -- a prompt cascade over SSH still cannot re-key the vault.

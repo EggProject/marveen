@@ -108,7 +108,7 @@ the pinning tests above document the current contract.
 
 **Update 2026-08-20:** the "NEVER modify" rule above was overridden by commit
 6b82c2f6 (the regex fix itself) and again by c423c61 (in-source comment that
-documents the new regex). Both MD and INDEX were updated to reflect the
+documents the new regex). Both MD and high.md were updated to reflect the
 resolution; future fixes to this file are no longer gated by that rule.
 
 ## Scope note (2026-08-25)

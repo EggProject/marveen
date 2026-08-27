@@ -109,7 +109,7 @@ Per the task rule "NEVER modify src/web/multipart.ts" this was not applied.
 
 **Update 2026-08-20:** the "NEVER modify" rule above was overridden by commit
 6b82c2f6 (the decodeUtf8 fix itself) and again by c423c61 (in-source comment).
-Both MD and INDEX were updated to reflect the resolution; future fixes to
+Both MD and high.md were updated to reflect the resolution; future fixes to
 this file are no longer gated by that rule.
 
 ## Scope note (2026-08-25)

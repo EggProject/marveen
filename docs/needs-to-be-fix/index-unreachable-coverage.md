@@ -3,7 +3,7 @@
 ## Resolution (2026-08-26, 642b883)
 
 The three "unreachable" sites are all reachable as of `642b883`
-(2026-08-26). Per INDEX.md the closure commit was `a330462`
+(2026-08-26). Per low.md the closure commit was `a330462`
 (2026-08-20, "NO-OP, line 174 already covered by index.test.ts:2739-2796");
 the `642b883` follow-up six days later re-wired `initHeartbeat()` into
 `main()` (line 489) and removed the `if (heartbeatStarted)` gate from
