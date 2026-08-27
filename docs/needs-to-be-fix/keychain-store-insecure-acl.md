@@ -244,7 +244,7 @@ updated 2026-08-27). Rationale:
   documented in the "Attempted fix in Cycle 16" and "Second attempted fix
   (2026-08-26, `b28e951`)" sections above is therefore closed. `-A`
   itself remains in argv at `src/web/keychain.ts:33` and the pinning test at
-  `src/__tests__/keychain.test.ts:310` (`expect(onlyCall().args).toContain('-A')`)
+  `src/__tests__/keychain.test.ts:335` (`expect(onlyCall().args).toContain('-A')`)
   stays in place to lock the empirical behaviour.
 - **The `SecKeychain` C API direct-read vector is a separate, operator-side
   decision.** Two paths can close it, both outside the scope of a code-only
