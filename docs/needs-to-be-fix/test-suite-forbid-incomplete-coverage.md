@@ -45,7 +45,7 @@ per-file factory AFTER the setupFile.
    11132 tests failing (4 of 382 files), confirming the 74-test delta is the
    `53a9f6c` forbid net effect.
 
-## Affected test files (16 files, 74 new failures since a330462)
+## Affected test files (20 files on 4ed3519: 16 net new since a330462, 4 pre-existing)
 
 Pre-existing on `a330462` baseline (19 fails, 4 files): the same 4 below that
 still fail on `4ed3519` minus the 6 fixed by `2a28a54` in
@@ -61,7 +61,7 @@ still fail on `4ed3519` minus the 6 fixed by `2a28a54` in
 | `forbid-incomplete-email-send-gate` | `src/__tests__/email-send-gate.test.ts` | 3 | real `execFileSync` for `injectEmailSendGate` settings.json write | same file |
 | `forbid-incomplete-governance-gates` | `src/__tests__/governance-gates.test.ts` | 3 | real `execFileSync` for `injectSelfPaceGate` settings.json write | same file |
 | `forbid-incomplete-hook-command-quoting` | `src/__tests__/hook-command-quoting.test.ts` | 6 | real `execFileSync` for `injectEmailSendGate`/`injectSelfPaceGate`/`injectEgressGate` quoting + migration | same file |
-| `forbid-incomplete-hook-path-guard` | `src/__tests__/hook-path-guard.test.ts` | 7 | real `execFileSync('python3', ...)` for `isUnsafeHookCommand` (2 tests at L56, L61) + `boot-hook-prune.py` (2 tests at L130, L175) + `upgradeLegacyHookCommands` (3 tests at L243, L280, L317). The `2a28a54` vi.mock at L31-35 of the test file (using `vi.importActual<typeof import('node:child_process')>('node:child_process')`) does NOT restore real `child_process` for these 7 tests — empirical measurement at `4ed3519` shows 7 fails despite the mock being present. The `2a28a54` commit message's "6 tests went from fail to pass" claim is not reproducible at `4ed3519` (the saved vitest output `/tmp/vitest-4ed3519-failures.txt` shows `7 failed` for this file at the commit the MD claims as its baseline). | same file |
+| `forbid-incomplete-hook-path-guard` | `src/__tests__/hook-path-guard.test.ts` | 7 | real `execFileSync('python3', ...)` for `isUnsafeHookCommand` (2 tests at L56, L61) + `boot-hook-prune.py` (2 tests at L130, L175) + `upgradeLegacyHookCommands` (3 tests at L243, L280, L317). The `2a28a54` vi.mock at L33-35 of the test file (using `vi.importActual<typeof import('node:child_process')>('node:child_process')`) does NOT restore real `child_process` for these 7 tests — empirical measurement at `4ed3519` shows 7 fails despite the mock being present. The `2a28a54` commit message's "6 tests went from fail to pass" claim is not reproducible at `4ed3519` (the saved vitest output `/tmp/vitest-4ed3519-failures.txt` shows `7 failed` for this file at the commit the MD claims as its baseline). | same file |
 | `forbid-incomplete-installer-apt-lock-set-e` | `src/__tests__/installer-apt-lock-set-e.test.ts` | 3 | real `execFileSync('apt-get', ...)` for the lock-state set | same file |
 | `forbid-incomplete-installer-service-auth-gate` | `src/__tests__/installer-service-auth-gate.test.ts` | 9 | real `execFileSync` for service install/auth gate probe | same file |
 | `forbid-incomplete-installer-start-and-fallback` | `src/__tests__/installer-start-and-fallback.test.ts` | 13 | real `execFileSync` for installer start + fallback scenarios | same file |
@@ -79,7 +79,7 @@ test-runner summary of `20 failed test files | 93 failed tests` matches
 exactly. The per-file counts above are the authoritative measurements
 from the saved vitest output at `/tmp/vitest-4ed3519-failures.txt`
 (timestamp 2026-08-27 13:11, on `4ed3519` with `2a28a54`'s
-`vi.importActual` mock in place at `hook-path-guard.test.ts:31-35`).
+`vi.importActual` mock in place at `hook-path-guard.test.ts:33-35`).
 
 ## Suggested direction
 
@@ -100,11 +100,15 @@ vi.mock('node:child_process', async () => {
 ```
 
 For test files that need both `node:child_process` AND `globalThis.fetch`
-AND `process.kill`, the same `vi.importActual` pattern must be applied to all
-three modules. The `test-suite-llm-api-audit-clean.md` audit doc (low.md:29)
-confirms that none of these tests make a real LLM call, so the
-`MARVEEN_TEST_ALLOW_FETCH=1` path is unnecessary for the gate; the
-per-file `vi.importActual` for `globalThis.fetch` is the correct shape.
+AND `process.kill`, the per-file opt-in is per-API: `vi.importActual` is
+the `node:child_process` shape (a `vi.mock`-able module), `globalThis.fetch`
+must use `vi.stubGlobal('fetch', originalFetch)` (it's a direct property
+assignment, not a module), and `process.kill` must use
+`vi.spyOn(process, 'kill').mockImplementation(...)` (also a direct property
+assignment). The setupFile header at `forbid-system-calls.ts:43-46` and
+`:109` documents these three escape hatches. The `test-suite-llm-api-audit-clean.md`
+audit doc (low.md:29) confirms that none of these tests make a real LLM call,
+so the `MARVEEN_TEST_ALLOW_FETCH=1` path is unnecessary for the gate.
 
 ## Alternative: move to the `test:integration` scope
 
@@ -135,14 +139,14 @@ Resolved.
 - `53a9f6c` (2026-08-24 12:19): global forbid introduced. RED fix in
   `schedule-runner-precheck.test.ts` only.
 - `2a28a54` (2026-08-24 15:14): `hook-path-guard.test.ts` opt-in
-  (`vi.importActual` at L31-35). The commit message claims "6 tests went
+  (`vi.importActual` at L33-35). The commit message claims "6 tests went
   from fail to pass". Empirical re-measurement at `4ed3519` (with the mock
   in place) shows `7 failed` for that file, NOT 1. The 6-test fix claim is
   not reproducible; the mock is in the file but the tests still fail. The
   root cause is likely that the `vi.importActual` template does not match
   the runtime shape these tests need (real `python3` script exec + spawn,
   not just the `child_process` module surface). Re-investigation deferred
-  to the next cycle along with the other 15 affected files.
+  to the next cycle along with the other 16 net-new affected files.
 - `6558b4d` (2026-08-26): `channel-coordinator` test switched from
   `process.kill` to `process.emit` to dodge the global forbid (a
   per-test fix, not a per-file `vi.mock`).
