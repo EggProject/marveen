@@ -548,6 +548,18 @@ describe('probeChannelPluginLiveness', () => {
   })
 
   it('debug-logs via the logger when the decider calls debugLog (reparented orphan)', async () => {
+    const killSpy = vi.spyOn(process, 'kill').mockImplementation(((
+      pid: number, sig?: NodeJS.Signals | number,
+    ) => {
+      if (sig === 0 && pid > 0 && pid <= 4_000_000) return true
+      if (sig === 0) {
+        const e = new Error('ESRCH') as NodeJS.ErrnoException
+        e.code = 'ESRCH'
+        throw e
+      }
+      return true
+    }) as never)
+    try {
     const { probeChannelPluginLiveness } = await importFresh()
     // The wrapper's isPidAlive uses process.kill(pid, 0), so the orphan must
     // be a real, signal-able pid. process.pid is always signal-able to itself.
@@ -561,7 +573,7 @@ describe('probeChannelPluginLiveness', () => {
     m.readFileSync.mockReturnValueOnce(String(ORPHAN))
     expect(probeChannelPluginLiveness(CLAUDE_PID, 'telegram', 'alpha')).toBe('alive')
     expect(m.loggerDebug).toHaveBeenCalled()
-  })
+      } finally { killSpy.mockRestore() }})
 
   it('bot.pid points to a non-signalable pid -> the inline process.kill catch branch fires', async () => {
     const { probeChannelPluginLiveness } = await importFresh()
