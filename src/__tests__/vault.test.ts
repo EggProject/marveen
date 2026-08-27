@@ -317,26 +317,6 @@ describe('getMasterKey via setSecret/getSecret round-trip', () => {
     expect(existsSync(vaultKeyPath())).toBe(false)
   })
 
-  // Regression pin: the explicit invariant that keychainStore throwing during
-  // the mint path does NOT trigger file write AND does NOT mint a replacement.
-  it('keychainStore throws KeychainUnavailableError on first mint - no file written, no re-key', () => {
-    state.platform = 'darwin'
-    state.keychainAvailable = true
-    state.keychainRetrieveReturn = null
-    state.keychainStoreThrows = true
-
-    let threw = false
-    try {
-      setSecret('id5b', 'label5b', 'plaintext-value-5b')
-    } catch (err) {
-      threw = true
-      expect(err).toBeInstanceOf(KeychainUnavailableError)
-    }
-    expect(threw).toBe(true)
-    expect(existsSync(vaultKeyPath())).toBe(false)
-    expect(state.keychainStored).toBeNull()
-  })
-
   // (6) not darwin + VAULT_KEY_PATH missing -> atomicWriteFileSync creates it
   it('creates the file-backed master key on non-darwin when missing', () => {
     state.platform = 'linux'

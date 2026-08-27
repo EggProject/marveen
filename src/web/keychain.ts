@@ -34,13 +34,8 @@ export function keychainStore(value: string): void {
     ], { stdio: ['ignore', 'ignore', 'ignore'] })
   } catch (err) {
     const status = isExecError(err) && typeof err.status === 'number' ? err.status : 'unknown'
-    const stderr = typeof err === 'object' && err !== null && 'stderr' in err && typeof err.stderr === 'string'
-      ? err.stderr.trim()
-      : ''
     const originalMessage = err instanceof Error ? err.message.trim() : ''
-    const detail = stderr !== ''
-      ? stderr
-      : (originalMessage !== '' ? originalMessage : 'see launchd logs')
+    const detail = originalMessage !== '' ? originalMessage : 'see launchd logs'
     throw new KeychainUnavailableError(
       `keychain add-generic-password failed (status ${status}): ${detail} - please unlock the login keychain and retry`,
     )
