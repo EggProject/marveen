@@ -129,7 +129,7 @@ vi.mock('../web/keychain.js', () => {
     KeychainUnavailableError,
     isKeychainAvailable: () => state.keychainAvailable,
     keychainStore: (value: string) => {
-      if (state.keychainStoreThrows) throw new Error('mock keychain store failure')
+      if (state.keychainStoreThrows) throw new KeychainUnavailableError('mock keychain store failure (status 45): test fixture')
       state.keychainStored = value
     },
     keychainRetrieve: () => {
@@ -263,8 +263,9 @@ describe('getMasterKey via setSecret/getSecret round-trip', () => {
 
     setSecret('id2', 'label2', 'plaintext-value-2')
 
-    // The migration throw is swallowed: file stays put, master key comes
-    // from the file, decryption still works.
+    // Migration is best-effort: the file is the source of truth; the
+    // keychain push is opportunistic. The throw is swallowed and the
+    // file stays put, so the master key still decrypts the entry.
     expect(existsSync(vaultKeyPath())).toBe(true)
     expect(existsSync(vaultKeyMigratedPath())).toBe(false)
     expect(getSecret('id2')).toBe('plaintext-value-2')
@@ -302,21 +303,38 @@ describe('getMasterKey via setSecret/getSecret round-trip', () => {
   })
 
   // (5) darwin + keychain available + VAULT_KEY_PATH missing + keychainRetrieve null
-  //     + keychainStore throws -> catch -> warn + atomicWriteFileSync(VAULT_KEY_PATH)
-  it('falls back to writing the new master key to a file when keychainStore throws', () => {
+  //     + keychainStore throws -> propagates KeychainUnavailableError; NO file written.
+  // Pin for the keychain-store-insecure-acl Option A cascade prevention (this commit):
+  // vault.ts:73-81 must now throw rather than silently downgrading to a
+  // same-uid-readable file at store/.vault-key (mode 0600).
+  it('propagates KeychainUnavailableError when keychainStore throws on first mint', () => {
     state.platform = 'darwin'
     state.keychainAvailable = true
     state.keychainRetrieveReturn = null
     state.keychainStoreThrows = true
 
-    setSecret('id5', 'label5', 'plaintext-value-5')
-    // The fallback wrote the new key to VAULT_KEY_PATH (mode 0o600 is a
-    // best-effort chmod from atomic-write; we only assert the content here).
-    expect(existsSync(vaultKeyPath())).toBe(true)
-    // The keychain was attempted (state.keychainStored stays null because
-    // the mock only sets it on success, but the SUT's catch path still ran).
-    // Round-trip: the file-stored master key decrypts the entry.
-    expect(getSecret('id5')).toBe('plaintext-value-5')
+    expect(() => setSecret('id5', 'label5', 'plaintext-value-5')).toThrow(KeychainUnavailableError)
+    expect(existsSync(vaultKeyPath())).toBe(false)
+  })
+
+  // Regression pin: the explicit invariant that keychainStore throwing during
+  // the mint path does NOT trigger file write AND does NOT mint a replacement.
+  it('keychainStore throws KeychainUnavailableError on first mint - no file written, no re-key', () => {
+    state.platform = 'darwin'
+    state.keychainAvailable = true
+    state.keychainRetrieveReturn = null
+    state.keychainStoreThrows = true
+
+    let threw = false
+    try {
+      setSecret('id5b', 'label5b', 'plaintext-value-5b')
+    } catch (err) {
+      threw = true
+      expect(err).toBeInstanceOf(KeychainUnavailableError)
+    }
+    expect(threw).toBe(true)
+    expect(existsSync(vaultKeyPath())).toBe(false)
+    expect(state.keychainStored).toBeNull()
   })
 
   // (6) not darwin + VAULT_KEY_PATH missing -> atomicWriteFileSync creates it

@@ -166,11 +166,13 @@ describe('keychainStore - add-generic-password', () => {
     expect(argAfter(onlyCall().args, '-w')).toBe(raw)
   })
 
-  // keychainStore has no try/catch: propagation is what lets vault.ts's
-  // callers (src/web/vault.ts:34-40 and :48-54) fall back to a file-based key.
+  // keychainStore wraps execFileSync in try/catch (this commit): every failure,
+  // including generic Error throws, surfaces as KeychainUnavailableError so
+  // vault.ts can distinguish a prompt / locked keychain / missing binary from
+  // a benign "key not present" and refuse the silent file-fallback cascade.
   it('propagates the execFileSync error instead of swallowing it', () => {
     mocks.execFileSync.mockImplementation(() => { throw new Error('boom') })
-    expect(() => keychainStore('k')).toThrow('boom')
+    expect(() => keychainStore('k')).toThrow(KeychainUnavailableError)
   })
 
   it('propagates ENOENT when /usr/bin/security is missing', () => {
@@ -178,7 +180,13 @@ describe('keychainStore - add-generic-password', () => {
       code: 'ENOENT',
     })
     mocks.execFileSync.mockImplementation(() => { throw enoent })
-    expect(() => keychainStore('k')).toThrow(/ENOENT/)
+    try {
+      keychainStore('k')
+      throw new Error('expected keychainStore to throw')
+    } catch (err) {
+      expect(err).toBeInstanceOf(KeychainUnavailableError)
+      if (err instanceof Error) expect(err.message).toContain('ENOENT')
+    }
   })
 })
 
@@ -307,17 +315,21 @@ describe('keychain.ts - known deviations (pinning)', () => {
     // prescribes removing -A, but on a real headless macOS install the
     // -T SECURITY replacement still surfaces a keychain-unlock prompt the
     // daemon cannot satisfy silently. keychain-retrieve-swallows-locked-
-    // keychain is ALREADY resolved (2026-08-17 6e5bdd7): keychainRetrieve
+    // keychain is ALREADY resolved (see the test below): keychainRetrieve
     // throws KeychainUnavailableError on prompts instead of returning null,
-    // so the prompt no longer re-keys the vault. The remaining failure
-    // mode is vault.getMasterKey's fallback writing a file-based master
-    // key to store/.vault-key (mode 0600) -- a security DOWNGRADE relative
-    // to the -A ACL (the file is same-uid-readable by anything on the
-    // host, while -A at least leaves the SecKeychain C API chokepoint
-    // intact). Until keychainStore surfaces the prompt as a user-facing
-    // error the operator can interactively resolve, or the daemon is
-    // launched after the login keychain is unlocked, -A must stay so the
-    // headless-keychain-read guarantee holds.
+    // so the prompt no longer re-keys the vault. The remaining failure mode
+    // was vault.getMasterKey's mint branch (vault.ts:73-81) catching a
+    // keychainStore failure on first run and writing the master key to
+    // store/.vault-key (mode 0600) -- a security DOWNGRADE relative to the
+    // -A ACL (the file is same-uid-readable by anything on the host, while
+    // -A at least leaves the SecKeychain C API chokepoint intact). Option A
+    // cascade prevention (this commit): keychainStore now wraps execFileSync
+    // in try/catch and re-throws as KeychainUnavailableError; vault.ts:73-81
+    // propagates instead of file-falling-back. The migration branch
+    // (vault.ts:30-42) stays best-effort because there the file IS the
+    // source of truth and the keychain push is opportunistic. Until -A is
+    // removed, this pin ensures -A stays so the headless-keychain-read
+    // guarantee holds.
     mocks.execFileSync.mockReturnValue('')
     keychainStore('master')
     expect(onlyCall().args).toContain('-A')

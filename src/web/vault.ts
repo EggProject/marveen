@@ -74,9 +74,13 @@ function getMasterKey(): Buffer {
     try {
       keychainStore(newKey)
       logger.info('New vault master key stored in macOS Keychain')
-    } catch (err: any) {
-      logger.warn({ err: err.message }, 'Keychain store failed, falling back to file')
-      atomicWriteFileSync(VAULT_KEY_PATH, newKey, { mode: 0o600 })
+    } catch (err) {
+      // The file-fallback cascade is removed: a keychainStore throw (e.g. locked-keychain
+      // prompt, exit 45) now propagates so the operator sees a user-facing error rather
+      // than a silent downgrade to a same-uid-readable file at store/.vault-key (mode 0600).
+      // Migration branch (lines 30-42) is unchanged: file is source of truth there, the
+      // keychain push is best-effort.
+      throw err
     }
     return Buffer.from(newKey, 'base64')
   }
