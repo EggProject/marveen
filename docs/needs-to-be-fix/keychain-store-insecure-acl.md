@@ -132,10 +132,11 @@ empirical observation (Honcho HOT memory, 2026-08-26):
 exited with status **45** ("User canceled.") on the first call over an
 SSH session because the login keychain was locked and the daemon could
 not satisfy the keychain-unlock prompt invisibly. `keychainRetrieve` did
-the right thing with the result (threw `KeychainUnavailableError` instead
-of returning `null`), and `vault.getMasterKey` correctly refused to
-re-key. But `vault.getMasterKey` then fell through to its pre-existing
-file-based-key fallback at `vault.ts:73-81`, writing `store/.vault-key`
+the right thing on the first iteration (returned `null` for exit 44, the
+genuine "no key yet" case), so `vault.getMasterKey` minted a new key and
+called `keychainStore`; the `-T SECURITY` write then hit the same locked
+keychain prompt and `execFileSync` threw exit 45. `vault.ts:74-80`
+caught the throw and wrote a file-based master key to `store/.vault-key`
 (mode `0600`). That file is readable by any same-uid process on the host
 -- a security **downgrade** relative to the `-A` keychain ACL, which at
 least keeps the `SecKeychain` C-API direct-read vector blocked. (Same-uid
@@ -177,13 +178,16 @@ fixed:
    -- **Empirically tested (2026-08-26, commit `b28e951`) and reverted
    (`94650ef`).** On this host the replacement still surfaces a
    keychain-unlock prompt the daemon cannot satisfy silently over SSH.
-   `keychainRetrieve` throws `KeychainUnavailableError` correctly, but
-   `vault.getMasterKey` then falls through to its file-based-key fallback
-   (`vault.ts:73-81`, writes `store/.vault-key` mode `0600`), which is a
-   security **downgrade** relative to the `-A` keychain ACL (the file is
-   same-uid-readable; `-A` at least blocks the `SecKeychain` C-API direct-
-   read vector). Step 2 is therefore **not viable on this host** in its
-   current form -- see "Second attempted fix" above for details.
+   `keychainRetrieve` correctly returns `null` on the first call (genuine
+   absence, exit 44), so `vault.getMasterKey` mints a new key, then
+   `keychainStore` hits the same prompt and throws; the catch at
+   `vault.ts:74-80` falls through to its file-based-key fallback (writes
+   `store/.vault-key` mode `0600`), which is a security **downgrade**
+   relative to the `-A` keychain ACL (the file is same-uid-readable;
+   `-A` at least blocks the `SecKeychain` C-API direct-read vector for
+   sandboxed / EDR-monitored callers). Step 2 is therefore **not viable
+   on this host** in its current form -- see "Second attempted fix"
+   above for details.
 3. **The only remaining viable path** is to wrap `keychainStore` in
    `try/catch` and surface the prompt as a user-facing error the operator
    can interactively resolve (unlock the keychain, then retry), OR arrange

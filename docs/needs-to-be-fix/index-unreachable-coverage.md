@@ -3,12 +3,12 @@
 ## Resolution (2026-08-26, 642b883)
 
 The three "unreachable" sites are all reachable as of `642b883`
-(2026-08-26). Per INDEX.md row 21 the closure commit was `a330462`
-(2026-08-21, "NO-OP, line 174 already covered by index.test.ts:2739-2796");
-the `642b883` follow-up two days later re-wired `initHeartbeat()` into
+(2026-08-26). Per INDEX.md the closure commit was `a330462`
+(2026-08-20, "NO-OP, line 174 already covered by index.test.ts:2739-2796");
+the `642b883` follow-up six days later re-wired `initHeartbeat()` into
 `main()` (line 489) and removed the `if (heartbeatStarted)` gate from
 `shutdown()`, which flipped the third site from "structurally
-unreachable" to "reachable; pinned by index.test.ts:1116-1139, 1142-...".
+unreachable" to "reachable; pinned by index.test.ts:1116-1140, 1143-1149".
 A 3-line comment at `index.ts:281-283` now explicitly documents that
 `buildPidfileLockContext.log.error` is forwarder-only (interface
 requirement) and "Pinned by index.test.ts:1382" (the test at L1383,
@@ -19,21 +19,24 @@ covered by tests in `src/__tests__/index.test.ts`**.
 The Location, Excerpt, Failure scenario, and Pinning test sections below
 describe the pre-642b883 state and are kept verbatim for audit
 reference. Current line refs (post-642b883 + `__test_*` rename fallout):
-L174 (unchanged), L286 (was L283), L383 (was L382). The third site's
-gating `if (heartbeatStarted)` wrapper was removed entirely; the
-try/catch at L383 is now unconditional inside `shutdown()`.
+L174 (unchanged), L286 (originally L283, +3 from `87cd76f`'s 3-line
+comment), L383 (originally L382, +1 from `2e33344`'s new import).
+The third site's gating `if (heartbeatStarted)` wrapper was removed
+entirely; the try/catch at L383 is now unconditional inside `shutdown()`.
 
-Refs: a330462 (initial closure, line 174 covered), 642b883 (re-wire
-`initHeartbeat()` into `main()`, drop `heartbeatStarted` gate, comment
-at L281-283 documenting the PidfileLockContext.log.error pin).
+Refs: a330462 (initial closure, line 174 covered), 87cd76f (added
+the 3-line comment at L281-283 documenting the PidfileLockContext.log.error
+pin), 642b883 (re-wire `initHeartbeat()` into `main()`, drop
+`heartbeatStarted` gate, add the new `try { stopHeartbeat() } catch` at
+L383 in `shutdown()`).
 
 ## Location
 
 `src/index.ts`:
 
 1. **Line 174** -- `error: (obj, msg) => logger.error(obj, msg)` inside `buildProcessLockContext().log`
-2. **Line 286** (was L283 pre-642b883) -- `error: (obj, msg) => logger.error(obj, msg)` inside `buildPidfileLockContext().log` (preceded by a 3-line comment at L281-283 documenting why it is forwarder-only)
-3. **Line 383** (was L382 pre-642b883) -- `try { stopHeartbeat() } catch (err) { logger.warn(...) }` inside `shutdown()` (no longer gated by `if (heartbeatStarted)`; `initHeartbeat()` is called from `main()` at L489)
+2. **Line 286** (originally L283 at MD creation; the +3 shift came from `87cd76f` adding the 3-line comment below) -- `error: (obj, msg) => logger.error(obj, msg)` inside `buildPidfileLockContext().log` (preceded by a 3-line comment at L281-283 documenting why it is forwarder-only)
+3. **Line 383** (originally L382 at MD creation; the +1 shift came from `2e33344` adding the `initHeartbeat()` import, and the `if (heartbeatStarted)` wrapper was removed by `221d5c8` before `642b883` re-added the unconditional try/catch) -- `try { stopHeartbeat() } catch (err) { logger.warn(...) }` inside `shutdown()` (no longer gated by `if (heartbeatStarted)`; `initHeartbeat()` is called from `main()` at L489)
 
 ## Excerpt
 
@@ -87,18 +90,22 @@ thresholds lines/functions/branches/statements at 100% for every
 1. **buildProcessLockContext.log.error (line 174)** -- `ctx.log.error` is
    only called from `process-lock.ts` `acquirePortLock`'s
    `terminateProcesses` path when `ctx.signal(pid, 'SIGKILL')` throws a
-   non-ESRCH error. **Closed by `a330462`** (2026-08-21): covered via the
+   non-ESRCH error. **Closed by `a330462`** (2026-08-20): covered via the
    SIGKILL-fails-EPERM path at `index.test.ts:2737-2741`.
 
-2. **buildPidfileLockContext.log.error (line 286, was L283)** --
-   `process-lock.ts` `acquirePidfileLock` only calls `ctx.log.warn` and
+2. **buildPidfileLockContext.log.error (line 286, was L283 at MD creation
+   -- the +3 shift came from `87cd76f` adding the 3-line comment below)**
+   -- `process-lock.ts` `acquirePidfileLock` only calls `ctx.log.warn` and
    `ctx.log.info` (see lines 301/328/336/346/350/352). It never calls
    `ctx.log.error` in production. **Closed by `642b883`** (2026-08-26):
    the comment at L281-283 documents the pin explicitly, and the test at
    `index.test.ts:1383-1390` ("forwards pidfile context errors to
    logger.error") exercises it via mock.
 
-3. **stopHeartbeat throw at line 383, was L382** -- `heartbeatStarted` was
+3. **stopHeartbeat throw at line 383 (originally L382 at MD creation;
+   the `if (heartbeatStarted)` wrapper was removed by `221d5c8` on
+   2026-08-16, then `642b883` re-added the unconditional try/catch at
+   L383)** -- `heartbeatStarted` was
    a module-scoped variable in `index.ts` set ONLY by `initHeartbeat()`
    inside `main()`. `main()` no longer called `initHeartbeat()` at the
    time of the MD's filing; the `if (heartbeatStarted)` branch was
@@ -119,14 +126,17 @@ thresholds lines/functions/branches/statements at 100% for every
   SIGKILL-fails-EPERM path at `index.test.ts:2737-2741`
   (`describe('buildProcessLockContext.log and sleep via real
   acquirePortLock', ...)`).
-- `buildPidfileLockContext.log.error` (line 286, was L283) -- covered by
+- `buildPidfileLockContext.log.error` (line 286, originally L283) -- covered by
   `index.test.ts:1383-1390` (`it('forwards pidfile context errors to
   logger.error', ...)`). The comment at `index.ts:281-283` explicitly
   names this test as the pin.
-- `shutdown()` stopHeartbeat catch (line 383, was L382) -- covered by
+- `shutdown()` stopHeartbeat catch (line 383, originally L382 at MD
+  creation; the `if (heartbeatStarted)` wrapper was removed by `221d5c8`
+  on 2026-08-16, then `642b883` re-added the unconditional try/catch at
+  L383) -- covered by
   `index.test.ts:1116-1140` (the 4-stop throws-individually test asserts
   the catch wrapper fires for `stopHeartbeat`) AND the positive pin at
-  `index.test.ts:1142-...` (asserts `stopHeartbeat` is called on shutdown
+  `index.test.ts:1143-1149` (asserts `stopHeartbeat` is called on shutdown
   when `initHeartbeat` was called).
 
 ```ts
@@ -159,7 +169,7 @@ The three options were:
    `acquirePidfileLock`'s side-effect paths.
 
 3. **Wire `heartbeatStarted = true`** -- if `initHeartbeat()` were still
-   called in `main()`, the `shutdown()` catch wrapper at line 382 would
+   called in `main()`, the `shutdown()` catch wrapper at line 383 would
    be exercisable. Restoring that wiring (and accompanying test mocks for
    `initHeartbeat` / `stopHeartbeat`) would close the gap.
 
