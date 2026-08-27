@@ -548,9 +548,7 @@ describe('probeChannelPluginLiveness', () => {
   })
 
   it('debug-logs via the logger when the decider calls debugLog (reparented orphan)', async () => {
-    const killSpy = vi.spyOn(process, 'kill').mockImplementation(((
-      pid: number, sig?: NodeJS.Signals | number,
-    ) => {
+    const killSpy = vi.spyOn(process, 'kill').mockImplementation(((pid: number, sig?: NodeJS.Signals | number) => {
       if (sig === 0 && pid > 0 && pid <= 4_000_000) return true
       if (sig === 0) {
         const e = new Error('ESRCH') as NodeJS.ErrnoException
@@ -560,20 +558,23 @@ describe('probeChannelPluginLiveness', () => {
       return true
     }) as never)
     try {
-    const { probeChannelPluginLiveness } = await importFresh()
-    // The wrapper's isPidAlive uses process.kill(pid, 0), so the orphan must
-    // be a real, signal-able pid. process.pid is always signal-able to itself.
-    const ORPHAN = process.pid
-    const out = ps([
-      { pid: CLAUDE_PID, ppid: 1, command: 'claude' },
-      { pid: ORPHAN, ppid: 1, command: TELEGRAM_CMD },
-    ])
-    m.execFileSync.mockReturnValueOnce(out)
-    m.existsSync.mockReturnValue(true)
-    m.readFileSync.mockReturnValueOnce(String(ORPHAN))
-    expect(probeChannelPluginLiveness(CLAUDE_PID, 'telegram', 'alpha')).toBe('alive')
-    expect(m.loggerDebug).toHaveBeenCalled()
-      } finally { killSpy.mockRestore() }})
+      const { probeChannelPluginLiveness } = await importFresh()
+      // The wrapper's isPidAlive uses process.kill(pid, 0), so the orphan must
+      // be a real, signal-able pid. process.pid is always signal-able to itself.
+      const ORPHAN = process.pid
+      const out = ps([
+        { pid: CLAUDE_PID, ppid: 1, command: 'claude' },
+        { pid: ORPHAN, ppid: 1, command: TELEGRAM_CMD },
+      ])
+      m.execFileSync.mockReturnValueOnce(out)
+      m.existsSync.mockReturnValue(true)
+      m.readFileSync.mockReturnValueOnce(String(ORPHAN))
+      expect(probeChannelPluginLiveness(CLAUDE_PID, 'telegram', 'alpha')).toBe('alive')
+      expect(m.loggerDebug).toHaveBeenCalled()
+    } finally {
+      killSpy.mockRestore()
+    }
+  })
 
   it('bot.pid points to a non-signalable pid -> the inline process.kill catch branch fires', async () => {
     const { probeChannelPluginLiveness } = await importFresh()
