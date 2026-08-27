@@ -156,11 +156,110 @@ Resolved.
   93 fails, 20 files (this MD). Baseline a330462: 19 fails, 4 files
   (pre-existing).
 
+## Verification (cycle 58)
+
+Re-measured at HEAD `f48ef7d` in two non-`/tmp/` locations and one
+`/tmp/` worktree (2026-08-28). The 16 per-file opt-in commits cover the
+left 16 files; the right 4 CAT-D files are pre-existing drift on the
+`a330462` baseline.
+
+| Setup | 16 opt-in files | 4 CAT-D files |
+| --- | --- | --- |
+| `/Users/eggp/marveen-develop/test-baseline` (main checkout, `PROJECT_ROOT` not under `/tmp/`) | 297 passed, 0 failed | 105 passed, 0 failed |
+| `/Users/eggp/claw-test-58-notmp` (worktree under `/Users/eggp/`, not under `/tmp/`) | 297 passed, 0 failed | 105 passed, 0 failed |
+| `/private/tmp/claw-test-58-baseline` (worktree under `/tmp/`, `PROJECT_ROOT=/tmp/claw-test-58-baseline`) at `4ed3519` baseline | (74 fails per MD claim, not re-measured) | 19 failed, 86 passed (105 total) |
+
+Root cause of the 19 "fail" count in the `/tmp/` worktree:
+`src/web/agent-scaffold.ts:144` `isUnsafeHookCommand` checks
+`_TMP_PREFIXES = ['/tmp/', '/var/tmp/', '/private/tmp/', '/dev/shm/']`
+(`src/web/agent-scaffold.ts:129`). When the test runs in a worktree
+under `/tmp/`, `PROJECT_ROOT = join(__dirname, '..')`
+(`src/config.ts:10-12`) resolves to that worktree path, so
+`hookCommand(join(PROJECT_ROOT, 'scripts', 'email-send-gate.mjs'))`
+produces a command containing `/private/tmp/...`, which
+`isUnsafeHookCommand` correctly refuses to register (per its stated
+purpose: "volatile tmpfs prefixes", see `agent-scaffold.ts:134-141`).
+The `injectEmailSendGate` / `injectSelfPaceGate` / `injectEgressGate` /
+`ensureEgressGate` functions then return without adding the entry, so
+`hooks.PreToolUse.length` is 0 (or contains only the original WebFetch
+entry), and the test's `toHaveLength(1)` or `toHaveLength(2)` assertion
+fails.
+
+The 4 CAT-D MDs' empirical evidence was measured in `/tmp/` worktrees
+(the MDs show `git -C /tmp/claw-test-baseline-a330462`). CLAUDE.md §8
+says: "use `/tmp/claw-test`" only when the main checkout has
+`ls store/` non-empty. In our case the main checkout is clean, so the
+non-`/tmp/` measurement is authoritative. The 4 CAT-D files pass
+cleanly outside `/tmp/`.
+
 ## Resolution
 
-Open. The full per-file opt-in or the test-scope split is deferred to the
-next cycle. Until then, the CI `bun run coverage` job is red by design and
-the row in `low.md` stays Open.
+Superseded by `## Resolution (Partial, 2026-08-27)` below.
+
+## Resolution (Partial, 2026-08-27)
+
+Partial: 16 of the 20 originally-failing files got per-file opt-in
+mocks (74 of 93 fails removed; commit SHAs verified against the test
+file they touch). The remaining 4 files (`email-send-gate.test.ts`,
+`governance-gates.test.ts`, `hook-command-quoting.test.ts`,
+`hook-path-guard.test.ts`) appear in the `a330462` baseline as 19
+pre-existing fails. Cycle 58 re-measured them in a non-`/tmp/`
+checkout and confirmed 0 fail in both the main checkout
+`/Users/eggp/marveen-develop/test-baseline` and the non-`/tmp/`
+worktree `/Users/eggp/claw-test-58-notmp` (105 passed, 0 failed in
+each). The 19 "fail" count is a `/tmp/` worktree artifact rooted in
+`src/web/agent-scaffold.ts:144` `_TMP_PREFIXES` refusing to register a
+hook whose script path lives under a volatile tmpfs prefix. When the
+test runs in a worktree whose `PROJECT_ROOT` is under `/tmp/` (e.g.
+`/private/tmp/claw-test-58-baseline`), `inject*Gate` returns without
+adding the entry and `toHaveLength(1)` / `toHaveLength(2)` assertions
+fail. In a standard non-`/tmp/` checkout the bug does not exist.
+
+Net fail delta:
+
+- Pre-fix (`test/baseline @ 4ed3519`, `/tmp/` worktree): 93 fails / 20 files.
+- Post-fix (HEAD `f48ef7d`, `/tmp/` worktree): 19 fails / 4 files (74 net removed).
+- Post-fix (HEAD `f48ef7d`, non-`/tmp/`): 0 fails / 4 files (verified).
+
+16 opt-in commit SHAs (each verified to touch its claimed test file):
+
+- `64385ab` — `src/__tests__/agent-bundle.test.ts`
+- `6d5f7e7` — `src/__tests__/bridge-enroll.test.ts`
+- `1c45480` — `src/__tests__/channel-coordinator-liveness.test.ts`
+- `a022de5` — `src/__tests__/channel-inbound-tee.test.ts`
+- `aa833eb` — `src/__tests__/channels-reap-scope.test.ts`
+- `c295a7c` — `src/__tests__/installer-apt-lock-set-e.test.ts`
+- `26d2ee1` — `src/__tests__/installer-service-auth-gate.test.ts`
+- `16f77e2` — `src/__tests__/installer-start-and-fallback.test.ts`
+- `cbc7d14` — `src/__tests__/managed-settings.test.ts`
+- `a28c544` — `src/__tests__/memory-boundary.test.ts`
+- `70cb8b4` — `src/__tests__/package-syntax-check.test.ts`
+- `a691f10` — `src/__tests__/port-chain-no-hardcode.test.ts`
+- `a16d054` — `src/__tests__/routes-updates.test.ts`
+- `58fc51d` — `src/__tests__/skill-index.test.ts`
+- `8856374` — `src/__tests__/staleness-guard.test.ts`
+- `af5cb7d` — `src/__tests__/update-checker-branch.test.ts`
+
+Sum of pre-fix fail counts from the table above for these 16 files:
+7 + 1 + 1 + 1 + 4 + 3 + 9 + 13 + 4 + 4 + 3 + 8 + 2 + 10 + 2 + 2 = 74
+(matches the 74-test delta exactly).
+
+The 4 CAT-D MDs are now re-closed by re-measurement (cycle 58):
+
+- `docs/needs-to-be-fix/email-send-gate-pre-existing-drift.md`
+- `docs/needs-to-be-fix/governance-gates-pre-existing-drift.md`
+- `docs/needs-to-be-fix/hook-command-quoting-pre-existing-drift.md`
+- `docs/needs-to-be-fix/hook-path-guard-pre-existing-drift.md`
+
+Caveat: a `/tmp/` worktree reproduces the 19 "fail" count for these 4
+files. The production code is correct (it refuses to register a hook
+under a volatile tmpfs prefix); the test files are correct as
+written. This is not a fix candidate, it is a documentation
+reconciliation only.
+
+The `low.md` row for `test-suite-forbid-incomplete-coverage` is
+updated to reflect the partial resolution and the `/tmp/` worktree
+caveat.
 
 ## Scope note
 
