@@ -75,6 +75,10 @@ interface MockState {
   keychainRetrieveReturn: string | null
   keychainStoreThrows: boolean
   keychainRetrieveThrows: boolean
+  // When non-null, keychainRetrieve throws this Error instead of the default
+  // KeychainUnavailableError. Used to exercise the `!(err instanceof
+  // KeychainUnavailableError) throw err` re-raise branch at vault.ts:49.
+  keychainRetrieveNonKeychainThrow: Error | null
   // cipher bookkeeping: iv-hex -> plaintext. Cleared per test.
   cipherMap: Map<string, string>
   // bookkeeping for getMasterKey-derived write paths
@@ -88,6 +92,7 @@ const state: MockState = {
   keychainRetrieveReturn: null,
   keychainStoreThrows: false,
   keychainRetrieveThrows: false,
+  keychainRetrieveNonKeychainThrow: null,
   cipherMap: new Map(),
   fileKeyWrittenToKeyFile: null,
 }
@@ -133,6 +138,7 @@ vi.mock('../web/keychain.js', () => {
       state.keychainStored = value
     },
     keychainRetrieve: () => {
+      if (state.keychainRetrieveNonKeychainThrow) throw state.keychainRetrieveNonKeychainThrow
       if (state.keychainRetrieveThrows) throw new KeychainUnavailableError('mock keychain retrieve failure')
       return state.keychainRetrieveReturn
     },
@@ -203,6 +209,7 @@ beforeEach(() => {
   state.keychainRetrieveReturn = null
   state.keychainStoreThrows = false
   state.keychainRetrieveThrows = false
+  state.keychainRetrieveNonKeychainThrow = null
   state.cipherMap.clear()
   state.fileKeyWrittenToKeyFile = null
 })
@@ -441,6 +448,28 @@ describe('getMasterKey via setSecret/getSecret round-trip', () => {
     })
 
     expect(() => setSecret('any', 'any', 'any')).toThrow(KeychainUnavailableError)
+    expect(state.keychainStored).toBeNull()
+  })
+
+  // (13) vault.ts:49 -- the `!(err instanceof KeychainUnavailableError) throw err`
+  // re-raise arm. keychainRetrieve can throw something OTHER than
+  // KeychainUnavailableError (a programmer-error TypeError, an out-of-memory
+  // Error, etc.) -- in that case the catch must propagate verbatim rather
+  // than swallow the failure and try to mint.
+  it('re-raises non-KeychainUnavailableError thrown from keychainRetrieve', () => {
+    state.platform = 'darwin'
+    state.keychainAvailable = true
+    state.keychainRetrieveNonKeychainThrow = new Error('unexpected programmer error')
+    let caught: unknown = null
+    try {
+      setSecret('any', 'any', 'any')
+    } catch (err) {
+      caught = err
+    }
+    expect(caught).toBeInstanceOf(Error)
+    expect((caught as Error).message).toBe('unexpected programmer error')
+    // Not a KeychainUnavailableError -- the guard refused to rewrap.
+    expect(caught).not.toBeInstanceOf(KeychainUnavailableError)
     expect(state.keychainStored).toBeNull()
   })
 
