@@ -845,6 +845,53 @@ describe('decision-action branches via the runner', () => {
     expect(mockRestartAgentProcess).toHaveBeenCalledWith('samu', { fresh: true })
   })
 
+  it('sub-agent restart with capturePane returning null exercises L279/L280/L295 fallback branches', async () => {
+    // A `(pane ?? capturePane(session))` (L279) retry-ag és a `(finalPane)`
+    // (L280) skip-ag, valamint a `(snapshotPath ? ...)` (L295) skip-ag csak
+    // akkor nyílik meg, ha a capture MINDKÉT hívásra null-t ad vissza, es
+    // a guard megis restart-ot dont (pct >= hardPct, busy=false). A sub-agent
+    // ágat használjuk, mert a main-nél running a capturePane-tól függ, és ott
+    // a null capture mar `inputs.running=false`-ot jelentene -- a guard
+    // 'not running' miatt 'none' action-t adna, es soha nem érnénk el a
+    // restart branch-et. Sub-agent-nél running = agentRunState, pane capture
+    // fuggetlen.
+    mockListAgentNames.mockReturnValue(['samu'])
+    mockReadContextGuardConfig.mockImplementation((n: string) => {
+      if (n !== 'samu') {
+        return {
+          enabled: false, saturationRestart: false,
+          actPct: 0.9, hardPct: 0.97, limitTokens: null,
+          cooldownMinutes: 15, handoffTimeoutMinutes: 20,
+        }
+      }
+      return {
+        enabled: true, saturationRestart: true,
+        actPct: 0.9, hardPct: 0.97, limitTokens: 100_000,
+        cooldownMinutes: 15, handoffTimeoutMinutes: 20,
+      }
+    })
+    // Mindkét capturePane hívás null -- L279 ?? retry, L280 finalPane null.
+    mockCapturePane.mockReturnValue(null)
+    mockDetectPaneState.mockReturnValue('unknown')
+    mockReadContextTokensFromProjectDir.mockReturnValue(99_000)
+    mockReadAgentModel.mockReturnValue('m1')
+
+    vi.useFakeTimers()
+    const { startContextGuardRunner } = await importRunner()
+    const timer = startContextGuardRunner()
+    await pumpOneSweep()
+    clearInterval(timer as unknown as number)
+
+    // A restart megtörtént (sub-agent path), de NEM íródott snapshot fájl.
+    expect(mockRestartAgentProcess).toHaveBeenCalledWith('samu', { fresh: true })
+    expect(existsSync(SNAPSHOT_PATH)).toBe(false)
+    // A createAgentMessage-et is meg kellett hivni -- az L295-ös branch[1]
+    // ilyenkor fut le (snapshotPath null, nincs Pane-snapshot megjegyzés).
+    expect(mockCreateAgentMessage).toHaveBeenCalled()
+    const messageArg = mockCreateAgentMessage.mock.calls[0]?.[3] as string | undefined
+    expect(messageArg ?? '').not.toContain('Pane-snapshot')
+  })
+
   it('non-running sub-agent: no probe and no side effects', async () => {
     mockListAgentNames.mockReturnValue(['samu'])
     mockAgentRunState.mockReturnValue('stopped')
