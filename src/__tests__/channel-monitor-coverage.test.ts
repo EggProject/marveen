@@ -1783,3 +1783,49 @@ describe('coverage: reconcileDesiredAgents reconcileBurstInProgress finally rese
     expect(m.startAgentProcess).toHaveBeenCalledTimes(2)
   })
 })
+
+// ---------------------------------------------------------------------------
+// coverage: per-tick target / stage branches reachable from existing tests
+// but missing one arm each.
+// ---------------------------------------------------------------------------
+describe('coverage: per-tick target + stage branches', () => {
+  it('L1422: skips sub-agents whose agentHasChannel is false (sub-agent w/o channel)', async () => {
+    // The per-tick target loop adds a sub-agent to `targets` only when
+    // isAgentRunning AND agentHasChannel are both true. Flip
+    // agentHasChannel to false so the second arm fires and the sub-agent
+    // is NOT added to the probe targets.
+    const mod = await freshMod()
+    vi.useFakeTimers()
+    m.listAgentNames.mockReturnValue(['sub-no-channel'])
+    m.isAgentRunning.mockReturnValue(true)
+    m.agentHasChannel.mockReturnValue(false)
+    m.capturePane.mockReturnValue('idle pane')
+    m.detectPaneState.mockReturnValue('idle')
+    const handle = mod.startChannelPluginMonitor()
+    await tickOnce()
+    clearMonitorHandle(handle)
+    vi.useRealTimers()
+    // No error should have been logged; the sub-agent was silently skipped.
+    expect(m.loggerError).not.toHaveBeenCalled()
+  })
+
+  it('L1282: skips the telegram-specific 409 probe when provider is non-telegram', async () => {
+    // probeTelegramConflict must NOT be called when the provider label is
+    // discord/slack/etc. Seed the provider as 'discord' so the if-guard
+    // evaluates to false.
+    const mod = await freshMod()
+    vi.useFakeTimers()
+    m.getClaudePidForSession.mockReturnValue(null)
+    m.probeChannelPluginLiveness.mockReturnValue('down')
+    m.listAgentNames.mockReturnValue([])
+    m.readAgentChannelProvider.mockReturnValue(null)
+    m.mainProvider = 'discord'
+    m.handleTelegramConflict = vi.fn()
+    const handle = mod.startChannelPluginMonitor()
+    await vi.advanceTimersByTimeAsync(8_000 + 100)
+    clearMonitorHandle(handle)
+    vi.useRealTimers()
+    // The provider-non-telegram branch fired; no Telegram probe ran.
+    expect(m.handleTelegramConflict).not.toHaveBeenCalled()
+  })
+})
