@@ -89,7 +89,6 @@ const H = vi.hoisted(() => {
     ensureAutonomySection: vi.fn(),
     schedulePluginUnlockAfterRespawn: vi.fn(),
     getSecret: vi.fn(),
-    resolveOpenRouterModel: vi.fn(),
     reapChannelOrphans: vi.fn(),
     reapDetachedChannelClaudes: vi.fn(),
     notifyChannel: vi.fn(),
@@ -183,7 +182,6 @@ vi.mock('../web/profiles.js', () => ({ loadProfileTemplate: H.loadProfileTemplat
 vi.mock('../web/agent-team.js', () => ({ resolveAgentSecurityProfile: H.resolveAgentSecurityProfile }))
 vi.mock('../web/channel-plugin-unlock.js', () => ({ schedulePluginUnlockAfterRespawn: H.schedulePluginUnlockAfterRespawn }))
 vi.mock('../web/vault.js', () => ({ getSecret: H.getSecret }))
-vi.mock('../web/openrouter-models.js', () => ({ resolveOpenRouterModel: H.resolveOpenRouterModel }))
 vi.mock('../web/main-agent.js', () => ({ get MAIN_CHANNELS_SESSION() { return H.mainChannelsSession } }))
 vi.mock('../notify.js', () => ({ notifyChannel: H.notifyChannel }))
 vi.mock('../settings-store.js', () => ({ getEffectiveSettingValue: H.getEffectiveSettingValue }))
@@ -364,7 +362,6 @@ beforeEach(() => {
   H.loadProfileTemplate.mockReturnValue({ permissionMode: 'permissive' })
   H.resolveAgentSecurityProfile.mockReturnValue('default')
   H.getSecret.mockReturnValue(null)
-  H.resolveOpenRouterModel.mockImplementation((m: string) => m)
   H.notifyChannel.mockResolvedValue(undefined)
 
   // pane-state defaults: idle, nothing parked, no dialogs.
@@ -1445,7 +1442,6 @@ describe('startAgentProcess -- guards', () => {
     H.execFileSync.mockReturnValue('')
     H.readAgentMemoryIsolation.mockReturnValue(true)
     H.readAgentModel.mockReturnValue('claude-opus-4-8')
-    H.resolveOpenRouterModel.mockImplementation((m: string) => m)
     H.loadProfileTemplate.mockReturnValue({ permissionMode: 'permissive' })
     H.resolveAgentConfigDir.mockReturnValue({ configDir: null, planUnresolved: false })
     H.getProvider.mockImplementation((t: string) => ({ type: t, pluginId: `${t}@mkt` }))
@@ -1524,39 +1520,20 @@ describe('startAgentProcess -- model/auth env', () => {
     expect(launchCmd()).not.toContain('ANTHROPIC_API_KEY')
   })
 
-  it('points a DeepSeek model at the DeepSeek Anthropic endpoint', () => {
-    H.readAgentModel.mockReturnValue('deepseek-v4-pro')
-    H.getSecret.mockImplementation((k: string) => (k === 'DEEPSEEK_API_KEY' ? 'ds-key' : null))
-    AP.startAgentProcess('zara')
-    const cmd = launchCmd()
-    expect(cmd).toContain('export ANTHROPIC_AUTH_TOKEN="ds-key"')
-    expect(cmd).toContain('export ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic')
-    expect(cmd).toContain("export ANTHROPIC_MODEL='deepseek-v4-pro'")
-  })
-
-  it('tolerates a missing DeepSeek key', () => {
-    H.readAgentModel.mockReturnValue('deepseek-v4-pro')
-    H.getSecret.mockReturnValue(null)
-    AP.startAgentProcess('zara')
-    expect(launchCmd()).toContain('export ANTHROPIC_AUTH_TOKEN=""')
-  })
-
-  it('routes a provider/model id through OpenRouter', () => {
-    H.readAgentModel.mockReturnValue('openrouter-auto:mid')
-    H.resolveOpenRouterModel.mockReturnValue('qwen/qwen3-max')
-    H.getSecret.mockImplementation((k: string) => (k === 'openrouter-fleet-key' ? 'or-key' : null))
-    AP.startAgentProcess('zara')
-    const cmd = launchCmd()
-    expect(cmd).toContain('export ANTHROPIC_AUTH_TOKEN="or-key"')
-    expect(cmd).toContain('export ANTHROPIC_BASE_URL=https://openrouter.ai/api')
-    expect(cmd).toContain("export ANTHROPIC_MODEL='qwen/qwen3-max'")
-  })
-
-  it('tolerates a missing OpenRouter key', () => {
-    H.readAgentModel.mockReturnValue('qwen/qwen3-max')
-    H.getSecret.mockReturnValue(null)
-    AP.startAgentProcess('zara')
-    expect(launchCmd()).toContain('export ANTHROPIC_AUTH_TOKEN=""')
+  // Stale third-party ids from before the DeepSeek/OpenRouter removal. These
+  // never reached the Ollama branch back then ('/' was the OpenRouter
+  // discriminator), so routing them there now would 404 opaquely upstream.
+  it.each([
+    'deepseek-v4-pro',
+    'deepseek/deepseek-chat-v3.1',
+    'openrouter-auto:tier1',
+    'qwen/qwen3-max',
+  ])('refuses to launch a stale third-party model id (%s)', (stale) => {
+    H.readAgentModel.mockReturnValue(stale)
+    const result = AP.startAgentProcess('zara')
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain(stale)
+    expect(calls().some((c) => c.args[0] === 'new-session')).toBe(false)
   })
 
   it('routes a bare tag (no slash) at the local Ollama endpoint', () => {
