@@ -47,7 +47,9 @@ export function loadProfileTemplate(profileId: string): ProfileTemplate {
   // outside PROFILES_DIR and returns whatever JSON happens to live there
   // as if it were a security profile.
   if (!/^[a-z0-9-]+$/.test(profileId)) {
-    return profileId !== 'default' ? loadProfileTemplate('default') : HARDCODED_DEFAULT_PROFILE
+    // 'default' matches the regex so the only ids that fall through here
+    // are non-default. Recurse to the default profile.
+    return loadProfileTemplate('default')
   }
   const path = join(PROFILES_DIR, `${profileId}.json`)
   if (existsSync(path)) {
