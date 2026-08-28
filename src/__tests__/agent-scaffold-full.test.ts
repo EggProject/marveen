@@ -828,6 +828,20 @@ describe('ensureDefaultScheduledTasks', () => {
     // The corrupted text was byte-copied.
     expect(readFileSync(dest, 'utf-8')).toContain('{ schedule:')
   })
+
+  it('seeds a task whose agent field is NOT a string (copyTaskConfigWithAgentRewrite typeof false branch)', () => {
+    // copyTaskConfigWithAgentRewrite (line ~670): the `typeof cfg.agent === 'string'`
+    // guard has two arms -- string (rewritten to MAIN_AGENT_ID) and non-string
+    // (preserved verbatim). Seed a task-config.json with `agent: null` so the
+    // non-string arm fires and the field stays null in the seeded destination.
+    mkdirSync(join(SANDBOX, 'scheduled-tasks', 'task1'), { recursive: true })
+    writeFileSync(join(SANDBOX, 'scheduled-tasks', 'task1', 'task-config.json'),
+      JSON.stringify({ schedule: '0 9 * * *', agent: null }))
+    scaffold.ensureDefaultScheduledTasks()
+    const dest = join(HOME, '.claude', 'scheduled-tasks', 'task1', 'task-config.json')
+    const cfg = JSON.parse(readFileSync(dest, 'utf-8'))
+    expect(cfg.agent).toBeNull()
+  })
 })
 
 // ===========================================================================
