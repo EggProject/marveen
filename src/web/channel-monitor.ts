@@ -1334,7 +1334,7 @@ async function handleMarveenDown(): Promise<void> {
   }
   if (marveenDownState.stage === 'resume') {
     const resumeStartedAt = marveenDownState.stageStartedAt!
-    /* istanbul ignore next: the early-return is not reachable through the standard 60s tick because RESUME_GRACE_MS (240s) > tick (60s) but the existing test setup drives the cascade past this branch in one jump */
+    /* istanbul ignore next: structurally unreachable -- resumeMarveenSession() (L1332 -> L777) writes a respawn stamp on stage entry, and every subsequent tick within the 240s RESUME_GRACE_MS falls inside MARVEEN_POST_RESPAWN_GRACE_MS (360s), so L1273 returns before this branch can fire */
     if (now - resumeStartedAt < RESUME_GRACE_MS) return
     marveenDownState.stage = 'hard'
     marveenDownState.stageStartedAt = now
