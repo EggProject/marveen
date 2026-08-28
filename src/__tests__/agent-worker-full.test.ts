@@ -475,18 +475,28 @@ describe('ensureWorkerCwd', () => {
     expect(lstatSync(join(cfg, 'plugins')).ino).toBe(before)
   })
 
-  it('warns when a symlink cannot be created (the symlinkSync catch -- currently uncovered)', () => {
-    // The ensureWorkerCwd try/catch around symlinkSync is unreachable
-    // through public input on a healthy sandbox: the rmSync that precedes
-    // it always removes any conflicting linkPath, and vi.spyOn on
-    // node:fs.symlinkSync does NOT intercept the destructured import the
-    // source captured at module load. The branch exists for transient
-    // filesystem errors (a TOCTOU race with another writer between the
-    // rmSync and symlinkSync) that no test-side lever can deterministically
-    // reproduce. See bug MD for direction.
-    seedSharedClaude({ settings: {} })
-    AW.ensureWorkerCwd()
-    expect(existsSync(join(H.home, '.marveen-worker', '.claude-config'))).toBe(true)
+  it('warns when a symlink cannot be created (the symlinkSync catch -- L376)', async () => {
+    // L376 catches a symlinkSync throw. vi.spyOn on fs.symlinkSync does
+    // NOT intercept the destructured import the source captured at module
+    // load, so we re-import the module against a vi.doMock'd fs whose
+    // symlinkSync is a throwing spy. A fresh tmpdir is required because
+    // vi.resetModules() drops the existing sandbox references too.
+    const fsSpy = { symlinkSync: vi.fn(() => { throw new Error('EACCES-symlink') }) }
+    vi.doMock('node:fs', async () => {
+      const actual = await vi.importActual<typeof import('node:fs')>('node:fs')
+      return { ...actual, symlinkSync: fsSpy.symlinkSync as unknown as typeof import('node:fs').symlinkSync }
+    })
+    vi.resetModules()
+    const AWfresh = await import('../web/agent-worker.js')
+    const claudeDir = seedSharedClaude({ settings: {} })
+    expect(existsSync(claudeDir)).toBe(true)
+    AWfresh.ensureWorkerCwd()
+    expect(fsSpy.symlinkSync).toHaveBeenCalled()
+    // The warn fires: every symlink attempt produced a 'failed to symlink' log.
+    const symlinkWarn = H.logs.find((l) => String(l.msg).includes('failed to symlink'))
+    expect(symlinkWarn).toBeDefined()
+    vi.doUnmock('node:fs')
+    vi.resetModules()
   })
 
   it('removes a symlinked settings.json then writes an owned file', () => {
@@ -568,6 +578,23 @@ describe('ensureWorkerCwd', () => {
     seedSharedClaude({ settingsRaw: '[]' })
     AW.ensureWorkerCwd()
     const cfg = join(H.home, '.marveen-worker', '.claude-config')
+    const s = JSON.parse(readFileSync(join(cfg, 'settings.json'), 'utf-8'))
+    expect(Object.keys(s).sort()).toEqual(['enabledPlugins', 'skipDangerousModePermissionPrompt'])
+  })
+
+  it('tolerates a SYMLINKED settings.json whose parsed value is not an object (L394 branch[1])', () => {
+    // L394 lives inside the `if (sst?.isSymbolicLink())` branch (settings
+    // is a symlink to the host ~/.claude/settings.json). When the linked
+    // file parses to a non-object (e.g. JSON null, an array, a number),
+    // the `parsed && typeof parsed === 'object' && !Array.isArray(parsed)`
+    // guard short-circuits to false and `current` stays `{}`. The test at
+    // line 577 covers the non-symlink equivalent; this one covers the
+    // symlink variant.
+    seedSharedClaude({ settingsRaw: 'null' })
+    const cfg = join(H.home, '.marveen-worker', '.claude-config')
+    mkdirSync(cfg, { recursive: true })
+    symlinkSync(join(H.home, '.claude', 'settings.json'), join(cfg, 'settings.json'))
+    AW.ensureWorkerCwd()
     const s = JSON.parse(readFileSync(join(cfg, 'settings.json'), 'utf-8'))
     expect(Object.keys(s).sort()).toEqual(['enabledPlugins', 'skipDangerousModePermissionPrompt'])
   })
@@ -930,6 +957,22 @@ describe('startWorkerSessionFor -- version probe', () => {
     })
     expect(() => AW.startWorkerSession()).not.toThrow()
     expect(H.logs.some((l) => l.level === 'warn' && String(l.msg).includes('version probe failed'))).toBe(true)
+  })
+
+  it('WARNs and continues when startWorkerSessionFor throws for both ctxSlow + ctxFast (L534-L535)', () => {
+    // L534 and L535 are the catch handlers in `startWorkerSession()` that
+    // log + swallow errors from the per-ctx pre-start calls. Drive both by
+    // making the tmux new-session execFileSync throw, which propagates up
+    // through startWorkerSessionFor into the outer catch.
+    H.sessionExistsOnHost.mockReturnValue(false)
+    H.execFileSync.mockImplementation((file: string, args: string[]) => {
+      const argv = [file, ...(args as string[])].join(' ')
+      if (argv.includes('new-session')) throw new Error('tmux-new-session-fail')
+      return ''
+    })
+    expect(() => AW.startWorkerSession()).not.toThrow()
+    expect(H.logs.some((l) => l.level === 'warn' && String(l.msg).includes('pre-start slow session failed'))).toBe(true)
+    expect(H.logs.some((l) => l.level === 'warn' && String(l.msg).includes('pre-start fast session failed'))).toBe(true)
   })
 })
 
