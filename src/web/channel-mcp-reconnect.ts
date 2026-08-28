@@ -51,6 +51,16 @@ function dismissMcpMenu(session: string): void {
   }
 }
 
+// Test-only escape hatch (cycle 47-48 pattern): the post-loop "still not
+// idle" warn at L49 was unreachable through attemptChannelMcpReconnect alone
+// because the production path always exhausts or short-circuits earlier in
+// ways that don't deterministically drive 4×non-idle captures. Exporting
+// the function under `__test_` lets the suite exercise both branches of the
+// `!pane || !paneLooksIdle(pane)` guard directly.
+export function __test_dismissMcpMenu(session: string): void {
+  dismissMcpMenu(session)
+}
+
 export interface ReconnectResult {
   ok: boolean
   message: string

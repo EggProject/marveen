@@ -58,6 +58,7 @@ import {
   resolveAgentProviderType,
   selectedSubmenuLine,
   chooseSubmenuTarget,
+  __test_dismissMcpMenu,
 } from '../web/channel-mcp-reconnect.js'
 
 // Submenu panes Claude Code renders for each plugin state. The `❯` marks the
@@ -335,5 +336,39 @@ describe('attemptChannelMcpReconnect', () => {
       (c) => Array.isArray(c[1]) && c[1].includes('Escape'),
     )
     expect(escapeCalls.length).toBeGreaterThan(0)
+  })
+})
+
+// __test_dismissMcpMenu: covers channel-mcp-reconnect.ts:49 branch[1]
+// (`pane && !paneLooksIdle(pane)` -> the stuck-modal warn). The production
+// call site in attemptChannelMcpReconnect drives the function through paths
+// that deterministically consume capturePane mocks before reaching the 4×
+// non-idle loop, so the post-loop "still not idle" branch (L49) was the
+// last uncovered line in this file. Exercising it through the test escape
+// hatch avoids monkey-patching capturePane around the real call chain.
+describe('__test_dismissMcpMenu', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('warns when the pane is captured but still not idle after the 4-Escape budget (L49 branch[1])', async () => {
+    const { logger } = await import('../logger.js')
+    // 4 in-loop captures, each non-empty + non-idle so the loop never
+    // short-circuits via `pane && paneLooksIdle(pane)`.
+    const busyPane = '· Synthesizing… (esc to interrupt)'
+    mockCapturePane
+      .mockReturnValueOnce(busyPane) // iter 1
+      .mockReturnValueOnce(busyPane) // iter 2
+      .mockReturnValueOnce(busyPane) // iter 3
+      .mockReturnValueOnce(busyPane) // iter 4
+      .mockReturnValueOnce(busyPane) // post-loop capture
+
+    __test_dismissMcpMenu('agent-samu')
+
+    // The post-loop warn is the ONLY signal that branch[1] fired.
+    expect(logger.warn).toHaveBeenCalledWith(
+      { session: 'agent-samu' },
+      expect.stringContaining('pane NOT confirmed idle'),
+    )
   })
 })
