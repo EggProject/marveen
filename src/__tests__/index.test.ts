@@ -2431,10 +2431,14 @@ describe('signal rethrows non-ESRCH errors', () => {
 })
 
 describe('isLegitimateDashboardPid: command does not match node|tsx', () => {
-  it('returns false when getProcessCommand returns a non-node binary name', async () => {
+  it('returns false when getProcessCommand returns a non-node binary name (index.ts:205 branch[0])', async () => {
     // Use the real acquirePidfileLock so isLegitimateDashboardPid actually
     // runs via ctx.isLegitimatePredecessor. checkFreshStartupRace will
     // short-circuit first (returns process.pid on the first read).
+    // A process.getuid=1000 + getProcessUid=1000 mockra kellett, hogy a
+    // function TENYLEGESEN elerje az L205-ot: az eredeti teszt uid nelkul
+    // a L203-as uid-mismatch agon tért vissza, es L205 soha nem futott le
+    // (ezért volt 99.02% branch coverage es "Uncovered Line: 205").
     await withRealAcquirePidfileLock(async () => {
       const origKill = process.kill
       ;(process as unknown as { kill: (pid: number, sig?: number | string) => boolean }).kill = ((pid: number, sig?: number | string) => {
@@ -2453,6 +2457,9 @@ describe('isLegitimateDashboardPid: command does not match node|tsx', () => {
         })
         mockExecFileSync.mockImplementation((cmd: string, args?: readonly string[]) => {
           if (cmd === '/bin/ps' && args?.[0] === '-p' && args?.[2] === '-o' && args?.[3] === 'comm=') return 'bash'
+          // uid-mezo mockolva, hogy a procCtx.uid === ownerUid -- kulonben
+          // az L203-as uid-mismatch ag elozne meg az L205-ot.
+          if (cmd === '/bin/ps' && args?.[0] === '-p' && args?.[2] === '-o' && args?.[3] === 'uid=') return '1000'
           if (cmd === '/bin/ps' && args?.[0] === '-Ao') return '999 1000 bash /opt/marveen/dist/index.js\n'
           return ''
         })
