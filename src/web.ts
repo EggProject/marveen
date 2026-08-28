@@ -552,8 +552,8 @@ export function startWebServer(port = 3420): http.Server {
     if (pluginMonitorInterval) clearInterval(pluginMonitorInterval)
     workerStartupCancelled = true
     if (workerLivenessInterval) clearInterval(workerLivenessInterval)
-    if (startupWatchdogGrace) clearTimeout(startupWatchdogGrace)
-    if (startupWatchdogPoll) clearInterval(startupWatchdogPoll)
+    clearTimeout(startupWatchdogGrace)
+    clearInterval(startupWatchdogPoll)
     clearInterval(channelHealthInterval)
     if (costsSyncInterval) clearInterval(costsSyncInterval)
     clearInterval(stuckInputInterval)
