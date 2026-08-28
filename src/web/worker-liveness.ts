@@ -128,7 +128,13 @@ export function decideWorkerLiveness(
   }
 
   // Absent after having been alive: the one transition worth a log line.
-  const lifetimeMs = prev.lastSeenAliveAtMs - prev.firstSeenAtMs!
+  // prev.firstSeenAtMs is structurally non-null here: the L126 guard
+  // (prev.lastSeenAliveAtMs != null) only fires after at least one alive
+  // observation, and the alive branch always sets firstSeenAtMs.
+  const firstSeenAtMs = prev.firstSeenAtMs
+  /* istanbul ignore next: structurally unreachable -- prev.lastSeenAliveAtMs != null implies prev.firstSeenAtMs != null (they are set together in the alive branch) */
+  if (firstSeenAtMs == null) throw new Error('firstSeenAtMs must be non-null')
+  const lifetimeMs = prev.lastSeenAliveAtMs - firstSeenAtMs
   return {
     logDeath: true,
     lifetimeMs,
@@ -164,10 +170,16 @@ export function sweepWorkerLiveness(
     )
     states.set(session, decision.next)
     if (decision.logDeath) {
+      // decision.lifetimeMs is structurally non-null when logDeath is true:
+      // the only branch in decideWorkerLiveness that sets logDeath=true is the
+      // !alive && lastSeenAliveAtMs != null branch, which computes a numeric
+      // lifetimeMs from prev.lastSeenAliveAtMs - prev.firstSeenAtMs.
+      const lifetimeMs = decision.lifetimeMs
+      /* istanbul ignore next: structurally unreachable -- decideWorkerLiveness only sets logDeath=true alongside a numeric lifetimeMs */
+      if (lifetimeMs == null) throw new Error('logDeath requires a numeric lifetimeMs')
       deps.onDeath({
         session,
-        // decision.lifetimeMs is non-null when logDeath is true (the only branch that sets logDeath also computes a numeric lifetimeMs).
-        lifetimeMs: decision.lifetimeMs!,
+        lifetimeMs,
         lastPane: decision.lastPane,
         lifetimeTruncated: decision.lifetimeTruncated,
       })
