@@ -31,15 +31,23 @@ function loadFromDisk(): Record<string, string | number> {
 
 cache = loadFromDisk()
 
+// Watcher callback extracted to a testable pure function. The if/else branch
+// (filename === 'config-overrides.json' -> cache reload, otherwise no-op) was
+// previously unreachable from unit tests because the fs.watch trigger is
+// inherently racy and platform-dependent; per cycle 47-48 we expose the
+// decision as `__test_handleWatchEvent` so the suite can exercise both
+// branches deterministically without an actual directory watcher.
+export function __test_handleWatchEvent(_event: unknown, filename: string | null): void {
+  if (filename === 'config-overrides.json') cache = loadFromDisk()
+}
+
 // Lazily start the directory watch on first use rather than at import time,
 // so importing this module in a test (no STORE_DIR yet) does not throw.
 function ensureWatching(): void {
   if (watcher) return
   try {
     mkdirSync(STORE_DIR, { recursive: true })
-    watcher = watch(STORE_DIR, { persistent: false }, (_event, filename) => {
-      if (filename === 'config-overrides.json') cache = loadFromDisk()
-    })
+    watcher = watch(STORE_DIR, { persistent: false }, __test_handleWatchEvent)
   } catch {
     // Best-effort: if the platform/FS doesn't support watching the
     // directory, the cache simply stays as of the last read/write from this

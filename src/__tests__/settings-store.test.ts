@@ -50,6 +50,7 @@ const {
   setOverride,
   getOverrides,
   reloadOverridesForTest,
+  __test_handleWatchEvent,
 } = await import('../settings-store.js')
 
 describe('settings-store', () => {
@@ -194,6 +195,35 @@ describe('settings-store', () => {
     // `ensureWatching`'s mkdirSync + watch() success path.
     setOverride('KANBAN_WIP_WARN_PCT', 77)
     reloadOverridesForTest()
+    expect(getEffectiveSettingValue('KANBAN_WIP_WARN_PCT')).toBe(77)
+  })
+
+  // ----- __test_handleWatchEvent: extracted per cycle 47-48 so the if/else
+  //       branches (filename === 'config-overrides.json') are deterministically
+  //       reachable without a real directory watcher. The branch[0]
+  //       (filename match -> reload cache) was previously uncovered because
+  //       fs.watch triggers are racy / platform-dependent.
+
+  it('__test_handleWatchEvent reloads the cache on config-overrides.json rename (branch[0])', () => {
+    // Pre-state: a value that matches the registry default (80) so any
+    // accidental reload would still satisfy the assertion -- we assert the
+    // NEW value (77) is visible, proving the reload fired.
+    writeFileSync(OVERRIDES, JSON.stringify({ KANBAN_WIP_WARN_PCT: 77 }))
+    __test_handleWatchEvent('rename', 'config-overrides.json')
+    expect(getEffectiveSettingValue('KANBAN_WIP_WARN_PCT')).toBe(77)
+  })
+
+  it('__test_handleWatchEvent ignores non-config-overrides.json files (branch[1])', () => {
+    writeFileSync(OVERRIDES, JSON.stringify({ KANBAN_WIP_WARN_PCT: 77 }))
+    // Manually set the in-memory cache to a sentinel value via reloadOverridesForTest
+    // (so we can prove the unrelated event did NOT touch the cache).
+    reloadOverridesForTest()
+    expect(getEffectiveSettingValue('KANBAN_WIP_WARN_PCT')).toBe(77)
+
+    // An unrelated event (e.g. .env write, lock file change) MUST NOT reload.
+    // The cache stays at 77 even if the on-disk file now has a different value.
+    writeFileSync(OVERRIDES, JSON.stringify({ KANBAN_WIP_WARN_PCT: 88 }))
+    __test_handleWatchEvent('change', 'something-else.json')
     expect(getEffectiveSettingValue('KANBAN_WIP_WARN_PCT')).toBe(77)
   })
 })
