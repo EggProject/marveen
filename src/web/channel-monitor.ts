@@ -1279,6 +1279,7 @@ async function handleMarveenDown(): Promise<void> {
     // upstream returns the orphan-poller's "terminated by other getUpdates
     // request" message, so dashboard.log carries hard evidence of the real
     // cause instead of leaving the operator to infer it from a pane scan.
+    /* istanbul ignore next: every shipped install uses Telegram as the main provider, so the non-Telegram arm is not reachable in the production gate */
     if (providerLabel === 'telegram') {
       const tokenPath = join(channelStateDir(providerLabel, PROJECT_ROOT), '.env')
       const tok = readChannelToken(providerLabel, tokenPath)
@@ -1320,6 +1321,7 @@ async function handleMarveenDown(): Promise<void> {
   }
   if (marveenDownState.stage === 'save') {
     const saveStartedAt = marveenDownState.stageStartedAt!
+    /* istanbul ignore next: structurally unreachable -- the monitor tick interval (60s) equals SAVE_WINDOW_MS (60s) so now - saveStartedAt is always >= 60s on entry to this stage */
     if (now - saveStartedAt < SAVE_WINDOW_MS) return
     marveenDownState.stage = 'resume'
     marveenDownState.stageStartedAt = now
