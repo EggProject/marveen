@@ -2455,7 +2455,7 @@ function cosineSimilarity(a: number[], b: number[]): number {
   return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB))
 }
 
-function vectorSearch(agentId: string, queryEmbedding: number[], limit: number = 10): Memory[] {
+function vectorSearch(agentId: string, queryEmbedding: number[], limit: number): Memory[] {
   const rows = db.prepare(
     "SELECT * FROM memories WHERE embedding IS NOT NULL AND (agent_id = ? OR category = 'shared')"
   ).all(agentId) as Memory[]
