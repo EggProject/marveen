@@ -109,7 +109,7 @@ function activeInviteCount(store: InvitesFile, now: number): number {
   // re-assigns it to {} on L138; runInviteMonitorTick continues early at
   // L209 when it's undefined), so the `?? {}` fallback was dead.
   let n = 0
-  for (const inv of Object.values(store.invites)) {
+  for (const inv of Object.values(store.invites!)) {
     if (!inv.used && inv.expiresAt >= now) n++
   }
   return n
