@@ -46,7 +46,7 @@ if [ -f "$INSTALL_DIR/.env" ]; then
   # the boot-time credentials sync). Keeps the MAIN agent on the same stable
   # token the sub-agents launch with, instead of the rotating
   # ~/.claude/.credentials.json, even when .env carries no auth key
-  # (2026-07-15 bootcamp: terminal-pasted setup-token never reached .env).
+  # (terminal-pasted setup-token never reached .env).
   if [ -z "$_oauth" ] && [ -s "$INSTALL_DIR/store/.claude-oauth-token" ]; then
     _oauth="$(cat "$INSTALL_DIR/store/.claude-oauth-token")"
   fi
@@ -220,7 +220,7 @@ for _p in $CHANNEL_PLUGINS_EXTRA; do
 done
 unset _p
 
-# ROOT-CAUSE NOTE (kali-linux WSL, claude-code 2.1.152, 2026-05-27):
+# ROOT-CAUSE NOTE:
 # Inbound MCP notifications from the `--channels` plugin go through a SECOND
 # gate beyond --dangerously-skip-permissions / --dangerously-load-development-
 # channels: claude-code checks `/etc/claude-code/managed-settings.json`
@@ -273,9 +273,8 @@ fi
 # shown in the input box, picked from git history / conversation). For headless
 # agent sessions it is pure noise AND it caused a false-positive incident: the
 # stuck-input recovery read the dim suggestion as a "parked input" and escalated a
-# phantom to the operator (2026-06-30, "Köszi a halakat."). Killing it at the
-# source removes the phantom entirely. Inherited by every sub-agent via the tmux
-# global env set below.
+# phantom to the operator. Killing it at the source removes the phantom entirely.
+# Inherited by every sub-agent via the tmux global env set below.
 export CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false
 
 CLAUDE="$(command -v claude)"
@@ -283,7 +282,7 @@ TMUX="$(command -v tmux)"
 [ -z "$CLAUDE" ] && echo "ERROR: claude not found on PATH" >&2 && exit 1
 [ -z "$TMUX" ]   && echo "ERROR: tmux not found on PATH" >&2 && exit 1
 
-# MCP startup-batch tuning for the MAIN session (2026-06-26).
+# MCP startup-batch tuning for the MAIN session.
 #
 # The --channels telegram plugin registers as a stdio MCP server. Claude Code
 # connects stdio MCP servers in batches of MCP_SERVER_CONNECTION_BATCH_SIZE
@@ -292,7 +291,7 @@ TMUX="$(command -v tmux)"
 # claude.ai Gmail/Calendar/Drive connectors + the channel plugin), so the slow
 # remote connectors starve the telegram plugin out of the startup batch / push
 # it past MCP_TIMEOUT -- it never registers, no poller spawns, and the main bot
-# goes silent (observed 2026-06-26: ~2h outage, auto-recovery exhausted).
+# goes silent (auto-recovery exhausts after ~2h of silence).
 #
 # startAgentProcess already sets these for every sub-agent (which is why their
 # channels come up); channels.sh did NOT, so the main session never got the
@@ -330,8 +329,7 @@ MODEL_FLAG=""
 # -- the ROTATING macOS Keychain OAuth session, or (Linux) the shared
 # ~/.claude/.credentials.json -- both periodically expire and 401 the main bot
 # ("Please run /login"), while the isolated sub-agents (long-lived fleet
-# setup-token) never do (confirmed root cause of the 2026-07-23 marveen-channels
-# silent outage). The helper provisions an isolated CLAUDE_CONFIG_DIR (same code
+# setup-token) never do. The helper provisions an isolated CLAUDE_CONFIG_DIR (same code
 # path as the sub-agents, via dist/web/agent-process.js) and authenticates the
 # main agent from the fleet setup-token instead.
 #
@@ -375,8 +373,8 @@ if [ -n "$_node_bin" ] && [ -f "$INSTALL_DIR/dist/web/agent-process.js" ]; then
   fi
   # LOUD REGRESSION GUARD, in two triggers. Both mean the same thing: this boot
   # resolved to the shared ~/.claude, so the main agent rides the rotating
-  # shared credential session -- exactly how the 2026-07-27 evening 401 outage
-  # started, unnoticed for hours because the owner simply got no replies. Both
+  # shared credential session -- the main agent silently 401s into a deaf channel
+  # until the owner notices. Both
   # surface it at START time: a failures-log line plus a best-effort inter-agent
   # message. Measured, not assumed: the only combination silent on BOTH is an
   # install that never ran isolated AND carries no fleet setup-token -- which is
@@ -423,7 +421,7 @@ fi
 unset _node_bin
 
 # Re-seed hasCompletedOnboarding in the SHARED ~/.claude.json BEFORE launching
-# the main claude. If the key was lost (2026-07-15 bootcamp incident), the
+# the main claude. If the key was lost, the
 # fresh TUI parks on the first-run "Select login method" picker -- and the
 # first-run guard below would blindly Enter it into a browser sign-in screen
 # no headless box can complete. Atomic tmp+rename; an unparseable file is left
@@ -545,7 +543,7 @@ $TMUX set-environment -g CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION false 2>/dev/null 
 #
 # Idempotent launch: the service runs KillMode=process so a `systemctl stop`
 # no longer cgroup-kills the SHARED tmux server (which would tear down every
-# sibling agent session on this host -- the 2026-06-26 fleet-wide outage). The
+# sibling agent session on this host -- a fleet-wide outage). The
 # trade-off is that a prior "$SESSION" can survive into this relaunch, so kill
 # just THIS session first -- never the server, never another agent's session --
 # otherwise new-session below fails with "duplicate session".
@@ -633,7 +631,7 @@ unset _bot_name
 # `launchctl kickstart -k com.marveen.channels` (or the launchd KeepAlive's own
 # restart after a crash) bypasses the dashboard - those code paths never touched
 # the watchdog baseline, and the old mtimes survived into the fresh session,
-# triggering a false-positive respawn loop within minutes (2026-06-01 18:26).
+# triggering a false-positive respawn loop within minutes.
 #
 # touch + epoch-write happens unconditionally here so every channels.sh launch
 # (manual or dashboard-driven) leaves a consistent baseline. The scheduled
@@ -642,14 +640,13 @@ mkdir -p "$INSTALL_DIR/store"
 touch "$INSTALL_DIR/store/.channel-keepalive"
 date +%s > "$INSTALL_DIR/store/.channel-last-respawn"
 
-# POST-INIT PLUGIN UNLOCK (2026-06-01 Szabi 15:24 incident workaround):
+# POST-INIT PLUGIN UNLOCK:
 # Claude Code 2.1.159 + telegram-plugin 0.0.6: the `--channels` parameter
 # announces "Listening for channel messages from: plugin:telegram@..." in the
 # TUI, but the plugin server itself is NOT always spawned on fresh-session
 # init - it lands in /mcp's Failed state with no bun-poller child. Manually
 # opening /mcp, moving the cursor up to the failed plugin row, and pressing
-# Enter twice (enter submenu, press Reconnect) brings the plugin live -
-# Szabi's empirical sequence that fixed the 16:31 hard-restart aftermath.
+# Enter twice (enter submenu, press Reconnect) brings the plugin live.
 #
 # Two-stage detection, both must indicate "no plugin" before we fire keystrokes:
 #
@@ -663,7 +660,7 @@ date +%s > "$INSTALL_DIR/store/.channel-last-respawn"
 #   2. capture-pane after `/mcp` shows the plugin's own row in a failed state.
 #      Connected/Enabled rows must NOT trigger the keystroke sequence, because
 #      then `Up`+`Enter`+`Enter` would land on "Disable" in the submenu and
-#      disable the plugin instead of reconnecting it (Szabi msg 427).
+#      disable the plugin instead of reconnecting it.
 #
 # We sequence both checks, log the decision, and fire only when both agree.
 # The subshell is detached so the main script keeps moving to the wait-loop.

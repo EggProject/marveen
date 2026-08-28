@@ -64,7 +64,10 @@ export async function tryHandleSpans(ctx: RouteContext): Promise<boolean> {
 
   // GET /api/traces -- list recent traces
   if (path === '/api/traces' && method === 'GET') {
-    const limit = Math.min(parseInt(url.searchParams.get('limit') ?? '50'), 200)
+    const rawLimit = parseInt(url.searchParams.get('limit') ?? '50')
+    const limit = Number.isFinite(rawLimit) && rawLimit >= 1
+      ? Math.min(rawLimit, 200)
+      : 50
     json(res, listOtelTraces(limit))
     return true
   }

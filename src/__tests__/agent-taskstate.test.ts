@@ -1,5 +1,17 @@
-import { describe, it, expect, afterEach } from 'vitest'
-import {
+import { describe, it, expect, afterEach, afterAll, vi } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+const SANDBOX = mkdtempSync(join(tmpdir(), 'agent-taskstate-'))
+const STORE = join(SANDBOX, 'store')
+
+vi.mock('../config.js', async (orig) => {
+  const actual = await orig<typeof import('../config.js')>()
+  return { ...actual, PROJECT_ROOT: SANDBOX, STORE_DIR: STORE }
+})
+
+const {
   shouldReplayTaskState,
   isEmptyTaskState,
   buildTaskStateInjection,
@@ -9,8 +21,11 @@ import {
   clearTaskState,
   sweepOrphanTaskStates,
   TASKSTATE_TTL_MS,
-  type AgentTaskState,
-} from '../web/agent-taskstate.js'
+} = await import('../web/agent-taskstate.js')
+
+type AgentTaskState = NonNullable<Parameters<typeof shouldReplayTaskState>[0]>
+
+afterAll(() => rmSync(SANDBOX, { recursive: true, force: true }))
 
 const NOW = 1_700_000_000_000
 const rec = (over: Partial<AgentTaskState> = {}): AgentTaskState => ({
@@ -95,7 +110,7 @@ describe('buildTaskStateInjection', () => {
   })
 })
 
-// Light I/O round-trip on the real store dir, with cleanup.
+// Light I/O round-trip on the sandboxed store dir, with cleanup.
 describe('task-state store I/O', () => {
   const A = 'vitest-taskstate-agent'
   afterEach(() => clearTaskState(A))

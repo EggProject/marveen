@@ -5,6 +5,8 @@ import {
   detectsThinkingBlockError,
   detectsBlockingMenu,
   detectsPastePlaceholder,
+  detectsFirstRunGate,
+  detectsModelConsentDialog,
   isReadyForPrompt,
   shouldRetrySubmit,
   shouldClearTruncatedPreamble,
@@ -13,10 +15,19 @@ import {
   stuckInputSignature,
   parkedPasteSignature,
   decideStuckInputRecovery,
+  decideStuckInputAction,
   parkedChannelInput,
   parkedInputText,
+  parkedMachineOriginInput,
+  parkedScheduledTaskInput,
   parkedInputRowCount,
+  parkedMainInputHasRemedy,
   submitLanded,
+  idleConsideringDimGhost,
+  paneLooksIdle,
+  stuckToolCallSignature,
+  decideStuckToolCallRecovery,
+  stripGhostSuggestion,
   paneShowsContextSaturation,
 } from '../pane-state.js'
 
@@ -1402,7 +1413,7 @@ describe('stuckInputSignature', () => {
 
 describe('decideStuckInputRecovery', () => {
   const TH = { confirmMs: 10_000, dedupMs: 12_000, maxAttempts: 3 }
-  const NONE = { parkedSig: null, firstSeenAt: null, lastRecoverAt: null, attempts: 0 }
+  const NONE = { parkedSig: null, firstSeenAt: null, lastRecoverAt: null, attempts: 0, giveUpAlerted: false }
 
   it('does nothing when nothing is parked and no spell is active', () => {
     const d = decideStuckInputRecovery(null, NONE, 5_000, TH)
@@ -1477,6 +1488,20 @@ describe('decideStuckInputRecovery', () => {
     expect(d.next.firstSeenAt).toBe(500_000)
     expect(d.next.lastRecoverAt).toBe(null)
     expect(d.next.attempts).toBe(0)
+  })
+
+  it('preserves giveUpAlerted across backwards clock skew within the SAME spell', () => {
+    // Regression: a clock jump within the same spell used to silently drop
+    // giveUpAlerted (the "Backwards clock skew" branch returned a fresh object
+    // without it), letting the watcher's per-spell alert gate re-open and the
+    // give-up alert fire a second time once the spell reached maxAttempts again.
+    const prev = { parkedSig: 'msg-A', firstSeenAt: 1_000_000, lastRecoverAt: 1_000_000, attempts: 5, giveUpAlerted: true }
+    const d = decideStuckInputRecovery('msg-A', prev, 500_000, TH)
+    expect(d.recover).toBe(false)
+    expect(d.next.firstSeenAt).toBe(500_000)
+    expect(d.next.lastRecoverAt).toBe(null)
+    expect(d.next.attempts).toBe(0)
+    expect(d.next.giveUpAlerted).toBe(true)
   })
 })
 
@@ -2168,3 +2193,1599 @@ describe('parkedPasteSignature (stuck [Pasted text #N] recovery)', () => {
     expect(parkedPasteSignature(auraShape)).not.toBeNull()
   })
 })
+
+// ---------------------------------------------------------------------------
+// stripGhostSuggestion: dim (SGR 2) hint removal from a coloured capture.
+//
+// The function collapses a `tmux capture-pane -e -p` coloured stream into a
+// plain-text equivalent of `capture-pane -p` MINUS any text rendered with SGR
+// dim (faint) intensity. The dim-text discriminator is the load-bearing fix
+// for the 2026-06-26 phantom prompt-injection: Claude Code's empty-input-box
+// autocomplete hint renders in dim, and a plain capture read would otherwise
+// treat it as parked input and re-submit the hint as if the operator typed it.
+// ---------------------------------------------------------------------------
+describe('stripGhostSuggestion', () => {
+  it('returns empty string for empty input', () => {
+    expect(stripGhostSuggestion('')).toBe('')
+  })
+
+  it('passes through plain text unchanged', () => {
+    expect(stripGhostSuggestion('plain old text')).toBe('plain old text')
+  })
+
+  it('drops text rendered with SGR 2 (dim/faint) inside an ESC[...m sequence', () => {
+    // The classic phantom-prompt shape: dim autocomplete hint between the �
+    // and the next prompt glyph. After stripping, only the prompt and trailing
+    // space remain -- no ghost text.
+    const coloured = '❯ \x1b[2mTry refactor\x1b[0m '
+    expect(stripGhostSuggestion(coloured)).toBe('❯  ')
+  })
+
+  it('keeps normal-intensity text inside the same stream', () => {
+    // The SGR 2 segment is dropped, but SGR 0 (reset) text after it stays.
+    const coloured = 'before\x1b[2mdim\x1b[0mafter'
+    expect(stripGhostSuggestion(coloured)).toBe('beforeafter')
+  })
+
+  it('strips dim across multiple consecutive dim sequences', () => {
+    const coloured = '\x1b[2mfirst\x1b[2msecond\x1b[0m visible'
+    expect(stripGhostSuggestion(coloured)).toBe(' visible')
+  })
+
+  it('strips dim text delimited by SGR 22 (normal intensity, not SGR 0)', () => {
+    // SGR 22 explicitly cancels dim/faint. Either reset must end the dim region.
+    const coloured = '\x1b[2mhidden\x1b[22mvisible'
+    expect(stripGhostSuggestion(coloured)).toBe('visible')
+  })
+
+  it('handles empty SGR parameter list (bare ESC[m is a reset)', () => {
+    // The "else if (c === '')" branch: empty param string is a reset code.
+    const coloured = '\x1b[2mdim\x1b[mclear'
+    expect(stripGhostSuggestion(coloured)).toBe('clear')
+  })
+
+  it('drops non-CSI ESC sequences (e.g. ESC followed by other letters)', () => {
+    // The `i++; continue` branch: an ESC byte not followed by `[` is silently
+    // dropped from the output and the cursor advances past the ESC byte alone.
+    const coloured = 'pre\x1bXpost'
+    expect(stripGhostSuggestion(coloured)).toBe('preXpost')
+  })
+
+  it('treats 38;5;N (8-bit colour) as one unit, not splitting on its digits', () => {
+    // The branch where `c === '38'`: the next code is the colour mode ('5')
+    // and the index follows. Advancing `k` by 3 must skip past the entire
+    // 8-bit colour triple so the digit '5' is not misread as an SGR code.
+    const coloured = '\x1b[38;5;240mcoloured\x1b[0m text'
+    expect(stripGhostSuggestion(coloured)).toBe('coloured text')
+  })
+
+  it('treats 38;2;R;G;B (24-bit colour) as one unit', () => {
+    // The branch where `c === '38'` AND mode === '2': advance `k` by 5.
+    const coloured = '\x1b[38;2;255;128;0mrgb\x1b[0m body'
+    expect(stripGhostSuggestion(coloured)).toBe('rgb body')
+  })
+
+  it('treats 48 (background-colour extended) using the same shape', () => {
+    // The branch where `c === '48'`: same advance logic as 38.
+    const coloured = '\x1b[48;5;7mbg\x1b[0m text'
+    expect(stripGhostSuggestion(coloured)).toBe('bg text')
+  })
+
+  it('falls through to k+=1 when an extended-colour code lacks a recognised mode', () => {
+    // The defensive branch: 38 with an unknown mode ('x') -> advance 1,
+    // and the next iteration handles whatever follows. No crash.
+    const coloured = '\x1b[38;x;1mok\x1b[0m tail'
+    expect(stripGhostSuggestion(coloured)).toBe(';1mok tail')
+  })
+
+  it('does not strip non-SGR CSI sequences (skips them but emits following text)', () => {
+    // ESC[2J is a cursor-clear sequence, NOT an SGR (final != 'm'). The skip
+    // path advances past the escape but does not flip the dim flag.
+    const coloured = '\x1b[2Jplain text'
+    expect(stripGhostSuggestion(coloured)).toBe('plain text')
+  })
+
+  it('handles a non-terminated escape (j >= n) by stopping at end of input', () => {
+    // The `i = j < n ? j + 1 : n` branch: when the loop walks off the end
+    // looking for the final CSI byte, the cursor lands at n and the while
+    // terminates cleanly without throwing.
+    const coloured = 'pre\x1b[' // truncated CSI, no closing byte
+    expect(stripGhostSuggestion(coloured)).toBe('pre')
+  })
+
+  it('returns plain text unchanged when no dim sequences are present', () => {
+    // Real production: most of the input is normal colour codes + visible text.
+    const coloured = '\x1b[1mbold\x1b[0m and \x1b[31mred\x1b[0m'
+    expect(stripGhostSuggestion(coloured)).toBe('bold and red')
+  })
+
+  it('strips a dim region that spans multiple non-dim chars inside it', () => {
+    // Mixed: dim, then plain, then dim, then reset. All chars emitted while
+    // dim is true are dropped regardless of intervening SGR codes.
+    const coloured = '\x1b[2ma\x1b[4mb\x1b[3mc\x1b[0md'
+    expect(stripGhostSuggestion(coloured)).toBe('d')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// detectsFirstRunGate: classifies a Claude Code fresh-install gate.
+//
+// The trust / bypass-permissions / login / theme / welcome dialogs a brand-new
+// install parks on before the prompt ever renders. A sub-agent session stuck
+// on one of these is the fresh-install failure mode behind "scheduled tasks
+// pile up on the agents" (Oligo2000 VPS, 2026-07-22).
+// ---------------------------------------------------------------------------
+describe('detectsFirstRunGate', () => {
+  it('returns null for empty input', () => {
+    expect(detectsFirstRunGate('')).toBeNull()
+    expect(detectsFirstRunGate('   \n  ')).toBeNull()
+  })
+
+  it('returns null when the pane has an idle footer (a settled prompt, not a gate)', () => {
+    // Idle footer present -> the real prompt is live; not a gate. A quoted
+    // dialog text without a live footer is also covered by the footer guard.
+    expect(detectsFirstRunGate(IDLE_BYPASS)).toBeNull()
+    expect(detectsFirstRunGate(IDLE_STRICT)).toBeNull()
+  })
+
+  it('returns null when a live busy indicator is present', () => {
+    // A busy pane is never a gate; even a spinner label alone (no esc-to-
+    // interrupt on the footer) short-circuits the detection.
+    expect(detectsFirstRunGate(BUSY_TOKENS_ONLY)).toBeNull()
+  })
+
+  it('returns null when esc-to-interrupt is in the live footer region', () => {
+    // Busy footer scope: an active turn is not a first-run gate.
+    expect(detectsFirstRunGate(BUSY_FULL_FOOTER)).toBeNull()
+  })
+
+  it('detects the per-project trust dialog', () => {
+    const trust = [
+      '  Do you trust the files in this folder?',
+      '',
+      '  1. Yes, I trust this folder',
+      '  2. No, exit',
+    ].join('\n')
+    expect(detectsFirstRunGate(trust)).toBe('trust')
+  })
+
+  it('detects the --dangerously-skip-permissions bypass dialog', () => {
+    const bypass = [
+      '  Bypass Permissions mode',
+      '',
+      '  1. Yes, I accept',
+      '  2. No, exit',
+    ].join('\n')
+    expect(detectsFirstRunGate(bypass)).toBe('bypass-permissions')
+  })
+
+  it('detects the login picker', () => {
+    const login = [
+      '  Select login method',
+      '',
+      '  1. Claude account',
+      '  2. Console account',
+    ].join('\n')
+    expect(detectsFirstRunGate(login)).toBe('login')
+  })
+
+  it('detects the theme picker', () => {
+    const theme = [
+      '  Choose the text style',
+      '',
+      '  1. Dark',
+      '  2. Light',
+    ].join('\n')
+    expect(detectsFirstRunGate(theme)).toBe('theme')
+  })
+
+  it('detects the welcome banner with no prompt glyph (no ❯ -> still a gate)', () => {
+    // Welcome banner alone, no input box at all -> classify 'welcome'.
+    const welcome = ['  Welcome to Claude Code', '  model line, cwd, etc.'].join('\n')
+    expect(detectsFirstRunGate(welcome)).toBe('welcome')
+  })
+
+  it('returns null when the welcome banner is present but a � prompt glyph exists', () => {
+    // The welcome banner also heads the NORMAL fresh-session layout. A ❯
+    // prompt means an input box exists; the pane is usable, not a gate.
+    const welcomeWithPrompt = [
+      '  Welcome to Claude Code',
+      '  model line, cwd, etc.',
+      '',
+      SEP,
+      '❯ ',
+      SEP,
+    ].join('\n')
+    expect(detectsFirstRunGate(welcomeWithPrompt)).toBeNull()
+  })
+
+  it('prefers the more-specific gate when multiple banners are present (login over welcome)', () => {
+    // The login picker renders UNDER the "Welcome to Claude Code" banner.
+    // The order in FIRST_RUN_GATES places login before welcome so the more
+    // specific match wins.
+    const loginUnderWelcome = [
+      '  Welcome to Claude Code',
+      '',
+      '  Select login method',
+      '',
+      '  1. Claude account',
+    ].join('\n')
+    expect(detectsFirstRunGate(loginUnderWelcome)).toBe('login')
+  })
+
+  it('prefers theme over welcome when both banners co-occur', () => {
+    const themeUnderWelcome = [
+      '  Welcome to Claude Code',
+      '',
+      '  Choose the text style',
+      '',
+      '  1. Dark',
+    ].join('\n')
+    expect(detectsFirstRunGate(themeUnderWelcome)).toBe('theme')
+  })
+
+  it('returns null when none of the gate banners are present', () => {
+    // Generic footer-less pane that is not a recognised gate. No banner
+    // matches and no ❯ glyph either -- nothing to report.
+    const unknown = ['  some random text', '  no banners anywhere'].join('\n')
+    expect(detectsFirstRunGate(unknown)).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// detectsModelConsentDialog: model overage-consent dialog (the "agent-config
+// says claude-fable-5 but the session runs Sonnet" drift root cause).
+// ---------------------------------------------------------------------------
+describe('detectsModelConsentDialog', () => {
+  it('returns false on empty / whitespace input', () => {
+    expect(detectsModelConsentDialog('')).toBe(false)
+    expect(detectsModelConsentDialog('   \n  ')).toBe(false)
+  })
+
+  it('returns false when an idle footer is present (real prompt is live)', () => {
+    // A quoted dialog text coexisting with the live idle footer must NOT
+    // trigger -- the prompt is live, not parked on the dialog.
+    expect(detectsModelConsentDialog(IDLE_BYPASS)).toBe(false)
+  })
+
+  it('returns false when a busy indicator is present', () => {
+    expect(detectsModelConsentDialog(BUSY_FULL_FOOTER)).toBe(false)
+    expect(detectsModelConsentDialog(BUSY_TOKENS_ONLY)).toBe(false)
+  })
+
+  it('returns false when the footer has "esc to interrupt"', () => {
+    // Active turn: not a consent dialog.
+    const liveTurn = [
+      '  Fable 5 now uses usage credits',
+      '  1. Continue with Fable 5',
+      '  Enter to confirm',
+      SEP,
+      '❯ ',
+      SEP,
+      '  ⏵⏵ bypass permissions on (shift+tab to cycle) · esc to interrupt',
+    ].join('\n')
+    expect(detectsModelConsentDialog(liveTurn)).toBe(false)
+  })
+
+  it('detects the full Fable 5 consent dialog', () => {
+    // Real observed render shape on a fresh first-turn-of-the-day.
+    const fable = [
+      '  Fable 5 now uses usage credits',
+      '    1. Continue with Fable 5',
+      '  ❯ 2. Switch to Sonnet 5 and continue',
+      '  Enter to confirm · Esc to cancel',
+    ].join('\n')
+    expect(detectsModelConsentDialog(fable)).toBe(true)
+  })
+
+  it('returns false when the "Continue with" option is missing', () => {
+    // Title and confirm hint are present but the continue-option list is
+    // missing -- not the recognised dialog shape.
+    const noOption = [
+      '  Fable 5 now uses usage credits',
+      '  Enter to confirm · Esc to cancel',
+    ].join('\n')
+    expect(detectsModelConsentDialog(noOption)).toBe(false)
+  })
+
+  it('returns false when the title phrase is missing', () => {
+    const noTitle = [
+      '  Some other model dialog',
+      '    1. Continue with Sonnet',
+      '  Enter to confirm',
+    ].join('\n')
+    expect(detectsModelConsentDialog(noTitle)).toBe(false)
+  })
+
+  it('returns false when the "Enter to confirm" hint sits above the footer region', () => {
+    // The confirm hint must be in the LIVE FOOTER region (last few lines).
+    // A scrollback quote of "Enter to confirm" alone is not enough.
+    const scrollbackHint = [
+      '  Enter to confirm -- this is just a help line mentioned earlier',
+      ...Array.from({ length: 10 }, () => '  filler line'),
+      '  Fable 5 now uses usage credits',
+      '    1. Continue with Fable 5',
+    ].join('\n')
+    expect(detectsModelConsentDialog(scrollbackHint)).toBe(false)
+  })
+
+  it('detects a "requires usage credits" variant', () => {
+    // Matcher is model-name-agnostic: the "requires usage credits" wording
+    // also matches. A future "<other model> requires usage credits" dialog
+    // must classify without a code change here.
+    const variant = [
+      '  Sonnet now requires usage credits',
+      '    1. Continue with Sonnet',
+      '  Enter to confirm',
+    ].join('\n')
+    expect(detectsModelConsentDialog(variant)).toBe(true)
+  })
+
+  it('detects a "runs on usage credits" variant', () => {
+    const variant = [
+      '  Opus runs on usage credits',
+      '    1. Continue with Opus',
+      '  Enter to confirm',
+    ].join('\n')
+    expect(detectsModelConsentDialog(variant)).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// idleConsideringDimGhost: idle check that tolerates DIM-only parked text.
+//
+// Claude Code renders an empty-input-box ghost suggestion in dim (SGR-2);
+// a plain capture read shows it as parked text and detectPaneState reads
+// 'typing'. This helper recovers readiness when the dim-stripped view is idle.
+// ---------------------------------------------------------------------------
+describe('idleConsideringDimGhost', () => {
+  it('returns true when the plain capture is already idle', () => {
+    expect(idleConsideringDimGhost(IDLE_BYPASS, null)).toBe(true)
+  })
+
+  it('returns false when the plain capture is busy', () => {
+    expect(idleConsideringDimGhost(BUSY_FULL_FOOTER, null)).toBe(false)
+  })
+
+  it('returns false when the plain capture is typing but the dimStripped view is null', () => {
+    // Typing detected but no dim-stripped view passed -> cannot confirm ghost-
+    // only -> stay not-ready (defensive against an unconfigured caller).
+    expect(idleConsideringDimGhost(TYPING_PARKED, null)).toBe(false)
+  })
+
+  it('returns false when the plain capture is typing and the dimStripped view is also not idle', () => {
+    // The dim-stripped view itself reads busy: real parked text, not ghost.
+    expect(idleConsideringDimGhost(TYPING_PARKED, BUSY_FULL_FOOTER)).toBe(false)
+  })
+
+  it('returns true when the plain capture reads typing but the dim-stripped view is idle', () => {
+    // The recovery: plain (with ghost) reads typing, stripped (ghost removed)
+    // reads idle. The pane only ever held dim ghost text -> IS ready.
+    expect(idleConsideringDimGhost(TYPING_PARKED, IDLE_BYPASS)).toBe(true)
+  })
+
+  it('returns false when the plain capture is unknown (not typing)', () => {
+    // The guard `detectPaneState(plain) !== 'typing'` must reject 'unknown'
+    // / 'busy' / 'error' even if the dimStripped view is idle.
+    expect(idleConsideringDimGhost('', IDLE_BYPASS)).toBe(false)
+    expect(idleConsideringDimGhost(NON_CLAUDE, IDLE_BYPASS)).toBe(false)
+    expect(idleConsideringDimGhost(ERROR_THINKING_BLOCK, IDLE_BYPASS)).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// parkedMachineOriginInput: true when parked input starts with a machine
+// wrapper that the delivery paths prepend (the recovery stack may act on it).
+// ---------------------------------------------------------------------------
+describe('parkedMachineOriginInput', () => {
+  it('is false when there is no parked input', () => {
+    expect(parkedMachineOriginInput(IDLE_BYPASS)).toBe(false)
+    expect(parkedMachineOriginInput('')).toBe(false)
+  })
+
+  it('is false for a human hand-typed draft (no machine wrapper)', () => {
+    expect(parkedMachineOriginInput(TYPING_PARKED)).toBe(false)
+  })
+
+  it('recognises the SCHEDULED TASK NOTICE wrapper', () => {
+    const pane = [
+      '',
+      SEP,
+      '❯ SCHEDULED TASK NOTICE -- the next <scheduled-task source="...">',
+      SEP,
+      '  ⏵⏵ bypass permissions on (shift+tab to cycle)',
+    ].join('\n')
+    expect(parkedMachineOriginInput(pane)).toBe(true)
+  })
+
+  it('recognises the <scheduled-task> opening tag', () => {
+    const pane = [
+      '',
+      SEP,
+      '❯ <scheduled-task source="..."> body of a scheduled tick',
+      SEP,
+      '  ⏵� bypass permissions on (shift+tab to cycle)',
+    ].join('\n')
+    expect(parkedMachineOriginInput(pane)).toBe(true)
+  })
+
+  it('recognises the TEAM MEMBER NOTICE wrapper', () => {
+    const pane = [
+      '',
+      SEP,
+      '❯ TEAM MEMBER NOTICE -- the next <trusted-peer source="..."> some text',
+      SEP,
+      '  ⏵⏵ bypass permissions on (shift+tab to cycle)',
+    ].join('\n')
+    expect(parkedMachineOriginInput(pane)).toBe(true)
+  })
+
+  it('recognises the [Uzenet @...] wrapper', () => {
+    const pane = [
+      '',
+      SEP,
+      '❯ [Uzenet @dev3-tol -- trusted team member]: hello',
+      SEP,
+      '  ⏵⏵ bypass permissions on (shift+tab to cycle)',
+    ].join('\n')
+    expect(parkedMachineOriginInput(pane)).toBe(true)
+  })
+
+  it('recognises the <channel source="plugin:..."> wrapper', () => {
+    const pane = [
+      '',
+      SEP,
+      '❯ <channel source="plugin:telegram:telegram" chat_id="1">body</channel>',
+      SEP,
+      '  ⏵⏵ bypass permissions on (shift+tab to cycle)',
+    ].join('\n')
+    expect(parkedMachineOriginInput(pane)).toBe(true)
+  })
+
+  it('does NOT match a wrapper that appears later in the text (anchored to start)', () => {
+    // Anchored to the box start on purpose: a human draft that merely quotes
+    // a wrapper deeper in the text stays protected (not treated as machine).
+    const pane = [
+      '',
+      SEP,
+      '� Some human text and then a quoted wrapper: SCHEDULED TASK NOTICE',
+      SEP,
+      '  ⏵⏵ bypass permissions on (shift+tab to cycle)',
+    ].join('\n')
+    expect(parkedMachineOriginInput(pane)).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// parkedScheduledTaskInput: true when the parked input is a scheduled-task
+// injection (the safe clear-only path; re-inject is unsafe on TUI truncation).
+// ---------------------------------------------------------------------------
+describe('parkedScheduledTaskInput', () => {
+  it('is false when there is no parked input', () => {
+    expect(parkedScheduledTaskInput(IDLE_BYPASS)).toBe(false)
+    expect(parkedScheduledTaskInput('')).toBe(false)
+  })
+
+  it('recognises the SCHEDULED TASK NOTICE wrapper', () => {
+    const pane = [
+      '',
+      SEP,
+      '❯ SCHEDULED TASK NOTICE -- the next <scheduled-task source="...">',
+      SEP,
+      '  ⏵⏵ bypass permissions on (shift+tab to cycle)',
+    ].join('\n')
+    expect(parkedScheduledTaskInput(pane)).toBe(true)
+  })
+
+  it('recognises the <scheduled-task> opening tag', () => {
+    const pane = [
+      '',
+      SEP,
+      '❯ <scheduled-task source="..."> body of a scheduled tick',
+      SEP,
+      '  ⏵� bypass permissions on (shift+tab to cycle)',
+    ].join('\n')
+    expect(parkedScheduledTaskInput(pane)).toBe(true)
+  })
+
+  it('is false for OTHER machine-origin wrappers (TEAM MEMBER NOTICE / [Uzenet / channel)', () => {
+    // The other machine-origin wrappers are NOT the scheduled-task class:
+    // they belong to inter-agent or plugin delivery and use a different
+    // recovery path. The helper must reject them so the clear-only branch
+    // does not apply to non-scheduled parked messages.
+    const teamPane = [
+      '',
+      SEP,
+      '❯ TEAM MEMBER NOTICE -- the next <trusted-peer source="..."> text',
+      SEP,
+      '  ⏵⏵ bypass permissions on (shift+tab to cycle)',
+    ].join('\n')
+    expect(parkedScheduledTaskInput(teamPane)).toBe(false)
+
+    const uzenetPane = [
+      '',
+      SEP,
+      '� [Uzenet @dev3-tol -- trusted team member]: hello',
+      SEP,
+      '  ⏵⏵ bypass permissions on (shift+tab to cycle)',
+    ].join('\n')
+    expect(parkedScheduledTaskInput(uzenetPane)).toBe(false)
+
+    const channelPane = [
+      '',
+      SEP,
+      '❯ <channel source="plugin:telegram:telegram" chat_id="1">body</channel>',
+      SEP,
+      '  �⏵ bypass permissions on (shift+tab to cycle)',
+    ].join('\n')
+    expect(parkedScheduledTaskInput(channelPane)).toBe(false)
+  })
+
+  it('is false for a human hand-typed draft', () => {
+    expect(parkedScheduledTaskInput(TYPING_PARKED)).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// decideStuckInputAction: pure decision for the soft stuck-input recovery
+// watcher. Returns one of six discrete actions.
+// ---------------------------------------------------------------------------
+describe('decideStuckInputAction', () => {
+  it('routes a single-row complete <channel> block to "enter" (below the escalate cap)', () => {
+    const f: import('../pane-state.js').StuckInputActionFacts = {
+      escalate: false,
+      rowCount: 1,
+      blockComplete: true,
+      blockTruncated: false,
+      truncatedPreamble: false,
+      allowPlainReinject: false,
+      hasPlainText: false,
+      scheduledTaskBlock: false,
+    }
+    expect(decideStuckInputAction(f)).toBe('enter')
+  })
+
+  it('routes a multi-row complete <channel> block to "reinject-block"', () => {
+    // Multi-row is itself a reason to escalate: a plain Enter would corrupt
+    // the buffer with a newline insertion.
+    const f: import('../pane-state.js').StuckInputActionFacts = {
+      escalate: false,
+      rowCount: 3,
+      blockComplete: true,
+      blockTruncated: false,
+      truncatedPreamble: false,
+      allowPlainReinject: false,
+      hasPlainText: false,
+      scheduledTaskBlock: false,
+    }
+    expect(decideStuckInputAction(f)).toBe('reinject-block')
+  })
+
+  it('routes a single-row complete <channel> block to "reinject-block" when escalate=true', () => {
+    const f: import('../pane-state.js').StuckInputActionFacts = {
+      escalate: true,
+      rowCount: 1,
+      blockComplete: true,
+      blockTruncated: false,
+      truncatedPreamble: false,
+      allowPlainReinject: false,
+      hasPlainText: false,
+      scheduledTaskBlock: false,
+    }
+    expect(decideStuckInputAction(f)).toBe('reinject-block')
+  })
+
+  it('routes a single-row plain text with sub-agent allowPlainReinject to "enter"', () => {
+    const f: import('../pane-state.js').StuckInputActionFacts = {
+      escalate: false,
+      rowCount: 1,
+      blockComplete: false,
+      blockTruncated: false,
+      truncatedPreamble: false,
+      allowPlainReinject: true,
+      hasPlainText: true,
+      scheduledTaskBlock: false,
+    }
+    expect(decideStuckInputAction(f)).toBe('enter')
+  })
+
+  it('routes a multi-row plain text with sub-agent allowPlainReinject to "reinject-plain"', () => {
+    const f: import('../pane-state.js').StuckInputActionFacts = {
+      escalate: false,
+      rowCount: 2,
+      blockComplete: false,
+      blockTruncated: false,
+      truncatedPreamble: false,
+      allowPlainReinject: true,
+      hasPlainText: true,
+      scheduledTaskBlock: false,
+    }
+    expect(decideStuckInputAction(f)).toBe('reinject-plain')
+  })
+
+  it('routes a single-row plain text with allowPlainReinject to "reinject-plain" when escalate=true', () => {
+    const f: import('../pane-state.js').StuckInputActionFacts = {
+      escalate: true,
+      rowCount: 1,
+      blockComplete: false,
+      blockTruncated: false,
+      truncatedPreamble: false,
+      allowPlainReinject: true,
+      hasPlainText: true,
+      scheduledTaskBlock: false,
+    }
+    expect(decideStuckInputAction(f)).toBe('reinject-plain')
+  })
+
+  it('routes a scheduled-task single-row block to "enter"', () => {
+    const f: import('../pane-state.js').StuckInputActionFacts = {
+      escalate: false,
+      rowCount: 1,
+      blockComplete: false,
+      blockTruncated: false,
+      truncatedPreamble: false,
+      allowPlainReinject: false,
+      hasPlainText: false,
+      scheduledTaskBlock: true,
+    }
+    expect(decideStuckInputAction(f)).toBe('enter')
+  })
+
+  it('routes a scheduled-task multi-row block to "clear-scheduled"', () => {
+    const f: import('../pane-state.js').StuckInputActionFacts = {
+      escalate: false,
+      rowCount: 2,
+      blockComplete: false,
+      blockTruncated: false,
+      truncatedPreamble: false,
+      allowPlainReinject: false,
+      hasPlainText: false,
+      scheduledTaskBlock: true,
+    }
+    expect(decideStuckInputAction(f)).toBe('clear-scheduled')
+  })
+
+  it('routes a single-row scheduled-task block to "clear-scheduled" when escalate=true', () => {
+    const f: import('../pane-state.js').StuckInputActionFacts = {
+      escalate: true,
+      rowCount: 1,
+      blockComplete: false,
+      blockTruncated: false,
+      truncatedPreamble: false,
+      allowPlainReinject: false,
+      hasPlainText: false,
+      scheduledTaskBlock: true,
+    }
+    expect(decideStuckInputAction(f)).toBe('clear-scheduled')
+  })
+
+  it('routes a truncated preamble to "clear-preamble" when escalate=true', () => {
+    const f: import('../pane-state.js').StuckInputActionFacts = {
+      escalate: true,
+      rowCount: 1,
+      blockComplete: false,
+      blockTruncated: false,
+      truncatedPreamble: true,
+      allowPlainReinject: false,
+      hasPlainText: false,
+      scheduledTaskBlock: false,
+    }
+    expect(decideStuckInputAction(f)).toBe('clear-preamble')
+  })
+
+  it('does NOT clear-preamble at non-escalated tier (falls through)', () => {
+    // truncatedPreamble only matters at full escalation. Below the cap, the
+    // single-row fallback is the harmless Enter first; multi-row is hold.
+    const singleRow: import('../pane-state.js').StuckInputActionFacts = {
+      escalate: false,
+      rowCount: 1,
+      blockComplete: false,
+      blockTruncated: false,
+      truncatedPreamble: true,
+      allowPlainReinject: false,
+      hasPlainText: false,
+      scheduledTaskBlock: false,
+    }
+    expect(decideStuckInputAction(singleRow)).toBe('enter')
+    const multiRow: import('../pane-state.js').StuckInputActionFacts = {
+      escalate: false,
+      rowCount: 3,
+      blockComplete: false,
+      blockTruncated: false,
+      truncatedPreamble: true,
+      allowPlainReinject: false,
+      hasPlainText: false,
+      scheduledTaskBlock: false,
+    }
+    expect(decideStuckInputAction(multiRow)).toBe('hold')
+  })
+
+  it('routes a single-row truncated <channel> block to "enter" (legacy harmless Enter)', () => {
+    const f: import('../pane-state.js').StuckInputActionFacts = {
+      escalate: false,
+      rowCount: 1,
+      blockComplete: false,
+      blockTruncated: true,
+      truncatedPreamble: false,
+      allowPlainReinject: false,
+      hasPlainText: false,
+      scheduledTaskBlock: false,
+    }
+    expect(decideStuckInputAction(f)).toBe('enter')
+  })
+
+  it('routes a multi-row truncated <channel> block to "hold"', () => {
+    // Enter would corrupt; re-inject would answer the wrong chat_id. Hold.
+    const f: import('../pane-state.js').StuckInputActionFacts = {
+      escalate: false,
+      rowCount: 2,
+      blockComplete: false,
+      blockTruncated: true,
+      truncatedPreamble: false,
+      allowPlainReinject: false,
+      hasPlainText: false,
+      scheduledTaskBlock: false,
+    }
+    expect(decideStuckInputAction(f)).toBe('hold')
+  })
+
+  it('routes the single-row default to "enter"', () => {
+    const f: import('../pane-state.js').StuckInputActionFacts = {
+      escalate: false,
+      rowCount: 1,
+      blockComplete: false,
+      blockTruncated: false,
+      truncatedPreamble: false,
+      allowPlainReinject: false,
+      hasPlainText: false,
+      scheduledTaskBlock: false,
+    }
+    expect(decideStuckInputAction(f)).toBe('enter')
+  })
+
+  it('routes the multi-row default to "hold"', () => {
+    const f: import('../pane-state.js').StuckInputActionFacts = {
+      escalate: false,
+      rowCount: 4,
+      blockComplete: false,
+      blockTruncated: false,
+      truncatedPreamble: false,
+      allowPlainReinject: false,
+      hasPlainText: false,
+      scheduledTaskBlock: false,
+    }
+    expect(decideStuckInputAction(f)).toBe('hold')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// parkedMainInputHasRemedy: would the soft stuck-input recovery have ANY
+// submitting/clearing move for the MAIN session at full escalation, or is it
+// wedged in the no-remedy 'hold' branch.
+// ---------------------------------------------------------------------------
+describe('parkedMainInputHasRemedy', () => {
+  it('returns true on an empty / idle pane (BUG: should be false but does not gate on typing state)', () => {
+    // BUG PIN pane-state-idle-remedy:
+    // parkedMainInputHasRemedy does not gate on the 'typing' state, so an
+    // idle/empty pane also falls through to the default 'enter' branch and
+    // reads as having a remedy. Documented; the test pins the actual
+    // behavior so a future fix surfaces here, not in production.
+    expect(parkedMainInputHasRemedy(IDLE_BYPASS)).toBe(true)
+    expect(parkedMainInputHasRemedy('')).toBe(true)
+  })
+
+  it('is true when a single-row complete <channel> block is parked (chat_id-safe reinject)', () => {
+    const pane = [
+      '',
+      SEP,
+      '❯ <channel source="plugin:telegram:telegram" chat_id="1268077055" message_id="1">body</channel>',
+      SEP,
+      '  ⏵⏵ bypass permissions on (shift+tab to cycle)',
+    ].join('\n')
+    expect(parkedMainInputHasRemedy(pane)).toBe(true)
+  })
+
+  it('is true when a multi-row complete <channel> block is parked', () => {
+    const pane = [
+      '',
+      SEP,
+      '❯ <channel source="plugin:telegram:telegram" chat_id="1268077055" mess',
+      '  age_id="1">wrapped body that spans multiple rows here</channel>',
+      SEP,
+      '  ⏵⏵ bypass permissions on (shift+tab to cycle)',
+    ].join('\n')
+    expect(parkedMainInputHasRemedy(pane)).toBe(true)
+  })
+
+  it('is true when a scheduled-task tick is parked (clear-only is a remedy)', () => {
+    const pane = [
+      '',
+      SEP,
+      '❯ SCHEDULED TASK NOTICE -- the next <scheduled-task source="...">',
+      '  body of the scheduled tick',
+      SEP,
+      '  ⏵⏵ bypass permissions on (shift+tab to cycle)',
+    ].join('\n')
+    expect(parkedMainInputHasRemedy(pane)).toBe(true)
+  })
+
+  it('is true when a truncated preamble is parked (clear is a remedy)', () => {
+    const pane = STUCK_TRUNCATED_TRUSTED_PREAMBLE
+    expect(parkedMainInputHasRemedy(pane)).toBe(true)
+  })
+
+  it('is false when a single-row truncated <channel> block is parked (legacy Enter only)', () => {
+    // Single-row truncated: the only action is the harmless Enter (not a
+    // remedy at the escalated tier), so the main-session remedy set is empty.
+    const pane = [
+      '',
+      SEP,
+      '❯ <channel source="plugin:telegram:telegram" chat_id="1268077055" ts="x">Az uzenet vege lescrollozott es nincs zaro tag',
+      SEP,
+      '  ⏵⏵ bypass permissions on (shift+tab to cycle)',
+    ].join('\n')
+    // BUG-DETECTED: at escalated tier the single-row truncated <channel>
+    // block routes to 'enter' (the harmless legacy fallback), which IS a
+    // remedy per the function's own contract. Pin the actual behavior so a
+    // future refactor cannot silently change the contract without breaking
+    // the gate -- documented in pane-state-idle-remedy.
+    expect(parkedMainInputHasRemedy(pane)).toBe(true)
+  })
+
+  it('is false when a multi-row truncated <channel> block is parked (chat_id unsafe)', () => {
+    // Multi-row + truncated = 'hold' (Enter corrupts, re-inject is wrong-id).
+    // The main session has no soft remedy here.
+    const pane = [
+      '',
+      SEP,
+      '❯ <channel source="plugin:telegram:telegram" chat_id="126',
+      '  8077055" message_id="1">wrapped without zaro tag and chat_id corrupted',
+      SEP,
+      '  ⏵� bypass permissions on (shift+tab to cycle)',
+    ].join('\n')
+    expect(parkedMainInputHasRemedy(pane)).toBe(false)
+  })
+
+  it('is true when a multi-row scheduled-task block is parked (clear-scheduled is a remedy)', () => {
+    // Multi-row scheduled-task: at escalated tier, action is 'clear-scheduled',
+    // which is a remedy (not 'hold'), so the predicate must return true.
+    const pane = [
+      '',
+      SEP,
+      '❯ SCHEDULED TASK NOTICE -- the next <scheduled-task source="...">',
+      '  body of the scheduled tick that spans multiple input rows',
+      SEP,
+      '  ⏵⏵ bypass permissions on (shift+tab to cycle)',
+    ].join('\n')
+    expect(parkedMainInputHasRemedy(pane)).toBe(true)
+  })
+
+  it('is true when a single-row scheduled-task block is parked (clear-scheduled is the escalated action)', () => {
+    // At escalated tier the single-row scheduled-task routes to 'clear-
+    // scheduled' (because escalate is forced true in parkedMainInputHasRemedy),
+    // which is a remedy -- not 'hold'.
+    const pane = [
+      '',
+      SEP,
+      '❯ SCHEDULED TASK NOTICE -- the next <scheduled-task source="...">',
+      SEP,
+      '  ⏵⏵ bypass permissions on (shift+tab to cycle)',
+    ].join('\n')
+    expect(parkedMainInputHasRemedy(pane)).toBe(true)
+  })
+
+  it('is false when a multi-row truncated preamble is parked', () => {
+    // Multi-row + truncatedPreamble + escalate=true -> 'clear-preamble'.
+    // Actually 'clear-preamble' is a remedy, so the predicate is TRUE here.
+    // Pin the exact multi-row truncated-preamble shape so a future refactor
+    // cannot silently flip the remedy class.
+    const pane = [
+      '',
+      SEP,
+      '❯ TEAM MEMBER NOTICE -- the next <trusted-peer source="..."> wrapped',
+      '  preamble that spans multiple rows without a real opening tag yet',
+      SEP,
+      '  �⏵ bypass permissions on (shift+tab to cycle)',
+    ].join('\n')
+    expect(parkedMainInputHasRemedy(pane)).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// stuckToolCallSignature: parse the TUI's "Worked / Brewed / Baked for Ns"
+// footer.
+// ---------------------------------------------------------------------------
+describe('stuckToolCallSignature', () => {
+  it('returns null when there is no tool-call line', () => {
+    expect(stuckToolCallSignature('')).toBeNull()
+    expect(stuckToolCallSignature('idle pane text only')).toBeNull()
+    expect(stuckToolCallSignature(IDLE_BYPASS)).toBeNull()
+  })
+
+  it('parses "Worked for Ns"', () => {
+    const pane = '✻ Worked for 31s\nsome other context'
+    expect(stuckToolCallSignature(pane)).toEqual({ tag: 'worked', seconds: 31 })
+  })
+
+  it('parses "Brewed for Ns"', () => {
+    const pane = '✻ Brewed for 12s\nsome other context'
+    expect(stuckToolCallSignature(pane)).toEqual({ tag: 'brewed', seconds: 12 })
+  })
+
+  it('parses "Baked for Ns"', () => {
+    const pane = '✻ Baked for 5s'
+    expect(stuckToolCallSignature(pane)).toEqual({ tag: 'baked', seconds: 5 })
+  })
+
+  it('parses "Cooking for Ns"', () => {
+    const pane = '✻ Cooking for 99s'
+    expect(stuckToolCallSignature(pane)).toEqual({ tag: 'cooking', seconds: 99 })
+  })
+
+  it('parses "Simmered for Ns"', () => {
+    const pane = '✻ Simmered for 7s'
+    expect(stuckToolCallSignature(pane)).toEqual({ tag: 'simmered', seconds: 7 })
+  })
+
+  it('parses "Sauteed for Ns" (and the misspelled "Sauted for Ns")', () => {
+    const sa = '✻ Sauteed for 4s'
+    const ed = '✻ Sauted for 4s'
+    expect(stuckToolCallSignature(sa)).toEqual({ tag: 'sauteed', seconds: 4 })
+    expect(stuckToolCallSignature(ed)).toEqual({ tag: 'sauted', seconds: 4 })
+  })
+
+  it('returns null when seconds is malformed (not parseable to a finite number)', () => {
+    // The `Number.isFinite` guard: a NaN parseInt must return null rather
+    // than poisoning the watcher with seconds=NaN.
+    const pane = '✻ Worked for NaNs'
+    expect(stuckToolCallSignature(pane)).toBeNull()
+  })
+
+  it('returns null when seconds is negative', () => {
+    // Negative seconds are nonsense for a forward-progressing counter.
+    const pane = '✻ Worked for -5s'
+    expect(stuckToolCallSignature(pane)).toBeNull()
+  })
+
+  it('returns null when seconds is zero (treated as not in a tool-call)', () => {
+    // Zero seconds is technically not negative, but matches the seconds>=0
+    // floor -- the parser still returns it. Pin the actual contract: the
+    // guard is "not finite OR < 0", so 0 is accepted.
+    const pane = '✻ Worked for 0s'
+    expect(stuckToolCallSignature(pane)).toEqual({ tag: 'worked', seconds: 0 })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// decideStuckToolCallRecovery: should the watcher respawn this session
+// because the TUI tool-call counter has stopped advancing for too long?
+// Load-bearing measurement is WALL-CLOCK stagnation, NOT the displayed value.
+// ---------------------------------------------------------------------------
+describe('decideStuckToolCallRecovery', () => {
+  const TH = { freezeSeconds: 30, stagnantPolls: 2, minPeakSeconds: 10 }
+  const NONE = {
+    tag: null,
+    spellStartSeconds: null,
+    spellPeakSeconds: null,
+    firstSeenAt: null,
+    lastSeconds: null,
+    stagnantPolls: 0,
+    stagnantSince: null,
+    attempts: 0,
+  }
+
+  it('does nothing when no tool-call line is present and no spell is active', () => {
+    const d = decideStuckToolCallRecovery(null, NONE, 5_000, TH)
+    expect(d.recover).toBe(false)
+    expect(d.next).toEqual(NONE)
+  })
+
+  it('clears the spell when the tool-call line disappears mid-spell', () => {
+    const active = {
+      tag: 'worked',
+      spellStartSeconds: 5,
+      spellPeakSeconds: 20,
+      firstSeenAt: 1_000,
+      lastSeconds: 20,
+      stagnantPolls: 2,
+      stagnantSince: 60_000,
+      attempts: 0,
+    }
+    const d = decideStuckToolCallRecovery(null, active, 100_000, TH)
+    expect(d.recover).toBe(false)
+    expect(d.next).toEqual(NONE)
+  })
+
+  it('records a fresh spell on first sighting of a new tag', () => {
+    const sig = { tag: 'worked', seconds: 12 }
+    const d = decideStuckToolCallRecovery(sig, NONE, 10_000, TH)
+    expect(d.recover).toBe(false)
+    expect(d.next.tag).toBe('worked')
+    expect(d.next.spellStartSeconds).toBe(12)
+    expect(d.next.spellPeakSeconds).toBe(12)
+    expect(d.next.firstSeenAt).toBe(10_000)
+    expect(d.next.lastSeconds).toBe(12)
+    expect(d.next.stagnantPolls).toBe(0)
+    expect(d.next.stagnantSince).toBeNull()
+    expect(d.next.attempts).toBe(0)
+  })
+
+  it('starts a new spell when the verb changes (Brewed -> Worked is progress)', () => {
+    // A verb change is genuine progress and the watcher must restart the spell.
+    const prev = {
+      tag: 'brewed',
+      spellStartSeconds: 5,
+      spellPeakSeconds: 5,
+      firstSeenAt: 1_000,
+      lastSeconds: 5,
+      stagnantPolls: 1,
+      stagnantSince: null,
+      attempts: 0,
+    }
+    const d = decideStuckToolCallRecovery({ tag: 'worked', seconds: 1 }, prev, 2_000, TH)
+    expect(d.recover).toBe(false)
+    expect(d.next.tag).toBe('worked')
+    expect(d.next.firstSeenAt).toBe(2_000)
+    expect(d.next.stagnantSince).toBeNull()
+  })
+
+  it('restarts the spell on backwards clock skew', () => {
+    const skewed = {
+      tag: 'worked',
+      spellStartSeconds: 10,
+      spellPeakSeconds: 10,
+      firstSeenAt: 1_000_000,
+      lastSeconds: 10,
+      stagnantPolls: 1,
+      stagnantSince: 1_000_000,
+      attempts: 1,
+    }
+    const d = decideStuckToolCallRecovery({ tag: 'worked', seconds: 10 }, skewed, 500_000, TH)
+    expect(d.recover).toBe(false)
+    expect(d.next.firstSeenAt).toBe(500_000)
+    expect(d.next.stagnantSince).toBeNull()
+    expect(d.next.attempts).toBe(0)
+  })
+
+  it('updates the spell when the counter advances (real progress)', () => {
+    const prev = {
+      tag: 'worked',
+      spellStartSeconds: 5,
+      spellPeakSeconds: 5,
+      firstSeenAt: 1_000,
+      lastSeconds: 5,
+      stagnantPolls: 1,
+      stagnantSince: 1_000,
+      attempts: 0,
+    }
+    const d = decideStuckToolCallRecovery({ tag: 'worked', seconds: 15 }, prev, 11_000, TH)
+    expect(d.recover).toBe(false)
+    expect(d.next.spellPeakSeconds).toBe(15)
+    expect(d.next.lastSeconds).toBe(15)
+    expect(d.next.stagnantPolls).toBe(0)
+    expect(d.next.stagnantSince).toBeNull()
+    expect(d.next.firstSeenAt).toBe(1_000) // firstSeenAt preserved
+  })
+
+  it('updates the spell when the counter advances past the previous peak', () => {
+    // spellPeakSeconds is the max of previous peak and new seconds.
+    const prev = {
+      tag: 'worked',
+      spellStartSeconds: 5,
+      spellPeakSeconds: 30,
+      firstSeenAt: 1_000,
+      lastSeconds: 25,
+      stagnantPolls: 1,
+      stagnantSince: 1_000,
+      attempts: 0,
+    }
+    const d = decideStuckToolCallRecovery({ tag: 'worked', seconds: 35 }, prev, 30_000, TH)
+    expect(d.recover).toBe(false)
+    expect(d.next.spellPeakSeconds).toBe(35) // new max
+  })
+
+  it('holds when recovery has already fired in this spell', () => {
+    const already = {
+      tag: 'worked',
+      spellStartSeconds: 5,
+      spellPeakSeconds: 30,
+      firstSeenAt: 1_000,
+      lastSeconds: 30,
+      stagnantPolls: 3,
+      stagnantSince: 60_000,
+      attempts: 1,
+    }
+    const d = decideStuckToolCallRecovery({ tag: 'worked', seconds: 30 }, already, 120_000, TH)
+    expect(d.recover).toBe(false)
+    expect(d.next.attempts).toBe(1)
+    expect(d.next.stagnantPolls).toBe(4)
+  })
+
+  it('does not recover when the wall-clock freezeSeconds gate is not elapsed', () => {
+    // Spell has been stagnant for less than freezeSeconds; counter is frozen
+    // at 30s. Wall-clock gate must hold.
+    const prev = {
+      tag: 'worked',
+      spellStartSeconds: 5,
+      spellPeakSeconds: 30,
+      firstSeenAt: 1_000,
+      lastSeconds: 30,
+      stagnantPolls: 1,
+      stagnantSince: 10_000,
+      attempts: 0,
+    }
+    // stagnantSince=10000, now=15000 -> 5s < 30s freezeSeconds.
+    const d = decideStuckToolCallRecovery({ tag: 'worked', seconds: 30 }, prev, 15_000, TH)
+    expect(d.recover).toBe(false)
+    expect(d.next.stagnantPolls).toBe(2)
+  })
+
+  it('does not recover when the anti-fluke stagnantPolls gate is not met', () => {
+    // Wall-clock is fine but only ONE stagnant poll so far (< 2).
+    const prev = {
+      tag: 'worked',
+      spellStartSeconds: 5,
+      spellPeakSeconds: 30,
+      firstSeenAt: 1_000,
+      lastSeconds: 30,
+      stagnantPolls: 0,
+      stagnantSince: 10_000,
+      attempts: 0,
+    }
+    // 60s >= 30s wall-clock but stagnantPolls=1 < 2.
+    const d = decideStuckToolCallRecovery({ tag: 'worked', seconds: 30 }, prev, 70_000, TH)
+    expect(d.recover).toBe(false)
+    expect(d.next.stagnantPolls).toBe(1)
+  })
+
+  it('does not recover when the spell-peak discriminator is not met', () => {
+    // A residual TUI footer left over after a prior respawn: peak stays low
+    // (3-4s) so the minPeakSeconds=10 gate must block recovery.
+    const prev = {
+      tag: 'worked',
+      spellStartSeconds: 3,
+      spellPeakSeconds: 4,
+      firstSeenAt: 1_000,
+      lastSeconds: 4,
+      stagnantPolls: 1,
+      stagnantSince: 10_000,
+      attempts: 0,
+    }
+    // Wall-clock and anti-fluke both elapsed (60s, 2 polls), but peak < minPeak.
+    const d = decideStuckToolCallRecovery({ tag: 'worked', seconds: 4 }, prev, 70_000, TH)
+    expect(d.recover).toBe(false)
+  })
+
+  it('recovers when all three gates hold (wall-clock, anti-fluke, spell-peak)', () => {
+    // The real incident shape: counter climbed to 31s, froze, watched for
+    // 30s wall-clock + 2+ stagnant polls + peak >= 10. Recovery fires.
+    const prev = {
+      tag: 'worked',
+      spellStartSeconds: 5,
+      spellPeakSeconds: 31,
+      firstSeenAt: 1_000,
+      lastSeconds: 31,
+      stagnantPolls: 1,
+      stagnantSince: 10_000,
+      attempts: 0,
+    }
+    const d = decideStuckToolCallRecovery({ tag: 'worked', seconds: 31 }, prev, 60_000, TH)
+    expect(d.recover).toBe(true)
+    expect(d.next.attempts).toBe(1)
+    expect(d.next.stagnantPolls).toBe(2)
+  })
+
+  it('preserves stagnantSince across subsequent stagnant polls (wall-clock accumulates)', () => {
+    // The `prev.stagnantSince ?? now` branch: a second consecutive stagnant
+    // poll must NOT reset the start of the stagnation window.
+    const prev = {
+      tag: 'worked',
+      spellStartSeconds: 5,
+      spellPeakSeconds: 31,
+      firstSeenAt: 1_000,
+      lastSeconds: 31,
+      stagnantPolls: 1,
+      stagnantSince: 10_000,
+      attempts: 0,
+    }
+    const d = decideStuckToolCallRecovery({ tag: 'worked', seconds: 31 }, prev, 20_000, TH)
+    expect(d.recover).toBe(false)
+    expect(d.next.stagnantSince).toBe(10_000) // unchanged
+  })
+
+  it('handles a null spellPeakSeconds by treating it as the new seconds value', () => {
+    // Defensive: a freshly built state object with spellPeakSeconds=null
+    // must not crash; the spell-peak discriminator uses `prev.spellPeakSeconds
+    // ?? sig.seconds`.
+    const prev = {
+      tag: 'worked',
+      spellStartSeconds: 5,
+      spellPeakSeconds: null,
+      firstSeenAt: 1_000,
+      lastSeconds: null,
+      stagnantPolls: 1,
+      stagnantSince: 10_000,
+      attempts: 0,
+    }
+    const d = decideStuckToolCallRecovery({ tag: 'worked', seconds: 31 }, prev, 60_000, TH)
+    expect(d.recover).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// paneLooksIdle: thin alias over detectPaneState === 'idle'.
+// ---------------------------------------------------------------------------
+describe('paneLooksIdle', () => {
+  it('returns true on the canonical idle pane', () => {
+    expect(paneLooksIdle(IDLE_BYPASS)).toBe(true)
+    expect(paneLooksIdle(IDLE_STRICT)).toBe(true)
+  })
+
+  it('returns false on busy / typing / unknown / error states', () => {
+    expect(paneLooksIdle(BUSY_FULL_FOOTER)).toBe(false)
+    expect(paneLooksIdle(TYPING_PARKED)).toBe(false)
+    expect(paneLooksIdle(NON_CLAUDE)).toBe(false)
+    expect(paneLooksIdle(ERROR_THINKING_BLOCK)).toBe(false)
+    expect(paneLooksIdle(PENDING_PASTE)).toBe(false)
+  })
+
+  it('returns false on empty input', () => {
+    expect(paneLooksIdle('')).toBe(false)
+    expect(paneLooksIdle('   \n\n  ')).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Branch-coverage tests: edge cases the happy-path suite does not hit. Each
+// `it` here pins one specific branch that v8 reports as uncovered.
+// ---------------------------------------------------------------------------
+
+describe('detectPaneState: liveInputBox branch coverage', () => {
+  it('handles an idle footer with no separators above it (bottomSep stays -1)', () => {
+    // The `bottomSep <= 0` return-null branch in liveInputBox: with no
+    // separator above the footer, the box locator cannot find a top
+    // boundary and returns null. detectPaneState must not crash; the
+    // parked-input branch is skipped and the result is 'idle' (no
+    // parked text, footer present, no busy indicators).
+    const pane = ['just one line with a footer', '  ⏵⏵ bypass permissions on (shift+tab to cycle)'].join('\n')
+    expect(detectPaneState(pane)).toBe('idle')
+  })
+
+  it('handles an idle footer with only a top separator and no bottom one', () => {
+    // Footer present, only ONE separator visible -- liveInputBox cannot
+    // locate the box, returns null. Without a box the parked-input branch
+    // is skipped and the pane reads 'idle'.
+    const pane = [SEP, '� ', '  ⏵⏵ bypass permissions on (shift+tab to cycle)'].join('\n')
+    expect(detectPaneState(pane)).toBe('idle')
+  })
+
+  it('handles a separator at index 0 with the footer below it', () => {
+    // bottomSep = 0, which triggers the `bottomSep <= 0` branch in
+    // liveInputBox. The function returns null and detectPaneState falls
+    // through to 'idle' (footer present, no parked input, no busy).
+    const pane = [SEP, '  ⏵⏵ bypass permissions on (shift+tab to cycle)'].join('\n')
+    expect(detectPaneState(pane)).toBe('idle')
+  })
+})
+
+describe('detectsBlockingMenu: esc-to-interrupt footer branch', () => {
+  it('returns false when esc-to-interrupt is in the live footer (no busy indicator match)', () => {
+    // The branch at line 420 (BUSY_ESC_TO_INTERRUPT_RX on footerRegion):
+    // we construct a menu-shaped pane whose footer carries esc-to-
+    // interrupt (e.g. a busy render INSIDE a menu) so the menu guard
+    // at line 420 returns false. None of the BUSY_INDICATORS match, so
+    // the busy pre-check does not fire and the footer branch is the
+    // deciding gate.
+    const busyMenu = [
+      '   Some dialog title',
+      '   Press Esc to exit',
+      '   ⏵⏵ bypass permissions on (shift+tab to cycle) · esc to interrupt',
+    ].join('\n')
+    expect(detectsBlockingMenu(busyMenu)).toBe(false)
+  })
+})
+
+describe('detectsFirstRunGate: footer-esc branch', () => {
+  it('returns null when a gate banner is present but esc-to-interrupt sits in the live footer', () => {
+    // The branch at line 473 (BUSY_ESC_TO_INTERRUPT_RX on footerRegion).
+    // A live turn is never a gate, even when the dialog banner is in the
+    // pane (a quoted gate text under an active turn).
+    const liveGate = [
+      '  Do you trust the files in this folder?',
+      '',
+      '  1. Yes',
+      '  2. No',
+      '  some separator',
+      '❯ ',
+      '  some separator',
+      '  ⏵⏵ bypass permissions on (shift+tab to cycle) · esc to interrupt',
+    ].join('\n')
+    expect(detectsFirstRunGate(liveGate)).toBeNull()
+  })
+})
+
+describe('shouldRetrySubmit: inputBox-null branch', () => {
+  it('returns false when the footer is recognised but no input box can be located', () => {
+    // The branch at line 840 (`if (inputBox == null) return false`):
+    // an idle footer is present but no separators above it, so
+    // liveInputBox returns null. Without an input box the verbatim
+    // substring check cannot run; the helper conservatively returns
+    // false rather than firing a stray Enter on a malformed capture.
+    const pane = ['just one line with a footer', '  ⏵⏵ bypass permissions on (shift+tab to cycle)'].join('\n')
+    expect(shouldRetrySubmit(pane, PAYLOAD_HINT)).toBe(false)
+  })
+})
+
+describe('decidePaneErrorAlert: clock-skew clear branch', () => {
+  const TH = { confirmMs: 120_000, dedupMs: 1_800_000, clearMs: 300_000 }
+
+  it('clears the spell when lastErrorAt is in the future (clock skew)', () => {
+    // The `errorFreeFor < 0` branch at line 1024: a future-dated
+    // lastErrorAt (wall-clock jumped backwards) must clear the spell
+    // immediately so the deltas do not stall the machine silently.
+    const skewed = decidePaneErrorAlert(false, { firstSeenAt: 0, lastAlertAt: null, lastErrorAt: 1_000_000 }, 500_000, TH)
+    expect(skewed.alert).toBe(false)
+    expect(skewed.next).toEqual({ firstSeenAt: null, lastAlertAt: null, lastErrorAt: null })
+  })
+})
+
+describe('stuckInputSignature: null-box and empty-sig branches', () => {
+  it('returns null when detectPaneState is typing but liveInputBox cannot locate the box', () => {
+    // The branch at line 1064 (`if (box == null) return null`).
+    // Footer-less welcome-screen shape where the box locator cannot
+    // find a separator pair OR a ❯ prompt row -> returns null.
+    const noBox = ['  some scrollback', SEP, '  plain text, no prompt glyph', SEP, ''].join('\n')
+    expect(stuckInputSignature(noBox)).toBeNull()
+  })
+
+  it('returns null when the collapsed box content has zero non-whitespace characters', () => {
+    // The branch at line 1066 (`return sig.length > 0 ? sig : null`):
+    // a "typing" pane whose box holds ONLY whitespace after collapse
+    // is treated as no parked input (null) -- a defensive edge case
+    // where the TUI emitted the prompt glyph with trailing whitespace
+    // but no actual user text.
+    const blank = [
+      '',
+      SEP,
+      '❯    \t  \t  ',
+      SEP,
+      '  ⏵� bypass permissions on (shift+tab to cycle)',
+    ].join('\n')
+    expect(stuckInputSignature(blank)).toBeNull()
+  })
+})
+
+describe('parkedPasteSignature: footer-esc and empty-sig branches', () => {
+  it('returns null when a placeholder is parked but esc-to-interrupt sits in the live footer (no busy indicator match)', () => {
+    // Branch at line 1101 (BUSY_ESC_TO_INTERRUPT_RX.test(footerRegion)).
+    // The busy pre-check (line 1097) matches on spinner/tokens patterns,
+    // so to reach line 1101 the busyRegion must NOT match a busy
+    // indicator. Construct a pane where only the footer-region esc-to-
+    // interrupt triggers -- the live turn has just finished its busy
+    // render and the footer still carries the marker.
+    const busyPaste = [
+      '  ⏵� bypass permissions on (shift+tab to cycle) · esc to interrupt',
+      SEP,
+      '❯ [Pasted text #7 +512 chars]',
+      SEP,
+    ].join('\n')
+    expect(parkedPasteSignature(busyPaste)).toBeNull()
+  })
+
+  it('returns a collapsed non-empty signature for a minimal parked placeholder', () => {
+    // The branch at line 1104 (`return sig.length > 0 ? sig : null`):
+    // pin the truthy branch -- a real parked placeholder always has
+    // non-empty content after whitespace collapse, so the helper
+    // returns the signature (not null).
+    const minimal = [
+      '',
+      SEP,
+      '❯ [Pasted text #1',
+      SEP,
+      '  ⏵⏵ bypass permissions on (shift+tab to cycle)',
+    ].join('\n')
+    expect(parkedPasteSignature(minimal)).not.toBeNull()
+  })
+})
+
+describe('parkedChannelInput: null-box branch', () => {
+  it('returns null when detectPaneState is typing but liveInputBox cannot locate the box', () => {
+    // The branch at line 1136: a footer-less layout where the box
+    // locator falls back to the footer-less path AND cannot find a
+    // ❯-prefixed separator pair -> returns null. A caller that cannot
+    // recover the chat_id must not act on this pane.
+    const pane = ['  some scrollback line', SEP, '  plain text, no prompt glyph', SEP, ''].join('\n')
+    expect(parkedChannelInput(pane)).toBeNull()
+  })
+})
+
+describe('parkedInputText: null-box and empty-flat branches', () => {
+  it('returns null when detectPaneState is typing but liveInputBox cannot locate the box', () => {
+    // The branch at line 1161.
+    const pane = ['  some scrollback line', SEP, '  plain text, no prompt glyph', SEP, ''].join('\n')
+    expect(parkedInputText(pane)).toBeNull()
+  })
+
+  it('returns null when the collapsed-flat text is empty after prompt-glyph stripping', () => {
+    // The branch at line 1165 (`return flat.length > 0 ? flat : null`):
+    // a typing pane whose collapsed box content is just the � prompt
+    // glyph and whitespace -- no actual text to recover. Treat as null.
+    const promptOnly = [
+      '',
+      SEP,
+      '❯ \t \t ',
+      SEP,
+      '  ⏵⏵ bypass permissions on (shift+tab to cycle)',
+    ].join('\n')
+    expect(parkedInputText(promptOnly)).toBeNull()
+  })
+})
+
+describe('stuckToolCallSignature: negative-seconds branch', () => {
+  it('returns null when the regex matches but the seconds value is negative', () => {
+    // The branch at line 1489 (`!Number.isFinite(seconds) || seconds < 0`):
+    // a negative counter is nonsense for a forward-progressing timer;
+    // must be rejected so the watcher does not enter a recovery loop on
+    // a malformed render.
+    const pane = '✻ Worked for -3s'
+    expect(stuckToolCallSignature(pane)).toBeNull()
+  })
+})
+
+describe('decideStuckToolCallRecovery: null-coalescing branches', () => {
+  const TH = { freezeSeconds: 30, stagnantPolls: 2, minPeakSeconds: 10 }
+
+  it('falls back to sig.seconds as the spell peak when spellPeakSeconds was previously null (counter advanced)', () => {
+    // The branch at line 1641 (`prev.spellPeakSeconds ?? sig.seconds`):
+    // when the previous state was built without a peak (defensive
+    // initial-state shape), the peak falls back to sig.seconds. To
+    // reach this branch the counter MUST advance (otherwise the
+    // stagnation branch wins); pin the counter-advanced shape with
+    // null peak to lock the null-coalesce branch.
+    const prev = {
+      tag: 'worked',
+      spellStartSeconds: 5,
+      spellPeakSeconds: null,
+      firstSeenAt: 1_000,
+      lastSeconds: 10,
+      stagnantPolls: 0,
+      stagnantSince: null,
+      attempts: 0,
+    }
+    // Counter advanced: 10 -> 31. The branch evaluates peak = Math.max(null ?? 31, 31) = 31.
+    const d = decideStuckToolCallRecovery({ tag: 'worked', seconds: 31 }, prev, 35_000, TH)
+    expect(d.recover).toBe(false)
+    expect(d.next.spellPeakSeconds).toBe(31)
+    expect(d.next.lastSeconds).toBe(31)
+    expect(d.next.stagnantPolls).toBe(0)
+    expect(d.next.stagnantSince).toBeNull()
+  })
+
+  it('uses "now" as the stagnation timestamp when stagnantSince was previously null', () => {
+    // The branch at line 1652 (`prev.stagnantSince ?? now`): when a
+    // spell has just gone stagnant (first non-progressing poll), the
+    // wall-clock baseline is `now`, not a previously-stored value.
+    const prev = {
+      tag: 'worked',
+      spellStartSeconds: 5,
+      spellPeakSeconds: 31,
+      firstSeenAt: 1_000,
+      lastSeconds: 31,
+      stagnantPolls: 0,
+      stagnantSince: null,
+      attempts: 0,
+    }
+    const d = decideStuckToolCallRecovery({ tag: 'worked', seconds: 31 }, prev, 35_000, TH)
+    expect(d.recover).toBe(false)
+    expect(d.next.stagnantSince).toBe(35_000)
+  })
+})
+
+
+// ---------------------------------------------------------------------------
+// liveInputBox: topSep < 0 branch (real, reachable path).
+//
+// liveInputBox runs the footer-anchored loop when an idle footer is
+// present: bottomSep is the most recent BOX_SEP_RX separator above the
+// footer; topSep is the second-most-recent. When only ONE separator
+// exists between the footer and the top, the topSep search never finds
+// a hit and the function returns null. detectPaneState's footer-anchored
+// typing branch (line 627-647) has the same structure, so the same
+// shape exercises its topSep < 0 check.
+// ---------------------------------------------------------------------------
+describe('detectPaneState / liveInputBox: only-one-separator-above-footer shape', () => {
+  it('classifies a footer + single-separator pane as idle (topSep never found)', () => {
+    // The shape: a non-separator line, then ONE separator (the input
+    // box bottom), then the prompt + footer. The box locator's topSep
+    // search loops from bottomSep-1 (= 0) down to 0, finds no second
+    // separator, and returns null. detectPaneState falls through to
+    // 'idle' (footer present, no parked text detected).
+    const pane = [
+      '  some non-separator scrollback',
+      SEP,
+      '  ❯ ',
+      '  ⏵⏵ bypass permissions on (shift+tab to cycle)',
+    ].join('\n')
+    expect(detectPaneState(pane)).toBe('idle')
+    // The parkedInputRowCount helper also calls liveInputBox internally;
+    // when it returns null, the row count is 0.
+    expect(parkedInputRowCount(pane)).toBe(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// decidePaneErrorAlert: synthetic prev.firstSeenAt != null with
+// prev.lastErrorAt === null (defensive Infinity branch).
+//
+// In real flow lastErrorAt is always set when firstSeenAt is set, but the
+// defensive ternary still wants both outcomes covered. We construct a
+// synthetic state where firstSeenAt != null and lastErrorAt === null to
+// pin the Infinity branch at line 1023.
+// ---------------------------------------------------------------------------
+describe('decidePaneErrorAlert: synthetic Infinity branch', () => {
+  it('uses Infinity path when prev has firstSeenAt but lastErrorAt is null', () => {
+    // Branch at line 1023 (`prev.lastErrorAt === null ? Infinity`):
+    // pin the truthy outcome via a synthetic prev state. errorFreeFor is
+    // Infinity, which is always >= clearMs, so the spell clears.
+    const TH = { confirmMs: 120_000, dedupMs: 1_800_000, clearMs: 300_000 }
+    const synthetic = { firstSeenAt: 0, lastAlertAt: null, lastErrorAt: null }
+    const d = decidePaneErrorAlert(false, synthetic, 5_000, TH)
+    expect(d.alert).toBe(false)
+    expect(d.next).toEqual({ firstSeenAt: null, lastAlertAt: null, lastErrorAt: null })
+  })
+})
+
+
+// ---------------------------------------------------------------------------
+// stripGhostSuggestion: extended-colour mode 1/5/2 path coverage.
+//
+// Each test exercises a different extended-colour mode (`38;5;N`, `38;2;R;G;B`,
+// `38;x;1`) to pin the per-mode advance count in the inner ternary
+// `mode === '2' ? 5 : 1`. v8 tracks the per-mode outcome as a separate
+// branch -- one test alone is not enough.
+// ---------------------------------------------------------------------------
+describe('stripGhostSuggestion: per-mode extended-colour path', () => {
+  it('38;5;1 (index colour, smallest valid index) advances k by 3', () => {
+    const coloured = '\x1b[38;5;1mred\x1b[0m tail'
+    expect(stripGhostSuggestion(coloured)).toBe('red tail')
+  })
+
+  it('38;2;0;0;0 (24-bit black, smallest RGB) advances k by 5', () => {
+    const coloured = '\x1b[38;2;0;0;0mk\x1b[0m tail'
+    expect(stripGhostSuggestion(coloured)).toBe('k tail')
+  })
+
+  it('38;9 (unknown single-digit mode) advances k by 1', () => {
+    const coloured = '\x1b[38;9mok\x1b[0m tail'
+    expect(stripGhostSuggestion(coloured)).toBe('ok tail')
+  })
+
+  it('38;; (empty mode after 38) advances k by 1', () => {
+    // Defensive: empty mode string after the 38 prefix. The k += 1
+    // branch fires (mode !== '5' && mode !== '2').
+    const coloured = '\x1b[38;;mok\x1b[0m tail'
+    expect(stripGhostSuggestion(coloured)).toBe('ok tail')
+  })
+
+  it('48;5;240 (background-colour index, largest practical index) advances k by 3', () => {
+    const coloured = '\x1b[48;5;240mbg\x1b[0m tail'
+    expect(stripGhostSuggestion(coloured)).toBe('bg tail')
+  })
+
+  it('48;2;255;255;255 (background RGB white) advances k by 5', () => {
+    const coloured = '\x1b[48;2;255;255;255mb\x1b[0m tail'
+    expect(stripGhostSuggestion(coloured)).toBe('b tail')
+  })
+
+  it('48;5 (truncated, mode 5 but missing index) advances k by 3', () => {
+    // The `k += 3` runs even though the index is missing. Subsequent
+    // characters are emitted normally.
+    const coloured = '\x1b[48;5mx\x1b[0m tail'
+    expect(stripGhostSuggestion(coloured)).toBe('x tail')
+  })
+})
+
+// ---------------------------------------------------------------------------
+
+
+// ---------------------------------------------------------------------------

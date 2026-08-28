@@ -9,7 +9,7 @@
 //   (b) ensureAgentHooks / scaffold never emits /tmp-rooted commands
 //   (c) boot-time prune detects and removes a planted /tmp hook
 //   (d) fail-open wrapper: a missing hook script exits 0, not non-zero
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
@@ -22,6 +22,17 @@ const PRUNE_SCRIPT = join(ROOT, 'scripts', 'boot-hook-prune.py')
 const STALENESS_HOOK = join(ROOT, 'scripts', 'hooks', 'staleness-guard.py')
 
 import { isUnsafeHookCommand, upgradeLegacyHookCommands } from '../web/agent-scaffold.js'
+
+// Global forbid-system-calls setupFile (vitest.config.ts) blanket-forbids
+// node:child_process across the suite. This file's pinning tests in
+// describe blocks (c) and (d) actually run real `python3 scripts/boot-hook-prune.py`
+// and real `spawnSync('bash', ['-c', ...])` -- the test logic depends on
+// observing real exit codes. The simplest zero-behavior-change opt-out is
+// `vi.importActual`, which restores the real child_process module for this
+// file only. Per-test-file mock wins over the global forbid.
+vi.mock('node:child_process', async () => {
+  return await vi.importActual<typeof import('node:child_process')>('node:child_process')
+})
 
 // ---------------------------------------------------------------------------
 // (a) Registration guard rejects /tmp and non-existent paths

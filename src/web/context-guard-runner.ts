@@ -260,7 +260,8 @@ async function checkAgent(name: string, nowMs: number): Promise<void> {
   try {
     switch (decision.action) {
       case 'request-handoff':
-        await sendPromptToSession(session, handoffPrompt(pctRound ?? 0, handoffPathFor(name)))
+        // pctRound is non-null here: decideGuard returns 'request-handoff' only when inputs.pct !== null (see context-guard.ts:322-333).
+        await sendPromptToSession(session, handoffPrompt(pctRound!, handoffPathFor(name)))
         break
       case 'restart': {
         // A forced restart must never be silent: the supervisor has to know
@@ -271,6 +272,10 @@ async function checkAgent(name: string, nowMs: number): Promise<void> {
         // inter-agent queue -- the channel supervisors actually read.
         let snapshotPath: string | null = null
         try {
+          // `pane` is capturePane(session) for the running check (MAIN) or
+          // for needPct sub-agents; both can return null on a transient tmux
+          // error even if agentRunState says 'running'. Retry capture once
+          // before giving up on the snapshot.
           const finalPane = pane ?? capturePane(session)
           if (finalPane) {
             snapshotPath = join(PROJECT_ROOT, 'store', `context-guard-last-pane-${name}.txt`)

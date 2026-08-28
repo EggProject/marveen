@@ -58,6 +58,31 @@ describe('normalizeContextGuardConfig', () => {
     expect(normalizeContextGuardConfig({ limitTokens: 500 }).limitTokens).toBeNull()
     expect(normalizeContextGuardConfig({ limitTokens: 500_000 }).limitTokens).toBe(500_000)
   })
+
+  // The `mins` helper at src/context-guard.ts:72-73 has the same shape as
+  // `pct` but without the upper bound. Pin every branch (typeof-number false,
+  // Number.isFinite false for NaN/Infinity, `v > 0` false for 0 / negative,
+  // and the ternary fallback path) so the suite fails loudly if a refactor
+  // drops one of the guards -- a silent relaxation would let a config of
+  // { cooldownMinutes: -1 } or { handoffTimeoutMinutes: NaN } through and
+  // every restart timer would compute negative or non-finite deadlines.
+  it('falls back to defaults for non-positive / non-finite minute values', () => {
+    const defaults = DEFAULT_CONTEXT_GUARD
+    // v > 0 false -- 0 and negatives fall through to dflt
+    expect(normalizeContextGuardConfig({ cooldownMinutes: 0 }).cooldownMinutes).toBe(defaults.cooldownMinutes)
+    expect(normalizeContextGuardConfig({ cooldownMinutes: -5 }).cooldownMinutes).toBe(defaults.cooldownMinutes)
+    expect(normalizeContextGuardConfig({ handoffTimeoutMinutes: -1 }).handoffTimeoutMinutes).toBe(defaults.handoffTimeoutMinutes)
+    // Number.isFinite false -- NaN and Infinity fall through to dflt
+    expect(normalizeContextGuardConfig({ cooldownMinutes: NaN }).cooldownMinutes).toBe(defaults.cooldownMinutes)
+    expect(normalizeContextGuardConfig({ cooldownMinutes: Infinity }).cooldownMinutes).toBe(defaults.cooldownMinutes)
+    expect(normalizeContextGuardConfig({ cooldownMinutes: -Infinity }).cooldownMinutes).toBe(defaults.cooldownMinutes)
+    expect(normalizeContextGuardConfig({ handoffTimeoutMinutes: NaN }).handoffTimeoutMinutes).toBe(defaults.handoffTimeoutMinutes)
+  })
+
+  it('accepts positive finite minute values verbatim', () => {
+    expect(normalizeContextGuardConfig({ cooldownMinutes: 7 }).cooldownMinutes).toBe(7)
+    expect(normalizeContextGuardConfig({ handoffTimeoutMinutes: 30 }).handoffTimeoutMinutes).toBe(30)
+  })
 })
 
 describe('contextLimitForModel / calibrateLimit', () => {
@@ -78,7 +103,7 @@ describe('contextLimitForModel / calibrateLimit', () => {
     expect(contextLimitForModel('claude-sonnet-5')).toBe(200_000)
     expect(contextLimitForModel('claude-haiku-4-5')).toBe(200_000)
     expect(contextLimitForModel('claude-opus-4-5')).toBe(200_000)
-    expect(contextLimitForModel('deepseek-v4-pro')).toBe(200_000)
+    expect(contextLimitForModel('qwen3.6:27b')).toBe(200_000)
     expect(contextLimitForModel(null)).toBe(200_000)
   })
 

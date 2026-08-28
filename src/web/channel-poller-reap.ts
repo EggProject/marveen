@@ -84,6 +84,21 @@ function readBotPid(chanDir: string): number | null {
   }
 }
 
+// A bot.pid file is only authoritative when the live env-var scan still
+// corroborates it. Without this check, a stale file plus OS pid-reuse would
+// point at an unrelated process; reapChannelOrphans would SIGTERM/SIGKILL
+// that process, and collectPollerEvidence would misattribute the down-spell.
+// This is the single chokepoint both consumers route through so the next
+// caller inherits the guard for free.
+// Bug: channel-poller-reap-botpid-killed-without-identity-check
+// Fail-closed: when envScanPids is empty (ps unavailable or no live poller),
+// the corroboration fails and the helper returns null. The reaper then
+// signals nothing; the forensics layer marks botPidAlive=false. Better to
+// miss a real orphan than to kill an unrelated one.
+function corroborateBotPid(botPid: number | null, envScanPids: number[]): number | null {
+  return botPid != null && envScanPids.includes(botPid) ? botPid : null
+}
+
 export interface ReapResult {
   reaped: number[]
   source: { fromBotPid: number | null; fromEnvScan: number[] }
@@ -182,10 +197,16 @@ export function collectPollerEvidence(
   claudePid: number,
 ): PollerEvidence {
   const chanDir = channelStateDir(provider, agentDirPath)
+  const envScanPids = listPollerPidsByStateDir(STATE_ENV_VAR[provider], chanDir)
+  // Corroborate bot.pid against the same env-var scan the reaper uses. Without
+  // this, a stale bot.pid (nothing ever deletes it) plus OS pid-reuse would
+  // mark an unrelated live process as 'botPidAlive' in the down-spell log,
+  // misattributing the death and trapping the watchdog in a thrash loop.
+  // Bug: channel-poller-reap-botpid-killed-without-identity-check
   return buildPollerEvidence(
     snapshotProcs(),
-    readBotPid(chanDir),
-    listPollerPidsByStateDir(STATE_ENV_VAR[provider], chanDir),
+    corroborateBotPid(readBotPid(chanDir), envScanPids),
+    envScanPids,
     claudePid,
   )
 }
@@ -204,8 +225,11 @@ export function reapChannelOrphans(
   const chanDir = channelStateDir(provider, agentDirPath)
   const envVar = STATE_ENV_VAR[provider]
 
-  const fromBotPid = readBotPid(chanDir)
   const fromEnvScan = listPollerPidsByStateDir(envVar, chanDir)
+  // corroborateBotPid applies the identity check: a bot.pid that the live
+  // snapshot does not see is treated as null and never signalled. Bug:
+  // channel-poller-reap-botpid-killed-without-identity-check.
+  const fromBotPid = corroborateBotPid(readBotPid(chanDir), fromEnvScan)
 
   // Deduplicate while preserving order so the bot.pid path is logged first.
   const all: number[] = []
@@ -265,8 +289,8 @@ export interface ProcRow { pid: number; ppid: number; command: string }
 // argv[0] basename === 'claude' (the binary), so the tmux server row whose argv
 // merely *contains* the claude command string is excluded.
 function isClaudeBinary(command: string): boolean {
-  const argv0 = command.trim().split(/\s+/, 1)[0] ?? ''
-  const base = argv0.split('/').pop() ?? ''
+  const argv0 = command.trim().split(/\s+/, 1)[0]
+  const base = argv0.split('/').pop()
   return base === 'claude'
 }
 

@@ -8,12 +8,13 @@ export async function tryHandleSkillUsage(ctx: RouteContext): Promise<boolean> {
   // POST /api/skill-usage -- record a skill usage event (from PostToolUse hook)
   if (path === '/api/skill-usage' && method === 'POST') {
     const body = await readBody(req)
-    const data = JSON.parse(body.toString()) as {
+    let data: {
       agent_id: string
       skill_name: string
       trigger_type: 'tool_call' | 'skill_read'
       session_id?: string | null
     }
+    try { data = JSON.parse(body.toString()) } catch { json(res, { error: 'Invalid JSON' }, 400); return true }
     if (!data.agent_id || !data.skill_name || !data.trigger_type) {
       json(res, { error: 'agent_id, skill_name and trigger_type required' }, 400)
       return true

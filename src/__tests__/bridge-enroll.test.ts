@@ -14,6 +14,17 @@ import { tryHandleSecurity } from '../web/routes/security.js'
 import { tryHandleAuth } from '../web/routes/auth.js'
 import type { RouteContext } from '../web/routes/types.js'
 
+// Global forbid-system-calls setupFile (vitest.config.ts) blanket-forbids
+// node:child_process across the suite. This file's pinning tests run real
+// subprocesses (see header for the specific API surface); the simplest
+// zero-behavior-change opt-out is `vi.importActual`, which restores the real
+// child_process module for this file only. Per-test-file mock wins over the
+// global forbid (hoisting order: setupFile first, per-file factory second).
+vi.mock('node:child_process', async () => {
+  return await vi.importActual<typeof import('node:child_process')>('node:child_process')
+})
+
+
 // AUTHPLAN1 #2 -- Bridge pairing. Contract under test:
 //   - one enroll writes the restricted authorized_keys line AND mints a
 //     device key, and the bundle embeds the DEVICE key (not the shared token);
@@ -197,6 +208,7 @@ async function call(
     path, method,
     url: new URL(`http://127.0.0.1:3420${path}`),
     auth: opts.auth,
+    fedPeer: null,
   })
   return { statusCode: res.statusCode, json: () => JSON.parse(res.body || '{}') }
 }

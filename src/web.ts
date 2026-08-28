@@ -272,7 +272,8 @@ export function startWebServer(port = 3420): http.Server {
           process.exit(1)
         }
       } catch (e) {
-        logger.error({ err: e }, 'Port-reclaim failed')
+        logger.error({ err: e }, 'Port-reclaim failed -- kilepes')
+        process.exit(1)
       }
     } else {
       logger.error({ err }, 'Web szerver hiba')
@@ -307,16 +308,20 @@ export function startWebServer(port = 3420): http.Server {
   // 8s grace would exit MID-bind and loop, so wait STARTUP_GRACE first. After
   // that, poll periodically so a mid-life listener drop is caught too, not just
   // a startup failure.
+  let startupWatchdogGrace: NodeJS.Timeout | undefined
+  let startupWatchdogPoll: NodeJS.Timeout | undefined
   const STARTUP_GRACE_MS = 7 * 60 * 1000
   const RELISTEN_POLL_MS = 60 * 1000
-  setTimeout(() => {
-    setInterval(() => {
+  startupWatchdogGrace = setTimeout(() => {
+    startupWatchdogPoll = setInterval(() => {
       if (!server.listening) {
         logger.error({ port }, 'Web server not listening -- exiting(1) for a clean launchd restart')
         process.exit(1)
       }
-    }, RELISTEN_POLL_MS).unref()
-  }, STARTUP_GRACE_MS).unref()
+    }, RELISTEN_POLL_MS)
+    startupWatchdogPoll.unref()
+  }, STARTUP_GRACE_MS)
+  startupWatchdogGrace.unref()
 
   // WEB_ONLY=true disables all background services (scheduler, pollers, monitors).
   // Used for staging preview instances that must not conflict with the live fleet
@@ -338,7 +343,11 @@ export function startWebServer(port = 3420): http.Server {
   // a warm-up, not a hard dependency. Skipped on the SDK rollback backend.
   if (!webOnly && (process.env.MARVEEN_AGENT_BACKEND || 'worker').toLowerCase() !== 'sdk') {
     import('./web/agent-worker.js')
-      .then(m => { m.startWorkerSession(); logger.info('Interactive agent worker pre-started') })
+      .then(m => {
+        if (workerStartupCancelled) return
+        m.startWorkerSession()
+        logger.info('Interactive agent worker pre-started')
+      })
       .catch(err => logger.warn({ err }, 'Failed to pre-start agent worker (will lazy-start on first use)'))
   }
 
@@ -352,11 +361,11 @@ export function startWebServer(port = 3420): http.Server {
   // import would start an interval nobody owns. A live setInterval keeps the
   // event loop alive, so that is not just a leak: the process would never exit.
   // The other monitors are synchronous calls and cannot hit this.
-  let workerLivenessCancelled = false
+  let workerStartupCancelled = false
   if (!webOnly && (process.env.MARVEEN_AGENT_BACKEND || 'worker').toLowerCase() !== 'sdk') {
     import('./web/worker-liveness.js')
       .then(m => {
-        if (workerLivenessCancelled) return
+        if (workerStartupCancelled) return
         workerLivenessInterval = m.startWorkerLivenessMonitor()
         logger.info('Worker liveness monitor started (60s poll)')
       })
@@ -541,8 +550,10 @@ export function startWebServer(port = 3420): http.Server {
     clearInterval(routerInterval)
     clearInterval(scheduleInterval)
     if (pluginMonitorInterval) clearInterval(pluginMonitorInterval)
-    workerLivenessCancelled = true
+    workerStartupCancelled = true
     if (workerLivenessInterval) clearInterval(workerLivenessInterval)
+    clearTimeout(startupWatchdogGrace)
+    clearInterval(startupWatchdogPoll)
     clearInterval(channelHealthInterval)
     if (costsSyncInterval) clearInterval(costsSyncInterval)
     clearInterval(stuckInputInterval)

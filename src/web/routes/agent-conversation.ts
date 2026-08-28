@@ -140,13 +140,19 @@ export async function tryHandleAgentConversation(ctx: RouteContext): Promise<boo
   const { res, path, method, url } = ctx
   const match = path.match(/^\/api\/agents\/([^/]+)\/conversation$/)
   if (!match || method !== 'GET') return false
-  const name = decodeURIComponent(match[1])
+  let name: string
+  try {
+    name = decodeURIComponent(match[1])
+  } catch {
+    json(res, { error: 'Érvénytelen agent-név (percent-encoding hiba)' }, 400)
+    return true
+  }
   // Pagination: `limit` is the page size, `offset` is how many of the NEWEST
   // entries to skip. offset=0 is the latest page; the UI pages further back
   // (offset += limit) to load older history beyond the on-screen window -- and
   // beyond the old fixed cap, since the whole transcript is now reachable.
   const limitRaw = Number(url.searchParams.get('limit'))
-  const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 2000) : DEFAULT_LIMIT
+  const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.max(1, Math.min(Math.floor(limitRaw), 2000)) : DEFAULT_LIMIT
   const offsetRaw = Number(url.searchParams.get('offset'))
   const offset = Number.isFinite(offsetRaw) && offsetRaw > 0 ? Math.floor(offsetRaw) : 0
 

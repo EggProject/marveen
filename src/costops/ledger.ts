@@ -6,7 +6,7 @@
 // cost_line_items (ChargeRow: ChargePeriod, ChargeCategory, BilledCost,
 // ConsumedQuantity/Unit, confidence), budgets (display-only).
 
-import type Database from 'better-sqlite3'
+import type { Database } from 'bun:sqlite'
 import { createHash } from 'node:crypto'
 import type { CostOpsConfig, CostConfidence } from './config.js'
 
@@ -74,7 +74,7 @@ export function confidenceBucket(c: CostConfidence): CostBucket {
  * Returns the number of line items written/updated.
  */
 export function syncFixedCostsToLedger(
-  db: Database.Database,
+  db: Database,
   config: CostOpsConfig,
   now: number,
   monthKey?: string,
@@ -168,7 +168,7 @@ interface LineRow {
 }
 
 export function getCostSummary(
-  db: Database.Database,
+  db: Database,
   config: CostOpsConfig,
   now: number,
   opts: { monthKey?: string; configExists?: boolean; configErrors?: string[] } = {},
@@ -275,7 +275,7 @@ export function getCostSummary(
   }
 }
 
-export function getCostSources(db: Database.Database): unknown[] {
+export function getCostSources(db: Database): unknown[] {
   return db.prepare(`SELECT id, name, provider, source_type, currency, active, updated_at FROM cost_sources WHERE active = 1 ORDER BY name`).all()
 }
 

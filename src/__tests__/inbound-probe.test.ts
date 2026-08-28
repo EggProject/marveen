@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { shouldTriggerDeafnessRespawn, readLastIngestionTimestamp } from '../web/inbound-probe.js'
 
 // ---------------------------------------------------------------------------
-// AC coverage map (channel-watchdog-prompt.md D3 + wolf-swarm-trial.md #3)
+// AC coverage map (the inbound-probe deafness-respawn AC set)
 //
 //   AC-D3-1: shouldTriggerDeafnessRespawn — exact probeTimeoutMs boundary
 //   AC-D3-2: readLastIngestionTimestamp — large file (>256KB) tail-read finds

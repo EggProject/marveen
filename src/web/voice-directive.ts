@@ -50,13 +50,24 @@ export function buildTtsDirective(opts: {
     if (!existsSync(tokenPath)) return null
     const token = readFileSync(tokenPath, 'utf-8').trim()
     const { chatId, stateDir, voiceModel } = opts
-    // Escape stateDir for embedding in a jq string argument
-    const escapedStateDir = stateDir.replace(/'/g, "'\\''")
+    // The filter lives in two nested quoting contexts: a JSON document inside a
+    // shell single-quoted string. Build the JSON with JSON.stringify (handles
+    // ", \ and control chars), splice jq's $t in via a placeholder, then apply
+    // the shell single-quote escape once to the finished filter.
+    const textPlaceholder = '@@TTS_TEXT@@'
+    const jqFilter = JSON.stringify({
+      text: textPlaceholder,
+      chat_id: chatId,
+      state_dir: stateDir,
+      voice_model: voiceModel,
+    })
+      .replace(`"${textPlaceholder}"`, () => '$t')
+      .replace(/'/g, "'\\''")
     return (
       `\n\n[Hang válasz direktíva]: A fenti hangüzenetre HANGBAN válaszolj. ` +
       `Amikor megvan a válaszod szövege, futtasd le ezt a parancsot (a szöveget JSON-escape-elve add meg a --arg-ban):\n` +
       `\`\`\`bash\n` +
-      `jq -n --arg t "A_VÁLASZOD_SZÖVEGE" '{"text":$t,"chat_id":"${chatId}","state_dir":"${escapedStateDir}","voice_model":"${voiceModel}"}' | ` +
+      `jq -n --arg t "A_VÁLASZOD_SZÖVEGE" '${jqFilter}' | ` +
       `curl -s -X POST http://localhost:${WEB_PORT}/api/voice/tts -H "Content-Type: application/json" -H "Authorization: Bearer ${token}" -d @-\n` +
       `\`\`\`\n` +
       `Szöveges választ NE küldj -- CSAK a fenti curl-t futtasd le a hangküldéshez.`

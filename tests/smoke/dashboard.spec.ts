@@ -66,10 +66,8 @@ test.describe('Dashboard smoke', () => {
     expect(errors).toHaveLength(0)
   })
 
-  // Card 2ed90db1 / PR #524 review blocker: "no UI is wired, /api/costs isn't
-  // reachable from the dashboard" -- this proves the Costs nav link is real, the
-  // page actually renders live data from /api/costs/summary (not dead scaffolding),
-  // and no JS error fires.
+  // Proves the Costs nav link is real, the page actually renders live data from
+  // /api/costs/summary (not dead scaffolding), and no JS error fires.
   test('costs page loads and renders live summary data without errors', async ({ page }) => {
     const errors: string[] = []
     page.on('pageerror', (err) => errors.push(err.message))

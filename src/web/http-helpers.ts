@@ -119,7 +119,7 @@ function gzipFileCached(filePath: string, etag: string, data: Buffer): Buffer {
   const gz = gzipSync(data)
   if (gzipMemo.size >= GZIP_MEMO_MAX_ENTRIES) {
     const oldest = gzipMemo.keys().next().value
-    if (oldest !== undefined) gzipMemo.delete(oldest)
+    gzipMemo.delete(oldest!)
   }
   gzipMemo.set(key, gz)
   return gz

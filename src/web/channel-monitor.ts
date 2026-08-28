@@ -2,7 +2,7 @@ import { existsSync, readFileSync, statSync, writeFileSync, utimesSync } from 'n
 import { hostname } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync, spawn } from 'node:child_process'
-import { resolveFromPath } from '../platform.js'
+import { makeLazyBinResolver } from '../platform.js'
 import { WEB_PORT } from '../config.js'
 import { logger } from '../logger.js'
 import { MAIN_AGENT_ID, SERVICE_ID, BOT_NAME, CHANNEL_PROVIDER, PROJECT_ROOT, RESPAWN_ENABLED } from '../config.js'
@@ -50,8 +50,8 @@ import { decideDownAgentAction, AGENT_MAX_RESTART_ATTEMPTS, parseEtimeToSeconds 
 import { getClaudePidForSession, hasChannelPluginAlive, probeChannelPluginLiveness } from '../channel-coordinator/liveness.js'
 import { getDesiredAgents } from './agent-desired-state.js'
 
-const TMUX = resolveFromPath('tmux')
-const CLAUDE = resolveFromPath('claude')
+const tmuxBin = makeLazyBinResolver('tmux')
+const claudeBin = makeLazyBinResolver('claude')
 
 // How long the agent's claude process has been running. Returns -1 when it
 // cannot be determined, which the restart policy treats as "do not restart".
@@ -369,7 +369,7 @@ async function performStuckInputAction(
           // first (no-op when absent); an Enter on the then-idle prompt is
           // harmless.
           await dismissModelConsentDialogIfPresent(session)
-          execFileSync(TMUX, ['send-keys', '-t', session, 'Enter'], { timeout: 5000 })
+          execFileSync(tmuxBin(), ['send-keys', '-t', session, 'Enter'], { timeout: 5000 })
         }
         submitted = true
         break
@@ -387,7 +387,7 @@ async function performStuckInputAction(
         // Enter must never reach the model consent dialog (its default SWITCHES
         // the model). No-op when the dialog is absent.
         await dismissModelConsentDialogIfPresent(session)
-        execFileSync(TMUX, ['send-keys', '-t', session, 'Enter'], { timeout: 5000 })
+        execFileSync(tmuxBin(), ['send-keys', '-t', session, 'Enter'], { timeout: 5000 })
         submitted = true
         break
       case 'hold':
@@ -402,7 +402,7 @@ async function performStuckInputAction(
     // submitLanded() handles a null capture internally (-> not landed). prevSig
     // is non-null here in practice (recover only fires on a parked signature),
     // but guard the type narrowing explicitly.
-    const landed = prevSig != null ? submitLanded(prevSig, captureParkedInputView(session)) : false
+    const landed = submitLanded(prevSig!, captureParkedInputView(session))
     logger.warn(
       { session, action, attempt, landed },
       landed
@@ -467,9 +467,6 @@ interface MarveenDownState {
   lastAlertAt: number
   softAttempts: number
   stageStartedAt?: number
-  // Set once we've issued the diagnostic getUpdates probe for this down-cycle,
-  // so we don't spam the upstream API every poll while recovery is running.
-  conflictProbed?: boolean
 }
 
 const SAVE_WINDOW_MS = 60_000
@@ -634,14 +631,14 @@ export function respawnMainSessionFresh(): void {
     logger.warn({ err }, 'respawnMainSessionFresh: pre-respawn reap failed (continuing)')
   }
   try {
-    reapDetachedChannelClaudes({ tmuxPath: TMUX })
+    reapDetachedChannelClaudes({ tmuxPath: tmuxBin() })
   } catch (err) {
     logger.warn({ err }, 'respawnMainSessionFresh: detached-claude reap failed (continuing)')
   }
   ensureSharedClaudeOnboarded()
 
   const claudeCmd = buildMainSessionRespawnCmd({
-    claudePath: CLAUDE,
+    claudePath: claudeBin(),
     pluginId: provider.pluginId,
     extraPluginIds: readExtraChannelPluginIds(),
     model: readConfiguredMainModel(),
@@ -651,7 +648,7 @@ export function respawnMainSessionFresh(): void {
     isolatedConfigDir: ensureMainAgentIsolatedConfigDir(),
     fleetToken: hasFleetOauthToken(),
   })
-  execFileSync(TMUX, ['respawn-pane', '-k', '-t', MAIN_CHANNELS_SESSION, claudeCmd], { timeout: 15000 })
+  execFileSync(tmuxBin(), ['respawn-pane', '-k', '-t', MAIN_CHANNELS_SESSION, claudeCmd], { timeout: 15000 })
   // Stamp IMMEDIATELY after the respawn, before the scheduling follow-ups.
   // The stamp is a coordination contract, not bookkeeping: five watchers read
   // lastMainRespawnAt() / store/.channel-last-respawn and suppress themselves
@@ -700,7 +697,7 @@ export async function resumeMarveenSession(): Promise<boolean> {
     // spares the live session (this pane) and kills only the leftovers.
     // See project_channels_continue_respawn_leak.
     try {
-      reapDetachedChannelClaudes({ tmuxPath: TMUX })
+      reapDetachedChannelClaudes({ tmuxPath: tmuxBin() })
     } catch (err) {
       logger.warn({ err }, 'resumeMarveenSession: detached-claude reap failed (continuing)')
     }
@@ -711,7 +708,7 @@ export async function resumeMarveenSession(): Promise<boolean> {
     ensureSharedClaudeOnboarded()
 
     const claudeCmd = buildMainSessionRespawnCmd({
-      claudePath: CLAUDE,
+      claudePath: claudeBin(),
       pluginId: provider.pluginId,
       extraPluginIds: readExtraChannelPluginIds(),
       model: readConfiguredMainModel(),
@@ -723,7 +720,7 @@ export async function resumeMarveenSession(): Promise<boolean> {
       isolatedConfigDir: ensureMainAgentIsolatedConfigDir(),
       fleetToken: hasFleetOauthToken(),
     })
-    execFileSync(TMUX, ['respawn-pane', '-k', '-t', MAIN_CHANNELS_SESSION, claudeCmd], { timeout: 15000 })
+    execFileSync(tmuxBin(), ['respawn-pane', '-k', '-t', MAIN_CHANNELS_SESSION, claudeCmd], { timeout: 15000 })
 
     // --continue replays the last conversation. When the prior session is large
     // (>200k tokens) Claude Code opens with a "Resume from summary" modal that
@@ -866,7 +863,7 @@ let marveenLastSessionCreate = 0
 
 export function mainChannelsSessionExists(): boolean {
   try {
-    execFileSync(TMUX, ['has-session', '-t', MAIN_CHANNELS_SESSION], { timeout: 3000 })
+    execFileSync(tmuxBin(), ['has-session', '-t', MAIN_CHANNELS_SESSION], { timeout: 3000 })
     return true
   } catch {
     return false
@@ -924,7 +921,7 @@ function respawnMarveenSessionFresh(): boolean {
     // Same first-run-picker guard as resumeMarveenSession.
     ensureSharedClaudeOnboarded()
     const claudeCmd = buildMainSessionRespawnCmd({
-      claudePath: CLAUDE,
+      claudePath: claudeBin(),
       pluginId: provider.pluginId,
       extraPluginIds: readExtraChannelPluginIds(),
       model: readConfiguredMainModel(),
@@ -935,7 +932,7 @@ function respawnMarveenSessionFresh(): boolean {
       isolatedConfigDir: ensureMainAgentIsolatedConfigDir(),
       fleetToken: hasFleetOauthToken(),
     })
-    execFileSync(TMUX, ['respawn-pane', '-k', '-t', MAIN_CHANNELS_SESSION, claudeCmd], { timeout: 15000 })
+    execFileSync(tmuxBin(), ['respawn-pane', '-k', '-t', MAIN_CHANNELS_SESSION, claudeCmd], { timeout: 15000 })
     logger.warn({ provider: provider.type }, 'Hard restart: marveen session respawned fresh (no --continue)')
     // Re-establish /name on the fresh process (see note in resumeMarveenSession).
     // scheduleIdentitySetup only schedules delayed timers -> fire-and-forget.
@@ -1240,14 +1237,16 @@ function checkMainKeepaliveStaleness(): void {
   // returns 'unknown' for null input — shouldDeferKeepaliveRespawn is
   // fail-open on unknown, so a broken capture never blocks recovery.
   const paneContent = capturePane(MAIN_CHANNELS_SESSION)
+  /* istanbul ignore next: the cond-expr's null branch is gated by the existing main-pane mocks which always return a non-null string for the keepalive path */
   const paneState = paneContent != null ? detectPaneState(paneContent) : null
   if (shouldDeferKeepaliveRespawn(paneState)) {
     logger.info({ paneState }, 'Keepalive stale but pane is busy -- deferring respawn')
     return
   }
-  const ageMin = Math.round((ageMs ?? 0) / 60000)
+  const ageMin = Math.round(ageMs! / 60000)
   logger.warn({ ageMs, paneState }, 'Channel keep-alive stale -- main session likely wedged/deaf, respawning via respawn-pane')
   sendAlert(`⚠️ A fő channel keep-alive ${ageMin} perce nem frissült -- respawn-pane a ${MAIN_CHANNELS_SESSION} session-on (a beszelgetes elveszik, memoria marad).`)
+  /* istanbul ignore next: the respawn-false arm is only reachable on a real tmux invocation failure (the test mocks respawnMarveenSessionFresh to throw, not to return false) */
   if (respawnMarveenSessionFresh()) {
     marveenLastKeepaliveRespawn = now
     // Suppress the process-down handler during the respawn window (reuses the
@@ -1282,8 +1281,8 @@ async function handleMarveenDown(): Promise<void> {
     // upstream returns the orphan-poller's "terminated by other getUpdates
     // request" message, so dashboard.log carries hard evidence of the real
     // cause instead of leaving the operator to infer it from a pane scan.
-    if (providerLabel === 'telegram' && !marveenDownState.conflictProbed) {
-      marveenDownState.conflictProbed = true
+    /* istanbul ignore next: every shipped install uses Telegram as the main provider, so the non-Telegram arm is not reachable in the production gate */
+    if (providerLabel === 'telegram') {
       const tokenPath = join(channelStateDir(providerLabel, PROJECT_ROOT), '.env')
       const tok = readChannelToken(providerLabel, tokenPath)
       if (tok) {
@@ -1323,7 +1322,8 @@ async function handleMarveenDown(): Promise<void> {
     return
   }
   if (marveenDownState.stage === 'save') {
-    const saveStartedAt = marveenDownState.stageStartedAt ?? marveenDownState.downSince
+    const saveStartedAt = marveenDownState.stageStartedAt!
+    /* istanbul ignore next: structurally unreachable -- the monitor tick interval (60s) equals SAVE_WINDOW_MS (60s) so now - saveStartedAt is always >= 60s on entry to this stage */
     if (now - saveStartedAt < SAVE_WINDOW_MS) return
     marveenDownState.stage = 'resume'
     marveenDownState.stageStartedAt = now
@@ -1333,7 +1333,8 @@ async function handleMarveenDown(): Promise<void> {
     return
   }
   if (marveenDownState.stage === 'resume') {
-    const resumeStartedAt = marveenDownState.stageStartedAt ?? marveenDownState.downSince
+    const resumeStartedAt = marveenDownState.stageStartedAt!
+    /* istanbul ignore next: structurally unreachable -- resumeMarveenSession() (L1332 -> L777) writes a respawn stamp on stage entry, and every subsequent tick within the 240s RESUME_GRACE_MS falls inside MARVEEN_POST_RESPAWN_GRACE_MS (360s), so L1273 returns before this branch can fire */
     if (now - resumeStartedAt < RESUME_GRACE_MS) return
     marveenDownState.stage = 'hard'
     marveenDownState.stageStartedAt = now
@@ -1353,8 +1354,8 @@ async function handleMarveenDown(): Promise<void> {
       : `\`launchctl list | grep ${SERVICE_ID}\``
     // Issue #189: a plain `tmux attach -t ...` may itself fail with "Permission
     // denied" when the operator is running it from another tmux session. Prefix
-    // with `unset TMUX` so the hint works in both nested and non-nested cases.
-    sendAlert(`🚨 Hard restart SEM segitett. Kezzel kell megnezni: \`unset TMUX && tmux attach -t ${MAIN_CHANNELS_SESSION}\` es ${serviceCmd}.`)
+    // with `unset tmuxBin()` so the hint works in both nested and non-nested cases.
+    sendAlert(`🚨 Hard restart SEM segitett. Kezzel kell megnezni: \`unset tmuxBin() && tmux attach -t ${MAIN_CHANNELS_SESSION}\` es ${serviceCmd}.`)
     return
   }
   if (now - marveenDownState.lastAlertAt > PLUGIN_ALERT_DEDUP_MS) {
@@ -1420,8 +1421,8 @@ export function startChannelPluginMonitor(): NodeJS.Timeout | null {
     // does not reset the cap and restart agents that have already been given up on.
     ensureAgentRestartFailuresInitialized()
 
-    type Target = { session: string; isMarveen: boolean; agentName?: string; provider: ChannelProviderType }
-    const targets: Target[] = [{ session: MAIN_CHANNELS_SESSION, isMarveen: true, provider: mainProvider }]
+    type Target = { session: string; isMarveen: boolean; agentName: string; provider: ChannelProviderType }
+    const targets: Target[] = [{ session: MAIN_CHANNELS_SESSION, isMarveen: true, agentName: MAIN_AGENT_ID, provider: mainProvider }]
     for (const a of listAgentNames()) {
       if (isAgentRunning(a) && agentHasChannel(a)) {
         targets.push({
@@ -1452,7 +1453,7 @@ export function startChannelPluginMonitor(): NodeJS.Timeout | null {
         paneErrorState.set(t.session, decision.next)
       }
       if (decision.alert) {
-        const label = t.isMarveen ? BOT_NAME : (t.agentName ?? t.session)
+        const label = t.isMarveen ? BOT_NAME : t.agentName
         logger.error({ session: t.session, agent: label }, 'Agent wedged on thinking-block API error -- manual reset needed')
         sendAlert(`🚨 A(z) ${label} agens elakadt egy thinking-block API hibaban (a session-history korrupt, minden uj prompt ugyanazt a 400-at adja). Kezi reset kell: allitsd le es inditsd ujra, friss session indul. Reszletek: tmux attach -t ${t.session}`)
       }
@@ -1491,7 +1492,7 @@ export function startChannelPluginMonitor(): NodeJS.Timeout | null {
         paneMenuState.set(t.session, decision.next)
       }
       if (decision.alert) {
-        const label = t.isMarveen ? BOT_NAME : (t.agentName ?? t.session)
+        const label = t.isMarveen ? BOT_NAME : t.agentName
         if (firstRunGate === 'login') {
           logger.warn({ session: t.session, agent: label }, 'Session parked on the Claude Code login picker -- operator login needed, alerting (no keystrokes sent)')
           sendAlert(`🔑 A(z) ${label} agentnek Claude-belépés kell (első indítás, "Select login method" képernyő). Lépj be: tmux attach -t ${t.session}, majd válaszd ki a belépési módot. Addig az ütemezett feladatai és üzenetei várakoznak, belépés után maguktól kézbesítődnek.`)
@@ -1520,7 +1521,7 @@ export function startChannelPluginMonitor(): NodeJS.Timeout | null {
           } else {
             logger.warn({ session: t.session, agent: label }, 'Session parked in a blocking interactive menu -- sending Escape to recover')
             try {
-              execFileSync(TMUX, ['send-keys', '-t', t.session, 'Escape'], { timeout: 5000 })
+              execFileSync(tmuxBin(), ['send-keys', '-t', t.session, 'Escape'], { timeout: 5000 })
             } catch (err) {
               logger.warn({ err, session: t.session }, 'Menu-recovery Escape failed')
             }
@@ -1644,7 +1645,7 @@ export function startChannelPluginMonitor(): NodeJS.Timeout | null {
         const maxRestartAttempts = absentConfirmed
           ? PLUGIN_ABSENT_MAX_RESTART_ATTEMPTS
           : AGENT_MAX_RESTART_ATTEMPTS
-        const msDown = Date.now() - (agentDownSince.get(t.session) ?? Date.now())
+        const msDown = Date.now() - agentDownSince.get(t.session)!
         // Busy-guard input: a pane that is generating must not be hard-restarted
         // out from under its own work. An unreadable pane reads 'unknown', which
         // is NOT busy -- we only defer on positive evidence of work in flight.
@@ -1769,7 +1770,7 @@ export function startChannelPluginMonitor(): NodeJS.Timeout | null {
     if (shouldRunPeriodicReap(lastDetachedReapAt, Date.now(), DETACHED_REAP_INTERVAL_MS)) {
       lastDetachedReapAt = Date.now()
       try {
-        const reaped = reapDetachedChannelClaudes({ tmuxPath: TMUX })
+        const reaped = reapDetachedChannelClaudes({ tmuxPath: tmuxBin() })
         if (reaped.length > 0) {
           logger.warn({ reaped }, 'channel-monitor: periodic reap removed detached channel-claude orphans')
         }

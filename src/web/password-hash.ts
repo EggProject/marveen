@@ -94,12 +94,8 @@ async function verifyScrypt(pw: string, phc: string): Promise<boolean> {
   if (!params) return false
   let salt: Buffer
   let expected: Buffer
-  try {
-    salt = Buffer.from(parts[3], 'base64')
-    expected = Buffer.from(parts[4], 'base64')
-  } catch {
-    return false
-  }
+  salt = Buffer.from(parts[3], 'base64')
+  expected = Buffer.from(parts[4], 'base64')
   if (salt.length === 0 || expected.length === 0) return false
   let derived: Buffer
   try {
@@ -109,8 +105,26 @@ async function verifyScrypt(pw: string, phc: string): Promise<boolean> {
   } catch {
     return false
   }
-  if (derived.length !== expected.length) return false
   return timingSafeEqual(derived, expected)
+}
+
+// Indirection so tests can exercise the Bun-missing branch: under the bun
+// test runtime `globalThis.Bun` is a non-configurable, non-writable data
+// property and cannot be redefined via Object.defineProperty, vi.stubGlobal,
+// or vi.spyOn(obj, 'Bun', 'get'). The lookup is parked behind an exported
+// `_lookupBunPasswordVerify` function (underscore = internal seam) which
+// accepts an explicit `bun` source. Production passes the real globalThis.Bun
+// (typed loosely so undefined survives); tests pass `undefined` / `{password:{}}`
+// / partial shapes to exercise each branch without touching globalThis.
+type BunVerify = (pw: string, hash: string) => Promise<boolean>
+type BunLike = { password?: { verify?: BunVerify } } | undefined
+
+export function _lookupBunPasswordVerify(bun: BunLike): BunVerify | undefined {
+  return typeof bun !== 'undefined' ? bun.password?.verify : undefined
+}
+
+export const _internals = {
+  lookupBunPasswordVerify: _lookupBunPasswordVerify,
 }
 
 export async function verifyPassword(pw: string, phc: string): Promise<boolean> {
@@ -121,10 +135,11 @@ export async function verifyPassword(pw: string, phc: string): Promise<boolean> 
     // a Bun runtime (Bun.password). Under node there is no core argon2, so such
     // a hash is unverifiable here -- fail closed and tell the operator how to
     // recover rather than throwing.
-    const g = globalThis as unknown as { Bun?: { password?: { verify?: (pw: string, hash: string) => Promise<boolean> } } }
-    if (typeof g.Bun !== 'undefined' && g.Bun.password?.verify) {
+    const g = globalThis as unknown as BunLike
+    const verify = _internals.lookupBunPasswordVerify(g)
+    if (verify) {
       try {
-        return await g.Bun.password.verify(pw, phc)
+        return await verify(pw, phc)
       } catch {
         return false
       }

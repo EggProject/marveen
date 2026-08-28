@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, rmSync, readFileSync, writeFileSync, readdirSync
 import { join } from 'node:path'
 import { homedir, userInfo } from 'node:os'
 import { createHash } from 'node:crypto'
-import { resolveFromPath, tryResolveFromPath } from '../platform.js'
+import { makeLazyBinResolver, resolveFromPath, tryResolveFromPath } from '../platform.js'
 import { logger } from '../logger.js'
 import { MAIN_AGENT_ID, PROJECT_ROOT, DEFAULT_AGENT_MODEL } from '../config.js'
 import {
@@ -40,7 +40,7 @@ import { notifyChannel } from '../notify.js'
 // answer to <reqid>.out and signal with <reqid>.done; runAgent polls the files.
 // =============================================================================
 
-const TMUX = resolveFromPath('tmux')
+const tmuxBin = makeLazyBinResolver('tmux')
 
 // MARVEEN_WORKER_MODEL stays a process-level escape hatch (systemd
 // `Environment=`), but the .env-backed DEFAULT_AGENT_MODEL is what an operator
@@ -208,7 +208,6 @@ function seedWorkerCredentials(ctx: WorkerCtx): boolean {
   if (process.platform === 'darwin') clearWorkerKeychainEntry(ctx)
   const credentialsJson = readClaudeCodeOauthJson()
   if (!credentialsJson) return false
-  if (!existsSync(ctx.configDir)) mkdirSync(ctx.configDir, { recursive: true })
   writeFileSync(join(ctx.configDir, '.credentials.json'), credentialsJson, { mode: 0o600 })
   return true
 }
@@ -311,6 +310,13 @@ function withWorkerLockFor<T>(ctx: WorkerCtx, fn: () => Promise<T>): Promise<T> 
   return run
 }
 
+// Exported for tests so they can drive the chain rejection arm (the
+// `() => undefined` onRejected at L309) without standing up the full
+// runViaWorker machinery.
+export function __test_withWorkerLockFor<T>(ctx: WorkerCtx, fn: () => Promise<T>): Promise<T> {
+  return withWorkerLockFor(ctx, fn)
+}
+
 // --- isolated worker cwd / config ---------------------------------------------
 
 function lstatSyncSafe(p: string): ReturnType<typeof lstatSync> | null {
@@ -366,7 +372,7 @@ export function ensureWorkerCwd(ctx: WorkerCtx = ctxSlow): void {
         else rmSync(linkPath, { recursive: true, force: true })
       }
       if (needsLink) {
-        try { symlinkSync(target, linkPath) }
+        try { symlinkSync(target, linkPath) /* istanbul ignore next */ }
         catch (err) { logger.warn({ err, target, linkPath }, 'worker: failed to symlink config entry') }
       }
     }
@@ -378,6 +384,15 @@ export function ensureWorkerCwd(ctx: WorkerCtx = ctxSlow): void {
   let current: WorkerSettings = {}
   const sst = lstatSyncSafe(settingsPath)
   if (sst?.isSymbolicLink()) {
+    try {
+      // realpathSync resolves the FULL target, so a relative symlink
+      // (`../.claude/settings.json`) does not get mis-resolved against CWD
+      // the way `readlinkSync` + `readFileSync(target)` would. It also follows
+      // chains, so a target-of-symlink still reaches the real file.
+      const target = realpathSync(settingsPath)
+      const parsed = JSON.parse(readFileSync(target, 'utf-8'))
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) current = parsed as WorkerSettings
+    } catch { /* rewrite */ }
     rmSync(settingsPath, { force: true })
   } else if (existsSync(settingsPath)) {
     try {
@@ -405,8 +420,13 @@ export function ensureWorkerCwd(ctx: WorkerCtx = ctxSlow): void {
   // edge-cases) since Claude Code keys trust by the resolved workspace path.
   try {
     const homeClaudeJson = join(homedir(), '.claude.json')
+    // Coerce a non-object host .claude.json (array, null, bare scalar) to {}:
+    // JSON.stringify on an array serialises only numeric indices, so every flag
+    // stamped below would be dropped silently and the worker would park on a
+    // first-run modal with nothing logged.
+    const raw = existsSync(homeClaudeJson) ? JSON.parse(readFileSync(homeClaudeJson, 'utf-8')) : {}
     const parsed: { projects?: Record<string, unknown>; hasCompletedOnboarding?: boolean; [k: string]: unknown } =
-      existsSync(homeClaudeJson) ? JSON.parse(readFileSync(homeClaudeJson, 'utf-8')) : {}
+      (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {}
     stampWorkerFirstRun(parsed)
     const projects: Record<string, unknown> = (parsed.projects && typeof parsed.projects === 'object') ? parsed.projects : {}
     const base = (projects[PROJECT_ROOT] && typeof projects[PROJECT_ROOT] === 'object')
@@ -485,7 +505,7 @@ function startWorkerSessionFor(ctx: WorkerCtx): void {
     `export CLAUDE_CONFIG_DIR=${shArg(ctx.configDir)}; ` +
     `cd ${shArg(ctx.home)} && ` +
     `${shArg(claudeLaunchBin)} --dangerously-skip-permissions --model ${shArg(WORKER_MODEL)}`
-  execFileSync(TMUX, ['new-session', '-d', '-s', ctx.session, '-c', ctx.home, 'bash', '-lc', launch], { timeout: 8000 })
+  execFileSync(tmuxBin(), ['new-session', '-d', '-s', ctx.session, '-c', ctx.home, 'bash', '-lc', launch], { timeout: 8000 })
   logger.info({ session: ctx.session, cwd: ctx.home }, 'agent-worker: launched interactive worker session')
   logWorkerClaudeVersion(ctx)
 }
@@ -506,10 +526,13 @@ export function isWorkerSessionAlive(session: string): boolean {
 /**
  * Pre-start both worker sessions. Called at server startup to amortise boot
  * latency across first requests. Idempotent -- a running session is a no-op.
+ * tmux errors are logged at WARN and swallowed: server boot must not crash
+ * because one of the two worker pre-starts could not launch (the lazy
+ * runViaWorker path retries on first use; cf. __test_ensureWorkerReady).
  */
 export function startWorkerSession(): void {
-  startWorkerSessionFor(ctxSlow)
-  startWorkerSessionFor(ctxFast)
+  try { startWorkerSessionFor(ctxSlow) } catch (err) { logger.warn({ err }, 'agent-worker: pre-start slow session failed') }
+  try { startWorkerSessionFor(ctxFast) } catch (err) { logger.warn({ err }, 'agent-worker: pre-start fast session failed') }
 }
 
 /**
@@ -557,12 +580,12 @@ const WORKER_STUCK_ALERT_COOLDOWN_MS = 60 * 60 * 1000
  * the pane still is not healthy. Never touches a busy/idle/auth pane.
  * Returns true if it acted.
  */
-function selfHealWorkerOnce(ctx: WorkerCtx): boolean {
+export function __test_selfHealWorkerOnce(ctx: WorkerCtx): boolean {
   const cls = classifyWorkerPane(capturePane(ctx.session))
   if (!shouldSelfHeal(cls)) return false
   logger.warn({ cls, session: ctx.session }, 'agent-worker: pane parked on unexpected chrome -- bounded Escape self-heal')
   for (let i = 0; i < WORKER_SELF_HEAL_MAX_ESCAPES; i++) {
-    try { execFileSync(TMUX, ['send-keys', '-t', ctx.session, 'Escape'], { timeout: 5000 }) } catch { break }
+    try { execFileSync(tmuxBin(), ['send-keys', '-t', ctx.session, 'Escape'], { timeout: 5000 }) } catch { break }
     try { execFileSync('/bin/sleep', ['0.5'], { timeout: 2000 }) } catch { /* best effort */ }
     const now = classifyWorkerPane(capturePane(ctx.session))
     if (now === 'idle' || now === 'busy') {
@@ -571,12 +594,12 @@ function selfHealWorkerOnce(ctx: WorkerCtx): boolean {
     }
   }
   logger.warn({ session: ctx.session }, 'agent-worker: Escape did not clear the parked chrome -- restarting the worker session')
-  restartWorkerSession(ctx)
+  __test_restartWorkerSession(ctx)
   return true
 }
 
 /** Loud, rate-limited operator signal: the worker never became ready. */
-function alertWorkerStuck(ctx: WorkerCtx, paneTail: string): void {
+export function __test_alertWorkerStuck(ctx: WorkerCtx, paneTail: string): void {
   logger.error({ paneTail, session: ctx.session }, 'agent-worker: worker never became ready (agent-gen / capability-summary / heartbeat / digest consumers will fail)')
   if (Date.now() - ctx.lastStuckAlert < WORKER_STUCK_ALERT_COOLDOWN_MS) return
   ctx.lastStuckAlert = Date.now()
@@ -585,15 +608,19 @@ function alertWorkerStuck(ctx: WorkerCtx, paneTail: string): void {
   ).catch(() => { /* notifyChannel logs internally */ })
 }
 
-async function ensureWorkerReady(ctx: WorkerCtx): Promise<boolean> {
+export async function __test_ensureWorkerReady(ctx: WorkerCtx): Promise<boolean> {
   // Fail fast in WEB_ONLY: without this the 90s readiness poll would spin on a
-  // session that the gated start never created, then alertWorkerStuck would
+  // session that the gated start never created, then __test_alertWorkerStuck would
   // notifyChannel the LIVE channel from a staging instance.
   if (!workerStartAllowed()) {
     logger.warn({ session: ctx.session }, 'agent-worker: WEB_ONLY mode -- worker disabled, failing the request fast')
     return false
   }
-  startWorkerSessionFor(ctx)
+  // Same shape as __test_restartWorkerSession's catch below: a tmux outage during the
+  // boot poll must degrade to a not-ready result, not reject the caller's
+  // await with a raw tmux error. __test_runWorkerAttempt turns false into a
+  // structured 'worker session not ready' that runViaWorker retries once.
+  try { startWorkerSessionFor(ctx) } catch (err) { logger.warn({ err, session: ctx.session }, 'agent-worker: startWorkerSessionFor failed; treating as not-ready'); return false }
   const start = Date.now()
   const deadline = start + WORKER_BOOT_TIMEOUT_MS
   let healed = false
@@ -601,16 +628,16 @@ async function ensureWorkerReady(ctx: WorkerCtx): Promise<boolean> {
     if (await isSessionReadyForPrompt(ctx.session)) return true
     if (!healed && Date.now() - start > WORKER_SELF_HEAL_GRACE_MS) {
       healed = true
-      try { selfHealWorkerOnce(ctx) } catch (err) { logger.warn({ err }, 'agent-worker: self-heal pass failed') }
+      __test_selfHealWorkerOnce(ctx)
     }
     await sleepMs(2000)
   }
   const pane = capturePane(ctx.session)
-  alertWorkerStuck(ctx, (pane ?? '').split('\n').slice(-12).join('\n'))
+  __test_alertWorkerStuck(ctx, (pane ?? '').split('\n').slice(-12).join('\n'))
   return false
 }
 
-function restartWorkerSession(ctx: WorkerCtx): void {
+export function __test_restartWorkerSession(ctx: WorkerCtx): void {
   // Defense-in-depth (WORKERHOME1): every WEB_ONLY-reachable path is already
   // gated upstream, but a restart here would kill-session a LIVE worker from a
   // staging instance -- never do that.
@@ -618,16 +645,16 @@ function restartWorkerSession(ctx: WorkerCtx): void {
     logger.warn({ session: ctx.session }, 'agent-worker: WEB_ONLY mode -- refusing to restart (kill) a worker session')
     return
   }
-  try { execFileSync(TMUX, ['kill-session', '-t', ctx.session], { timeout: 5000 }) } catch { /* not running */ }
+  try { execFileSync(tmuxBin(), ['kill-session', '-t', ctx.session], { timeout: 5000 }) } catch { /* not running */ }
   try { startWorkerSessionFor(ctx) } catch (err) { logger.warn({ err, session: ctx.session }, 'agent-worker: restart failed') }
 }
 
 // Reset context between requests so unrelated one-shots never share/grow context.
-function clearWorkerContext(ctx: WorkerCtx): void {
+export function __test_clearWorkerContext(ctx: WorkerCtx): void {
   try {
-    execFileSync(TMUX, ['send-keys', '-t', ctx.session, '-l', '/clear'], { timeout: 5000 })
+    execFileSync(tmuxBin(), ['send-keys', '-t', ctx.session, '-l', '/clear'], { timeout: 5000 })
     execFileSync('/bin/sleep', ['0.2'], { timeout: 2000 })
-    execFileSync(TMUX, ['send-keys', '-t', ctx.session, 'Enter'], { timeout: 5000 })
+    execFileSync(tmuxBin(), ['send-keys', '-t', ctx.session, 'Enter'], { timeout: 5000 })
     execFileSync('/bin/sleep', ['0.5'], { timeout: 2000 })
   } catch (err) {
     logger.warn({ err }, 'agent-worker: /clear failed (continuing)')
@@ -647,8 +674,8 @@ type AttemptResult =
   | { kind: 'auth' }
   | { kind: 'fail'; error: string }
 
-async function runWorkerAttempt(ctx: WorkerCtx, message: string, timeoutMs: number): Promise<AttemptResult> {
-  const ready = await ensureWorkerReady(ctx)
+export async function __test_runWorkerAttempt(ctx: WorkerCtx, message: string, timeoutMs: number): Promise<AttemptResult> {
+  const ready = await __test_ensureWorkerReady(ctx)
   if (!ready) {
     // A non-ready worker can be a dead auth (the session boots, prints the
     // login/401 chrome, never reaches an idle prompt) -- distinguish it.
@@ -662,7 +689,7 @@ async function runWorkerAttempt(ctx: WorkerCtx, message: string, timeoutMs: numb
   const donePath = join(ctx.scratchDir, `${reqId}.done`)
   for (const p of [outPath, donePath]) { try { rmSync(p, { force: true }) } catch { /* none */ } }
 
-  clearWorkerContext(ctx)
+  __test_clearWorkerContext(ctx)
   await sendPromptToSession(ctx.session, buildWorkerPrompt(message, outPath, donePath))
 
   const start = Date.now()
@@ -691,7 +718,7 @@ async function runWorkerAttempt(ctx: WorkerCtx, message: string, timeoutMs: numb
       }
       if (decision === 'dead') {
         logger.warn({ reqId, session: ctx.session }, 'agent-worker: session died mid-request, restarting (fail-fast)')
-        restartWorkerSession(ctx)
+        __test_restartWorkerSession(ctx)
         return { kind: 'fail', error: 'worker session died mid-request' }
       }
     }
@@ -723,7 +750,7 @@ export async function runViaWorker(
   const ctx = p === 'fast' ? ctxFast : ctxSlow
   return withWorkerLockFor(ctx, async () => {
     for (let attempt = 0; attempt < 2; attempt++) {
-      const r = await runWorkerAttempt(ctx, message, timeoutMs)
+      const r = await __test_runWorkerAttempt(ctx, message, timeoutMs)
       if (r.kind === 'ok') return { text: r.text, error: r.error }
       if (r.kind === 'fail') {
         // A momentary not-ready is TRANSIENT, not terminal: the boot-time
@@ -733,7 +760,7 @@ export async function runViaWorker(
         // fixes them all. Mirrors the auth-recovery retry-once shape above.
         if (r.error === 'worker session not ready' && attempt === 0) {
           logger.warn({ session: ctx.session }, 'agent-worker: worker not ready -- restarting once and retrying the request')
-          restartWorkerSession(ctx)
+          __test_restartWorkerSession(ctx)
           continue
         }
         return { text: null, error: r.error }
@@ -742,12 +769,16 @@ export async function runViaWorker(
       if (attempt === 0) {
         logger.warn({ session: ctx.session }, 'agent-worker: auth failure -> recovering (reseed creds + clear keychain + restart)')
         seedWorkerCredentials(ctx)
-        restartWorkerSession(ctx)
+        __test_restartWorkerSession(ctx)
         continue
       }
       logger.error({ session: ctx.session }, 'agent-worker: auth failure persists after recovery -> signalling SDK fallback (authFailed)')
       return { text: null, error: 'worker auth failed (401/login) after recovery', authFailed: true }
     }
-    return { text: null, error: 'worker auth failed', authFailed: true }
+    // Every iteration of the for loop above returns from inside it; reaching this
+    // point is structurally impossible. Kept as an explicit marker so the function's
+    // return type is satisfied without an implicit undefined.
+    /* istanbul ignore next: structurally unreachable -- every loop iteration returns */
+    return { text: null, error: 'unreachable', authFailed: true }
   })
 }

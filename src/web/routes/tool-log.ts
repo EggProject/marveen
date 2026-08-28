@@ -8,7 +8,7 @@ export async function tryHandleToolLog(ctx: RouteContext): Promise<boolean> {
   // POST /api/tool-log -- log a tool call (from PostToolUse hook)
   if (path === '/api/tool-log' && method === 'POST') {
     const body = await readBody(req)
-    const data = JSON.parse(body.toString()) as {
+    let data: {
       session_id: string
       tool_name: string
       input_summary?: string
@@ -17,6 +17,7 @@ export async function tryHandleToolLog(ctx: RouteContext): Promise<boolean> {
       trace_id?: string
       duration_ms?: number
     }
+    try { data = JSON.parse(body.toString()) } catch { json(res, { error: 'Invalid JSON' }, 400); return true }
     if (!data.session_id || !data.tool_name) { json(res, { error: 'session_id and tool_name required' }, 400); return true }
     logToolCall(data.session_id, data.tool_name, data.input_summary ?? null, data.success !== false, data.agent_id ?? null, data.trace_id ?? null, data.duration_ms ?? null)
     json(res, { ok: true })
@@ -56,7 +57,8 @@ export async function tryHandleToolLog(ctx: RouteContext): Promise<boolean> {
   // POST /api/tool-log/prune -- cleanup old entries
   if (path === '/api/tool-log/prune' && method === 'POST') {
     const body = await readBody(req)
-    const data = JSON.parse(body.toString()) as { older_than_secs?: number }
+    let data: { older_than_secs?: number }
+    try { data = JSON.parse(body.toString()) } catch { json(res, { error: 'Invalid JSON' }, 400); return true }
     pruneToolCallLog(data.older_than_secs ?? 86400)
     json(res, { ok: true })
     return true

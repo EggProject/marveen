@@ -81,8 +81,20 @@ Valaszolj KIZAROLAG JSON formatumban, semmi mas:
 
   if (path === '/api/schedules/expand-prompt' && method === 'POST') {
     const body = await readBody(req)
-    const { prompt, answers } = JSON.parse(body.toString()) as { prompt: string; answers: { question: string; answer: string }[] }
+    let parsed: { prompt: string; answers: { question: string; answer: string }[] }
+    try {
+      parsed = JSON.parse(body.toString()) as { prompt: string; answers: { question: string; answer: string }[] }
+    } catch {
+      json(res, { error: 'Invalid JSON' }, 400)
+      return true
+    }
+    const { prompt, answers } = parsed
     if (!prompt?.trim()) { json(res, { error: 'Prompt is required' }, 400); return true }
+    if (!Array.isArray(answers)) { json(res, { error: 'Answers array is required' }, 400); return true }
+    if (!answers.every(a => a && typeof a === 'object' && typeof a.question === 'string' && typeof a.answer === 'string')) {
+      json(res, { error: 'Answers must contain question and answer strings' }, 400)
+      return true
+    }
 
     const answersText = answers.map((a: { question: string; answer: string }) => `Kerdes: ${a.question}\nValasz: ${a.answer}`).join('\n\n')
 

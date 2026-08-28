@@ -45,7 +45,6 @@ import { resolveAgentSecurityProfile } from './agent-team.js'
 import { writeAgentSettingsFromProfile, ensureFleetRosterSection, ensureAutonomySection } from './agent-scaffold.js'
 import { schedulePluginUnlockAfterRespawn } from './channel-plugin-unlock.js'
 import { getSecret } from './vault.js'
-import { resolveOpenRouterModel } from './openrouter-models.js'
 import { reapChannelOrphans, reapDetachedChannelClaudes } from './channel-poller-reap.js'
 import { MAIN_CHANNELS_SESSION } from './main-agent.js'
 import { notifyChannel } from '../notify.js'
@@ -684,14 +683,13 @@ export function stampProjectTrustForDir(dotClaudePath: string, projectDir: strin
 // Pre-stamp the Fable overage-consent acknowledgment in a config root's
 // .claude.json so the "Fable 5 now uses usage credits" dialog never renders.
 //
-// Root cause chain (2026-07-23, card b71fc541): a config root without
-// fableOverageConsentV2[<orgUuid>] parks the first Fable 5 turn on a TUI
-// dialog whose DEFAULT option is "Switch to Sonnet 5 and continue". The
-// fleet's own blind Enters (identity /name, sendPromptToSession retry-Enter)
-// accept that default, silently switching the session to Sonnet while
-// agent-config still says claude-fable-5 -- the long-unexplained
-// model/activeModel drift. Fleet policy (owner decision 2026-07-23): the
-// fleet stays on Fable 5, so the consent is pre-acknowledged the same way
+// Root cause chain: a config root without fableOverageConsentV2[<orgUuid>]
+// parks the first Fable 5 turn on a TUI dialog whose DEFAULT option is
+// "Switch to Sonnet 5 and continue". The fleet's own blind Enters (identity
+// /name, sendPromptToSession retry-Enter) accept that default, silently
+// switching the session to Sonnet while agent-config still says claude-fable-5
+// -- the long-unexplained model/activeModel drift. Fleet policy: the fleet
+// stays on Fable 5, so the consent is pre-acknowledged the same way
 // onboarding/trust flags already are (see stampProjectTrustForDir above).
 //
 // Claude Code keys the consent on oauthAccount.organizationUuid (or
@@ -774,7 +772,7 @@ function runTmux(host: string | null, tmuxArgs: string[], opts: { timeout?: numb
   // makes tmux emit `can't find session: agent-X` / `no server running`; without
   // this those leaked as ~450 bare (non-pino) lines into store/dashboard.log.
   // Callers that care read err.stderr via logger.warn({ err }).
-  execFileSync(inv.file, inv.args, { timeout: opts.timeout ?? (host ? 8000 : 3000), stdio: ['ignore', 'ignore', 'pipe'] })
+  execFileSync(inv.file, inv.args, { timeout: opts.timeout ?? 3000, stdio: ['ignore', 'ignore', 'pipe'] })
 }
 
 function captureTmux(host: string | null, tmuxArgs: string[], opts: { timeout?: number } = {}): string {
@@ -912,6 +910,20 @@ export function startAgentProcess(name: string, opts: { fresh?: boolean } = {}):
   const dir = agentDir(name)
   if (!existsSync(dir)) return { ok: false, error: 'Agent not found' }
 
+  // Third-party provider ids (DeepSeek, OpenRouter) no longer have a runtime
+  // branch in either the local OR the remote launcher. Refusing here is
+  // deliberate: letting them fall through to the Ollama branch (local) or the
+  // laptop's `claude --model '<stale>'` line (remote) would fail with an
+  // opaque upstream error. Hoisted before the remote dispatch so both paths
+  // share one source of truth.
+  {
+    const model = readAgentModel(name)
+    if (model.startsWith('deepseek-') || model.startsWith('openrouter-auto:') || model.includes('/')) {
+      logger.warn({ name, model }, 'refusing to launch: stale third-party provider model id')
+      return { ok: false, error: `Model '${model}' is no longer supported. Set the agent to a Claude model or a local Ollama tag.` }
+    }
+  }
+
   // Remote agents are handled entirely by the ssh path above (with its own
   // start guard), before any local already-running check / scaffolding.
   const remote = readAgentRemoteConfig(name)
@@ -975,7 +987,7 @@ export function startAgentProcess(name: string, opts: { fresh?: boolean } = {}):
 
   try {
     try {
-      runTmux(null, ['kill-session', '-t', session])
+      runTmux(null, ['kill-session', '-t', session], { timeout: 5000 })
       execSync('sleep 3', { timeout: 5000 })
     } catch { /* ok */ }
 
@@ -1005,30 +1017,18 @@ export function startAgentProcess(name: string, opts: { fresh?: boolean } = {}):
       logger.warn({ err, name }, 'pre-launch detached-claude reap failed (continuing)')
     }
 
-    // `openrouter-auto:<tier>` resolves to the tier's current recommended model
-    // (weekly-refreshed); a concrete OpenRouter id (contains '/') passes through.
-    const model = resolveOpenRouterModel(readAgentModel(name))
+    const model = readAgentModel(name)
     const authMode = readAgentAuthMode(name)
     const isClaude = model.startsWith('claude-')
-    const isDeepseek = model.startsWith('deepseek-')
-    // OpenRouter model ids are `provider/model` (contain '/'); Ollama tags use
-    // ':' and no '/'. This discriminator keeps OpenRouter ids off the Ollama path.
-    const isOpenRouter = !isClaude && !isDeepseek && model.includes('/')
-    const isOllama = !isClaude && !isDeepseek && !isOpenRouter
+    const isOllama = !isClaude
     // ANTHROPIC_MODEL is REQUIRED for non-Claude models: the interactive TUI
     // validates the `--model` flag against known Anthropic models and silently
     // falls back to the built-in default (claude-opus-...) for an unrecognized
-    // value like `qwen3.6:27b` or `deepseek-v4-pro` -- which then errors against
-    // the custom ANTHROPIC_BASE_URL ("model does not exist"). The env var is
-    // authoritative and bypasses that validation. (`--print` honors --model, but
-    // the agents run the TUI.) Single-quoted so a `:` in the tag is shell-safe.
+    // value like `qwen3.6:27b` -- which then errors against the custom
+    // ANTHROPIC_BASE_URL ("model does not exist"). The env var is authoritative
+    // and bypasses that validation. (`--print` honors --model, but the agents
+    // run the TUI.) Single-quoted so a `:` in the tag is shell-safe.
     const ollamaEnv = isOllama ? `export ANTHROPIC_AUTH_TOKEN=ollama && export ANTHROPIC_BASE_URL=${OLLAMA_URL} && export ANTHROPIC_MODEL='${model}' && ` : ''
-    const deepseekKey = isDeepseek ? (getSecret('DEEPSEEK_API_KEY') ?? '') : ''
-    const deepseekEnv = isDeepseek ? `export ANTHROPIC_AUTH_TOKEN="${deepseekKey}" && export ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic && export ANTHROPIC_MODEL='${model}' && ` : ''
-    // OpenRouter: Anthropic-compatible endpoint at https://openrouter.ai/api
-    // (the SDK appends /v1/messages). Key from the vault (openrouter-fleet-key).
-    const openrouterKey = isOpenRouter ? (getSecret('openrouter-fleet-key') ?? '') : ''
-    const openrouterEnv = isOpenRouter ? `export ANTHROPIC_AUTH_TOKEN="${openrouterKey}" && export ANTHROPIC_BASE_URL=https://openrouter.ai/api && export ANTHROPIC_MODEL='${model}' && ` : ''
     // When authMode is 'api', the agent uses its own ANTHROPIC_API_KEY from
     // the vault instead of the host's OAuth. The vault entry ID follows the
     // convention `agent-{name}-api-key`. We inject it as an env var so Claude
@@ -1184,7 +1184,7 @@ export function startAgentProcess(name: string, opts: { fresh?: boolean } = {}):
     // rotates or expires, the agent parks on a 401 even though the fleet token
     // exported right next to it is fine (dani/geri recurring outage,
     // 2026-07-25). Only agents that never touch Anthropic OAuth stay on the
-    // shared root: local/BYO-endpoint models (Ollama/DeepSeek/OpenRouter) and
+    // shared root: local/BYO-endpoint models (Ollama) and
     // per-agent API-key (authMode 'api') agents.
     const needsFleetOauth = isClaude && authMode !== 'api'
     if (!claudeConfigDir && (hasChannel || needsFleetOauth) && name !== MAIN_AGENT_ID) {
@@ -1294,7 +1294,7 @@ export function startAgentProcess(name: string, opts: { fresh?: boolean } = {}):
     const promptSuggestionEnv = 'export CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false && '
     // Single-quote `${model}` so values like `claude-opus-4-8[1m]` (1M-context
     // suffix) are not glob-expanded by the shell that tmux spawns the command in.
-    const cmd = `export PATH="/opt/homebrew/bin:$HOME/.bun/bin:/usr/local/bin:/usr/bin:/bin:$PATH" && ${unsetTokens} && ${promptSuggestionEnv}${mcpEnv}${channelSetup}${apiKeyEnv}${claudeConfigEnv}${oauthTokenEnv}${ollamaEnv}${deepseekEnv}${openrouterEnv}cd "${dir}" && ${claudeBin()} ${continueFlag}${skipFlag}--model '${model}' ${channelFlag}`.trimEnd()
+    const cmd = `export PATH="/opt/homebrew/bin:$HOME/.bun/bin:/usr/local/bin:/usr/bin:/bin:$PATH" && ${unsetTokens} && ${promptSuggestionEnv}${mcpEnv}${channelSetup}${apiKeyEnv}${claudeConfigEnv}${oauthTokenEnv}${ollamaEnv}cd "${dir}" && ${claudeBin()} ${continueFlag}${skipFlag}--model '${model}' ${channelFlag}`.trimEnd()
     runTmux(null, ['new-session', '-d', '-s', session, cmd], { timeout: 10000 })
 
     logger.info({ name, session, channelDir: agentChannelDir }, 'Agent tmux session started')
@@ -1381,7 +1381,7 @@ export function getAgentProcessInfo(name: string): { running: boolean; session?:
 export function restartAgentProcess(name: string, opts: { fresh?: boolean } = {}): { ok: boolean; pid?: number; error?: string } {
   if (isAgentRunning(name)) {
     const stopResult = stopAgentProcess(name)
-    if (!stopResult.ok) return { ok: false, error: stopResult.error || 'Failed to stop running agent before restart' }
+    if (!stopResult.ok) return { ok: false, error: stopResult.error }
   }
   return startAgentProcess(name, opts)
 }
@@ -1509,7 +1509,7 @@ export async function answerFirstRunGates(
     logger.info({ session, gate, step: i }, 'first-run gate: answered dialog')
     await delay(FIRST_RUN_ANSWER_SETTLE_MS)
   }
-  return acted ? 'cleared' : 'unchanged'
+  return 'cleared'
 }
 
 // Post-(re)start identity setup. Every freshly spawned Claude Code session is
@@ -2074,5 +2074,26 @@ export async function clearStaleParkedInput(session: string, host: string | null
   unwedgeAttempts.set(key, { last: nowMs, sig: parked, fails: 0, escalated: false })
   logger.warn({ session, parked: parked.slice(0, 60) }, 'message-router: cleared stale parked input (channel un-wedge)')
   return true
+}
+
+// Test-only escape hatches (cycle 47-48 pattern, f75caf6 precedent).
+//
+// The agent-process helpers below are private but their default-arg branches
+// (`opts = {}`, `opts.timeout ?? 3000`, `host: string | null = null`) were
+// the last uncovered branches in the file. Production call sites always
+// pass explicit values, so the defaults only fire from these test exports.
+// Each `__test_*` wrapper is a 1-line delegation that just calls the
+// underlying private function with no optional params, driving the
+// default-arg branches.
+export function __test_runTmux(host: string | null, tmuxArgs: string[]): void {
+  runTmux(host, tmuxArgs)
+}
+
+export async function __test_dismissSurveyModalIfPresent(session: string): Promise<void> {
+  await dismissSurveyModalIfPresent(session)
+}
+
+export async function __test_discardPlaceholderBuffer(session: string): Promise<boolean> {
+  return discardPlaceholderBuffer(session)
 }
 

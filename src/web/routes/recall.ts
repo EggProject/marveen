@@ -1,3 +1,4 @@
+import { DateTime } from 'luxon'
 import { recallByDateRange, recallSearch, getDailyLogDates } from '../../db.js'
 import { MAIN_AGENT_ID, APP_TZ } from '../../config.js'
 import { json } from '../http-helpers.js'
@@ -6,29 +7,41 @@ import type { RouteContext } from './types.js'
 const TZ = APP_TZ  // install zone (config.APP_TZ); was hardcoded Europe/Budapest
 
 function todayBudapest(): string {
-  return new Intl.DateTimeFormat('sv-SE', { timeZone: TZ }).format(new Date())
+  return DateTime.now().setZone(TZ).toFormat('yyyy-MM-dd')
 }
 
-function budapestDate(d: Date): string {
-  return new Intl.DateTimeFormat('sv-SE', { timeZone: TZ }).format(d)
+// Test-only export: the weekday algorithm against an explicit TZ.
+// Kept so the cross-zone pin test in recall.test.ts can exercise UTC+12+
+// zones without faking APP_TZ (test-sandbox-setup mocks config.js, which
+// leaks APP_TZ=undefined into this module; the production TZ is therefore
+// uncontrollable from a dynamic import inside vitest).
+export function __test__dayOfWeekBudapestWithTz(tz: string, dateStr: string): number {
+  return DateTime.fromISO(dateStr, { zone: tz }).weekday % 7
 }
 
+// Luxon parses dateStr as midnight IN the zone, so the calendar day is never
+// re-derived from a UTC instant. That is what retires the noon-UTC anchor bug
+// for install zones at UTC+12 and beyond: the old probe crossed a calendar
+// day and read the weekday for dateStr+1.
 function addDays(dateStr: string, days: number): string {
-  const ms = new Date(`${dateStr}T12:00:00Z`).getTime() + days * 86_400_000
-  return budapestDate(new Date(ms))
+  return DateTime.fromISO(dateStr, { zone: TZ }).plus({ days }).toFormat('yyyy-MM-dd')
 }
 
+// Luxon's weekday is 1=Monday..7=Sunday; callers here want 0=Sunday..6=Saturday,
+// which `% 7` gives directly (Sun 7->0, Mon 1->1, ... Sat 6->6).
 function dayOfWeekBudapest(dateStr: string): number {
-  const d = new Date(`${dateStr}T12:00:00Z`)
-  const weekday = new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'short' }).format(d)
-  const map: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
-  return map[weekday] ?? 0
+  return DateTime.fromISO(dateStr, { zone: TZ }).weekday % 7
 }
+
+// Test-only export: the PRODUCTION weekday helper (TZ-baked, no parameter).
+// Used by the cross-zone pin test in recall.test.ts to assert that the SUT
+// -- not just a test-only helper -- resolves the weekday in the install zone.
+export const __test__dayOfWeekBudapestProduction = dayOfWeekBudapest
 
 function startOfWeek(dateStr: string): string {
-  const dow = dayOfWeekBudapest(dateStr)
-  const diff = dow === 0 ? -6 : 1 - dow
-  return addDays(dateStr, diff)
+  const weekday = DateTime.fromISO(dateStr, { zone: TZ }).weekday
+  const offset = weekday === 7 ? -6 : 1 - weekday
+  return addDays(dateStr, offset)
 }
 
 function startOfMonth(dateStr: string): string {
@@ -36,9 +49,7 @@ function startOfMonth(dateStr: string): string {
 }
 
 function endOfMonth(dateStr: string): string {
-  const [y, m] = dateStr.split('-').map(Number)
-  const last = new Date(Date.UTC(y, m, 0))
-  return budapestDate(last)
+  return DateTime.fromISO(dateStr, { zone: TZ }).endOf('month').toFormat('yyyy-MM-dd')
 }
 
 const HU_MONTHS: Record<string, string> = {
@@ -150,7 +161,7 @@ export function parseDateExpression(input: string): DateRange | null {
         const from = addDays(to, -6)
         return { from, to }
       }
-      const weekIdx = weekMap[weekMatch[1]] ?? 0
+      const weekIdx = weekMap[weekMatch[1]]
       let weekStart = startOfWeek(monthStart)
       if (weekStart < monthStart) weekStart = addDays(weekStart, 7)
       const from = addDays(weekStart, weekIdx * 7)

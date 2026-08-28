@@ -45,13 +45,6 @@ export class UserFacingError extends Error {
 // ---------------------------------------------------------------------------
 const SAFE_NAME_RE = /^[a-z0-9][a-z0-9_-]*$/
 
-function assertSafeName(value: unknown, field: string): string {
-  if (typeof value !== 'string' || !SAFE_NAME_RE.test(value)) {
-    throw new Error(`Érvénytelen ${field} érték: "${String(value).slice(0, 60)}" -- csak [a-z0-9_-] megengedett.`)
-  }
-  return value
-}
-
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -753,7 +746,7 @@ function validateNames(fleet: FleetJson): string[] {
     }
   }
 
-  for (const agent of fleet.agents ?? []) {
+  for (const agent of fleet.agents) {
     if (!SAFE_NAME_RE.test(String(agent.name ?? ''))) {
       errors.push(`Érvénytelen agent.name: "${String(agent.name).slice(0, 60)}"`)
     }
@@ -791,7 +784,7 @@ function buildDiffReport(fleet: FleetJson): DiffReport {
   const warnings: string[] = []
 
   const existingAgents = new Set(listAgentNames())
-  const newAgents = (fleet.agents ?? []).map(a => a.name).filter(n => !existingAgents.has(n))
+  const newAgents = (fleet.agents).map(a => a.name).filter(n => !existingAgents.has(n))
 
   let newMemories = 0
   for (const mem of fleet.memories ?? []) {
@@ -828,12 +821,12 @@ function buildDiffReport(fleet: FleetJson): DiffReport {
   }
 
   // H3: track which existing agents and main agent would be overwritten
-  const existingAgentsToOverwrite = (fleet.agents ?? []).map(a => a.name).filter(n => existingAgents.has(n))
+  const existingAgentsToOverwrite = (fleet.agents).map(a => a.name).filter(n => existingAgents.has(n))
   const mainAgentOverwrite = !!fleet.mainAgent && existsSync(join(PROJECT_ROOT, 'CLAUDE.md'))
 
   // Channels: always warn -- bot tokens are not exported (re-pair model)
   const hasChannels = Object.keys(fleet.mainAgent?.channelsAccess ?? {}).length > 0 ||
-    (fleet.agents ?? []).some(a => Object.keys(a.channelsAccess ?? {}).length > 0)
+    (fleet.agents).some(a => Object.keys(a.channelsAccess ?? {}).length > 0)
   if (hasChannels) {
     warnings.push('Csatornák: újra-párosítás szükséges a célgépen (bot token újboli megadása).')
   }
@@ -1048,7 +1041,7 @@ export function importFleet(
     }
 
     // 1. Sub-agent files
-    for (const agent of fleet.agents ?? []) {
+    for (const agent of fleet.agents) {
       writeAgentFiles(agent, tracker)
     }
 
@@ -1258,13 +1251,13 @@ export function importFleet(
       )
     }
 
-    logger.info({ agents: (fleet.agents ?? []).map(a => a.name) }, 'Fleet import completed')
+    logger.info({ agents: (fleet.agents).map(a => a.name) }, 'Fleet import completed')
 
     return {
       ok: true,
       imported: {
         mainAgent: !!fleet.mainAgent,
-        agents: (fleet.agents ?? []).map(a => a.name),
+        agents: (fleet.agents).map(a => a.name),
         globalSkills: (fleet.skills ?? []).length,
         scheduledTasks: (fleet.scheduledTasks ?? []).length,
         memories: (fleet.memories ?? []).length,

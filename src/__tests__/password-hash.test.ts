@@ -1,4 +1,6 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, afterEach, vi } from 'vitest'
+import { Buffer } from 'node:buffer'
+import * as passwordHashModule from '../web/password-hash.js'
 import {
   hashPassword,
   verifyPassword,
@@ -7,6 +9,47 @@ import {
   MIN_PASSWORD_LENGTH,
   MAX_PASSWORD_LENGTH,
 } from '../web/password-hash.js'
+
+// The "Bun" runtime surface is consulted at verifyPassword call time, NOT at
+// module load. To exercise the argon2-via-Bun branch without a real Bun
+// runtime we monkey-patch globalThis.Bun per test and restore it in afterEach.
+//
+// Under bun runtime, `Bun` is a non-configurable readonly property on
+// globalThis -- direct assignment throws and `Object.defineProperty` throws
+// "Attempting to change configurable attribute of unconfigurable property".
+// The only way to inject a stub is via a wrapper that catches the throw
+// and returns success: verifyPassword falls back to Bun if available, so
+// under bun the real Bun.password.verify handles the call (no mock needed).
+// The tests still assert the public contract (return value, mock-or-real
+// call observation) without depending on being able to override Bun itself.
+type BunLike = {
+  password?: { verify?: (pw: string, hash: string) => Promise<boolean> }
+}
+const ORIGINAL_BUN = (globalThis as { Bun?: BunLike }).Bun
+let canOverrideBun = true
+try {
+  Object.defineProperty(globalThis, 'Bun', {
+    value: ORIGINAL_BUN,
+    writable: true,
+    configurable: true,
+    enumerable: true,
+  })
+} catch {
+  // Bun runtime: property is non-configurable. setBun() will silently no-op.
+  canOverrideBun = false
+}
+function setBun(value: BunLike | undefined): void {
+  if (!canOverrideBun) return
+  Object.defineProperty(globalThis, 'Bun', {
+    value,
+    writable: true,
+    configurable: true,
+    enumerable: true,
+  })
+}
+afterEach(() => {
+  setBun(ORIGINAL_BUN)
+})
 
 describe('hashPassword / verifyPassword', () => {
   it('produces a PHC scrypt string and round-trips', async () => {
@@ -51,7 +94,147 @@ describe('hashPassword / verifyPassword', () => {
 
   it('rejects out-of-range ln params (guards against OOM/hang)', async () => {
     expect(await verifyPassword('x', '$scrypt$ln=99,r=8,p=1$c2FsdA==$a2V5')).toBe(false)
+    // ln=0 fails the positive-integer guard inside parseScryptParams.
+    expect(await verifyPassword('x', '$scrypt$ln=0,r=8,p=1$c2FsdA==$a2V5')).toBe(false)
   })
+
+  it('rejects an unknown key inside the params segment', async () => {
+    // The 'foo=' arm in parseScryptParams is the only path that returns null
+    // *after* a valid integer is seen; without this case the third-branch
+    // coverage on line 81 stays uncovered.
+    expect(await verifyPassword('x', '$scrypt$foo=16,r=8,p=1$c2FsdA==$a2V5')).toBe(false)
+    // Trailing unknown key on a 4-tuple.
+    expect(await verifyPassword('x', '$scrypt$ln=16,r=8,p=1,zz=1$c2FsdA==$a2V5')).toBe(false)
+  })
+
+  it('rejects a missing required key inside the params segment', async () => {
+    // parseScryptParams requires ln, r and p; omitting one yields null.
+    expect(await verifyPassword('x', '$scrypt$ln=16,r=8$c2FsdA==$a2V5')).toBe(false)
+    expect(await verifyPassword('x', '$scrypt$ln=16,p=1$c2FsdA==$a2V5')).toBe(false)
+    expect(await verifyPassword('x', '$scrypt$r=8,p=1$c2FsdA==$a2V5')).toBe(false)
+    // Non-integer value is rejected by the integer guard.
+    expect(await verifyPassword('x', '$scrypt$ln=abc,r=8,p=1$c2FsdA==$a2V5')).toBe(false)
+    expect(await verifyPassword('x', '$scrypt$ln=1.5,r=8,p=1$c2FsdA==$a2V5')).toBe(false)
+    expect(await verifyPassword('x', '$scrypt$ln=-1,r=8,p=1$c2FsdA==$a2V5')).toBe(false)
+  })
+
+  it('rejects a 5-part hash whose algorithm segment is not "scrypt"', async () => {
+    // The `parts.length !== 5 || parts[1] !== 'scrypt'` guard on line 92 has
+    // two halves; only the length-half was exercised by the existing suite.
+    expect(await verifyPassword('x', '$other$ln=16,r=8,p=1$c2FsdA==$a2V5')).toBe(false)
+    // Six-part hash (length guard) and the 5-part with a stray trailing $.
+    expect(await verifyPassword('x', '$scrypt$ln=16$extra$abc$def$ghi')).toBe(false)
+  })
+
+  it('returns false (no throw) when scrypt itself rejects the stored params', async () => {
+    // ln=17 still satisfies parseScryptParams (ln in [1,20]) but requires
+    // maxmem > 128 MiB; node's scrypt then throws and the catch on line 110
+    // converts that to a clean `false`.
+    expect(await verifyPassword('x', '$scrypt$ln=17,r=8,p=1$c2FsdA==$a2V5')).toBe(false)
+    expect(await verifyPassword('x', '$scrypt$ln=20,r=8,p=1$c2FsdA==$a2V5')).toBe(false)
+  })
+
+  it('rejects non-string inputs without throwing', async () => {
+    // verifyPassword's first guard: typeof checks on pw and phc.
+    expect(await verifyPassword(undefined as unknown as string, '$scrypt$ln=16,r=8,p=1$c2FsdA==$a2V5')).toBe(false)
+    expect(await verifyPassword(null as unknown as string, '$scrypt$ln=16,r=8,p=1$c2FsdA==$a2V5')).toBe(false)
+    expect(await verifyPassword('x', undefined as unknown as string)).toBe(false)
+    expect(await verifyPassword('x', null as unknown as string)).toBe(false)
+  })
+
+  it('routes argon2 hashes through Bun.password.verify when Bun is present', async () => {
+    const verify = vi.fn(async (_pw: string, hash: string) => hash === '$argon2id$good')
+    setBun({ password: { verify } })
+    if (canOverrideBun) {
+      // Mock-injected: success path -- Bun returns true.
+      expect(await verifyPassword('any-pw-here', '$argon2id$good')).toBe(true)
+      expect(verify).toHaveBeenCalledWith('any-pw-here', '$argon2id$good')
+      // False path: Bun returns false (still under the try, so the catch is not taken).
+      expect(await verifyPassword('any-pw-here', '$argon2id$bad')).toBe(false)
+      // Throwing path: the try/catch on lines 126-129 converts the throw to false.
+      verify.mockRejectedValueOnce(new Error('boom'))
+      expect(await verifyPassword('any-pw-here', '$argon2id$throws')).toBe(false)
+    } else {
+      // Real Bun runtime: a fake argon2 hash won't verify, so the function
+      // returns false. This exercises the "Bun is present and was called"
+      // code path; the call argument validation lives in Bun itself, which
+      // we don't observe from JS-land.
+      expect(await verifyPassword('any-pw-here', '$argon2id$good')).toBe(false)
+      expect(await verifyPassword('any-pw-here', '$argon2id$bad')).toBe(false)
+    }
+  })
+
+  it('routes argon2 hashes through Bun.password.verify when only the function is set', async () => {
+    // Optional-chaining guard: password is the object, verify is undefined -> false.
+    setBun({ password: {} })
+    if (canOverrideBun) {
+      expect(await verifyPassword('any-pw-here', '$argon2id$v=19$m=65536,t=2,p=1$abc$def')).toBe(false)
+    } else {
+      // Under bun runtime the real Bun.password.verify is present, so the
+      // optional-chaining guard is not exercised. We still need to assert
+      // that an unparseable argon2 hash returns false cleanly (not throws).
+      expect(await verifyPassword('any-pw-here', '$argon2id$malformed')).toBe(false)
+    }
+  })
+
+  // --- Bun.password.verify missing branch (password-hash.ts:120, 127-128) ---
+  // Under bun runtime `globalThis.Bun` is non-configurable and non-writable --
+  // `Object.defineProperty`, `vi.stubGlobal`, and `vi.spyOn(obj, 'Bun', 'get')`
+  // all throw "Attempting to change ... of unconfigurable property". The
+  // module exposes the lookup behind the `_internals.lookupBunPasswordVerify`
+  // property specifically so a test can vi.spyOn the property and the
+  // module-internal call (`_internals.lookupBunPasswordVerify()`) reads
+  // through that property at every invocation.
+  it('returns false and warns when _internals.lookupBunPasswordVerify yields null (Bun absent)', async () => {
+    const { logger } = await import('../logger.js')
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined)
+    const lookupSpy = vi.spyOn(passwordHashModule._internals, 'lookupBunPasswordVerify').mockReturnValue(undefined)
+
+    try {
+      expect(await verifyPassword('any-pw-here', '$argon2id$v=19$m=65536,t=2,p=1$abc$def')).toBe(false)
+      expect(warnSpy).toHaveBeenCalledWith(
+        'argon2 password hash requires the Bun runtime; reset the password via the dashboard-user CLI',
+      )
+    } finally {
+      lookupSpy.mockRestore()
+      warnSpy.mockRestore()
+    }
+  })
+
+  it('returns false (no warn) when Bun.password.verify throws', async () => {
+    // The try/catch at password-hash.ts:142-145 -- when Bun.password.verify
+    // is present but rejects, the function returns false silently instead of
+    // propagating the throw (which would surface as a 500 to the dashboard).
+    const lookupSpy = vi.spyOn(passwordHashModule._internals, 'lookupBunPasswordVerify').mockReturnValue(
+      () => Promise.reject(new Error('boom')),
+    )
+    try {
+      expect(await verifyPassword('any-pw-here', '$argon2id$any')).toBe(false)
+    } finally {
+      lookupSpy.mockRestore()
+    }
+  })
+
+  // Direct invocation of the real lookup function. Under bun runtime globalThis.Bun.password.verify is
+  // always present, so this asserts the success-arm return path. The other two branches
+  // (Bun undefined, Bun.password.verify undefined) are structurally unreachable from the live
+  // global under bun, so we exercise them via the parameterised lookup function below.
+  it('_lookupBunPasswordVerify returns Bun.password.verify when present', () => {
+    const verify = passwordHashModule._lookupBunPasswordVerify({ password: { verify: () => Promise.resolve(true) } })
+    expect(typeof verify).toBe('function')
+  })
+
+  it('_lookupBunPasswordVerify returns undefined when Bun is undefined', () => {
+    expect(passwordHashModule._lookupBunPasswordVerify(undefined)).toBeUndefined()
+  })
+
+  it('_lookupBunPasswordVerify returns undefined when Bun.password.verify is missing', () => {
+    // Bun present, password present, verify absent -> optional-chain falsy
+    expect(passwordHashModule._lookupBunPasswordVerify({ password: {} })).toBeUndefined()
+    // Bun present, password absent entirely -> optional-chain falsy
+    expect(passwordHashModule._lookupBunPasswordVerify({})).toBeUndefined()
+  })
+
 })
 
 describe('assertPasswordPolicy', () => {
@@ -65,8 +248,13 @@ describe('assertPasswordPolicy', () => {
   })
   it('rejects a non-string', () => {
     expect(() => assertPasswordPolicy(undefined as unknown)).toThrow(PasswordPolicyError)
+    expect(() => assertPasswordPolicy(null as unknown)).toThrow(PasswordPolicyError)
+    expect(() => assertPasswordPolicy(42 as unknown)).toThrow(PasswordPolicyError)
+    expect(() => assertPasswordPolicy({} as unknown)).toThrow(PasswordPolicyError)
   })
   it('hashPassword enforces the policy', async () => {
     await expect(hashPassword('short')).rejects.toBeInstanceOf(PasswordPolicyError)
+    await expect(hashPassword('x'.repeat(MAX_PASSWORD_LENGTH + 1))).rejects.toBeInstanceOf(PasswordPolicyError)
+    await expect(hashPassword(undefined as unknown as string)).rejects.toBeInstanceOf(PasswordPolicyError)
   })
 })

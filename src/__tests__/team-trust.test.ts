@@ -209,3 +209,52 @@ describe('isTrustedPeer — custom mainAgentId', () => {
     expect(isTrustedPeer('main', 'sub', ctx)).toBe(false)
   })
 })
+
+describe('isTrustedPeer — multi-entry lists', () => {
+  // Regression pin: helpers must scan the full delegatesTo / trustFrom
+  // list, not just the first entry. A subtle bug here would silently
+  // demote later entries to untrusted.
+  const ctx = makeCtx({
+    lead: { reportsTo: null, delegatesTo: ['a', 'b', 'c'], trustFrom: ['x', 'y', 'z'] },
+    a: { reportsTo: null, delegatesTo: [], trustFrom: [] },
+    b: { reportsTo: null, delegatesTo: [], trustFrom: [] },
+    c: { reportsTo: null, delegatesTo: [], trustFrom: [] },
+    x: { reportsTo: null, delegatesTo: [], trustFrom: [] },
+    y: { reportsTo: null, delegatesTo: [], trustFrom: [] },
+    z: { reportsTo: null, delegatesTo: [], trustFrom: [] },
+  })
+
+  it('trusts every member of a multi-entry delegatesTo list', () => {
+    for (const member of ['a', 'b', 'c']) {
+      expect(isTrustedPeer('lead', member, ctx)).toBe(true)
+      expect(isTrustedPeer(member, 'lead', ctx)).toBe(true)
+    }
+  })
+
+  it('trusts every member of a multi-entry trustFrom list', () => {
+    for (const member of ['x', 'y', 'z']) {
+      expect(isTrustedPeer('lead', member, ctx)).toBe(true)
+      expect(isTrustedPeer(member, 'lead', ctx)).toBe(true)
+    }
+  })
+})
+
+describe('isTrustedPeer — main agent also present in teams', () => {
+  // The MAIN id does not have to be absent from the teams map: it can
+  // be a fully-described agent like any other. The MAIN shortcut still
+  // applies, and the self-loop guard still wins.
+  const ctx = makeCtx({
+    main: { reportsTo: null, delegatesTo: ['worker'], trustFrom: [] },
+    worker: { reportsTo: 'main', delegatesTo: [], trustFrom: [] },
+    other: { reportsTo: null, delegatesTo: [], trustFrom: [] },
+  }, 'main')
+
+  it('still applies the MAIN shortcut when main has its own team entry', () => {
+    expect(isTrustedPeer('main', 'worker', ctx)).toBe(true)
+    expect(isTrustedPeer('other', 'main', ctx)).toBe(true)
+  })
+
+  it('main ↔ main still returns false (self-loop wins over the shortcut)', () => {
+    expect(isTrustedPeer('main', 'main', ctx)).toBe(false)
+  })
+})

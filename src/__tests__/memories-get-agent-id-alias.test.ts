@@ -37,7 +37,7 @@ function makeCtx(path: string, searchParams: Record<string, string> = {}): { ctx
   }
 
   return {
-    ctx: { req: {} as any, res: res as any, path, method: 'GET', url },
+    ctx: { req: {} as any, res: res as any, path, method: 'GET', url, fedPeer: null },
     getBody: () => (responseBody ? JSON.parse(responseBody) : null),
   }
 }

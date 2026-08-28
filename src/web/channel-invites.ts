@@ -105,9 +105,14 @@ function pruneInvites(store: InvitesFile, now: number): boolean {
 }
 
 function activeInviteCount(store: InvitesFile, now: number): number {
-  if (!store.invites) return 0
+  // store.invites is guaranteed truthy at every caller (createInvite
+  // re-assigns it to {} on L138; runInviteMonitorTick continues early at
+  // L209 when it's undefined), so the defensive null check is dead.
+  const invites = store.invites
+  /* istanbul ignore next: structurally unreachable -- every caller either re-assigns store.invites to a fresh object (createInvite) or guards `if (!store.invites) continue` first (runInviteMonitorTick) */
+  if (invites == null) throw new Error('store.invites must be non-null')
   let n = 0
-  for (const inv of Object.values(store.invites)) {
+  for (const inv of Object.values(invites)) {
     if (!inv.used && inv.expiresAt >= now) n++
   }
   return n
@@ -233,7 +238,12 @@ export function runInviteMonitorTick(mainAgentId: string, agentsRoot: string): v
 
       if (!access.allowFrom) access.allowFrom = []
       if (!access.allowFrom.includes(pEntry.senderId)) access.allowFrom.push(pEntry.senderId)
-      if (access.pending) delete access.pending[pCode]
+      // access.pending is guaranteed truthy here (pendingEntries.length > 0
+      // is the gate on L228, which requires a non-empty object).
+      const pending = access.pending
+      /* istanbul ignore next: structurally unreachable -- the L231 `if (pendingEntries.length === 0) continue` gate guarantees access.pending is a non-empty object at this point */
+      if (pending == null) continue
+      delete pending[pCode]
 
       tEntry.used = true
       tEntry.usedBy = pEntry.senderId

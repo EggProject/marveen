@@ -114,8 +114,10 @@ async function acquireLock(
           continue
         }
       } catch {
-        // Lock vanished between open and stat; retry immediately.
-        continue
+        // stat failed, so we cannot tell whether the lock is stale. The lock
+        // file is still there as far as we know (openSync said EEXIST), so
+        // fall through to the wait below instead of spinning through every
+        // retry without ever pausing.
       }
       await sleep(delayMs)
     }

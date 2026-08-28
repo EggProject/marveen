@@ -1,4 +1,4 @@
-// Tests for OTel distributed tracing (card def5a189).
+// Tests for OTel distributed tracing.
 //
 // Scope: DB layer (otel_spans table + stampMessageTrace), API route
 // (POST/GET /api/spans, GET /api/traces/:id, GET /api/traces), and the
@@ -10,7 +10,7 @@
 // that can drift from the schema.
 
 import { describe, it, expect, beforeEach } from 'vitest'
-import Database from 'better-sqlite3'
+import { Database } from '../db/sqlite.js'
 
 // ---------------------------------------------------------------------------
 // Minimal in-process DB setup (mirrors initializeDatabase logic for the

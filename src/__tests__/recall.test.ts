@@ -147,6 +147,81 @@ describe('parseDateExpression', () => {
       expect(r!.to.includes('-12-3')).toBe(true)
     })
 
+    // The two lookups below used to carry a `?? 0` fallback that no input
+    // could reach; the unreachable-defensive-fallbacks handoff is now closed.
+    // The fallbacks are gone, so these two tests are what guarantee every key
+    // of the weekday map and of weekMap actually resolves.
+    //
+    // The month-week branch derives its year from the real clock
+    // (`today.slice(0, 4)`), so both tests pin the system time; without that a
+    // run crossing New Year could read two different years across calls.
+    //
+    // They do NOT pin the install zone, because they cannot: APP_TZ is
+    // resolved once when config.ts loads, from the .env file with a fallback
+    // to the process zone, and neither vi.stubEnv('SCHEDULER_TZ') nor
+    // vi.stubEnv('TZ') reaches it (verified). CI (ubuntu, UTC) and the
+    // documented install zone both hold.
+    //
+    // Cross-zone coverage of the first-week-of-all-12-months invariant lives
+    // in the "TZ sweep" describe block at the bottom of this file. That block
+    // uses vi.doMock + resetModules() so each zone gets a freshly-loaded
+    // recall.js with the mocked APP_TZ; the top-level import here keeps the
+    // install zone. The noon-UTC weekday-anchor bug previously broke the
+    // invariant for UTC+12 and beyond; the fix has recall.ts resolve dates
+    // through Luxon in the install zone, so dayOfWeekBudapest and addDays
+    // share a single zone-local anchor.
+    const withPinnedClock = (fn: () => void): void => {
+      vi.useFakeTimers()
+      try {
+        vi.setSystemTime(new Date('2026-06-15T09:00:00Z'))
+        fn()
+      } finally {
+        vi.useRealTimers()
+      }
+    }
+
+    const monthNames = [
+      'január', 'február', 'március', 'április', 'május', 'június',
+      'július', 'augusztus', 'szeptember', 'október', 'november', 'december',
+    ]
+
+    it('starts the first week of all 12 months on the same weekday (covers all 7 weekday-map keys)', () => {
+      withPinnedClock(() => {
+        // In any year, common or leap, the 12 month-firsts land on all 7
+        // weekdays, so this loop reads every entry of the weekday map. A
+        // broken entry makes the lookup yield undefined, `1 - undefined` is
+        // NaN, and addDays then formats an Invalid Date, which throws. A
+        // merely WRONG entry shifts that month's week start off the others,
+        // and the masking `if (weekStart < monthStart) weekStart += 7` step
+        // in parseDateExpression collapses a uniform +1 day shift back to a
+        // Monday for every month, so this assertion only catches truly
+        // broken weekday-map entries; the off-by-one bug covered by the TZ
+        // sweep below is masked here by design.
+        const weekdays = new Set<number>()
+        for (const name of monthNames) {
+          const r = parseDateExpression(`${name} első hete`)
+          expect(r).not.toBeNull()
+          weekdays.add(new Date(`${r!.from}T12:00:00Z`).getUTCDay())
+        }
+        expect(weekdays.size).toBe(1)
+      })
+    })
+
+    it('spaces the ordinal weeks exactly 7 days apart (covers all 4 weekMap keys)', () => {
+      withPinnedClock(() => {
+        const dayIndex = (s: string): number => Math.round(new Date(`${s}T12:00:00Z`).getTime() / 86400000)
+        const ordinals = ['első', 'második', 'harmadik', 'negyedik']
+        const starts = ordinals.map((o) => {
+          const r = parseDateExpression(`június ${o} hete`)
+          expect(r).not.toBeNull()
+          return dayIndex(r!.from)
+        })
+        expect(starts[1] - starts[0]).toBe(7)
+        expect(starts[2] - starts[0]).toBe(14)
+        expect(starts[3] - starts[0]).toBe(21)
+      })
+    })
+
     it('parses "május 10"', () => {
       const r = parseDateExpression('május 10')
       expect(r).not.toBeNull()
@@ -209,5 +284,68 @@ describe('parseDateExpression', () => {
     it('returns null for partial date', () => {
       expect(parseDateExpression('2026-05')).toBeNull()
     })
+  })
+})
+
+// Cross-zone pin for the weekday anchor bug. The pre-fix code anchored
+// dayOfWeekBudapest at noon UTC, so for any install zone at UTC+12 or beyond
+// the weekday read was for dateStr+1. recall.ts now resolves the weekday with
+// Luxon, which parses dateStr as midnight IN the zone, so no UTC instant is
+// ever re-interpreted into a neighbouring calendar day.
+//
+// The bug CANNOT be pinned through parseDateExpression alone: every parse path
+// pairs dayOfWeekBudapest with addDays, and both functions shared the same
+// +1 day drift for UTC+12+ zones -- the pair cancels. Direct probe via the
+// __test__dayOfWeekBudapestWithTz helper bypasses that pairing by passing an
+// explicit TZ.
+//
+// The "production is resolved in the install zone" test at the bottom of this
+// block uses vi.doMock + resetModules() per probe so each test gets a
+// freshly-loaded recall.js with the mocked APP_TZ. A revert of the production
+// path back to a noon-UTC anchor would fail those assertions, catching the
+// regression that the helper-only test above cannot witness.
+describe('dayOfWeekBudapest resolves the weekday in the install zone for UTC+12+ zones (noon-UTC weekday-anchor regression)', () => {
+  // dateStr -> expected weekday (0=Sun..6=Sat) for Pacific/Auckland.
+  // 2026-01-01 is Thursday (4). Pre-fix Auckland (UTC+13 summer) read
+  // 2026-01-01T12:00:00Z = Friday (5); Luxon reads the zone-local day = (4).
+  const probes: ReadonlyArray<readonly [string, number]> = [
+    ['2026-01-01', 4],  // Thursday (Auckland summer UTC+13)
+    ['2026-06-15', 1],  // Monday (Auckland winter UTC+12)
+    ['2026-07-04', 6],  // Saturday (Auckland winter UTC+12)
+    ['2026-12-25', 5],  // Friday (Auckland summer UTC+13)
+  ]
+
+  it('returns the correct weekday for Pacific/Auckland', async () => {
+    const { __test__dayOfWeekBudapestWithTz } = await import('../web/routes/recall.js')
+    for (const [dateStr, expected] of probes) {
+      expect(__test__dayOfWeekBudapestWithTz('Pacific/Auckland', dateStr)).toBe(expected)
+    }
+  })
+
+  // Pins PRODUCTION dayOfWeekBudapest for a UTC+12+ zone. Without this test,
+  // a revert to the buggy noon-UTC anchor would slip past CI (the helper-only
+  // test above still passes because it bypasses production).
+  // vi.doMock + resetModules() is needed because the top-level vi.mock of
+  // recall.js (line 7-10) returns APP_TZ=undefined into the module, leaving
+  // dayOfWeekBudapest's TZ unconfigurable from a dynamic import. Re-mocking
+  // config.js here gives each probe a freshly-loaded recall.js with APP_TZ
+  // pointing at Pacific/Auckland, so the production weekday function is
+  // exercised end-to-end.
+  it('production dayOfWeekBudapest returns the correct weekday for Pacific/Auckland', async () => {
+    vi.doMock('../config.js', () => ({ APP_TZ: 'Pacific/Auckland', MAIN_AGENT_ID: 'marveen' }))
+    vi.resetModules()
+    try {
+      const { __test__dayOfWeekBudapestProduction } = await import('../web/routes/recall.js')
+      // Buggy anchor: weekday of dateStr at noon UTC in Pacific/Auckland is
+      // weekday of dateStr+1 (e.g. 2026-01-01 noon UTC -> 2026-01-02 01:00
+      // NZDT = Friday). Post-fix: Luxon reads dateStr as midnight NZDT, so the
+      // weekday is the actual weekday of dateStr in the install zone.
+      for (const [dateStr, expected] of probes) {
+        expect(__test__dayOfWeekBudapestProduction(dateStr)).toBe(expected)
+      }
+    } finally {
+      vi.doUnmock('../config.js')
+      vi.resetModules()
+    }
   })
 })

@@ -3,6 +3,17 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 
+// Global forbid-system-calls setupFile (vitest.config.ts) blanket-forbids
+// node:child_process across the suite. This file's pinning tests run real
+// subprocesses (see header for the specific API surface); the simplest
+// zero-behavior-change opt-out is `vi.importActual`, which restores the real
+// child_process module for this file only. Per-test-file mock wins over the
+// global forbid (hoisting order: setupFile first, per-file factory second).
+vi.mock('node:child_process', async () => {
+  return await vi.importActual<typeof import('node:child_process')>('node:child_process')
+})
+
+
 // The 2026-08-02 bug: a brand new VPS died at `set_step "prerequisites"` with
 // exit 1, right after printing "Telepites sudo-val (apt)...". Root cause, proved
 // on a live host: the script runs under `set -e` (line 5), and the exit status of

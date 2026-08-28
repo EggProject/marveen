@@ -40,6 +40,7 @@ function fakeCtx(path: string, method: string): {
     path: url.pathname,
     method,
     url,
+    fedPeer: null,
   } as RouteContext
   return { ctx, out }
 }

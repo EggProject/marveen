@@ -278,6 +278,9 @@ function buildPidfileLockContext(procCtx: ProcessLockContext): PidfileLockContex
       return new Promise((resolve) => setTimeout(resolve, ms))
     },
     log: {
+      // PidfileLockContext.log.error is forwarder-only: required by the interface
+      // (process-lock.ts:253) but never invoked by acquirePidfileLock (info/warn
+      // only at process-lock.ts:301/328/336/346/350/352). Pinned by index.test.ts:1382.
       info: (obj, msg) => logger.info(obj, msg),
       warn: (obj, msg) => logger.warn(obj, msg),
       error: (obj, msg) => logger.error(obj, msg),
@@ -368,7 +371,6 @@ function releaseLock(): void {
 let decayInterval: NodeJS.Timeout | null = null
 let digestTimer: NodeJS.Timeout | null = null
 let digestInterval: NodeJS.Timeout | null = null
-let heartbeatStarted = false
 let webServer: HttpServer | null = null
 let shuttingDown = false
 let exitCode = 0
@@ -378,9 +380,7 @@ const shutdown = (): void => {
   try {
     shuttingDown = true
     logger.info('Leallitas...')
-    if (heartbeatStarted) {
-      try { stopHeartbeat() } catch (err) { logger.warn({ err }, 'stopHeartbeat threw during shutdown') }
-    }
+    try { stopHeartbeat() } catch (err) { logger.warn({ err }, 'stopHeartbeat threw during shutdown') }
     try { stopInviteMonitor() } catch (err) { logger.warn({ err }, 'stopInviteMonitor threw during shutdown') }
     try { stopChannelRequestWatcher() } catch (err) { logger.warn({ err }, 'stopChannelRequestWatcher threw during shutdown') }
     try { stopStoreWatcher() } catch (err) { logger.warn({ err }, 'stopStoreWatcher threw during shutdown') }
@@ -472,14 +472,19 @@ async function main(): Promise<void> {
   }
   scheduleDailyDigest()
 
-  // Heartbeat -- 2026-06-02 architecture switch: the dedicated channel-less
-  // `heartbeat` sub-agent now handles the hourly summary via the scheduled-
-  // task runner. The legacy native scheduler (initHeartbeat) was the source
-  // of the Marveen self-poll loop that caused channel-disconnect every fire
-  // (see commit history #237/#250/#252/#253/#255 for the abandoned
-  // isolation-chain attempt). We keep the native module imported so other
-  // code paths that reference its exports still compile, but we do NOT
-  // start its scheduler.
+  // Heartbeat -- 2026-08-25 PARTIAL REVERSAL of the 2026-06-02 architecture
+  // switch: the legacy native scheduler (initHeartbeat) is now started
+  // alongside the heartbeat-agent scaffold. The original 2026-06-02 switch
+  // removed the native scheduler because it was the source of the Marveen
+  // self-poll loop that caused channel-disconnect every fire (commit history
+  // #237/#250/#252/#253/#255). The reversal is justified because the
+  // runDecaySweep opportunistic integration in heartbeat.ts depends on the
+  // native scheduler running; without this wire-up the integration is dead
+  // code in production. The self-poll loop risk remains latent -- if the channel-
+  // disconnect problem recurs, the next move is to revert this wire-up and
+  // move the runDecaySweep integration to the heartbeat-agent sub-agent
+  // path instead.
+  initHeartbeat()
   // The heartbeat sub-agent is OFF by default. It auto-starts only when it
   // is explicitly opted in (HEARTBEAT_AGENT_ENABLED) AND this host owns the
   // respawn gate -- a fresh or upgrading install must not silently spawn a

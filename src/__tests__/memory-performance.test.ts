@@ -9,6 +9,7 @@ import {
   getMemoryCacheSize,
   backfillEmbeddings,
 } from '../db.js'
+import { getPragma } from '../db/sqlite.js'
 
 // All tests use an in-memory SQLite database so they never touch the real store.
 beforeAll(() => {
@@ -25,13 +26,13 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 describe('SQLite performance pragmas', () => {
   it('cache_size is set to -65536 (64 MB)', () => {
-    const row = getDb().pragma('cache_size', { simple: true })
+    const row = getPragma(getDb(), 'cache_size')
     expect(row).toBe(-65536)
   })
 
   it('synchronous is NORMAL (1)', () => {
     // SQLite reports NORMAL as integer 1.
-    const row = getDb().pragma('synchronous', { simple: true })
+    const row = getPragma(getDb(), 'synchronous')
     expect(row).toBe(1)
   })
 

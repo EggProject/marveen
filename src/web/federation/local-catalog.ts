@@ -44,7 +44,14 @@ export function listAgentLocalSkills(agentName: string): Array<{ agent: string; 
   const dir = join(agentDir(agentName), '.claude', 'skills')
   if (!existsSync(dir)) return []
   try {
+    // Sorted, not raw readdir order. This list is hashed by summarySourceHash
+    // (capabilities.ts) to decide whether an agent's LLM capability summary is
+    // stale. readdirSync order is filesystem-dependent -- macOS/APFS returns it
+    // sorted, ext4 returns hash order -- so an unsorted list makes the hash
+    // depend on the host rather than the content, and a restore or migration
+    // would silently invalidate every cached summary and pay to regenerate them.
     return readdirSync(dir)
+      .sort()
       .filter((f) => { try { return statSync(join(dir, f)).isDirectory() } catch { return false } })
       .map((f) => ({ agent: agentName, name: f, description: readSkillDescription(join(dir, f)) }))
   } catch {

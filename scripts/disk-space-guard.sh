@@ -1,7 +1,7 @@
 #!/bin/bash
 # Disk-space guard for the host (systemd --user timer, every minute).
 #
-# Incident it fixes (2026-06-03 dawn): the root filesystem filled to 100% from a
+# Incident it fixes: the root filesystem filled to 100% from a
 # 2.2G orphaned /tmp/health_* Apple Health export (the apple-health skill's
 # scratch cleanup didn't run). A full root wedged the main session in a /mcp
 # modal and every disk-touching watchdog gave false signals. This guard is the

@@ -114,10 +114,10 @@ describe('workerStartAllowed (WORKERHOME1: WEB_ONLY must suppress every worker s
   // prove the choke points consult it). Every function that creates, kills or
   // configures a live worker session must check the gate: the lazy-start path
   // (startWorkerSessionFor covers ensureWorkerCwd + tmux new-session), the
-  // readiness poll (ensureWorkerReady would otherwise spin 90s then page the
-  // LIVE channel via alertWorkerStuck from a staging instance) and the restart
-  // path (kill-session against a live worker). This is exactly how the
-  // 2026-07-28 sandbox boot wrote into the live worker config dir.
+  // readiness poll (__test_ensureWorkerReady would otherwise spin 90s then page
+  // the LIVE channel via __test_alertWorkerStuck from a staging instance) and
+  // the restart path (kill-session against a live worker). This is exactly
+  // how the 2026-07-28 sandbox boot wrote into the live worker config dir.
   it('the three session-lifecycle choke points are wired to the gate', () => {
     const __dirname = dirname(fileURLToPath(import.meta.url))
     const src = readFileSync(join(__dirname, '../web/agent-worker.ts'), 'utf-8')
@@ -128,8 +128,8 @@ describe('workerStartAllowed (WORKERHOME1: WEB_ONLY must suppress every worker s
       return body.includes('workerStartAllowed()')
     }
     expect(gated('startWorkerSessionFor')).toBe(true)
-    expect(gated('ensureWorkerReady')).toBe(true)
-    expect(gated('restartWorkerSession')).toBe(true)
+    expect(gated('__test_ensureWorkerReady')).toBe(true)
+    expect(gated('__test_restartWorkerSession')).toBe(true)
   })
 
   // The worker launch line must invoke claude by RESOLVED path, never by bare

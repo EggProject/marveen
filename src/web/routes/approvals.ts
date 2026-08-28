@@ -167,7 +167,9 @@ export async function tryHandleApprovals(ctx: RouteContext): Promise<boolean> {
       return true
     }
 
-    const updated = resolveApproval(idMatch[1], status, resolved_by.trim(), msgId)
+    const trimmedResolvedBy = resolved_by.trim()
+
+    const updated = resolveApproval(idMatch[1], status, trimmedResolvedBy, msgId)
     if (!updated) {
       // Either not found or already resolved
       const existing = getApproval(idMatch[1])
@@ -180,7 +182,7 @@ export async function tryHandleApprovals(ctx: RouteContext): Promise<boolean> {
     }
 
     const approval = getApproval(idMatch[1])
-    logger.info({ id: idMatch[1], status, resolved_by }, 'Approval resolved')
+    logger.info({ id: idMatch[1], status, resolved_by: trimmedResolvedBy }, 'Approval resolved')
     json(res, approval)
     return true
   }

@@ -27,7 +27,7 @@ source "${INSTALL_DIR}/install-lang.sh"
 
 # Prune stale hook paths (e.g. /tmp scratchpad installs that survived a reboot)
 # before launching agents -- a missing hook script causes non-zero exit which
-# blocks every UserPromptSubmit, creating a silent fleet lockout (2026-07-14 incident).
+# blocks every UserPromptSubmit, creating a silent fleet lockout.
 INSTALL_DIR="$INSTALL_DIR" python3 "${INSTALL_DIR}/scripts/boot-hook-prune.py" 2>&1 | grep -v '^$' | sed 's/^/[boot-hook-prune] /' || true
 
 echo "${BOT_NAME:-Marveen} $(_t start.starting)"

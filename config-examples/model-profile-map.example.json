@@ -13,7 +13,7 @@
   "profiles": {
     "premium_reasoning": "claude-opus-5",
     "build_strong": "claude-sonnet-5",
-    "analysis_efficient": "deepseek-v4-pro",
-    "routine_lowcost": "deepseek-v4-pro"
+    "analysis_efficient": "claude-haiku-4-5-20251001",
+    "routine_lowcost": "claude-haiku-4-5-20251001"
   }
 }

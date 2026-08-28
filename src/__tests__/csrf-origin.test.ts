@@ -31,6 +31,19 @@ describe('originMatchesServedHost', () => {
   it('returns false for a malformed origin', () => {
     expect(originMatchesServedHost('not-a-url', TS, undefined)).toBe(false)
   })
+  it('returns false when the parsed origin has an empty host', () => {
+    // about:blank / file:///path parse successfully but yield an empty host.
+    // The gate must reject those rather than compare host === ''.
+    expect(originMatchesServedHost('about:blank', TS, TS)).toBe(false)
+    expect(originMatchesServedHost('file:///path', TS, undefined)).toBe(false)
+  })
+  it('returns false when host does not match and X-Forwarded-Host is absent', () => {
+    // Exercises the falsy branch of `if (xForwardedHost)`: nothing matches,
+    // so the function falls through to `return false`.
+    expect(originMatchesServedHost('https://example.com', undefined, undefined)).toBe(false)
+    expect(originMatchesServedHost('https://example.com', 'other.example.com', undefined)).toBe(false)
+    expect(originMatchesServedHost('https://example.com', 'other.example.com', '')).toBe(false)
+  })
 })
 
 describe('isBlockedCrossOriginWrite', () => {

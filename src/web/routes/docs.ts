@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
-import { join, basename } from 'node:path'
+import { join } from 'node:path'
 import { PROJECT_ROOT } from '../../config.js'
 import { json } from '../http-helpers.js'
 import type { RouteContext } from './types.js'
@@ -9,8 +9,11 @@ import type { RouteContext } from './types.js'
 // auth wiring here. Nothing is writable; this only ever reads .md files that
 // already live in the repo.
 const DOCS_DIR = join(PROJECT_ROOT, 'docs')
-// Allowlist: a bare markdown filename. Combined with the basename() check below
-// this blocks path traversal (../, absolute paths, nested segments).
+// Allowlist: a bare markdown filename. The character class excludes every
+// path-separator node:path treats as one (`/`, `\`), and the upstream
+// path-segment regex `[^/]+` rejects percent-encoded slashes before decode,
+// so the regex alone blocks path traversal (../, absolute paths, nested
+// segments, null bytes).
 const NAME_RE = /^[A-Za-z0-9._-]+\.md$/
 
 function titleOf(content: string, fallback: string): string {
@@ -44,7 +47,8 @@ export async function tryHandleDocs(ctx: RouteContext): Promise<boolean> {
           ms = s.birthtimeMs && s.birthtimeMs > 0 ? s.birthtimeMs : s.mtimeMs
           created = new Date(ms).toISOString().slice(0, 10)
         } catch {
-          /* keep filename as title, created stays null */
+          title = name
+          /* created stays null */
         }
         return { name, title, created, ms }
       })
@@ -59,7 +63,7 @@ export async function tryHandleDocs(ctx: RouteContext): Promise<boolean> {
   const match = path.match(/^\/api\/docs\/([^/]+)$/)
   if (match && method === 'GET') {
     const name = decodeURIComponent(match[1])
-    if (!NAME_RE.test(name) || basename(name) !== name) {
+    if (!NAME_RE.test(name)) {
       json(res, { error: 'Invalid doc name' }, 400)
       return true
     }

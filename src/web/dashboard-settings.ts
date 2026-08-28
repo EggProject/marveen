@@ -82,7 +82,7 @@ export function detectRequiredEnvVars(repoPath: string): string[] {
     const parsed = JSON.parse(readFileOr(mcpJsonPath, '{}'))
     const servers = parsed.mcpServers || {}
     const vars = new Set<string>()
-    for (const cfg of Object.values(servers) as any[]) {
+    for (const cfg of Object.values(servers) as Array<{ env?: Record<string, unknown> } | null | undefined>) {
       for (const key of Object.keys(cfg?.env || {})) vars.add(key)
     }
     return [...vars]

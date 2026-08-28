@@ -69,7 +69,10 @@ export async function tryHandleMemories(ctx: RouteContext): Promise<boolean> {
     }
     const agentId = url.searchParams.get('agent') || agentIdAlias || ''
     const tier = url.searchParams.get('tier') || url.searchParams.get('category') || ''
-    const limit = Math.min(parseInt(url.searchParams.get('limit') || '50', 10), 200)
+    const rawLimit = parseInt(url.searchParams.get('limit') || '50', 10)
+    const limit = Number.isFinite(rawLimit) && rawLimit >= 1
+      ? Math.min(rawLimit, 200)
+      : 50
     const mode = url.searchParams.get('mode') || 'fts'
 
     let results: Memory[]
@@ -238,8 +241,44 @@ Respond ONLY with JSON, nothing else:
   if (memUpdateMatch && method === 'PUT') {
     const id = parseInt(memUpdateMatch[1], 10)
     const body = await readBody(req)
-    const { content, category, tier, agent_id, keywords } = JSON.parse(body.toString()) as { content: string; category?: string; tier?: string; agent_id?: string; keywords?: string }
-    if (updateMemory(id, content, tier || category, agent_id, keywords)) { json(res, { ok: true }); return true }
+    const { content, category, tier, agent_id, keywords } = JSON.parse(body.toString()) as {
+      content?: unknown; category?: unknown; tier?: unknown; agent_id?: string; keywords?: string
+    }
+
+    // --- Inline validation mirrors POST at lines 39-52. Inlined per
+    // fix-scope: no helper extraction, no POST refactor. ---
+    if (typeof content !== 'string' || !content.trim()) {
+      json(res, { error: 'Content is required' }, 400)
+      return true
+    }
+    if (containsSuspiciousContent(content)) {
+      logger.warn({ agent: agent_id }, 'Memory content rejected: suspicious pattern (PUT /api/memories/:id)')
+      json(res, { error: 'Content rejected by security filter' }, 400)
+      return true
+    }
+    // PUT may omit BOTH category and tier to leave the row's category unchanged.
+    // updateMemory treats a falsy category as "leave alone" (src/db.ts:1365), so
+    // defaulting here would silently reclassify every edit. The dashboard PUT
+    // (web/app.js:6581) sends `tier`, so mirror POST's deprecation log on tier-only.
+    if (typeof tier === 'string' && category === undefined) {
+      logger.warn({ agent: agent_id }, '[DEPRECATED] PUT /api/memories/:id: use "category" instead of "tier"')
+    }
+    let resolvedCategory: string | undefined
+    const rawCategory = typeof category === 'string'
+      ? category
+      : typeof tier === 'string'
+        ? tier
+        : undefined
+    if (rawCategory !== undefined) {
+      resolvedCategory = rawCategory.toLowerCase()
+      if (!MEMORY_CATEGORIES.has(resolvedCategory)) {
+        json(res, { error: `Invalid category "${resolvedCategory}". Allowed: ${[...MEMORY_CATEGORIES].join(', ')}` }, 400)
+        return true
+      }
+    }
+
+    const normalizedKeywords = keywords === '' ? undefined : keywords
+    if (updateMemory(id, content.trim(), resolvedCategory, agent_id, normalizedKeywords)) { json(res, { ok: true }); return true }
     json(res, { error: 'Memory not found' }, 404)
     return true
   }

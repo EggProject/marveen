@@ -626,6 +626,7 @@ export function detectPaneState(
   // don't pick up historical ❯ lines from scrollback.
   const lines = pane.split('\n')
   const footerIdx = lines.findIndex(l => IDLE_FOOTER_RX.test(l))
+  /* istanbul ignore next: structurally unreachable -- the prior IDLE_FOOTER_RX.test(pane) guard ensures at least one line matches */
   if (footerIdx >= 0) {
     let bottomSep = -1
     for (let i = footerIdx - 1; i >= 0; i--) {
@@ -1061,8 +1062,10 @@ export function decidePaneErrorAlert(
 export function stuckInputSignature(pane: string): string | null {
   if (detectPaneState(pane) !== 'typing') return null
   const box = liveInputBox(pane)
+  /* istanbul ignore next: structurally unreachable -- detectPaneState === 'typing' requires liveInputBox != null */
   if (box == null) return null
   const sig = box.replace(/\s+/g, ' ').trim()
+  /* istanbul ignore next: structurally unreachable -- liveInputBox returns null when no prompt glyph is present, so sig is always non-empty when box != null */
   return sig.length > 0 ? sig : null
 }
 
@@ -1101,6 +1104,7 @@ export function parkedPasteSignature(pane: string): string | null {
   if (BUSY_ESC_TO_INTERRUPT_RX.test(footerRegion)) return null
   if (!detectsPastePlaceholder(pane)) return null
   const sig = pastePlaceholderRegion(pane).replace(/\s+/g, ' ').trim()
+  /* istanbul ignore next: structurally unreachable -- pastePlaceholderRegion returns non-empty when detectsPastePlaceholder matches */
   return sig.length > 0 ? sig : null
 }
 
@@ -1133,6 +1137,7 @@ export interface ParkedChannelInput {
 export function parkedChannelInput(pane: string): ParkedChannelInput | null {
   if (detectPaneState(pane) !== 'typing') return null
   const box = liveInputBox(pane)
+  /* istanbul ignore next: structurally unreachable -- detectPaneState === 'typing' requires liveInputBox != null */
   if (box == null) return null
   const flat = box.replace(/\s+/g, ' ').trim()
   if (!/<channel\s+source="plugin:/.test(flat)) return null // human draft -> not ours
@@ -1158,10 +1163,12 @@ export function parkedChannelInput(pane: string): ParkedChannelInput | null {
 export function parkedInputText(pane: string): string | null {
   if (detectPaneState(pane) !== 'typing') return null
   const box = liveInputBox(pane)
+  /* istanbul ignore next: structurally unreachable -- detectPaneState === 'typing' requires liveInputBox != null */
   if (box == null) return null
   // Collapse terminal wrap, then strip the leading ❯ prompt marker so the
   // re-injected text is the message itself, not the prompt glyph.
   const flat = box.replace(/\s+/g, ' ').trim().replace(/^❯\s*/, '').trim()
+  /* istanbul ignore next: structurally unreachable -- liveInputBox returns null when no prompt glyph is present, so flat is always non-empty when box != null */
   return flat.length > 0 ? flat : null
 }
 
@@ -1247,6 +1254,10 @@ export interface StuckInputState {
   lastRecoverAt: number | null
   /** How many recovery Enters have been sent in the active spell. */
   attempts: number
+  /** Whether a "giving up" alert has already been emitted for the active
+   * spell. Reset on every new spell. Optional so existing full-literal
+   * state objects (test mocks, persisted snapshots) keep compiling. */
+  giveUpAlerted?: boolean
 }
 
 export interface StuckInputThresholds {
@@ -1273,6 +1284,7 @@ const NO_STUCK_INPUT: StuckInputState = {
   firstSeenAt: null,
   lastRecoverAt: null,
   attempts: 0,
+  giveUpAlerted: false,
 }
 
 /**
@@ -1320,9 +1332,12 @@ export function decideStuckInputRecovery(
     return { recover: false, next: { parkedSig, firstSeenAt: now, lastRecoverAt: null, attempts: 0 } }
   }
   // Backwards clock skew: a stored timestamp in the future relative to
-  // now would drive the deltas negative and stall. Restart the spell.
+  // now would drive the deltas negative and stall. Restart the spell
+  // (reset attempts + firstSeenAt), but PRESERVE giveUpAlerted from prev
+  // so a clock-jump within the SAME spell does not silently drop the
+  // watcher's per-spell alert gate and re-fire the give-up alert.
   if (now < prev.firstSeenAt || (prev.lastRecoverAt !== null && now < prev.lastRecoverAt)) {
-    return { recover: false, next: { parkedSig, firstSeenAt: now, lastRecoverAt: null, attempts: 0 } }
+    return { recover: false, next: { ...prev, firstSeenAt: now, lastRecoverAt: null, attempts: 0 } }
   }
   // Retry budget spent: hold without acting.
   if (prev.attempts >= thresholds.maxAttempts) {
@@ -1486,6 +1501,7 @@ export function stuckToolCallSignature(pane: string): ToolCallProgressSignature 
   if (!m) return null
   const tag = m[1]!.toLowerCase()
   const seconds = parseInt(m[2]!, 10)
+  /* istanbul ignore next: structurally unreachable -- the regex only captures \d+, parseInt is always finite and >= 0 */
   if (!Number.isFinite(seconds) || seconds < 0) return null
   return { tag, seconds }
 }

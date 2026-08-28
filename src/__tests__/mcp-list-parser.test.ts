@@ -5,6 +5,7 @@ import {
   applyRefreshOutcome,
   scrubPaths,
   catalogMatchesConfigured,
+  slugify,
   type McpListEntry,
 } from '../mcp-list-parser.js'
 
@@ -486,5 +487,106 @@ describe('scrubPaths -- sensitive-path removal', () => {
     // NOT conflated with the caller's.
     expect(result).not.toContain('~smith')
     expect(result).not.toContain('~/')
+  })
+})
+
+describe('parseMcpListLine -- status "unknown" fallback (parseStatus miss)', () => {
+  it('classifies a status string that matches no known keyword as "unknown"', () => {
+    // The CLI may grow new status strings ("Pending", "Disabled", ...)
+    // before this parser learns the mapping. Anything that does not
+    // include "connected", "needs authentication", or "failed" must
+    // fall through to the unknown bucket rather than crash.
+    const result = parseMcpListLine('my-server: node /x - Pending')
+    expect(result).not.toBeNull()
+    expect(result?.status).toBe('unknown')
+  })
+
+  it('classifies a short unrecognised status as "unknown"', () => {
+    const result = parseMcpListLine('claude.ai Foo: https://example.com - n/a')
+    expect(result?.status).toBe('unknown')
+  })
+})
+
+describe('classifyName -- plugin: malformed fallback', () => {
+  it('uses the whole trimmed name when the plugin: trailing segment is empty', () => {
+    // The CLI emits "plugin:<package>:<name>" with three colon-separated
+    // segments; a malformed entry like "plugin:" splits into
+    // ['plugin', ''], last is empty, so the `|| trimmed` fallback fires
+    // and slugify produces "plugin" rather than an empty id.
+    const result = parseMcpListLine('plugin:: node /x - Connected')
+    expect(result).not.toBeNull()
+    expect(result?.source).toBe('plugin')
+    expect(result?.normalizedId).toBe('plugin')
+  })
+})
+
+describe('parseMcpListLine -- empty field rejection', () => {
+  it('returns null when the name portion is whitespace-only', () => {
+    // firstSep > 0 (so the guard does not catch it), but rawName.trim()
+    // becomes empty -- the entry has no identifying name.
+    expect(parseMcpListLine('   : node /x - Connected')).toBeNull()
+  })
+
+  it('returns null when the endpoint portion is empty', () => {
+    // "my-server:  - Connected" -- between ": " and " - " is just whitespace.
+    expect(parseMcpListLine('my-server:  - Connected')).toBeNull()
+  })
+
+  it('returns null when the status portion is empty', () => {
+    // Trailing " - " with nothing after it -- no status to surface.
+    expect(parseMcpListLine('my-server: node /x - ')).toBeNull()
+  })
+})
+
+describe('parseMcpListLine -- empty-slug rejection', () => {
+  it('returns null when the slugified name is empty', () => {
+    // "+++" slugifies to "" -- with no normalised id the entry cannot
+    // be matched against the catalog, so the parser rejects it
+    // instead of returning a row with normalizedId: ''.
+    expect(parseMcpListLine('+++: node /x - Connected')).toBeNull()
+  })
+})
+
+describe('slugify -- direct coverage', () => {
+  it('collapses runs of non-alphanumerics into a single hyphen', () => {
+    expect(slugify('A / B / C')).toBe('a-b-c')
+  })
+
+  it('strips leading and trailing hyphens produced by the first pass', () => {
+    // '---foo---' has no whitespace to trim, the first replace yields
+    // '-foo-', the second strips both ends.
+    expect(slugify('---foo---')).toBe('foo')
+  })
+
+  it('returns an empty string when the input has no alphanumerics', () => {
+    expect(slugify('+++')).toBe('')
+  })
+})
+
+describe('catalogMatchesConfigured -- branch coverage', () => {
+  it('matches via nameSlug when idSlug is empty', () => {
+    // First `if` short-circuits on the empty idSlug, second `if` fires
+    // via s === nameSlug. Covers the idSlug-falsy + nameSlug-truthy
+    // path.
+    expect(catalogMatchesConfigured('', 'slack', ['slack'])).toBe(true)
+  })
+
+  it('matches via exact idSlug when nameSlug is empty', () => {
+    // First `if` matches via s === idSlug, the second `if` is never
+    // reached. Covers the idSlug-truthy + nameSlug-falsy path.
+    expect(catalogMatchesConfigured('slack', '', ['slack'])).toBe(true)
+  })
+
+  it('matches via exact nameSlug equality (not just startsWith)', () => {
+    // idSlug branch returns false; nameSlug branch returns true via
+    // s === nameSlug. Covers the nameSlug-equality-true sub-branch.
+    expect(catalogMatchesConfigured('different', 'slack', ['slack'])).toBe(true)
+  })
+
+  it('does not match via nameSlug when neither equality nor startsWith hit', () => {
+    // idSlug is empty (short-circuit), nameSlug truthy but neither
+    // s === nameSlug nor s.startsWith(nameSlug + '-') fires. Covers
+    // the inner-false branch of the second `if`.
+    expect(catalogMatchesConfigured('', 'slack', ['other'])).toBe(false)
   })
 })

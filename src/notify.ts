@@ -22,7 +22,13 @@ export async function notifyChannel(text: string): Promise<void> {
       await provider.sendMessage(CHANNEL_TOKEN, CHANNEL_CHAT_ID, chunk, parseMode)
     } catch {
       try {
-        await provider.sendMessage(CHANNEL_TOKEN, CHANNEL_CHAT_ID, outbound.slice(0, 4096))
+        // Fallback: re-split the failing chunk through the provider's own
+        // splitMessage. Each provider's splitMessage uses its own limit
+        // constant (telegram 4096, slack 4000, discord 2000, googlechat
+        // 4096, teams 28000), so this respects the provider's actual API
+        // limit without expanding the ChannelProvider interface.
+        const fallback = provider.splitMessage(chunk)[0]
+        await provider.sendMessage(CHANNEL_TOKEN, CHANNEL_CHAT_ID, fallback)
       } catch { /* last resort, give up */ }
     }
   }

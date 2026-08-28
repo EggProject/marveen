@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { randomBytes, createCipheriv, createDecipheriv, scryptSync } from 'node:crypto'
 import { PROJECT_ROOT } from '../config.js'
 import { atomicWriteFileSync } from './atomic-write.js'
-import { isKeychainAvailable, keychainStore, keychainRetrieve } from './keychain.js'
+import { isKeychainAvailable, keychainStore, keychainRetrieve, KeychainUnavailableError } from './keychain.js'
 import { logger } from '../logger.js'
 
 const VAULT_PATH = join(PROJECT_ROOT, 'store', 'vault.json')
@@ -41,16 +41,46 @@ function getMasterKey(): Buffer {
       return Buffer.from(fileKey, 'base64')
     }
 
-    const existing = keychainRetrieve()
+    let existing: string | null = null
+    let keychainFailed = false
+    try {
+      existing = keychainRetrieve()
+    } catch (err) {
+      if (!(err instanceof KeychainUnavailableError)) throw err
+      // Keychain is reachable but locked / ACL-blocked / missing binary.
+      // Mark and fall through; the entries-exist guard below refuses to
+      // mint only when the vault is non-empty. First-run (vault empty
+      // + unreachable keychain) still mints -- re-keying is unavoidable
+      // in this one edge case.
+      keychainFailed = true
+    }
     if (existing) return Buffer.from(existing, 'base64')
+
+    // Defense-in-depth: if the vault already holds secrets AND the keychain
+    // is unreachable (throw, not just null-return), NEVER mint a replacement.
+    // A null return without a throw means the item is genuinely absent --
+    // safe to mint, even if the vault already has entries from a prior
+    // process (round-trip pattern in tests, or a process that lost its
+    // keychain between runs but kept the encrypted vault file).
+    if (keychainFailed && vaultHasContent()) {
+      throw new KeychainUnavailableError(
+        'Vault already contains secrets but the macOS Keychain master key is unreachable. ' +
+        'Refusing to mint a replacement to avoid destroying the vault. ' +
+        'Unlock the login keychain or restore the master key manually.',
+      )
+    }
 
     const newKey = randomBytes(64).toString('base64')
     try {
       keychainStore(newKey)
       logger.info('New vault master key stored in macOS Keychain')
-    } catch (err: any) {
-      logger.warn({ err: err.message }, 'Keychain store failed, falling back to file')
-      atomicWriteFileSync(VAULT_KEY_PATH, newKey, { mode: 0o600 })
+    } catch (err) {
+      // The file-fallback cascade is removed: a keychainStore throw (e.g. locked-keychain
+      // prompt, exit 45) now propagates so the operator sees a user-facing error rather
+      // than a silent downgrade to a same-uid-readable file at store/.vault-key (mode 0600).
+      // Migration branch (lines 30-42) is unchanged: file is source of truth there, the
+      // keychain push is best-effort.
+      throw err
     }
     return Buffer.from(newKey, 'base64')
   }
@@ -91,8 +121,27 @@ function decrypt(packed: string): string {
 }
 
 function readVault(): VaultStore {
+  const raw = readVaultRaw()
+  return isVaultStore(raw) ? raw : { entries: [] }
+}
+
+function readVaultRaw(): unknown | undefined {
   try { return JSON.parse(readFileSync(VAULT_PATH, 'utf-8')) }
-  catch { return { entries: [] } }
+  catch { return undefined }
+}
+
+function isVaultStore(v: unknown): v is VaultStore {
+  if (typeof v !== 'object' || v === null) return false
+  if (!('entries' in v)) return false
+  return Array.isArray(v.entries)
+}
+
+// A parseable-but-invalid vault may still hold encrypted secrets, so it
+// counts as content and must block minting.
+function vaultHasContent(): boolean {
+  const raw = readVaultRaw()
+  if (raw === undefined) return false
+  return isVaultStore(raw) ? raw.entries.length > 0 : true
 }
 
 function writeVault(store: VaultStore): void {

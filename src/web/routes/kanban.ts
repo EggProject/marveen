@@ -338,12 +338,16 @@ export async function tryHandleKanban(ctx: RouteContext): Promise<boolean> {
     if (!parent) { json(res, { error: 'Szülő kártya nem található' }, 404); return true }
     const body = await readBody(req)
     const { subtasks } = JSON.parse(body.toString()) as {
-      subtasks: Array<{ title: string; description: string; assignee: string | null; priority: string }>
+      subtasks: Array<{ title: string; description: string; assignee: string | null; priority: 'low' | 'normal' | 'high' | 'urgent' }>
     }
     if (!Array.isArray(subtasks) || subtasks.length === 0) {
       json(res, { error: 'Subtask lista kötelező' }, 400)
       return true
     }
+    // Narrowed priority type is a compile-time lie: the body is untrusted JSON.
+    // Validate at runtime so an invalid string like "critical" falls back to
+    // 'normal' instead of triggering the DB CHECK constraint (500 error).
+    const validPriorities = new Set<string>(['low', 'normal', 'high', 'urgent'])
     const db = getDb()
     const created = db.transaction(() => {
       const ids: string[] = []
@@ -354,7 +358,7 @@ export async function tryHandleKanban(ctx: RouteContext): Promise<boolean> {
           title: st.title,
           description: st.description,
           assignee: st.assignee ?? undefined,
-          priority: (st.priority as any) ?? 'normal',
+          priority: validPriorities.has(st.priority) ? st.priority : 'normal',
           project: parent.project ?? undefined,
           parent_id: parentId,
         })

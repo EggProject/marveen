@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { groupByRelease, type UpdateCommit } from '../web/update-checker.js'
 
 // Unit tests for the release-grouping that turns the flat newest-first commit
-// list into version buckets (card cbe2a240, PR-A). A `chore(release): vX`
+// list into version buckets. A `chore(release): vX`
 // commit starts a version group; the non-release commits older than it (down to
 // the next release marker) are what shipped in vX; commits newer than the newest
 // release marker form the leading "upcoming" group.

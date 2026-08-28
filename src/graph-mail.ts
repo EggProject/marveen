@@ -113,7 +113,16 @@ function loadCredentials(): MailCredentials {
     )
   }
   if (!cachedCreds || cachedCreds.mtimeMs !== currentMtime) {
-    cachedCreds = { value: parseCredentials(readFileSync(CREDS_PATH, 'utf-8')), mtimeMs: currentMtime }
+    let raw: string
+    try {
+      raw = readFileSync(CREDS_PATH, 'utf-8')
+    } catch (err) {
+      throw new Error(
+        `graph-mail: credentials file not readable at ${CREDS_PATH} (${(err as NodeJS.ErrnoException).code ?? 'unknown'}). ` +
+          `Set MARVEEN_MAIL_CREDS or fix the file at that path.`,
+      )
+    }
+    cachedCreds = { value: parseCredentials(raw), mtimeMs: currentMtime }
   }
   return cachedCreds.value
 }

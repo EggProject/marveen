@@ -7,10 +7,9 @@
 # is down. It is the COARSE net (total-pipe-death / session-wedge); the
 # dashboard's userbot inbound-probe handles the finer inbound-only deafness.
 #
-# Two INDEPENDENT detection signals (PLAN.md GAP 2b, 2026-07-23
-# marveen-channels silent outage -- the keepalive signal alone never sees a
-# dead model-API token, since the token-free keepalive probe only exercises
-# the Telegram Bot API, not Claude):
+# Two INDEPENDENT detection signals (PLAN.md GAP 2b, the keepalive
+# signal alone never sees a dead model-API token, since the token-free
+# keepalive probe only exercises the Telegram Bot API, not Claude):
 #   STALE    -- store/.channel-keepalive mtime. Two token-free producers keep
 #               it fresh: channel-monitor advances it on organic inbound, and
 #               the idle-path channel-keepalive-probe.sh timer touches it every
@@ -36,7 +35,7 @@
 # `systemctl restart` was outright forbidden here: the shared tmux SERVER lives
 # in the channels unit's cgroup, and under the old KillMode=control-group a
 # restart SIGKILLed the server and every agent session, not just the main one --
-# the 2026-06-26 fleet outage. The unit now runs KillMode=process so a restart is
+# a fleet-wide outage. The unit now runs KillMode=process so a restart is
 # no longer catastrophic, but respawn-pane stays preferred: it recovers only the
 # wedged pane without disturbing any sibling session.)
 #

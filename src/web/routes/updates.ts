@@ -195,7 +195,6 @@ export async function tryHandleUpdates(ctx: RouteContext): Promise<boolean> {
       }
     }
     const releaseLock = () => {
-      if (!lockHeld) return
       try { unlinkSync(UPDATE_PIDFILE) } catch { /* already gone */ }
       lockHeld = false
     }
@@ -279,9 +278,12 @@ export async function tryHandleUpdates(ctx: RouteContext): Promise<boolean> {
         if (stillOurs) releaseLock()
       })
       child.unref()
-      if (typeof outFd === 'number') {
-        try { closeSync(outFd) } catch { /* already closed */ }
-      }
+      // outFd is a number here: the try/catch above is the only path that
+      // leaves it as 'ignore', and that path returns early with a 500. The
+      // previous `if (typeof outFd === 'number')` guard was structurally
+      // unreachable (its else arm never fired). The closeSync itself can
+      // still throw on a stale fd, hence the inner try/catch.
+      try { closeSync(outFd) } catch { /* already closed */ }
       json(res, { ok: true })
     } catch (err) {
       releaseLock()

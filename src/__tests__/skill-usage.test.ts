@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import Database from 'better-sqlite3'
+import { Database } from '../db/sqlite.js'
 
 // ---- DB schema (mirrors db.ts) ----
 

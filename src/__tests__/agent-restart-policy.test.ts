@@ -1,5 +1,24 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { shouldAutoRestartDownAgent, effectiveRestartGraceMs, parseEtimeToSeconds, decideDownAgentAction } from '../web/agent-restart-policy.js'
+
+// SANDBOX STORE_DIR -- redirect PROJECT_ROOT/STORE_DIR to a tmpdir so modules
+// that freeze those paths at module load (channel-monitor.ts:828
+// RESPAWN_STAMP_FILE, channel-coordinator/liveness.ts:30 RESPAWN_STAMP_FILE,
+// store-watcher.ts:29 SENSITIVE_NAMES) don't pollute the live ./store/.
+// Must come BEFORE any import that transitively reaches '../config.js'.
+const configSandbox = vi.hoisted(() => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { tmpdir } = require('node:os') as typeof import('node:os')
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { join } = require('node:path') as typeof import('node:path')
+  const stamp = `${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`
+  const dir = join(tmpdir(), `cfg-${stamp}`)
+  return { PROJECT_ROOT: dir, STORE_DIR: join(dir, 'store') }
+})
+vi.mock('../config.js', async (orig) => {
+  const actual = await orig<typeof import('../config.js')>()
+  return { ...actual, ...configSandbox }
+})
 
 const STARTUP = 180_000
 const RESTART = 90_000
@@ -283,6 +302,24 @@ describe('decideDownAgentAction', () => {
     expect(decideDownAgentAction({ ...restartable, consecutiveFailures: MAX - 1 }, MAX)).toBe('restart')
   })
 
+  // Pinning test for `consecutiveFailures: null`: the line-132
+  // `(input.consecutiveFailures ?? 0) > 0` short-circuits on
+  // `Number.isFinite(null)` BEFORE the `??` is evaluated (Number.isFinite
+  // returns false for null per ECMA-262, so failures = 0 via the
+  // ternary's else arm). Pin that current behaviour here so the gap
+  // between `null` and `0` (both produce the same 'restart' result via
+  // the else arm) is explicit. See agent-restart-policy-consecutivefailures-nullish-coalesce
+  it("treats consecutiveFailures: null identically to 0 (Number.isFinite short-circuits before ?? is evaluated)", () => {
+    // Use a non-restartable shape so the result lands in 'skip' via a
+    // different guard, making it unambiguous that the null-vs-zero path
+    // is the only thing distinguishing this test from the above.
+    const freshProcess = { ...restartable, processAgeMs: 1_000 } // within startup grace
+    expect(decideDownAgentAction({ ...freshProcess, consecutiveFailures: null }, MAX)).toBe('skip')
+    expect(decideDownAgentAction({ ...freshProcess, consecutiveFailures: 0 }, MAX)).toBe('skip')
+    // Restartable case: null and 0 both let shouldAutoRestartDownAgent reach 'restart'
+    expect(decideDownAgentAction({ ...restartable, consecutiveFailures: null }, MAX)).toBe('restart')
+  })
+
   it("alerts exactly once when the cap is first reached", () => {
     expect(decideDownAgentAction({ ...restartable, consecutiveFailures: MAX }, MAX)).toBe('alert')
   })
@@ -312,6 +349,72 @@ describe('decideDownAgentAction', () => {
   it("falls back to plain back-off behaviour when the cap is disabled (0)", () => {
     // No cap -> never escalates to 'alert', however high the failure count.
     expect(decideDownAgentAction({ ...restartable, consecutiveFailures: 999 }, 0)).toBe('restart')
+  })
+
+  it("skips (defers) when the agent is busy and no busyDefer cap is set", () => {
+    // Restarting a busy agent throws away in-flight work. Without a cap the
+    // watchdog waits for idle forever (only `alert-busy` cancels the wait).
+    expect(decideDownAgentAction({
+      ...restartable,
+      agentBusy: true,
+      consecutiveFailures: 1,
+    }, MAX)).toBe('skip')
+  })
+
+  it("skips (defers) when the agent is busy and msDown is below busyDefer cap", () => {
+    // Pane is still spinning -- not yet past the cap, so still wait.
+    expect(decideDownAgentAction({
+      ...restartable,
+      agentBusy: true,
+      busyDeferMaxMs: 60_000,
+      msDown: 30_000,
+      consecutiveFailures: 1,
+    }, MAX)).toBe('skip')
+  })
+
+  it("escalates to 'alert-busy' when the agent is busy and the defer cap is exceeded", () => {
+    // Down long enough that the watchdog refuses to wait further AND refuses
+    // to kill live work: alert the operator instead.
+    expect(decideDownAgentAction({
+      ...restartable,
+      agentBusy: true,
+      busyDeferMaxMs: 60_000,
+      msDown: 90_000,
+      consecutiveFailures: 1,
+    }, MAX)).toBe('alert-busy')
+  })
+
+  it("treats a non-finite busyDeferMaxMs as 'no cap' (defers indefinitely)", () => {
+    // NaN / Infinity / negative should not arm the alert-busy escalation.
+    expect(decideDownAgentAction({
+      ...restartable,
+      agentBusy: true,
+      busyDeferMaxMs: Number.NaN,
+      msDown: 10_000_000,
+      consecutiveFailures: 1,
+    }, MAX)).toBe('skip')
+  })
+
+  it("skips within the msDown confirmation window (downConfirmMs not yet elapsed)", () => {
+    // A single down sample is a suspicion, not a verdict: do not act until
+    // the plugin has been continuously down for at least downConfirmMs.
+    expect(decideDownAgentAction({
+      ...restartable,
+      msDown: 5_000,
+      downConfirmMs: 30_000,
+      consecutiveFailures: 1,
+    }, MAX)).toBe('skip')
+  })
+
+  it("passes through the confirmation window when msDown >= downConfirmMs", () => {
+    // Confirmation satisfied -> control reaches the underlying restart policy.
+    // The wrapped policy says restart, so we get 'restart'.
+    expect(decideDownAgentAction({
+      ...restartable,
+      msDown: 60_000,
+      downConfirmMs: 30_000,
+      consecutiveFailures: 1,
+    }, MAX)).toBe('restart')
   })
 
   // The channel-monitor passes maxRestartAttempts=1 when the unlock probe has

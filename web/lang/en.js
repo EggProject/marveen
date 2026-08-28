@@ -1070,6 +1070,9 @@ window._i18n.en = {
   'bgTasks.toast.started':			'Background task started',
   'bgTasks.toast.stop_error':			'Failed to stop',
   'bgTasks.toast.stopped':			'Stopped',
+  'bgTasks.toast.already_done':			'Task was already finished',
+  'bgTasks.toast.already_failed':		'Task had already failed',
+  'bgTasks.toast.already_timeout':		'Task had already timed out',
   'connectors.api_keys_needed':			'API keys required...',
   'connectors.catalog_empty':			'No results in this category',
   'connectors.catalog_error':			'Error loading catalog',
@@ -1647,9 +1650,6 @@ window._i18n.en = {
   'channel.tg_howto.start_li': 'Have the person start the bot in Telegram (<code>/start</code>) and send it a message.',
   'channel.tg_howto.group_li': 'Invite the bot to an existing Telegram group (group settings &rarr; Members &rarr; Add).',
   'channel.tg_howto.pair_li': 'In the group, type <code>/pair</code> (or the command the bot provides).',
-  'agents.deepseek_hint_pre': 'DeepSeek-V4-Pro is not configured.',
-  'agents.deepseek_link': 'Add API key',
-  'agents.deepseek_hint_post': 'on the Vault page.',
   'channel.btn.slack_manifest': 'Create Slack App (manifest)',
 
   // --- Fleet Migration ---

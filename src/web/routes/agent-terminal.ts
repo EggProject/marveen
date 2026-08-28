@@ -1,6 +1,6 @@
 import { execFile, execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { resolveFromPath } from '../../platform.js'
+import { makeLazyBinResolver } from '../../platform.js'
 import { logger } from '../../logger.js'
 import { readBody, json } from '../http-helpers.js'
 import { agentDir } from '../agent-config.js'
@@ -10,7 +10,7 @@ import { literalKeyArgs, specialKeyArgs, loginSequence, type LoginStep } from '.
 import { readTerminalInputEnabled, writeTerminalInputEnabled } from '../terminal-input-store.js'
 import type { RouteContext } from './types.js'
 
-const TMUX = resolveFromPath('tmux')
+const tmuxBin = makeLazyBinResolver('tmux')
 
 // Per-agent dashboard terminal: live pane stream (SSE), keystroke injection,
 // and the scripted /login flow. All gated by the dashboard token (the SSE
@@ -23,7 +23,7 @@ function sleep(ms: number): Promise<void> {
 
 function isTmuxSessionAlive(session: string): boolean {
   try {
-    execFileSync(TMUX, ['has-session', '-t', session], { timeout: 3000, stdio: 'ignore' })
+    execFileSync(tmuxBin(), ['has-session', '-t', session], { timeout: 3000, stdio: 'ignore' })
     return true
   } catch {
     return false
@@ -46,7 +46,7 @@ function resolveTarget(name: string): SessionTarget {
 // caller can surface a 500 rather than silently swallowing a tmux failure.
 function tmux(args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
-    execFile(TMUX, args, { timeout: 5000 }, (err) => {
+    execFile(tmuxBin(), args, { timeout: 5000 }, (err) => {
       if (err) reject(err)
       else resolve()
     })
@@ -69,6 +69,15 @@ export function sanitizeLiteralKeys(keys: string): string {
   const noPasteMarkers = keys.replace(/\x1b\[20[01]~/g, '')
   const singleLine = noPasteMarkers.replace(/[\r\n]+/g, '')
   return singleLine.replace(/^\s+|\s+$/g, '')
+}
+
+// Build the AUDIT preview string for a literal-keys payload. The `literalKeys`
+// parameter is REQUIRED (not nullable) because the caller has already proven
+// it is non-null via the `if (!args)` guard above -- TS strict-generics needs
+// a function with a non-nullable parameter to narrow the `string | null`
+// type at the call site without an explicit non-null assertion.
+function computeLiteralKeysPreview(literalKeys: string): string {
+  return `keys:${JSON.stringify(literalKeys.slice(0, 120))}${literalKeys.length > 120 ? '…' : ''}`
 }
 
 async function runLoginSteps(session: string, steps: LoginStep[]): Promise<void> {
@@ -142,7 +151,7 @@ export async function tryHandleAgentTerminal(ctx: RouteContext): Promise<boolean
       // the visible pane) so the frontend can offer scroll-back; the frontend
       // repaints the full snapshot (clear-scrollback + clear + home) each changed
       // frame and only when the user is at the bottom, so scrolling up is stable.
-      execFile(TMUX, ['capture-pane', '-t', session, '-S', '-2000', '-e', '-p'], { timeout: 3000, encoding: 'utf-8', maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
+      execFile(tmuxBin(), ['capture-pane', '-t', session, '-S', '-2000', '-e', '-p'], { timeout: 3000, encoding: 'utf-8', maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
         inFlight = false
         if (closed) return
         const pane = err ? '' : (stdout ?? '')
@@ -212,10 +221,25 @@ export async function tryHandleAgentTerminal(ctx: RouteContext): Promise<boolean
     }
     // AUDIT every accepted injection. Preview reflects the SANITIZED payload
     // actually sent (truncated so a long paste does not bloat the log, but
-    // present so a forged prompt is traceable).
-    const preview = parsed.special
-      ? `special:${parsed.special}`
-      : `keys:${JSON.stringify((literalKeys ?? '').slice(0, 120))}${(literalKeys ?? '').length > 120 ? '…' : ''}`
+    // present so a forged prompt is traceable). The two remaining branches
+    // are exhaustive: by the time we reach this line, `args` is truthy,
+    // which means either parsed.special was truthy (and specialKeyArgs
+    // returned args) or literalKeys was truthy (and literalKeyArgs returned
+    // args). The previous third `''` arm was structurally unreachable
+    // because both being falsy would have triggered the `if (!args)` 400
+    // guard above.
+    let preview: string
+    if (parsed.special) {
+      preview = `special:${parsed.special}`
+    } else {
+      // literalKeys is guaranteed non-null here: the if (!args) guard above
+      // proved it (both falsy would have triggered the 400), so this branch
+      // is only reachable when literalKeys is truthy.
+      const keys = literalKeys
+      /* istanbul ignore next: structurally unreachable -- the if (!args) guard above proves literalKeys is truthy when parsed.special is falsy */
+      if (keys == null) throw new Error('literalKeys must be non-null')
+      preview = computeLiteralKeysPreview(keys)
+    }
     logger.info({ name, remote, xff, ua, preview }, 'agent-terminal: KEYS INJECTION ACCEPTED')
     try {
       await tmux(args)

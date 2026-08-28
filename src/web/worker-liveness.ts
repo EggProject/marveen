@@ -128,8 +128,13 @@ export function decideWorkerLiveness(
   }
 
   // Absent after having been alive: the one transition worth a log line.
-  const lifetimeMs =
-    prev.firstSeenAtMs != null ? prev.lastSeenAliveAtMs - prev.firstSeenAtMs : null
+  // prev.firstSeenAtMs is structurally non-null here: the L126 guard
+  // (prev.lastSeenAliveAtMs != null) only fires after at least one alive
+  // observation, and the alive branch always sets firstSeenAtMs.
+  const firstSeenAtMs = prev.firstSeenAtMs
+  /* istanbul ignore next: structurally unreachable -- prev.lastSeenAliveAtMs != null implies prev.firstSeenAtMs != null (they are set together in the alive branch) */
+  if (firstSeenAtMs == null) throw new Error('firstSeenAtMs must be non-null')
+  const lifetimeMs = prev.lastSeenAliveAtMs - firstSeenAtMs
   return {
     logDeath: true,
     lifetimeMs,
@@ -148,7 +153,7 @@ export interface WorkerLivenessDeps {
   sessions: () => Array<{ session: string }>
   isAlive: (session: string) => boolean
   capture: (session: string) => string | null
-  onDeath: (info: { session: string; lifetimeMs: number | null; lastPane: string | null; lifetimeTruncated: boolean }) => void
+  onDeath: (info: { session: string; lifetimeMs: number; lastPane: string | null; lifetimeTruncated: boolean }) => void
   now: () => number
 }
 
@@ -165,9 +170,16 @@ export function sweepWorkerLiveness(
     )
     states.set(session, decision.next)
     if (decision.logDeath) {
+      // decision.lifetimeMs is structurally non-null when logDeath is true:
+      // the only branch in decideWorkerLiveness that sets logDeath=true is the
+      // !alive && lastSeenAliveAtMs != null branch, which computes a numeric
+      // lifetimeMs from prev.lastSeenAliveAtMs - prev.firstSeenAtMs.
+      const lifetimeMs = decision.lifetimeMs
+      /* istanbul ignore next: structurally unreachable -- decideWorkerLiveness only sets logDeath=true alongside a numeric lifetimeMs */
+      if (lifetimeMs == null) throw new Error('logDeath requires a numeric lifetimeMs')
       deps.onDeath({
         session,
-        lifetimeMs: decision.lifetimeMs,
+        lifetimeMs,
         lastPane: decision.lastPane,
         lifetimeTruncated: decision.lifetimeTruncated,
       })
@@ -194,7 +206,12 @@ export function startWorkerLivenessMonitor(): NodeJS.Timeout {
         {
           session,
           lifetimeMs,
-          lifetimeMin: lifetimeMs == null ? null : Math.round(lifetimeMs / 60_000),
+          // decideWorkerLiveness only sets lifetimeMs to a number when logDeath
+          // is true (the !alive && lastSeenAliveAtMs != null branch computes
+          // prev.lastSeenAliveAtMs - prev.firstSeenAtMs, always a number).
+          // The earlier optional `lifetimeMs: number | null` type allowed for
+          // a null here that was structurally unreachable.
+          lifetimeMin: Math.round(lifetimeMs / 60_000),
           // The session predated this monitor process, so the figure above is a
           // LOWER BOUND. Said out loud rather than estimated: a truncated
           // lifetime reads like a fast death and would point at the launch line.

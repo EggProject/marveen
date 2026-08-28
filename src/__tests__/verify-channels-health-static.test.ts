@@ -6,7 +6,7 @@
  * executing it.  Full behavioral verification requires tmux mocking and a
  * live process tree, which is out of scope for this unit layer.
  *
- * AC source: docs/channel-watchdog-prompt.md D1 — Definition of Done
+ * AC source: the D1 Definition of Done for verify-channels-health.sh
  *
  *   D1-DoD-1: The global `pgrep -af 'bun server.ts'` fallback is removed entirely.
  *   D1-DoD-2: Session-absent path fails with a note and fail=1 (not silently passes).

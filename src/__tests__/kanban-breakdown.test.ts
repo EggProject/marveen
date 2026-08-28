@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import Database from 'better-sqlite3'
+import { Database } from '../db/sqlite.js'
 import { validateSubtasks } from '../web/llm-breakdown.js'
 
 vi.mock('node:child_process', () => ({

@@ -31,16 +31,25 @@ export function resolveKanbanDispatchTarget(
   const lower = a.toLowerCase()
 
   // Human owner never triggers an agent.
-  if (a === opts.ownerName) return null
+  if (lower === norm(opts.ownerName)) return null
 
   // Bot / main agent (matched by display name or canonical id) -> main session.
-  if (lower === opts.botName.toLowerCase() || lower === opts.mainAgentId.toLowerCase()) {
-    return opts.mainAgentId
+  // The returned id is trimmed defensively in case a quoted .env value leaked
+  // padding into the config (readEnvFile trims unquoted, but quotes preserve
+  // padding). We don't lowercase the return -- mainAgentId is the canonical
+  // session name, and a tmux lookup must receive it exactly as registered.
+  if (lower === norm(opts.botName) || lower === norm(opts.mainAgentId)) {
+    return opts.mainAgentId.trim()
   }
 
   // Sub-agent: case-insensitive name match, dispatched only if it is running.
-  const match = opts.agentNames.find((n) => n.toLowerCase() === lower)
+  const match = opts.agentNames.find((n) => norm(n) === lower)
   if (match && opts.isRunning(match)) return match
 
   return null
 }
+
+// Normalize a configured name: strip quoted-string padding from .env and
+// lowercase for case-insensitive matching. The assignee (a) is already
+// trimmed by the caller; only the configured names need this.
+const norm = (s: string): string => s.trim().toLowerCase()

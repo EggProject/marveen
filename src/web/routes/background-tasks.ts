@@ -1,18 +1,18 @@
 import { randomBytes } from 'node:crypto'
-import { execSync, execFileSync } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 import {
   createBackgroundTaskAtomic, finishBackgroundTask, getBackgroundTasks,
-  getBackgroundTask, getRunningBackgroundTasks, markOrphanedTasksFailed,
+  getBackgroundTask, getRunningBackgroundTasks,
   type BackgroundTask,
 } from '../../db.js'
-import { resolveFromPath } from '../../platform.js'
+import { makeLazyBinResolver } from '../../platform.js'
 import { APP_TZ } from '../../config.js'
 import { logger } from '../../logger.js'
 import { readBody, json } from '../http-helpers.js'
 import type { RouteContext } from './types.js'
 
-const TMUX = resolveFromPath('tmux')
-const CLAUDE = resolveFromPath('claude')
+const tmuxBin = makeLazyBinResolver('tmux')
+const claudeBin = makeLazyBinResolver('claude')
 const MAX_CONCURRENT = 3
 const TIMEOUT_MS = 30 * 60 * 1000
 
@@ -24,7 +24,7 @@ function bgSessionName(id: string): string {
 
 function isBgSessionAlive(session: string): boolean {
   try {
-    const out = execFileSync(TMUX, ['list-sessions', '-F', '#{session_name}'], { timeout: 3000, encoding: 'utf-8' })
+    const out = execFileSync(tmuxBin(), ['list-sessions', '-F', '#{session_name}'], { timeout: 3000, encoding: 'utf-8' })
     return out.split('\n').some(l => l.trim() === session)
   } catch {
     return false
@@ -33,7 +33,7 @@ function isBgSessionAlive(session: string): boolean {
 
 function captureSession(session: string): string | null {
   try {
-    return execFileSync(TMUX, ['capture-pane', '-t', session, '-p', '-S', '-500'], { timeout: 5000, encoding: 'utf-8' })
+    return execFileSync(tmuxBin(), ['capture-pane', '-t', session, '-p', '-S', '-500'], { timeout: 5000, encoding: 'utf-8' })
   } catch {
     return null
   }
@@ -41,7 +41,7 @@ function captureSession(session: string): string | null {
 
 function killSession(session: string): void {
   try {
-    execFileSync(TMUX, ['kill-session', '-t', session], { timeout: 3000 })
+    execFileSync(tmuxBin(), ['kill-session', '-t', session], { timeout: 3000 })
   } catch { /* already dead */ }
 }
 
@@ -56,11 +56,11 @@ export function spawnBackgroundTask(agentId: string, prompt: string): Background
 
   const shellCmd = [
     `export PATH="/opt/homebrew/bin:$HOME/.bun/bin:/usr/local/bin:/usr/bin:/bin:$PATH"`,
-    `${CLAUDE} -p "$BG_PROMPT" --output-format text 2>&1`,
+    `${claudeBin()} -p "$BG_PROMPT" --output-format text 2>&1`,
   ].join(' && ')
 
   try {
-    execFileSync(TMUX, [
+    execFileSync(tmuxBin(), [
       'new-session', '-d', '-s', session, '-x', '200', '-y', '50',
       `${shellCmd}; echo '___BG_DONE___'; sleep 5`,
     ], {
@@ -93,9 +93,10 @@ function pollUntilDone(id: string): void {
     if (!session) { clearInterval(interval); return }
 
     if (!isBgSessionAlive(session)) {
-      const output = '(session ended)'
-      finishBackgroundTask(id, 'done', output)
-      logger.info({ id }, 'Background task session ended')
+      const pane = captureSession(session)
+      const output = pane?.trim() || '(session ended)'
+      finishBackgroundTask(id, 'failed', output)
+      logger.warn({ id }, 'Background task session ended without completion marker')
       clearInterval(interval)
       return
     }
@@ -131,7 +132,9 @@ export function sweepOrphanedBackgroundTasks(): void {
       finishBackgroundTask(task.id, 'failed', output?.trim() || '(orphaned on restart)')
       orphaned++
     } else {
-      setTimeout(() => checkAndFinalize(task.id), TIMEOUT_MS)
+      const elapsedMs = Date.now() - task.started_at * 1000
+      const remainingMs = Math.max(0, TIMEOUT_MS - elapsedMs)
+      setTimeout(() => checkAndFinalize(task.id), remainingMs)
       pollUntilDone(task.id)
     }
   }
@@ -145,7 +148,8 @@ export async function tryHandleBackgroundTasks(ctx: RouteContext): Promise<boole
 
   if (path === '/api/background-tasks' && method === 'POST') {
     const body = await readBody(req)
-    const data = JSON.parse(body.toString()) as { agent_id: string; prompt: string }
+    let data: { agent_id: string; prompt: string }
+    try { data = JSON.parse(body.toString()) } catch { json(res, { error: 'Invalid JSON' }, 400); return true }
     if (!data.prompt?.trim()) {
       json(res, { error: 'Prompt megadása kötelező' }, 400)
       return true
@@ -199,12 +203,13 @@ export async function tryHandleBackgroundTasks(ctx: RouteContext): Promise<boole
   if (taskMatch && method === 'DELETE') {
     const task = getBackgroundTask(taskMatch[1])
     if (!task) { json(res, { error: 'Háttérfeladat nem található' }, 404); return true }
-    const output = task.tmux_session ? captureSession(task.tmux_session) : null
-    if (task.status === 'running' && task.tmux_session) {
-      killSession(task.tmux_session)
-    }
+    if (task.status !== 'running') { json(res, { ok: true, status: task.status }); return true }
+    const session = task.tmux_session
+    const output = session ? captureSession(session) : null
+    if (session) killSession(session)
     finishBackgroundTask(task.id, 'failed', output?.trim() || '(cancelled)')
-    json(res, { ok: true })
+    logger.info({ id: task.id, session }, 'Background task cancelled via DELETE')
+    json(res, { ok: true, status: 'cancelled' })
     return true
   }
 

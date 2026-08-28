@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterAll } from 'vitest'
+import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -9,10 +9,20 @@ import {
 import {
   sendFederatedMessage,
   isPeerInBackoff,
+  resetPeerBackoff,
+  logFedOut,
   _resetBackoffForTest,
   FEDERATION_REQUEST_TIMEOUT_MS,
   FEDERATION_MAX_CONTENT_BYTES,
 } from '../web/federation/bridge.js'
+import { logger } from '../logger.js'
+
+// Spy on the shared pino logger so logFedOut can be verified without dragging
+// in the real pino transport (which would buffer async writes and produce
+// noisy output). Reset between tests so each one sees a clean call record.
+vi.mock('../logger.js', () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}))
 
 const TMP = mkdtempSync(join(tmpdir(), 'fed-bridge-test-'))
 const TOKEN = 'a'.repeat(64)
@@ -186,5 +196,116 @@ describe('per-peer backoff (circuit breaker)', () => {
 describe('constants', () => {
   it('keeps the request timeout a few seconds (tick-holding bound)', () => {
     expect(FEDERATION_REQUEST_TIMEOUT_MS).toBeLessThanOrEqual(5000)
+  })
+})
+
+describe('resetPeerBackoff (production lifecycle reset)', () => {
+  it('with no argument clears every backing-off peer', async () => {
+    enabledConfig()
+    const failing = fetchReturning(500, {})
+    await sendFederatedMessage(MSG, NOW, failing)
+    expect(isPeerInBackoff('arthur', NOW + 1)).toBe(true)
+    resetPeerBackoff()
+    expect(isPeerInBackoff('arthur', NOW + 1)).toBe(false)
+  })
+
+  it('with a peerId clears only that peer, leaving others untouched', async () => {
+    enabledConfig()
+    // Second peer so we can verify isolation.
+    writeConfigFile({
+      enabled: true,
+      systemId: 'teodor',
+      peers: [
+        { id: 'arthur', baseUrl: 'https://macbook.example', outboundToken: TOKEN, inboundToken: IN_TOKEN },
+        { id: 'beatrice', baseUrl: 'https://laptop.example', outboundToken: 'c'.repeat(64), inboundToken: 'd'.repeat(64) },
+      ],
+    })
+    const failing = fetchReturning(500, {})
+    await sendFederatedMessage(MSG, NOW, failing)
+    await sendFederatedMessage({ ...MSG, to_agent: 'beatrice/ops' }, NOW, failing)
+    expect(isPeerInBackoff('arthur', NOW + 1)).toBe(true)
+    expect(isPeerInBackoff('beatrice', NOW + 1)).toBe(true)
+    resetPeerBackoff('arthur')
+    expect(isPeerInBackoff('arthur', NOW + 1)).toBe(false)
+    expect(isPeerInBackoff('beatrice', NOW + 1)).toBe(true)
+  })
+})
+
+describe('logFedOut (structured-log helper)', () => {
+  it('emits an info record tagged with fedOut:true and the user-supplied fields + msg', () => {
+    vi.mocked(logger.info).mockClear()
+    logFedOut({ peer: 'arthur', remoteId: '42' }, 'federation delivery')
+    expect(logger.info).toHaveBeenCalledTimes(1)
+    expect(logger.info).toHaveBeenCalledWith(
+      { fedOut: true, peer: 'arthur', remoteId: '42' },
+      'federation delivery',
+    )
+  })
+})
+
+describe('sendFederatedMessage -- body parsing edges (covers remaining branches)', () => {
+  it('delivers with remoteId="" when the 2xx body is non-JSON (catch branch)', async () => {
+    enabledConfig()
+    const f = (async () => new Response('not json at all', { status: 202 })) as typeof fetch
+    const r = await sendFederatedMessage(MSG, NOW, f)
+    expect(r).toEqual({ kind: 'delivered', remoteId: '' })
+  })
+
+  it('delivers with remoteId="" when the JSON has no id field (?? branch)', async () => {
+    enabledConfig()
+    const f = (async () => new Response(JSON.stringify({ status: 'queued' }), { status: 202 })) as typeof fetch
+    const r = await sendFederatedMessage(MSG, NOW, f)
+    expect(r).toEqual({ kind: 'delivered', remoteId: '' })
+  })
+
+  it('truncates the long invalid address in the failure error (truncate default 80)', async () => {
+    enabledConfig()
+    // 90-char garbage system segment + slash + agent; parseQualifiedId returns
+    // null because the system segment fails the SEGMENT_RE whitelist. The
+    // failure path passes it through truncate(..., 80).
+    const longSeg = 'x'.repeat(90)
+    const r = await sendFederatedMessage({ ...MSG, to_agent: `${longSeg}/agent` }, NOW, fetchReturning(202, {}))
+    expect(r).toMatchObject({ kind: 'failed' })
+    if (r.kind === 'failed') {
+      // The error must carry the truncated form, never the full 90+ chars.
+      expect(r.error).toContain('…')
+      expect(r.error).not.toContain(longSeg)
+    }
+  })
+
+  it('truncates a long 4xx body in the failure error (truncate default 300)', async () => {
+    enabledConfig()
+    const longBody = 'y'.repeat(500)
+    const f = (async () => new Response(longBody, { status: 400 })) as typeof fetch
+    const r = await sendFederatedMessage(MSG, NOW, f)
+    expect(r).toMatchObject({ kind: 'failed' })
+    if (r.kind === 'failed') {
+      expect(r.error).toContain('…')
+      expect(r.error).not.toContain(longBody)
+    }
+  })
+
+  it('truncates a long 5xx body in the retry error (truncate default 300)', async () => {
+    enabledConfig()
+    const longBody = 'z'.repeat(500)
+    const f = (async () => new Response(longBody, { status: 502 })) as typeof fetch
+    const r = await sendFederatedMessage(MSG, NOW, f)
+    expect(r).toMatchObject({ kind: 'retry' })
+    if (r.kind === 'retry') {
+      expect(r.error).toContain('…')
+      expect(r.error).not.toContain(longBody)
+    }
+  })
+
+  it('truncates a long network-error message in the retry error (truncate default 300)', async () => {
+    enabledConfig()
+    const longMsg = 'e'.repeat(500)
+    const f = (async () => { throw new Error(longMsg) }) as unknown as typeof fetch
+    const r = await sendFederatedMessage(MSG, NOW, f)
+    expect(r).toMatchObject({ kind: 'retry' })
+    if (r.kind === 'retry') {
+      expect(r.error).toContain('…')
+      expect(r.error).not.toContain(longMsg)
+    }
   })
 })

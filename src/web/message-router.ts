@@ -76,9 +76,9 @@ export function shouldGiveUpOnInject(failCount: number, maxFailures: number): bo
  */
 function notifyOrchestratorOfFailedHandoff(msg: AgentMessage, reason: string): void {
   try {
-    // A failed message to the main agent can't happen (pull model), but guard
-    // anyway so we never loop a notification back onto itself.
-    if (msg.to_agent === MAIN_AGENT_ID) return
+    // No main-agent guard is needed here: the main loop's `if (isMainAgent) { ... continue }`
+    // short-circuits main-agent targets before they reach either call site of
+    // notifyOrchestratorOfFailedHandoff.
     const preview = (msg.content ?? '').slice(0, 220)
     createAgentMessage(
       'system',
@@ -117,7 +117,7 @@ function notifyDelegationFailed(msg: AgentMessage, error: string): void {
   }
 }
 
-// ---- session-stuck detection (card 2922e380 thread a) ------------------------
+// ---- session-stuck detection ------------------------
 // When a session EXISTS but is never ready (menu-blocked / context-saturated /
 // parked input the janitor can't clear), track how long it has been continuously
 // stuck. After STUCK_ESCALATE_MS, escalate to warning-level logs so the existing
@@ -126,7 +126,7 @@ function notifyDelegationFailed(msg: AgentMessage, error: string): void {
 const STUCK_ESCALATE_MS = 10 * 60 * 1000  // 10 min continuously stuck -> escalate
 const agentStuckSince = new Map<string, number>()  // agent -> first tick stuck (Date.now)
 
-// ---- reconnect-backlog batching (card 2922e380 thread b) --------------------
+// ---- reconnect-backlog batching --------------------
 // When a session was absent and reconnects, old pending messages are summarized
 // into ONE batch delivery instead of FIFO-bursting them one by one (the pattern
 // that made the Mason incident read like churn). Only triggers when there are
@@ -159,7 +159,7 @@ export function shouldAbandon(sessionExists: boolean, ageMs: number, windowMs: n
   return !sessionExists && ageMs > windowMs
 }
 
-// ---- Distributed trace context (card def5a189) ------------------------------
+// ---- Distributed trace context ------------------------------
 // In-memory map of the last trace context delivered TO each agent. When the
 // agent subsequently sends a new message (no explicit trace_id), the router
 // stamps it with this context so the whole chain shares one root trace_id.
@@ -314,7 +314,10 @@ function batchDeliverBacklog(agent: string, agentPending: AgentMessage[], now: n
       recent.push(m)
     }
   }
-  if (old.length === 0) return
+  // old.length >= 1 by construction: the caller at lines 405-411 gates on
+  // `oldestAge > RECONNECT_BATCH_AGE_MS` where oldestAge is the age of
+  // agentPending[0] (oldest row, ORDER BY created_at ASC), so the first
+  // partition iteration always pushes that row into `old`.
 
   // Build a summary: who sent what, when (oldest first).
   const lines: string[] = [
@@ -471,13 +474,14 @@ export async function runMessageRouterTick(): Promise<void> {
         }
         continue
       }
-      // Use cached session data from the pre-pass (one sessionExistsOnHost call
-      // per unique receiver per tick). Fall back to a direct call for agents not
-      // in the pending set (shouldn't happen, but safe).
-      const cached = agentSessionCache.get(msg.to_agent)
-      const session = cached?.session ?? agentSessionName(msg.to_agent)
-      const host = isMainAgent ? null : cached?.host ?? readAgentRemoteHost(msg.to_agent)
-      const sessionExists = cached?.exists ?? sessionExistsOnHost(host, session)
+      // Read session data from the pre-pass cache. The pre-pass populates
+      // agentSessionCache for every receiver in receiversInTick, which is built
+      // from the same `pending` slice the loop iterates over, so the cache
+      // lookup always wins.
+      const cached = agentSessionCache.get(msg.to_agent)!
+      const session = cached.session
+      const host = cached.host
+      const sessionExists = cached.exists
 
       if (shouldAbandon(sessionExists, ageMs, MESSAGE_ABANDON_WINDOW_MS)) {
         logger.warn({ id: msg.id, from: msg.from_agent, to: msg.to_agent, ageMs }, 'Agent message abandoned: target session absent for full retry window')
@@ -499,7 +503,7 @@ export async function runMessageRouterTick(): Promise<void> {
       }
 
       if (!(await isSessionReadyForPrompt(session, host))) {
-        // ---- session-stuck detection (card 2922e380 thread a) ----
+        // ---- session-stuck detection ----
         // Track how long this session has been continuously not-ready.
         const stuckStart = agentStuckSince.get(msg.to_agent)
         if (!stuckStart) {
@@ -542,7 +546,7 @@ export async function runMessageRouterTick(): Promise<void> {
       // Classify (channel-inbound / trusted-peer / untrusted) + reject an empty
       // from_agent -- SINGLE SOURCE in agent-message-wrap so the router and the
       // main-agent pull endpoint frame messages identically (no security drift).
-      // Trace context (card def5a189): stamp if not yet set. channel-inbound
+      // Trace context: stamp if not yet set. channel-inbound
       // messages (user → agent) are excluded -- only inter-agent spans.
       const cls = classifyAgentMessage(msg.from_agent, msg.to_agent)
       if (!cls) {

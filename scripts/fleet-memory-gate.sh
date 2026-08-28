@@ -6,7 +6,7 @@
 # The Marveen fleet auto-respawns on every user-manager (re)init: the dashboard's
 # channel-monitor reconcile loop starts every desired-but-down agent ~15s apart.
 # On a 7.4 GiB WSL VM that startup storm drove app.slice to a 6.9G peak and an OOM
-# poweroff (2026-07-09). This gate decides, per agent, whether a NEW start is
+# poweroff. This gate decides, per agent, whether a NEW start is
 # allowed given current MemAvailable + running-agent count. It NEVER kills or
 # restarts anything -- it only answers "may this agent start now?" and (as a side
 # effect) manages the safe-mode flag + a deduped Telegram alert.
@@ -68,10 +68,10 @@ SAFE_FLAG="$STATE_DIR/.fleet-safe-mode"
 ALERT_STAMP="$STATE_DIR/.fleet-memgate-alert"   # "band:epoch" of last alert
 OBSERVE_FLAG="$STATE_DIR/.fleet-memgate-observe"  # if present -> observe-only
 
-# OBSERVE-ONLY mode (Istvan standing directive 2026-07-09, re-confirmed 2026-07-15):
-# monitor + alert stay ON, but the gate NEVER blocks a start and NEVER writes the
-# safe-mode marker -- Istvan makes the throttle/rollback call himself. Toggle via the
-# file flag (touch/rm store/.fleet-memgate-observe) or MARVEEN_MEM_GATE_OBSERVE=1.
+# OBSERVE-ONLY mode: monitor + alert stay ON, but the gate NEVER blocks
+# a start and NEVER writes the safe-mode marker -- operator makes the throttle/rollback
+# call. Toggle via the file flag (touch/rm store/.fleet-memgate-observe) or
+# MARVEEN_MEM_GATE_OBSERVE=1.
 OBSERVE=0
 if [[ "${MARVEEN_MEM_GATE_OBSERVE:-0}" == "1" || -f "$OBSERVE_FLAG" ]]; then OBSERVE=1; fi
 ENV_FILE="${TELEGRAM_ENV:-$HOME/.claude/channels/telegram/.env}"
@@ -171,7 +171,7 @@ fi
 status_line="used=${used_pct}% avail=${avail_mb}MB running_agents=${running} cap=${AGENT_CAP} band=${band}"
 
 # Observe-only: alerts have already fired above; from here the gate only reports and
-# always ALLOWS -- no block exit (10), no cap-block. Istvan owns the throttle call.
+# always ALLOWS -- no block exit (10), no cap-block. The operator owns the throttle call.
 if (( OBSERVE )); then
   echo "observe-only (monitor+alert, no block): $status_line"
   exit 0

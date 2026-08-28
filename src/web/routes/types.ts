@@ -11,10 +11,10 @@ export interface RouteContext {
   method: string
   url: URL
   /** Federation caller identity, set by the auth gate when a peer's inbound
-   *  token authenticated this request. Absent/undefined and null both mean
-   *  "not a federation-token caller" (e.g. dashboard token) -- handlers must
-   *  treat the two identically. */
-  fedPeer?: string | null
+   *  token authenticated this request. null means 'not a federation-token
+   *  caller' (e.g. dashboard token); the dispatcher (src/web.ts:153,171)
+   *  always populates this field. */
+  fedPeer: string | null
   /** Resolved auth principal for this request, set by the gate. Absent means
    *  the request carried no valid credential (only possible on ungated public
    *  paths, which are reached without a principal). `user` is set for the

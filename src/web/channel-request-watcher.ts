@@ -64,6 +64,15 @@ async function lookupChannelName(agent: string, channelId: string): Promise<void
   }
 
   const provider = resolveAgentProvider(agent)
+  // DO NOT REMOVE: this guard is load-bearing, not defensive. Both call sites
+  // (scanAuditLog at line 46, the runScanTick pending-list walk at line 115) are
+  // already inside the outer `if (provider !== 'slack') continue` at line 109, so
+  // through the public API this branch never fires. But resolveAgentProvider
+  // re-reads agent-config.json on every call, with no cache: a mid-tick flip to
+  // telegram between the outer guard and this read would route the inner path
+  // through readChannelToken('telegram', ...) and ship the TELEGRAM_BOT_TOKEN as
+  // Authorization: Bearer to slack.com/api/conversations.info. That is a real
+  // cross-vendor token leak, not a coverage-only defect.
   if (provider !== 'slack') return
   const stateDir = channelStateDir(provider, agentDir(agent))
   const token = readChannelToken(provider, join(stateDir, '.env'))

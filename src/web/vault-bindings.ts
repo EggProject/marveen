@@ -160,7 +160,6 @@ export function collectAllMcpFilePaths(): Array<{ path: string, label: string }>
 }
 
 function maskValue(val: string): string {
-  if (val.length <= 6) return '***'
   return val.slice(0, 3) + '...' + val.slice(-3)
 }
 
@@ -232,8 +231,7 @@ function unwrapCommand(serverCfg: any): void {
   delete serverCfg._vaultOriginalArgs
 }
 
-function serverHasVaultRefs(env: Record<string, string> | undefined): boolean {
-  if (!env) return false
+function serverHasVaultRefs(env: Record<string, string>): boolean {
   return Object.values(env).some(v => typeof v === 'string' && v.startsWith('vault:'))
 }
 

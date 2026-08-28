@@ -40,7 +40,7 @@ export async function tryHandleIdeas(ctx: RouteContext): Promise<boolean> {
 
   if (path === '/api/ideas' && method === 'POST') {
     const body = await readBody(req)
-    const data = JSON.parse(body.toString()) as {
+    let data: {
       title: string
       description?: string
       category?: string
@@ -48,7 +48,24 @@ export async function tryHandleIdeas(ctx: RouteContext): Promise<boolean> {
       impact?: number | null
       effort?: number | null
     }
-    if (!data.title) { json(res, { error: 'title required' }, 400); return true }
+    try {
+      const parsed: unknown = JSON.parse(body.toString())
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        json(res, { error: 'Invalid JSON' }, 400); return true
+      }
+      data = parsed as {
+        title: string
+        description?: string
+        category?: string
+        source?: string
+        impact?: number | null
+        effort?: number | null
+      }
+    } catch {
+      json(res, { error: 'Invalid JSON' }, 400); return true
+    }
+    const title = typeof data.title === 'string' ? data.title.trim() : ''
+    if (!title) { json(res, { error: 'title required' }, 400); return true }
     // Same 1-5 validation as PUT -- previously POST silently dropped these fields
     let impact: number | null = null
     if (data.impact !== undefined && data.impact !== null) {
@@ -65,7 +82,7 @@ export async function tryHandleIdeas(ctx: RouteContext): Promise<boolean> {
     const id = randomUUID().slice(0, 8)
     createIdea({
       id,
-      title: data.title,
+      title,
       description: data.description ?? null,
       category: data.category ?? 'Egyéb',
       status: 'new',
@@ -83,7 +100,7 @@ export async function tryHandleIdeas(ctx: RouteContext): Promise<boolean> {
   if (ideaMatch && method === 'PUT') {
     const id = decodeURIComponent(ideaMatch[1])
     const body = await readBody(req)
-    const data = JSON.parse(body.toString()) as {
+    let data: {
       title?: string
       description?: string
       category?: string
@@ -91,6 +108,28 @@ export async function tryHandleIdeas(ctx: RouteContext): Promise<boolean> {
       kanban_id?: string
       impact?: number | null
       effort?: number | null
+    }
+    try {
+      const parsed: unknown = JSON.parse(body.toString())
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        json(res, { error: 'Invalid JSON' }, 400); return true
+      }
+      data = parsed as {
+        title?: string
+        description?: string
+        category?: string
+        status?: IdeaRow['status']
+        kanban_id?: string
+        impact?: number | null
+        effort?: number | null
+      }
+    } catch {
+      json(res, { error: 'Invalid JSON' }, 400); return true
+    }
+    if (data.title !== undefined) {
+      const trimmed = typeof data.title === 'string' ? data.title.trim() : ''
+      if (!trimmed) { json(res, { error: 'title required' }, 400); return true }
+      data.title = trimmed
     }
     // Coerce impact/effort to int or null -- reject values outside 1-5
     if (data.impact !== undefined && data.impact !== null) {
@@ -135,10 +174,21 @@ export async function tryHandleIdeas(ctx: RouteContext): Promise<boolean> {
   if (commentsMatch && method === 'POST') {
     const ideaId = decodeURIComponent(commentsMatch[1])
     const body = await readBody(req)
-    const { author, content } = JSON.parse(body.toString()) as { author?: string; content?: string }
+    let parsed: { author?: string; content?: string }
+    try {
+      const v: unknown = JSON.parse(body.toString())
+      if (typeof v !== 'object' || v === null || Array.isArray(v)) {
+        json(res, { error: 'Invalid JSON' }, 400); return true
+      }
+      parsed = v as { author?: string; content?: string }
+    } catch {
+      json(res, { error: 'Invalid JSON' }, 400); return true
+    }
+    const { author, content } = parsed
     if (!content || typeof content !== 'string' || !content.trim()) {
       json(res, { error: 'content required' }, 400); return true
     }
+    if (!getIdea(ideaId)) { json(res, { error: 'Ötlet nem található' }, 404); return true }
     const comment = addIdeaComment(ideaId, author?.trim() || MAIN_AGENT_ID, content.trim())
     json(res, { ok: true, comment })
     return true
@@ -149,11 +199,24 @@ export async function tryHandleIdeas(ctx: RouteContext): Promise<boolean> {
   if (promoteMatch && method === 'POST') {
     const ideaId = decodeURIComponent(promoteMatch[1])
     const body = await readBody(req)
-    const data = JSON.parse(body.toString()) as { phase?: 'detail' | 'plan' }
+    let data: { phase?: 'detail' | 'plan' }
+    try {
+      const parsed: unknown = JSON.parse(body.toString())
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        json(res, { error: 'Invalid JSON' }, 400); return true
+      }
+      data = parsed as { phase?: 'detail' | 'plan' }
+    } catch {
+      json(res, { error: 'Invalid JSON' }, 400); return true
+    }
     const phase = data.phase ?? 'detail'
 
     const idea = (getDb().prepare('SELECT * FROM idea_box WHERE id = ?').get(ideaId) as import('../../db.js').IdeaBoxRow | undefined)
     if (!idea) { json(res, { error: 'Ötlet nem található' }, 404); return true }
+    if (idea.status === 'kanban') {
+      json(res, { error: 'Ötlet már kanban státuszban van', kanban_id: idea.kanban_id }, 409)
+      return true
+    }
 
     const cardId = randomUUID().slice(0, 8)
     const status = phase === 'plan' ? 'planned' : 'waiting'
@@ -185,7 +248,7 @@ export async function tryHandleIdeas(ctx: RouteContext): Promise<boolean> {
       json(res, { subtasks: result.subtasks })
     } catch (err) {
       logger.error({ err, ideaId }, 'Idea breakdown generation failed')
-      json(res, { error: (err as Error).message }, 500)
+      json(res, { error: err instanceof Error ? err.message : String(err) }, 500)
     }
     return true
   }
@@ -197,11 +260,28 @@ export async function tryHandleIdeas(ctx: RouteContext): Promise<boolean> {
     const ideaId = decodeURIComponent(promoteBreakdownMatch[1])
     const idea = getIdea(ideaId)
     if (!idea) { json(res, { error: 'Ötlet nem található' }, 404); return true }
+    if (idea.status === 'kanban') {
+      json(res, { error: 'Ötlet már kanban státuszban van', kanban_id: idea.kanban_id }, 409)
+      return true
+    }
     const body = await readBody(req)
-    const { subtasks, success_criteria } = JSON.parse(body.toString()) as {
+    let parsed: {
       subtasks: Array<{ title: string; description?: string; assignee?: string | null; priority?: string }>
       success_criteria?: string
     }
+    try {
+      const v: unknown = JSON.parse(body.toString())
+      if (typeof v !== 'object' || v === null || Array.isArray(v)) {
+        json(res, { error: 'Invalid JSON' }, 400); return true
+      }
+      parsed = v as {
+        subtasks: Array<{ title: string; description?: string; assignee?: string | null; priority?: string }>
+        success_criteria?: string
+      }
+    } catch {
+      json(res, { error: 'Invalid JSON' }, 400); return true
+    }
+    const { subtasks, success_criteria } = parsed
     if (!Array.isArray(subtasks) || subtasks.length === 0) {
       json(res, { error: 'Legalább egy jóváhagyott alfeladat kötelező' }, 400)
       return true

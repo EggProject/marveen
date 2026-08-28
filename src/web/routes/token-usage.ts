@@ -11,6 +11,12 @@ import { json, jsonMaybeGzip } from '../http-helpers.js'
 import { logger } from '../../logger.js'
 import type { RouteContext } from './types.js'
 
+function intParam(raw: string | null, fallback: number, min: number): number {
+  if (raw === null) return fallback
+  const n = parseInt(raw)
+  return Number.isFinite(n) && n >= min ? n : fallback
+}
+
 export async function tryHandleTokenUsage(ctx: RouteContext): Promise<boolean> {
   const { req, res, path, method, url } = ctx
 
@@ -38,7 +44,7 @@ export async function tryHandleTokenUsage(ctx: RouteContext): Promise<boolean> {
   }
 
   if (path === '/api/token-usage/timeline' && method === 'GET') {
-    const bucketMinutes = parseInt(url.searchParams.get('bucket') || '60')
+    const bucketMinutes = intParam(url.searchParams.get('bucket'), 60, 1)
     const from = url.searchParams.get('from')
     const to = url.searchParams.get('to')
     const agent = url.searchParams.get('agent') || undefined
@@ -80,8 +86,8 @@ export async function tryHandleTokenUsage(ctx: RouteContext): Promise<boolean> {
     const agent = url.searchParams.get('agent') || undefined
     const from = url.searchParams.get('from')
     const to = url.searchParams.get('to')
-    const limit = parseInt(url.searchParams.get('limit') || '100')
-    const offset = parseInt(url.searchParams.get('offset') || '0')
+    const limit = intParam(url.searchParams.get('limit'), 100, 1)
+    const offset = intParam(url.searchParams.get('offset'), 0, 0)
     const minTokens = url.searchParams.get('min_tokens')
     const q = url.searchParams.get('q') || undefined
     const details = getTokenDetails({

@@ -95,7 +95,7 @@ export function sanitizeCapabilityTag(raw: string): string | null {
 // separators), collapse whitespace, cap length; empty result -> null (no tag).
 export function sanitizeOriginNote(raw: string | null | undefined): string | null {
   const cleaned = String(raw ?? '')
-    .replace(/[^a-zA-Z0-9 _.\-/]/g, '')
+    .replace(/[^a-zA-Z0-9\s_.\-/]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 60)

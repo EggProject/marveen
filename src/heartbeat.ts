@@ -14,6 +14,7 @@ import {
 import { getHeartbeatKanbanSummary, getActiveScheduledTaskCount } from './db.js'
 import { getCalendarEvents, type CalendarEvent } from './google-api.js'
 import { runAgent } from './agent.js'
+import { runDecaySweep } from './memory.js'
 import { notifyTelegram } from './notify.js'
 import { logger } from './logger.js'
 import { wrapUntrusted, UNTRUSTED_PREAMBLE } from './prompt-safety.js'
@@ -489,6 +490,26 @@ async function executeHeartbeat(): Promise<void> {
   }
 
   logger.info('Heartbeat ellenorzes indul...')
+  // Opportunistic decay sweep: piggy-back the daily memory decay onto the
+  // hourly heartbeat tick so the 24h setInterval in index.ts is supplemented
+  // by an opportunistic path that catches decay work at the NEXT in-window
+  // heartbeat tick (capped by HEARTBEAT_START_HOUR..HEARTBEAT_END_HOUR).
+  // Latency for memories installed off-window can therefore be up to
+  // 24 - (endH - startH) hours (default: 10h for a 9-23 window); the
+  // setInterval in index.ts remains the deterministic 24h cadence.
+  // Failure is logged and swallowed -- the decay sweep is best-effort and
+  // must never block the heartbeat prompt.
+  //
+  // INVARIANT (call-site only): this try/catch wraps a SYNCHRONOUS call --
+  // it cannot catch a rejected Promise. If runDecaySweep becomes async,
+  // await it AND convert the try/catch to a `.then().catch()` fire-and-forget
+  // pattern (see backfillEmbeddings at src/index.ts:445 for the shape), or
+  // an unhandled rejection will escape and reintroduce a heartbeat blocker.
+  try {
+    runDecaySweep()
+  } catch (err) {
+    logger.warn({ err }, 'Heartbeat: opportunistic runDecaySweep failed, continuing')
+  }
   const data = await collectData()
 
   if (!shouldNotify(data)) {

@@ -101,11 +101,11 @@ function buildReason(
   haikuKeyHits: number,
   opusSignalHits: number,
   haikuSignalHits: number,
-  signals: AgentSignals | undefined,
+  signals: AgentSignals,
   changeAdvised: boolean,
   contextOverride: boolean,
 ): string {
-  const s = signals ?? {}
+  const s = signals
   const lines: string[] = []
 
   // Section 1: Jelenlegi állapot
@@ -169,7 +169,7 @@ function buildReason(
     : '⚠️'
   const schedDesc = s.scheduledFreqPerDay === undefined ? 'nincs adat'
     : s.scheduledFreqPerDay >= 10 ? `sűrű heartbeat (${Math.round(s.scheduledFreqPerDay)}x/nap) -- Haiku elegendő`
-    : `ritka/közepes (${Math.round(s.scheduledFreqPerDay ?? 0)}x/nap)`
+    : `ritka/közepes (${Math.round(s.scheduledFreqPerDay)}x/nap)`
   lines.push(`  Ütemezési frekvencia: ${schedIcon} ${schedDesc}`)
 
   const mcpIcon = s.mcpServerCount === undefined ? '⚠️'
@@ -179,7 +179,7 @@ function buildReason(
   const mcpDesc = s.mcpServerCount === undefined ? 'nincs adat'
     : s.mcpServerCount >= 4 ? `${s.mcpServerCount} MCP szerver -- gazdag tool-chain`
     : s.mcpServerCount >= 2 ? `${s.mcpServerCount} MCP szerver`
-    : `${s.mcpServerCount ?? 0} MCP szerver -- minimális integráció`
+    : `${s.mcpServerCount} MCP szerver -- minimális integráció`
   lines.push(`  Integráció-mélység: ${mcpIcon} ${mcpDesc}`)
   lines.push('')
 

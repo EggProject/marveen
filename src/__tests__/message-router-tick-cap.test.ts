@@ -6,7 +6,7 @@
 // never make one tick run long and starve the event loop -- the slow-tick half
 // of the progressive-hang pattern.
 //
-// Since card 2922e380, sessionExistsOnHost is called once per unique receiver
+// sessionExistsOnHost is called once per unique receiver
 // in the pre-pass and cached for the main loop (not once per message). The work
 // cap is verified by the slice() bound: at most MAX_MESSAGES_PER_TICK messages
 // enter the loop per tick, regardless of backlog size.
@@ -40,7 +40,7 @@ vi.mock('../db.js', () => ({
   markMessageFailed: (...a: unknown[]) => mockMarkFailed(...a),
   markMessageDone: (..._a: unknown[]) => true,
   createAgentMessage: (..._a: unknown[]) => ({ id: 999 }),
-  // card def5a189: OTel trace stubs -- no-ops in this test
+  // OTel trace stubs -- no-ops in this test
   stampMessageTrace: (..._a: unknown[]) => false,
   upsertOtelSpan: (..._a: unknown[]) => undefined,
   closeOtelSpan: (..._a: unknown[]) => false,
@@ -103,10 +103,10 @@ describe('message router per-tick work cap', () => {
 
     await runMessageRouterTick()
 
-    // sessionExistsOnHost is called once per unique receiver (cached since card 2922e380).
+    // sessionExistsOnHost is called once per unique receiver (cached).
     expect(mockSessionExistsOnHost).toHaveBeenCalledTimes(1)
     // Messages are fresh (within abandon window) and session is absent, so they
-    // are NOT marked failed — they remain pending for the next tick.
+    // are NOT marked failed -- they remain pending for the next tick.
     expect(mockMarkFailed).not.toHaveBeenCalled()
   })
 

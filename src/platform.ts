@@ -10,7 +10,12 @@ function detect(): PlatformType {
   if (override === 'macos' || override === 'linux-server' || override === 'linux-gui') return override
   if (process.platform === 'darwin') return 'macos'
   if (process.platform === 'linux') {
-    const hasDisplay = !!(process.env['DISPLAY'] || process.env['WAYLAND_DISPLAY'] || process.env['XDG_SESSION_TYPE'])
+    const xdgSessionType = process.env['XDG_SESSION_TYPE'] ?? ''
+    const hasDisplay = !!(
+      process.env['DISPLAY']
+      || process.env['WAYLAND_DISPLAY']
+      || ['x11', 'wayland', 'mir'].includes(xdgSessionType)
+    )
     return hasDisplay ? 'linux-gui' : 'linux-server'
   }
   return 'linux-server'

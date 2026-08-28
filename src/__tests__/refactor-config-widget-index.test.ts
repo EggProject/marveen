@@ -34,7 +34,10 @@ describe('OWNER_NAME default value', () => {
     expect(defaultValue).toBe('Owner')
     // Explicitly reject the old hardcoded personal name so a revert is caught.
     expect(defaultValue).not.toBe('Szabolcs')
-    expect(src).toMatch(/OWNER_NAME\s*=\s*env\['OWNER_NAME'\]\s*\?\?\s*OWNER_NAME_PLACEHOLDER/)
+    // Regression guard for the empty-env-blanks-identity defect: the constant
+    // must route through envOr (empty-string-tolerant) and fall back to the
+    // placeholder literal, not a hardcoded personal name.
+    expect(src).toMatch(/OWNER_NAME\s*=\s*envOr\(\s*'OWNER_NAME'\s*,\s*OWNER_NAME_PLACEHOLDER\s*\)/)
   })
 })
 

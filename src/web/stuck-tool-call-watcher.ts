@@ -39,7 +39,7 @@
 
 import { execFileSync } from 'node:child_process'
 import { logger } from '../logger.js'
-import { resolveFromPath } from '../platform.js'
+import { makeLazyBinResolver } from '../platform.js'
 import { capturePane } from './agent-process.js'
 import { MAIN_CHANNELS_SESSION } from './main-agent.js'
 import { resumeMarveenSession, lastMainRespawnAt, MARVEEN_POST_RESPAWN_GRACE_MS } from './channel-monitor.js'
@@ -51,7 +51,7 @@ import {
   type StuckToolCallThresholds,
 } from '../pane-state.js'
 
-const TMUX = resolveFromPath('tmux')
+const tmuxBin = makeLazyBinResolver('tmux')
 
 // CPU-profile guard (#248): the genuine wedge is a render loop blocked on stdio
 // -- CPU collapses to ~0.3% (IO-wait). A frozen "Worked for Ns" counter on a
@@ -75,7 +75,7 @@ export function confirmsWedgeProfile(cpuPercent: number | null, maxCpuPercent: n
 // wedge from a process actively burning CPU.
 function sampleMainClaudeCpuPercent(session: string): number | null {
   try {
-    const panePid = execFileSync(TMUX, ['list-panes', '-t', session, '-F', '#{pane_pid}'], { timeout: 3000, encoding: 'utf-8' })
+    const panePid = execFileSync(tmuxBin(), ['list-panes', '-t', session, '-F', '#{pane_pid}'], { timeout: 3000, encoding: 'utf-8' })
       .split('\n')[0]?.trim()
     if (!panePid || !/^\d+$/.test(panePid)) return null
     const out = execFileSync('/bin/ps', ['-o', '%cpu=', '-p', panePid], { timeout: 3000, encoding: 'utf-8' }).trim()
@@ -138,7 +138,8 @@ export function shouldDeferForRecentRespawn(
   nowMs: number,
   graceMs = MARVEEN_POST_RESPAWN_GRACE_MS,
 ): boolean {
-  return lastRespawnMs > 0 && nowMs - lastRespawnMs < graceMs
+  const age = nowMs - lastRespawnMs
+  return lastRespawnMs > 0 && age >= 0 && age < graceMs
 }
 
 async function checkSession(label: string, session: string): Promise<void> {
@@ -189,7 +190,7 @@ async function checkSession(label: string, session: string): Promise<void> {
     const lastRespawn = lastMainRespawnAt()
     if (shouldDeferForRecentRespawn(lastRespawn, Date.now())) {
       logger.info(
-        { label, session, sinceRespawnMs: lastRespawn ? Date.now() - lastRespawn : null, graceMs: MARVEEN_POST_RESPAWN_GRACE_MS },
+        { label, session, sinceRespawnMs: Date.now() - lastRespawn, graceMs: MARVEEN_POST_RESPAWN_GRACE_MS },
         'stuck-tool-call-watcher: recent respawn within grace, deferring recovery (avoid double-respawn / boot churn)',
       )
       return

@@ -6,28 +6,43 @@
 // this covers the part the unit tests cannot: that readAgentModel still answers
 // what it always answered.
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from 'node:fs';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { mkdirSync, writeFileSync, rmSync, readFileSync, mkdtempSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import {
+
+// ENFORCED sandbox -- the previous version of this file wrote to
+// <repoRoot>/store/model-profile-map.json directly. agent-config.ts computes
+// MODEL_PROFILE_MAP_PATH and AGENTS_BASE_DIR from PROJECT_ROOT at module load
+// time (agent-config.ts:15, :77), so the only safe path is to redirect
+// PROJECT_ROOT to a tmpdir-scoped sandbox BEFORE the module loads.
+const SANDBOX = mkdtempSync(join(tmpdir(), 'model-profiles-wiring-'))
+const STORE = join(SANDBOX, 'store')
+const MAP_PATH = join(STORE, 'model-profile-map.json')
+
+vi.mock('../config.js', async (orig) => {
+  const actual = await orig<typeof import('../config.js')>()
+  return { ...actual, PROJECT_ROOT: SANDBOX, STORE_DIR: STORE }
+})
+
+// ALL imports that transitively reach config.js MUST come AFTER the mock.
+const {
   readAgentModel,
   resolveAgentModelDetailed,
   invalidateModelProfileMapCache,
   AGENTS_BASE_DIR,
-} from '../web/agent-config.js';
+} = await import('../web/agent-config.js')
 
 const SRC = join(dirname(fileURLToPath(import.meta.url)), '..');
-const PROJECT_ROOT = join(SRC, '..');
-const MAP_PATH = join(PROJECT_ROOT, 'store', 'model-profile-map.json');
 
 const MAP = {
   version: 'wiring-test-1',
   profiles: {
     premium_reasoning: 'claude-opus-5',
     build_strong: 'claude-sonnet-5',
-    analysis_efficient: 'deepseek-v4-pro',
-    routine_lowcost: 'deepseek-v4-pro',
+    analysis_efficient: 'claude-haiku-4-5-20251001',
+    routine_lowcost: 'claude-haiku-4-5-20251001',
   },
 };
 
@@ -35,7 +50,7 @@ const MAP = {
 const FIXTURES: Record<string, Record<string, unknown>> = {
   'mp-legacy-explicit': { model: 'claude-sonnet-5' },
   'mp-canary-build': { model: 'claude-sonnet-5', modelProfile: 'build_strong' },
-  'mp-canary-research': { model: 'deepseek-v4-pro', modelProfile: 'analysis_efficient' },
+  'mp-canary-research': { model: 'claude-haiku-4-5-20251001', modelProfile: 'analysis_efficient' },
   'mp-profile-only': { modelProfile: 'analysis_efficient' },
   'mp-bad-profile': { modelProfile: 'turbo' },
 };
@@ -43,8 +58,8 @@ const FIXTURES: Record<string, Record<string, unknown>> = {
 let createdStore = false;
 
 beforeAll(() => {
-  createdStore = !existsSync(join(PROJECT_ROOT, 'store'));
-  mkdirSync(join(PROJECT_ROOT, 'store'), { recursive: true });
+  createdStore = !existsSync(STORE);
+  mkdirSync(STORE, { recursive: true });
   writeFileSync(MAP_PATH, JSON.stringify(MAP, null, 2));
   invalidateModelProfileMapCache();
   for (const [name, cfg] of Object.entries(FIXTURES)) {
@@ -56,8 +71,9 @@ beforeAll(() => {
 afterAll(() => {
   for (const name of Object.keys(FIXTURES)) rmSync(join(AGENTS_BASE_DIR, name), { recursive: true, force: true });
   rmSync(MAP_PATH, { force: true });
-  if (createdStore) rmSync(join(PROJECT_ROOT, 'store'), { recursive: true, force: true });
+  if (createdStore) rmSync(STORE, { recursive: true, force: true });
   invalidateModelProfileMapCache();
+  rmSync(SANDBOX, { recursive: true, force: true });
 });
 
 describe('additive over the existing selector', () => {
@@ -71,14 +87,14 @@ describe('additive over the existing selector', () => {
     // canary agents keep their explicit model AND gain a profile, and the
     // resolved-model diff is empty.
     expect(readAgentModel('mp-canary-build')).toBe('claude-sonnet-5');
-    expect(readAgentModel('mp-canary-research')).toBe('deepseek-v4-pro');
+    expect(readAgentModel('mp-canary-research')).toBe('claude-haiku-4-5-20251001');
     expect(resolveAgentModelDetailed('mp-canary-build').source).toBe('explicit_model');
     expect(resolveAgentModelDetailed('mp-canary-research').source).toBe('explicit_model');
   });
 
   it('an agent with ONLY a profile resolves through the map', () => {
     const r = resolveAgentModelDetailed('mp-profile-only');
-    expect(r.model).toBe('deepseek-v4-pro');
+    expect(r.model).toBe('claude-haiku-4-5-20251001');
     expect(r.source).toBe('model_profile');
   });
 

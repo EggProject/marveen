@@ -1,0 +1,470 @@
+// 100% coverage test for src/web/keychain.ts.
+//
+// The module is a thin `/usr/bin/security` wrapper with four exports:
+//   isKeychainAvailable  -- platform() === 'darwin'
+//   keychainStore        -- add-generic-password -U ... -A  (no try/catch)
+//   keychainRetrieve     -- find-generic-password -w, catch -> null
+//   keychainDelete       -- delete-generic-password, catch -> false
+//
+// Mocking strategy (rule 5 + rule 4):
+//   - node:child_process is mocked so `execFileSync` never spawns anything.
+//     This suite must NEVER touch a real keychain: the service/account pair
+//     it drives (`com.marveen.vault` / `master-key`) is the LIVE vault master
+//     key on any macOS box with marveen installed, and `add-generic-password
+//     -U` would silently overwrite it, making every existing vault entry
+//     permanently undecryptable (see src/web/vault.ts:44-55). There is
+//     therefore no `process.platform === 'darwin'` integration path here --
+//     mocking is the only safe option, so the suite is fully
+//     platform-independent and passes on Linux CI too.
+//   - node:os is mocked via importOriginal so only `platform` is replaced;
+//     `tmpdir` stays real because setup/temp-sandbox.ts depends on it.
+//
+// keychain.ts holds no module-scope STORE_DIR / PROJECT_ROOT / homedir()
+// derived state (SECURITY / SERVICE / ACCOUNT are literals), so rules 2 and 3
+// have nothing to redirect: a single static import is sufficient and no
+// vi.resetModules() dance is needed. snapshotEnv() is still installed as a
+// cheap guard so a stray env mutation can never escape this file.
+
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest'
+import { snapshotEnv } from './setup/temp-sandbox.js'
+
+// The exact literals from src/web/keychain.ts:4-6. Duplicated (not imported --
+// they are not exported) so a silent rename of the service or account, which
+// would orphan every already-stored key, fails this suite.
+const SECURITY = '/usr/bin/security'
+const SERVICE = 'com.marveen.vault'
+const ACCOUNT = 'master-key'
+
+type ExecFileSync = (file: string, args: readonly string[], opts?: unknown) => string
+
+const mocks = vi.hoisted(() => ({
+  execFileSync: vi.fn<ExecFileSync>(),
+  platform: vi.fn<() => NodeJS.Platform>(),
+}))
+
+vi.mock('node:child_process', () => ({ execFileSync: mocks.execFileSync }))
+
+vi.mock('node:os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:os')>()
+  return { ...actual, platform: mocks.platform }
+})
+
+const { isKeychainAvailable, keychainStore, keychainRetrieve, keychainDelete, KeychainUnavailableError } =
+  await import('../web/keychain.js')
+
+const envSnapshot = snapshotEnv()
+
+beforeEach(() => {
+  mocks.execFileSync.mockReset()
+  mocks.platform.mockReset()
+  mocks.platform.mockReturnValue('darwin')
+})
+
+afterEach(() => {
+  vi.clearAllMocks()
+})
+
+afterAll(() => {
+  envSnapshot.restore()
+})
+
+/** The single (file, args, opts) triple execFileSync was called with. */
+function onlyCall(): { file: string; args: readonly string[]; opts: unknown } {
+  expect(mocks.execFileSync).toHaveBeenCalledTimes(1)
+  const call = mocks.execFileSync.mock.calls[0]
+  return { file: call[0], args: call[1], opts: call[2] }
+}
+
+/** Value of the flag directly following `flag` in an argv array. */
+function argAfter(args: readonly string[], flag: string): string | undefined {
+  const idx = args.indexOf(flag)
+  return idx === -1 ? undefined : args[idx + 1]
+}
+
+// ---------------------------------------------------------------------------
+// isKeychainAvailable
+// ---------------------------------------------------------------------------
+describe('isKeychainAvailable - platform gate', () => {
+  it('returns true on darwin', () => {
+    mocks.platform.mockReturnValue('darwin')
+    expect(isKeychainAvailable()).toBe(true)
+  })
+
+  it('returns false on linux', () => {
+    mocks.platform.mockReturnValue('linux')
+    expect(isKeychainAvailable()).toBe(false)
+  })
+
+  it('returns false on win32', () => {
+    mocks.platform.mockReturnValue('win32')
+    expect(isKeychainAvailable()).toBe(false)
+  })
+
+  // The gate is re-read on every call rather than captured at module load, so
+  // a platform mock swapped mid-suite must be observed immediately.
+  it('re-evaluates platform() on every call', () => {
+    mocks.platform.mockReturnValueOnce('darwin').mockReturnValueOnce('linux')
+    expect(isKeychainAvailable()).toBe(true)
+    expect(isKeychainAvailable()).toBe(false)
+    expect(mocks.platform).toHaveBeenCalledTimes(2)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// keychainStore
+// ---------------------------------------------------------------------------
+describe('keychainStore - add-generic-password', () => {
+  it('invokes /usr/bin/security with the add-generic-password argv', () => {
+    mocks.execFileSync.mockReturnValue('')
+    keychainStore('s3cret-key')
+
+    const { file, args } = onlyCall()
+    expect(file).toBe(SECURITY)
+    expect(args[0]).toBe('add-generic-password')
+    expect(argAfter(args, '-s')).toBe(SERVICE)
+    expect(argAfter(args, '-a')).toBe(ACCOUNT)
+    expect(argAfter(args, '-w')).toBe('s3cret-key')
+  })
+
+  it('passes -U so an existing item is updated instead of erroring', () => {
+    // Without -U the security(1) man page states "the item cannot already
+    // exist", i.e. every re-store after the first would throw.
+    mocks.execFileSync.mockReturnValue('')
+    keychainStore('k')
+    expect(onlyCall().args).toContain('-U')
+  })
+
+  it('silences all three stdio streams', () => {
+    mocks.execFileSync.mockReturnValue('')
+    keychainStore('k')
+    expect(onlyCall().opts).toEqual({ stdio: ['ignore', 'ignore', 'ignore'] })
+  })
+
+  it('does not request utf-8 encoding (return value is unused)', () => {
+    mocks.execFileSync.mockReturnValue('')
+    keychainStore('k')
+    expect(onlyCall().opts).not.toHaveProperty('encoding')
+  })
+
+  it('returns undefined regardless of what security prints', () => {
+    mocks.execFileSync.mockReturnValue('some output')
+    expect(keychainStore('k')).toBeUndefined()
+  })
+
+  it('stores an empty string without special-casing it', () => {
+    mocks.execFileSync.mockReturnValue('')
+    keychainStore('')
+    expect(argAfter(onlyCall().args, '-w')).toBe('')
+  })
+
+  it('passes the value verbatim, without shell quoting or trimming', () => {
+    // execFileSync takes an argv array (no shell), so metacharacters and
+    // surrounding whitespace must survive untouched.
+    mocks.execFileSync.mockReturnValue('')
+    const raw = "  a b'c\"d;$(whoami)`x`\\y\n  "
+    keychainStore(raw)
+    expect(argAfter(onlyCall().args, '-w')).toBe(raw)
+  })
+
+  // keychainStore wraps execFileSync in try/catch (`c54317e`): every failure,
+  // including generic Error throws, surfaces as KeychainUnavailableError so
+  // vault.ts can distinguish a prompt / locked keychain / missing binary from
+  // a benign "key not present" and refuse the silent file-fallback cascade.
+  it('propagates the execFileSync error instead of swallowing it', () => {
+    mocks.execFileSync.mockImplementation(() => { throw new Error('boom') })
+    expect(() => keychainStore('k')).toThrow(KeychainUnavailableError)
+  })
+
+  it('propagates ENOENT when /usr/bin/security is missing', () => {
+    const enoent = Object.assign(new Error('spawnSync /usr/bin/security ENOENT'), {
+      code: 'ENOENT',
+    })
+    mocks.execFileSync.mockImplementation(() => { throw enoent })
+    try {
+      keychainStore('k')
+      throw new Error('expected keychainStore to throw')
+    } catch (err) {
+      expect(err).toBeInstanceOf(KeychainUnavailableError)
+      if (err instanceof Error) expect(err.message).toContain('ENOENT')
+    }
+  })
+
+  // --- keychainStore: non-Error branches (keychain.ts:36-38) -----------
+  // The catch at line 35 builds the user-facing message from THREE cond-exprs:
+  //   L36 status      = isExecError(err) && typeof err.status === 'number' ? err.status : 'unknown'
+  //   L37 message     = err instanceof Error ? err.message.trim() : ''
+  //   L38 detail      = originalMessage !== '' ? originalMessage : 'see launchd logs'
+  // The existing suite only throws Error instances (which short-circuit the
+  // typeguard and the Error instanceof check true). These cases exercise the
+  // `else` arms: a non-Error throw forces both L36 and L37 to their falsy
+  // side, AND a whitespace-only message forces L38 to its 'see launchd logs'
+  // fallback.
+  it('falls back to status "unknown" for a non-Error throw in keychainStore', () => {
+    // Plain object with no `status` field: isExecError returns true (it's
+    // a non-null object) but typeof err.status === 'number' is false, so the
+    // L36 cond-expr takes the 'unknown' arm.
+    mocks.execFileSync.mockImplementation(() => { throw { code: 'locked' } })
+    try {
+      keychainStore('k')
+      throw new Error('expected keychainStore to throw')
+    } catch (err) {
+      expect(err).toBeInstanceOf(KeychainUnavailableError)
+      if (err instanceof Error) expect(err.message).toContain('status unknown')
+    }
+  })
+
+  it('uses "see launchd logs" when a non-Error throw has no message', () => {
+    // No message field at all -> originalMessage === '' -> L38 else arm.
+    mocks.execFileSync.mockImplementation(() => { throw { status: 36 } })
+    try {
+      keychainStore('k')
+      throw new Error('expected keychainStore to throw')
+    } catch (err) {
+      expect(err).toBeInstanceOf(KeychainUnavailableError)
+      if (err instanceof Error) expect(err.message).toContain('see launchd logs')
+    }
+  })
+
+  it('uses "see launchd logs" when an Error throws with a whitespace-only message', () => {
+    // err.message.trim() === '' -> originalMessage === '' -> L38 else arm.
+    mocks.execFileSync.mockImplementation(() => { throw new Error('   \n  ') })
+    try {
+      keychainStore('k')
+      throw new Error('expected keychainStore to throw')
+    } catch (err) {
+      expect(err).toBeInstanceOf(KeychainUnavailableError)
+      if (err instanceof Error) expect(err.message).toContain('see launchd logs')
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// keychainRetrieve
+// ---------------------------------------------------------------------------
+describe('keychainRetrieve - find-generic-password', () => {
+  it('invokes /usr/bin/security with the find-generic-password argv', () => {
+    mocks.execFileSync.mockReturnValue('key\n')
+    keychainRetrieve()
+
+    const { file, args } = onlyCall()
+    expect(file).toBe(SECURITY)
+    expect(args).toEqual(['find-generic-password', '-s', SERVICE, '-a', ACCOUNT, '-w'])
+  })
+
+  it('requests utf-8 encoding and pipes stdout+stderr', () => {
+    mocks.execFileSync.mockReturnValue('key\n')
+    keychainRetrieve()
+    expect(onlyCall().opts).toEqual({
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+  })
+
+  it('returns the trailing-newline-stripped password', () => {
+    mocks.execFileSync.mockReturnValue('bXktc2VjcmV0\n')
+    expect(keychainRetrieve()).toBe('bXktc2VjcmV0')
+  })
+
+  it('trims surrounding whitespace on both sides', () => {
+    mocks.execFileSync.mockReturnValue('  \t padded \r\n')
+    expect(keychainRetrieve()).toBe('padded')
+  })
+
+  it('preserves interior whitespace', () => {
+    mocks.execFileSync.mockReturnValue('two words\n')
+    expect(keychainRetrieve()).toBe('two words')
+  })
+
+  it('returns null for empty output', () => {
+    mocks.execFileSync.mockReturnValue('')
+    expect(keychainRetrieve()).toBeNull()
+  })
+
+  it('returns null for whitespace-only output', () => {
+    // The `|| null` arm: trim() collapses to '' which is falsy.
+    mocks.execFileSync.mockReturnValue('   \n\t  ')
+    expect(keychainRetrieve()).toBeNull()
+  })
+
+  it('returns null when security exits non-zero (item not found)', () => {
+    const notFound = Object.assign(
+      new Error('security: SecKeychainSearchCopyNext: The specified item could not be found in the keychain.'),
+      { status: 44 },
+    )
+    mocks.execFileSync.mockImplementation(() => { throw notFound })
+    expect(keychainRetrieve()).toBeNull()
+  })
+
+  it('throws KeychainUnavailableError when /usr/bin/security is missing (non-darwin host)', () => {
+    // Nothing gates the exec on isKeychainAvailable(), so a Linux caller that
+    // skips the gate lands in the catch rather than crashing. ENOENT carries
+    // no `status` so it falls through the exit-44 short-circuit and surfaces
+    // as the actionable error the vault module refuses to swallow.
+    mocks.platform.mockReturnValue('linux')
+    mocks.execFileSync.mockImplementation(() => {
+      throw Object.assign(new Error('spawnSync /usr/bin/security ENOENT'), { code: 'ENOENT' })
+    })
+    expect(() => keychainRetrieve()).toThrow(KeychainUnavailableError)
+  })
+
+  // --- isExecError non-Error object branch (keychain.ts:12-13) ----------
+  // The typeguard `e instanceof Error || (typeof e === 'object' && e !== null)`
+  // has 3 evaluation paths in Istanbul: short-circuit true (e is Error), full
+  // evaluation true (e is non-null object), short-circuit false (e is null/
+  // primitive). The existing suite only throws real `Error` instances, which
+  // always take the short-circuit. To exercise the `(typeof e === 'object' &&
+  // e !== null)` disjunct we throw a plain object -- a shape `execFileSync`
+  // itself never produces, but the guard exists for defensive symmetry so the
+  // branch is worth a test.
+  it('handles a non-Error object throw in keychainRetrieve (defensive typeguard branch)', () => {
+    // status: 36 -> not exit-44, so the throw path at line 64 fires. The
+    // throw wraps `err.message` via `err instanceof Error ? err.message :
+    // String(err)` -- the String(err) arm IS the branch we want to exercise.
+    const notAnError = { status: 36, code: 'EACCES', message: 'not an Error instance' }
+    mocks.execFileSync.mockImplementation(() => { throw notAnError })
+    try {
+      keychainRetrieve()
+      throw new Error('expected keychainRetrieve to throw')
+    } catch (err) {
+      expect(err).toBeInstanceOf(KeychainUnavailableError)
+      // String(err) on a plain object yields '[object Object]', so the
+      // wrapped message must contain that sentinel.
+      if (err instanceof Error) expect(err.message).toContain('[object Object]')
+    }
+  })
+
+  it('handles a primitive (string) throw in keychainRetrieve (typeguard falsy path)', () => {
+    // A bare string throws lands on the falsy arm of the typeguard -- never
+    // an Error instance and never an object -- so the message is captured
+    // via String(err) (which yields the string itself).
+    mocks.execFileSync.mockImplementation(() => { throw 'a string was thrown' })
+    try {
+      keychainRetrieve()
+      throw new Error('expected keychainRetrieve to throw')
+    } catch (err) {
+      expect(err).toBeInstanceOf(KeychainUnavailableError)
+      if (err instanceof Error) expect(err.message).toContain('a string was thrown')
+    }
+  })
+
+  it('handles a null throw in keychainRetrieve (typeguard null check)', () => {
+    // `typeof null === 'object'` is true but `e !== null` is false -- the
+    // second disjunct short-circuits false and isExecError returns false.
+    mocks.execFileSync.mockImplementation(() => { throw null })
+    try {
+      keychainRetrieve()
+      throw new Error('expected keychainRetrieve to throw')
+    } catch (err) {
+      expect(err).toBeInstanceOf(KeychainUnavailableError)
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// keychainDelete
+// ---------------------------------------------------------------------------
+describe('keychainDelete - delete-generic-password', () => {
+  it('invokes /usr/bin/security with the delete-generic-password argv', () => {
+    mocks.execFileSync.mockReturnValue('')
+    keychainDelete()
+
+    const { file, args, opts } = onlyCall()
+    expect(file).toBe(SECURITY)
+    expect(args).toEqual(['delete-generic-password', '-s', SERVICE, '-a', ACCOUNT])
+    expect(opts).toEqual({ stdio: ['ignore', 'ignore', 'ignore'] })
+  })
+
+  it('returns true when security exits zero', () => {
+    mocks.execFileSync.mockReturnValue('')
+    expect(keychainDelete()).toBe(true)
+  })
+
+  it('returns false when the item does not exist', () => {
+    mocks.execFileSync.mockImplementation(() => {
+      throw Object.assign(new Error('The specified item could not be found in the keychain.'), { status: 44 })
+    })
+    expect(keychainDelete()).toBe(false)
+  })
+
+  it('returns false on a non-Error throw', () => {
+    // The bare `catch {}` has no binding, so any thrown shape is absorbed.
+    mocks.execFileSync.mockImplementation(() => { throw 'not-an-error' })
+    expect(keychainDelete()).toBe(false)
+  })
+
+  it('deletes only the com.marveen.vault / master-key pair', () => {
+    mocks.execFileSync.mockReturnValue('')
+    keychainDelete()
+    const { args } = onlyCall()
+    expect(argAfter(args, '-s')).toBe(SERVICE)
+    expect(argAfter(args, '-a')).toBe(ACCOUNT)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Known deviations (pinning). These lock in current behavior and MUST fail
+// once the corresponding entry is fixed.
+// ---------------------------------------------------------------------------
+describe('keychain.ts - known deviations (pinning)', () => {
+  // Pinned deviation: keychain-store insecure-ACL (the -A flag)
+  it('passes -A, the flag security(1) itself calls insecure', () => {
+    // security(1): "-A  Allow any application to access this item without
+    // warning (insecure, not recommended!)". -A leaves the item's ACL empty,
+    // so the vault master key is readable through the SecKeychain C API
+    // directly -- not only by way of an exec of /usr/bin/security. The fix
+    // would remove -A, but on a real headless macOS install the
+    // -T SECURITY replacement still surfaces a keychain-unlock prompt the
+    // daemon cannot satisfy silently. The locked-keychain swallows-retrieve
+    // scenario is ALREADY resolved (see the test below): keychainRetrieve
+    // throws KeychainUnavailableError on prompts instead of returning null,
+    // so the prompt no longer re-keys the vault. The remaining failure mode
+    // was vault.getMasterKey's mint branch (vault.ts:73-81) catching a
+    // keychainStore failure on first run and writing the master key to
+    // store/.vault-key (mode 0600) -- a security DOWNGRADE relative to the
+    // -A ACL (the file is same-uid-readable by anything on the host, while
+    // -A at least leaves the SecKeychain C API chokepoint intact). Option A
+    // cascade prevention (`c54317e`): keychainStore now wraps execFileSync
+    // in try/catch and re-throws as KeychainUnavailableError; vault.ts:73-81
+    // propagates instead of file-falling-back. The migration branch
+    // (vault.ts:30-42) stays best-effort because there the file IS the
+    // source of truth and the keychain push is opportunistic. Until -A is
+    // removed, this pin ensures -A stays so the headless-keychain-read
+    // guarantee holds.
+    mocks.execFileSync.mockReturnValue('')
+    keychainStore('master')
+    expect(onlyCall().args).toContain('-A')
+  })
+
+  // Pinned defect: keychainRetrieve previously mapped "locked" and "missing" to the same null (resolved)
+  it('throws KeychainUnavailableError on a locked keychain (status 36) but stays null for missing items (status 44)', () => {
+    // errSecInteractionNotAllowed (-25308) surfaces from security(1) as exit
+    // 36 / "User interaction is not allowed." -- the normal state for a login
+    // keychain over non-interactive SSH or right after a reboot. The previous
+    // behaviour mapped exit 36 to null, which vault.ts:44-49 read as "no key
+    // yet" and answered by minting + storing (with -U) a REPLACEMENT master
+    // key, destroying every existing secret. The fix throws instead; the
+    // vault module catches and refuses to re-key when the vault is non-empty.
+    const locked = Object.assign(new Error('User interaction is not allowed.'), { status: 36 })
+    mocks.execFileSync.mockImplementation(() => { throw locked })
+    expect(() => keychainRetrieve()).toThrow(KeychainUnavailableError)
+
+    mocks.execFileSync.mockReset()
+    mocks.execFileSync.mockImplementation(() => {
+      throw Object.assign(new Error('The specified item could not be found in the keychain.'), { status: 44 })
+    })
+    expect(keychainRetrieve()).toBeNull()
+  })
+
+  // Not filed as a bug: the secret rides in argv rather than on stdin, which
+  // exposes it to anything that can read this process's arguments. On macOS
+  // that is same-uid and root only (unlike Linux /proc), and a same-uid
+  // reader can already just run `security find-generic-password` itself, so
+  // there is no confirmed additional exposure. Pinned as a behavioral fact,
+  // not as a defect claim -- `security` offers no stdin path for the password
+  // (only -w on argv or -X as hex), so this is not straightforwardly fixable.
+  it('passes the secret as an argv element rather than on stdin', () => {
+    mocks.execFileSync.mockReturnValue('')
+    keychainStore('super-secret-master-key')
+    expect(onlyCall().args).toContain('super-secret-master-key')
+  })
+})
