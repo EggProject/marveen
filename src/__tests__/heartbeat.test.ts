@@ -844,6 +844,36 @@ describe('ensureHeartbeatWorkerCwd', () => {
     expect(settings.enabledPlugins['telegram@claude-plugins-official']).toBe(false)
   })
 
+  it('treats an array-shaped settings.json as the empty default (heartbeat.ts:138 !Array.isArray branch)', async () => {
+    // A `!Array.isArray(parsed)` guard (src/heartbeat.ts:138) csak akkor fut
+    // le, ha a settings.json TOMB alaku (a typeof === 'object' az array-re is
+    // true, ezert kell a kiegeszito !Array.isArray). Ilyenkor a jelenlegi
+    // settings.json-t ignore-oljuk, es a default {}-val indulunk -- igy a
+    // frissites utan NINCSENEK atmentett hook-ok, csak az enabledPlugins flip.
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 7, 5, 12, 0, 0))
+    mockState.getCalendarEvents.mockResolvedValueOnce([{ id: 'e1' }])
+    mockState.runAgent.mockResolvedValueOnce({ text: 'ok' })
+
+    const hb = await loadHeartbeatFresh()
+    const cwd = join(mockState.projectRoot, 'agents', 'heartbeat-worker')
+    const cfgDir = join(cwd, '.claude-config')
+    mkdirSync(cwd, { recursive: true })
+    mkdirSync(cfgDir, { recursive: true })
+    writeFileSync(join(cfgDir, 'settings.json'), JSON.stringify(['item1', 'item2']))
+
+    await hb.executeHeartbeat()
+
+    const settings = JSON.parse(
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      require('node:fs').readFileSync(join(cfgDir, 'settings.json'), 'utf-8'),
+    )
+    // A tomb elemei nem kerultek at a settings-be, csak a kotelezo plugin-flip.
+    expect(settings['item1']).toBeUndefined()
+    expect(settings['item2']).toBeUndefined()
+    expect(settings.enabledPlugins['telegram@claude-plugins-official']).toBe(false)
+  })
+
   it('writes .claude.json when the home has one and duplicates projects[PROJECT_ROOT]', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date(2026, 7, 5, 12, 0, 0))
