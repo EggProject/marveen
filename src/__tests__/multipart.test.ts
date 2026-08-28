@@ -341,3 +341,24 @@ describe('parseMultipart - ismert eltresek (pinning)', () => {
     expect(fields).toEqual({})
   })
 })
+
+// A `if (boundary.length > 70) return { fields: {} }` guard (multipart.ts:25)
+// csak RFC 2045-ot sértő (71+ karakteres) boundary esetén fut le -- a normál
+// kliensek mind a 70 karakteren belül maradnak, igy az eddigi tesztek egyike
+// sem triggerelte. Pinning: a parser a hosszú boundary-t ures form-kent adja
+// vissza, NEM próbálkozik felező straddle-lel vagy határtalan split-tel
+// (amit egy távoli attacker DoS-ra használhatna).
+describe('parseMultipart - boundary hossz guard (RFC 2045 §5.1)', () => {
+  it('71+ karakteres boundary-val ures formot ad vissza (L25 branch[0])', () => {
+    const longBoundary = 'a'.repeat(71) // egyel hosszabb, mint a 70 karakteres RFC limit
+    const ct = `multipart/form-data; boundary=${longBoundary}`
+    // A buffer tartalma irreleváns, a guard a Content-Type olvasasa utan azonnal visszaad.
+    expect(parseMultipart(Buffer.from('irrelevant'), ct)).toEqual({ fields: {} })
+  })
+
+  it('pont 70 karakteres boundary-val meg elfogadja (a guard > 70, nem >=)', () => {
+    const exactBoundary = 'b'.repeat(70)
+    const body = buildBody([fieldPart('a', '1')], exactBoundary)
+    expect(parseMultipart(body, `multipart/form-data; boundary=${exactBoundary}`).fields).toEqual({ a: '1' })
+  })
+})
