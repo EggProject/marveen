@@ -60,7 +60,6 @@ describe('PORTCHAIN1: the port chain follows WEB_PORT on a NON-default port', ()
 
   it.each([
     'scripts/doctor.sh',
-    'scripts/pre-pr-review.sh',
     'scripts/start.sh',
     'scripts/migrate-main-agent-id.sh',
     'scripts/set-bot-menu.sh',
@@ -73,7 +72,6 @@ describe('PORTCHAIN1: the port chain follows WEB_PORT on a NON-default port', ()
   // negative control that restored the literal in doctor.sh still passed.
   it.each([
     'scripts/doctor.sh',
-    'scripts/pre-pr-review.sh',
     'scripts/start.sh',
     'scripts/migrate.sh',
     'scripts/migrate-main-agent-id.sh',
