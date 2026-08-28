@@ -154,8 +154,8 @@ export async function tryHandleSkills(ctx: RouteContext): Promise<boolean> {
     }
 
     skills.sort((a, b) => {
-      if (a.source !== b.source) return a.source === 'user' ? -1 : 1
       /* istanbul ignore next: V8 TimSort comparator-call pattern never invokes the (a=user, b=plugin) direction in the existing seed mixes */
+      if (a.source !== b.source) return a.source === 'user' ? -1 : 1
       return a.label.localeCompare(b.label)
     })
     json(res, skills)
