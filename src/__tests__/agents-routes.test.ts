@@ -1,9 +1,9 @@
 // 100% coverage suite for src/web/routes/agents.ts.
 //
-// The SUT is the dispatcher for the entire /api/agents* surface and four
-// /api/openrouter/* sub-routes. Almost every handler fans out into a long
-// chain of imports (db, vault, agent-config, agent-process, agent-bundle,
-// channel-mcp-reconnect, channel-health, ...). To exercise it without ever
+// The SUT is the dispatcher for the entire /api/agents* surface. Almost every
+// handler fans out into a long chain of imports (db, vault, agent-config,
+// agent-process, agent-bundle, channel-mcp-reconnect, channel-health, ...). To
+// exercise it without ever
 // touching the real store, the live agents tree, the network, or a tmux
 // server, every collaborator is mocked. The SUT's own logic (path matching,
 // validation, ordering of error responses, restart-paths, the drain-inbox
@@ -141,13 +141,6 @@ const H = vi.hoisted(() => {
     setSecret: mkFn(),
     deleteSecret: mkFn(),
     listSecrets: vi.fn(() => []),
-
-    // openrouter-models
-    loadOpenRouterCatalog: vi.fn(() => ({ updated: '2026-08-01', tiers: [] })),
-    fetchAllOpenRouterModels: vi.fn(async () => []),
-    loadCuratedManual: vi.fn(() => []),
-    addCuratedManual: vi.fn(() => ['model-x']),
-    removeCuratedManual: vi.fn(() => []),
 
     // agent-bundle
     exportAgentBundle: mkFn(),
@@ -388,15 +381,6 @@ vi.mock('../web/vault.js', () => ({
   setSecret: H.setSecret,
   deleteSecret: H.deleteSecret,
   listSecrets: H.listSecrets,
-}))
-
-vi.mock('../web/openrouter-models.js', () => ({
-  loadOpenRouterCatalog: H.loadOpenRouterCatalog,
-  fetchAllOpenRouterModels: H.fetchAllOpenRouterModels,
-  loadCuratedManual: H.loadCuratedManual,
-  addCuratedManual: H.addCuratedManual,
-  removeCuratedManual: H.removeCuratedManual,
-  resolveOpenRouterModel: vi.fn(() => null),
 }))
 
 vi.mock('../web/claude-plans.js', () => ({
@@ -750,11 +734,6 @@ beforeEach(() => {
   H.setSecret.mockReset()
   H.deleteSecret.mockReset()
   H.listSecrets.mockReset().mockReturnValue([])
-  H.loadOpenRouterCatalog.mockReset().mockReturnValue({ updated: '2026-08-01', tiers: [] })
-  H.fetchAllOpenRouterModels.mockReset().mockResolvedValue([])
-  H.loadCuratedManual.mockReset().mockReturnValue([])
-  H.addCuratedManual.mockReset().mockReturnValue(['model-x'])
-  H.removeCuratedManual.mockReset().mockReturnValue([])
   H.readAgentTelegramConfig.mockReset().mockReturnValue({ hasTelegram: false, botUsername: '' })
   H.readAgentDiscordConfig.mockReset().mockReturnValue({ hasDiscord: false })
   H.readAgentGooglechatConfig.mockReset().mockReturnValue({ hasGooglechat: false })
@@ -867,109 +846,13 @@ afterEach(() => {
 // --- dispatched routes / model listing -------------------------------------
 
 describe('GET /api/models/available', () => {
-  it('returns the static model list with deepseek empty when no key', async () => {
+  it('returns the static Claude model list', async () => {
     const { res, json } = await call('GET', '/api/models/available')
     expect(res.statusCode).toBe(200)
     const body = json() as Record<string, unknown>
     expect((body.claude as unknown[]).length).toBeGreaterThan(0)
-    expect(body.deepseek).toEqual([])
-    expect(body.deepseekConfigured).toBe(false)
-    expect(body.openrouter).toBeNull()
-    expect(body.openrouterManual).toEqual([])
-    expect(body.openrouterConfigured).toBe(false)
-  })
-
-  it('returns deepseek + openrouter options when both vault keys are set', async () => {
-    H.getSecret.mockImplementation((k: string) =>
-      k === 'DEEPSEEK_API_KEY' ? 'k' : k === 'openrouter-fleet-key' ? 'k' : null
-    )
-    H.loadOpenRouterCatalog.mockReturnValue({ updated: '2026-08-02', tiers: [{ key: 'premium', label: 'P', auto: ['a'], manual: ['m'] }] })
-    H.loadCuratedManual.mockReturnValue(['m'])
-    const { json } = await call('GET', '/api/models/available')
-    const body = json() as Record<string, any>
-    expect(body.deepseekConfigured).toBe(true)
-    expect((body.deepseek as unknown[]).length).toBeGreaterThan(0)
-    expect(body.openrouterConfigured).toBe(true)
-    expect(body.openrouter.tiers[0].key).toBe('premium')
-    expect(body.openrouterManual).toEqual(['m'])
-  })
-})
-
-describe('GET /api/openrouter/manual', () => {
-  it('403s when the openrouter key is missing', async () => {
-    const { res, json } = await call('GET', '/api/openrouter/manual')
-    expect(res.statusCode).toBe(403)
-    expect(json()).toEqual({ error: 'OpenRouter not configured' })
-  })
-
-  it('returns the curated list when the key is set', async () => {
-    H.getSecret.mockImplementation((k: string) => (k === 'openrouter-fleet-key' ? 'k' : null))
-    H.loadCuratedManual.mockReturnValue(['m1', 'm2'])
-    const { res, json } = await call('GET', '/api/openrouter/manual')
-    expect(res.statusCode).toBe(200)
-    expect(json()).toEqual({ models: ['m1', 'm2'] })
-  })
-})
-
-describe('POST /api/openrouter/manual', () => {
-  it('403s when the openrouter key is missing', async () => {
-    const { res } = await call('POST', '/api/openrouter/manual', { body: { id: 'm', checked: true } })
-    expect(res.statusCode).toBe(403)
-  })
-
-  it('400s when id is missing', async () => {
-    H.getSecret.mockImplementation((k: string) => (k === 'openrouter-fleet-key' ? 'k' : null))
-    const { res, json } = await call('POST', '/api/openrouter/manual', { body: { checked: true } })
-    expect(res.statusCode).toBe(400)
-    expect(json()).toEqual({ error: 'id is required' })
-  })
-
-  it('adds a model to the curated list when checked=true', async () => {
-    H.getSecret.mockImplementation((k: string) => (k === 'openrouter-fleet-key' ? 'k' : null))
-    H.addCuratedManual.mockReturnValue(['m1'])
-    const { res, json } = await call('POST', '/api/openrouter/manual', { body: { id: 'm1', name: 'M1', checked: true } })
-    expect(res.statusCode).toBe(200)
-    expect(H.addCuratedManual).toHaveBeenCalledWith('m1', 'M1')
-    expect(json()).toEqual({ ok: true, models: ['m1'] })
-  })
-
-  it('removes a model when checked=false', async () => {
-    H.getSecret.mockImplementation((k: string) => (k === 'openrouter-fleet-key' ? 'k' : null))
-    H.removeCuratedManual.mockReturnValue([])
-    const { res } = await call('POST', '/api/openrouter/manual', { body: { id: 'm1', checked: false } })
-    expect(res.statusCode).toBe(200)
-    expect(H.removeCuratedManual).toHaveBeenCalledWith('m1')
-  })
-
-  it('falls back to id when name is missing', async () => {
-    H.getSecret.mockImplementation((k: string) => (k === 'openrouter-fleet-key' ? 'k' : null))
-    const { res } = await call('POST', '/api/openrouter/manual', { body: { id: 'only-id', checked: true } })
-    expect(res.statusCode).toBe(200)
-    expect(H.addCuratedManual).toHaveBeenCalledWith('only-id', 'only-id')
-  })
-})
-
-describe('GET /api/openrouter/models', () => {
-  it('403s when the openrouter key is missing', async () => {
-    const { res } = await call('GET', '/api/openrouter/models')
-    expect(res.statusCode).toBe(403)
-  })
-
-  it('returns the fetched model list on success', async () => {
-    H.getSecret.mockImplementation((k: string) => (k === 'openrouter-fleet-key' ? 'k' : null))
-    H.fetchAllOpenRouterModels.mockResolvedValue([{ id: 'm' }])
-    const { res, json } = await call('GET', '/api/openrouter/models')
-    expect(res.statusCode).toBe(200)
-    expect(json()).toEqual({ models: [{ id: 'm' }] })
-  })
-
-  it('502s when the upstream fetch throws', async () => {
-    H.getSecret.mockImplementation((k: string) => (k === 'openrouter-fleet-key' ? 'k' : null))
-    H.fetchAllOpenRouterModels.mockRejectedValue(new Error('boom'))
-    const { res, json } = await call('GET', '/api/openrouter/models')
-    expect(res.statusCode).toBe(502)
-    expect(json()).toEqual({ error: 'Could not fetch OpenRouter models' })
-    expect(H.loggerWarn).toHaveBeenCalled()
+    // Third-party provider groups were removed; the payload is Claude-only.
+    expect(Object.keys(body)).toEqual(['claude'])
   })
 })
 
