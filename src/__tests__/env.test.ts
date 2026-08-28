@@ -207,6 +207,25 @@ describe('updateEnvFile', () => {
     expect(readEnvFile()['TOKEN']).toBe('UJ')
   })
 
+  it('harom vagy tobbszor ismetlodo kulcsnal csak egy figyelmeztetest ir (env-update-dedup-skip-push branch)', async () => {
+    // A `duplicateKeys.includes(key)` guard (src/env.ts:80) akkor fut le, ha
+    // egy kulcs HAROM vagy tobbszor szerepel: elso elofordulasra pushol a
+    // tombbe, masodikra mar `includes` true-t ad, tehat a push elmarad. Ez a
+    // teszt a WARN szamara es a tartalomra egyarant allit: 1 figyelmeztetes,
+    // es minden sor atirodik.
+    const { envPath, updateEnvFile } = await loadEnv(
+      'TOKEN=a\nEGYEB=x\nTOKEN=b\nTOKEN=c\n',
+    )
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    updateEnvFile({ TOKEN: 'UJ' })
+    // Mindharom TOKEN sor atirodik, az EGYEB sor valtozatlan marad.
+    expect(readFileSync(envPath, 'utf-8')).toBe('TOKEN=UJ\nEGYEB=x\nTOKEN=UJ\nTOKEN=UJ\n')
+    // A dedup warn csak EGYSZER jon, nem haromszor.
+    expect(warnSpy).toHaveBeenCalledTimes(1)
+    expect(warnSpy.mock.calls[0]?.[0]).toContain('TOKEN')
+    warnSpy.mockRestore()
+  })
+
   it('preserves 0600 across updateEnvFile (closes env-update-mode-downgrade)', async () => {
     const { envPath, updateEnvFile } = await loadEnv('SECRET=a\n')
     chmodSync(envPath, 0o600)
