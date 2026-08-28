@@ -910,6 +910,20 @@ export function startAgentProcess(name: string, opts: { fresh?: boolean } = {}):
   const dir = agentDir(name)
   if (!existsSync(dir)) return { ok: false, error: 'Agent not found' }
 
+  // Third-party provider ids (DeepSeek, OpenRouter) no longer have a runtime
+  // branch in either the local OR the remote launcher. Refusing here is
+  // deliberate: letting them fall through to the Ollama branch (local) or the
+  // laptop's `claude --model '<stale>'` line (remote) would fail with an
+  // opaque upstream error. Hoisted before the remote dispatch so both paths
+  // share one source of truth.
+  {
+    const model = readAgentModel(name)
+    if (model.startsWith('deepseek-') || model.startsWith('openrouter-auto:') || model.includes('/')) {
+      logger.warn({ name, model }, 'refusing to launch: stale third-party provider model id')
+      return { ok: false, error: `Model '${model}' is no longer supported. Set the agent to a Claude model or a local Ollama tag.` }
+    }
+  }
+
   // Remote agents are handled entirely by the ssh path above (with its own
   // start guard), before any local already-running check / scaffolding.
   const remote = readAgentRemoteConfig(name)
@@ -1004,14 +1018,6 @@ export function startAgentProcess(name: string, opts: { fresh?: boolean } = {}):
     }
 
     const model = readAgentModel(name)
-    // Third-party provider ids (DeepSeek, OpenRouter) no longer have a runtime
-    // branch. Refusing here is deliberate: letting them fall through to the
-    // Ollama branch would launch against an endpoint that has never heard of
-    // the model and fail with an opaque upstream 404.
-    if (model.startsWith('deepseek-') || model.startsWith('openrouter-auto:') || model.includes('/')) {
-      logger.warn({ name, model }, 'refusing to launch: stale third-party provider model id')
-      return { ok: false, error: `Model '${model}' is no longer supported. Set the agent to a Claude model or a local Ollama tag.` }
-    }
     const authMode = readAgentAuthMode(name)
     const isClaude = model.startsWith('claude-')
     const isOllama = !isClaude

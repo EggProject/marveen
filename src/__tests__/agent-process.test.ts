@@ -2095,6 +2095,25 @@ describe('startRemoteAgentProcess', () => {
     AP.startAgentProcess('remoty')
     expect(calls().find((c) => c.args[0] === 'new-session')?.file).toBe('/usr/bin/tmux')
   })
+
+  // Regression: the stale third-party guard must cover the remote path too.
+  // A remote agent with deepseek-*/openrouter-auto:*/'/' in its model id
+  // would otherwise be passed to `claude --model '<stale>'` on the laptop and
+  // fail opaquely there.
+  it.each([
+    'deepseek-v4-pro',
+    'deepseek/deepseek-chat-v3.1',
+    'openrouter-auto:tier1',
+    'qwen/qwen3-max',
+  ])('refuses a remote agent whose model id is stale third-party (%s)', (stale) => {
+    H.execFileSync.mockImplementation(() => { throw Object.assign(new Error('x'), { status: 1 }) })
+    H.readAgentModel.mockReturnValue(stale)
+    const result = AP.startAgentProcess('remoty')
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain(stale)
+    // No ssh new-session dispatch should have been issued.
+    expect(calls().find((c) => c.file === 'ssh' && c.args.some((a) => a.includes('new-session')))).toBeUndefined()
+  })
 })
 
 // ===========================================================================
