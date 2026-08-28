@@ -143,6 +143,33 @@ describe('loadCredentials + getToken (cache, mtime, errors)', () => {
     await expect(listMessages()).rejects.toThrowError(/credentials file not readable at .*EISDIR/)
   })
 
+  it('falls back to "unknown" code when the readFileSync error has no .code property (graph-mail:121 ?? branch)', async () => {
+    // Az `err.code ?? 'unknown'` (src/graph-mail.ts:121) akkor fut le, ha a
+    // readFileSync ugyan dob, de a hibauzenet NEM rendszer-errno (nincs .code
+    // mező). A stat atszokott, a readFileSpy egy tokbol dobott sima Error,
+    // aminek nincs .code-ja -- pont az ?? fallback agat nyitja meg.
+    // vi.doMock('node:fs') csak a kovetkezo import-ig el, igy a beforeEach-ben
+    // beallitott MARVEEN_MAIL_CREDS marad ervenyben, es a freshly imported
+    // graph-mail.js megkapja a szintetikus readFile-et.
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('node:fs')>()
+      return {
+        ...actual,
+        readFileSync: () => {
+          throw new Error('synthetic no-code failure')
+        },
+      }
+    })
+    vi.resetModules()
+    try {
+      const { listMessages } = await import('../graph-mail.js')
+      await expect(listMessages()).rejects.toThrowError(/credentials file not readable at .*unknown/)
+    } finally {
+      vi.doUnmock('node:fs')
+      vi.resetModules()
+    }
+  })
+
   it('mints a token via the client-credentials endpoint', async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = []
     globalThis.fetch = vi.fn(async (url: string, init?: RequestInit) => {
