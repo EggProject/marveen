@@ -513,8 +513,7 @@ describe('parseDateExpression', () => {
 
   // Pinning tests for unreachable defensive branches. The two `?? 0` fallbacks
   // (recall.ts:25 and recall.ts:153) cannot be exercised through public input:
-  // every value the lookup map can be asked for is already a key. They are
-  // documented in recall-unreachable-defensive-fallbacks.
+  // every value the lookup map can be asked for is already a key.
   // These pinning tests assert the structural property that makes them dead.
   describe('unreachable defensive fallbacks (pinning tests)', () => {
     it('every Intl.DateTimeFormat weekday:short output maps to a key in dayOfWeekBudapest (recall.ts:25 `?? 0` is dead)', () => {

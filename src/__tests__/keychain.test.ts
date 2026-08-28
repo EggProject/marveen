@@ -406,16 +406,16 @@ describe('keychainDelete - delete-generic-password', () => {
 // once the corresponding entry is fixed.
 // ---------------------------------------------------------------------------
 describe('keychain.ts - known deviations (pinning)', () => {
-  // keychain-store-insecure-acl
+  // Pinned deviation: keychain-store insecure-ACL (the -A flag)
   it('passes -A, the flag security(1) itself calls insecure', () => {
     // security(1): "-A  Allow any application to access this item without
     // warning (insecure, not recommended!)". -A leaves the item's ACL empty,
     // so the vault master key is readable through the SecKeychain C API
-    // directly -- not only by way of an exec of /usr/bin/security. The MD
-    // prescribes removing -A, but on a real headless macOS install the
+    // directly -- not only by way of an exec of /usr/bin/security. The fix
+    // would remove -A, but on a real headless macOS install the
     // -T SECURITY replacement still surfaces a keychain-unlock prompt the
-    // daemon cannot satisfy silently. keychain-retrieve-swallows-locked-
-    // keychain is ALREADY resolved (see the test below): keychainRetrieve
+    // daemon cannot satisfy silently. The locked-keychain swallows-retrieve
+    // scenario is ALREADY resolved (see the test below): keychainRetrieve
     // throws KeychainUnavailableError on prompts instead of returning null,
     // so the prompt no longer re-keys the vault. The remaining failure mode
     // was vault.getMasterKey's mint branch (vault.ts:73-81) catching a
@@ -435,7 +435,7 @@ describe('keychain.ts - known deviations (pinning)', () => {
     expect(onlyCall().args).toContain('-A')
   })
 
-  // keychain-retrieve-swallows-locked-keychain (resolved)
+  // Pinned defect: keychainRetrieve previously mapped "locked" and "missing" to the same null (resolved)
   it('throws KeychainUnavailableError on a locked keychain (status 36) but stays null for missing items (status 44)', () => {
     // errSecInteractionNotAllowed (-25308) surfaces from security(1) as exit
     // 36 / "User interaction is not allowed." -- the normal state for a login

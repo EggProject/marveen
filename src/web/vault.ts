@@ -50,8 +50,8 @@ function getMasterKey(): Buffer {
       // Keychain is reachable but locked / ACL-blocked / missing binary.
       // Mark and fall through; the entries-exist guard below refuses to
       // mint only when the vault is non-empty. First-run (vault empty
-      // + unreachable keychain) still mints -- the MD explicitly calls
-      // this the one edge case where re-keying is unavoidable.
+      // + unreachable keychain) still mints -- re-keying is unavoidable
+      // in this one edge case.
       keychainFailed = true
     }
     if (existing) return Buffer.from(existing, 'base64')

@@ -480,9 +480,7 @@ async function main(): Promise<void> {
   // #237/#250/#252/#253/#255). The reversal is justified because the
   // runDecaySweep opportunistic integration in heartbeat.ts depends on the
   // native scheduler running; without this wire-up the integration is dead
-  // code in production (see heartbeat-brief-rundiceaysweep-not-applicable.md
-  // Resolution 2026-08-25 + the CRITICAL finding in the code-review of
-  // 2026-08-25). The self-poll loop risk remains latent -- if the channel-
+  // code in production. The self-poll loop risk remains latent -- if the channel-
   // disconnect problem recurs, the next move is to revert this wire-up and
   // move the runDecaySweep integration to the heartbeat-agent sub-agent
   // path instead.

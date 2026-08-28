@@ -424,8 +424,7 @@ describe('scheduleNext body .catch handler (line 549)', () => {
 })
 
 // =============================================================================
-// opportunistic runDecaySweep integration (added 2026-08-25, closes
-// heartbeat-brief-rundiceaysweep-not-applicable)
+// opportunistic runDecaySweep integration (added 2026-08-25)
 // =============================================================================
 
 describe('executeHeartbeat calls runDecaySweep opportunistically', () => {

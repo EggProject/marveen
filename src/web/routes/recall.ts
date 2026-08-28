@@ -21,9 +21,8 @@ export function __test__dayOfWeekBudapestWithTz(tz: string, dateStr: string): nu
 
 // Luxon parses dateStr as midnight IN the zone, so the calendar day is never
 // re-derived from a UTC instant. That is what retires the noon-UTC anchor bug
-// (recall-dayofweek-noon-utc-far-east-skew): for install zones at UTC+12 and
-// beyond the old probe crossed a calendar day and read the weekday for
-// dateStr+1.
+// for install zones at UTC+12 and beyond: the old probe crossed a calendar
+// day and read the weekday for dateStr+1.
 function addDays(dateStr: string, days: number): string {
   return DateTime.fromISO(dateStr, { zone: TZ }).plus({ days }).toFormat('yyyy-MM-dd')
 }

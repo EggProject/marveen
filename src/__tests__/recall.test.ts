@@ -148,7 +148,7 @@ describe('parseDateExpression', () => {
     })
 
     // The two lookups below used to carry a `?? 0` fallback that no input
-    // could reach (recall-unreachable-defensive-fallbacks).
+    // could reach; the unreachable-defensive-fallbacks handoff is now closed.
     // The fallbacks are gone, so these two tests are what guarantee every key
     // of the weekday map and of weekMap actually resolves.
     //
@@ -166,10 +166,10 @@ describe('parseDateExpression', () => {
     // in the "TZ sweep" describe block at the bottom of this file. That block
     // uses vi.doMock + resetModules() so each zone gets a freshly-loaded
     // recall.js with the mocked APP_TZ; the top-level import here keeps the
-    // install zone. The MD recall-dayofweek-noon-utc-far-east-skew is the
-    // bug that previously broke the invariant for UTC+12 and beyond; this
-    // fix has recall.ts resolve dates through Luxon in the install zone, so
-    // dayOfWeekBudapest and addDays share a single zone-local anchor.
+    // install zone. The noon-UTC weekday-anchor bug previously broke the
+    // invariant for UTC+12 and beyond; the fix has recall.ts resolve dates
+    // through Luxon in the install zone, so dayOfWeekBudapest and addDays
+    // share a single zone-local anchor.
     const withPinnedClock = (fn: () => void): void => {
       vi.useFakeTimers()
       try {
@@ -287,8 +287,7 @@ describe('parseDateExpression', () => {
   })
 })
 
-// Cross-zone pin for the weekday anchor bug covered by the MD
-// recall-dayofweek-noon-utc-far-east-skew. The pre-fix code anchored
+// Cross-zone pin for the weekday anchor bug. The pre-fix code anchored
 // dayOfWeekBudapest at noon UTC, so for any install zone at UTC+12 or beyond
 // the weekday read was for dateStr+1. recall.ts now resolves the weekday with
 // Luxon, which parses dateStr as midnight IN the zone, so no UTC instant is
@@ -305,7 +304,7 @@ describe('parseDateExpression', () => {
 // freshly-loaded recall.js with the mocked APP_TZ. A revert of the production
 // path back to a noon-UTC anchor would fail those assertions, catching the
 // regression that the helper-only test above cannot witness.
-describe('dayOfWeekBudapest resolves the weekday in the install zone for UTC+12+ zones (recall-dayofweek-noon-utc-far-east-skew)', () => {
+describe('dayOfWeekBudapest resolves the weekday in the install zone for UTC+12+ zones (noon-UTC weekday-anchor regression)', () => {
   // dateStr -> expected weekday (0=Sun..6=Sat) for Pacific/Auckland.
   // 2026-01-01 is Thursday (4). Pre-fix Auckland (UTC+13 summer) read
   // 2026-01-01T12:00:00Z = Friday (5); Luxon reads the zone-local day = (4).

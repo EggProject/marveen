@@ -1193,7 +1193,7 @@ describe('POST /api/updates/apply', () => {
     expect(handled).toBe(true)
     expect(res.statusCode).toBe(500)
     expect(existsSync(UPDATE_PIDFILE)).toBe(false)
-    // Bug MD: routes-updates-release-lock-unreachable-defensive-branch.md
+    // Pinned scenario: the release-lock defensive branch should propagate, not swallow
   })
 })
 

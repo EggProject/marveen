@@ -485,8 +485,7 @@ describe('tryHandleFleetQ -- PUT success', () => {
 })
 
 // ---------------------------------------------------------------------------
-// PUT /api/agents/:name/capabilities -- error paths (defects documented in
-// routes-fleet-q-*.md)
+// PUT /api/agents/:name/capabilities -- error paths
 //
 // The SUT does NOT wrap readBody() or JSON.parse() in try/catch. A malformed
 // body or a non-object JSON value escapes the handler as an unhandled

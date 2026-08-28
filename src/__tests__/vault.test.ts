@@ -311,7 +311,7 @@ describe('getMasterKey via setSecret/getSecret round-trip', () => {
 
   // (5) darwin + keychain available + VAULT_KEY_PATH missing + keychainRetrieve null
   //     + keychainStore throws -> propagates KeychainUnavailableError; NO file written.
-  // Pin for the keychain-store-insecure-acl Option A cascade prevention (`c54317e`):
+  // Pin for the keychain-store insecure-ACL Option A cascade prevention (`c54317e`):
   // vault.ts:73-81 must now throw rather than silently downgrading to a
   // same-uid-readable file at store/.vault-key (mode 0600).
   it('propagates KeychainUnavailableError when keychainStore throws on first mint', () => {
@@ -349,7 +349,7 @@ describe('getMasterKey via setSecret/getSecret round-trip', () => {
   })
 
   // (8) keychainRetrieve throws AND vault is non-empty -> refuse to re-key.
-  // Pins keychain-retrieve-swallows-locked-keychain:
+  // Pins the locked-keychain swallows-retrieve scenario:
   // the bare catch in keychainRetrieve previously mapped "locked" and
   // "missing" to the same null, so vault.getMasterKey minted a replacement
   // master key and silently overwrote (-U) the original -- every secret
@@ -372,15 +372,14 @@ describe('getMasterKey via setSecret/getSecret round-trip', () => {
   })
 
   // (9) keychainRetrieve throws AND vault is empty -> first-run fallback.
-  // Pins the MD's "worth pairing with" note: first-run with an
-  // unreachable keychain is the one edge case where re-keying is
-  // unavoidable, because there is no prior master key to lose. The vault
-  // entries guard deliberately allows this through. We assert only that
-  // the initial mint happened; the cipher mock is round-trip-agnostic
-  // about master keys, and a follow-up getSecret would re-enter
-  // getMasterKey with vault entries present, triggering the (9a) branch
-  // again -- which is a different scenario and is already pinned by the
-  // (8) test.
+  // Pairs with the (8) test above: first-run with an unreachable keychain
+  // is the one edge case where re-keying is unavoidable, because there is
+  // no prior master key to lose. The vault entries guard deliberately
+  // allows this through. We assert only that the initial mint happened;
+  // the cipher mock is round-trip-agnostic about master keys, and a
+  // follow-up getSecret would re-enter getMasterKey with vault entries
+  // present, triggering the (9a) branch again -- which is a different
+  // scenario and is already pinned by the (8) test.
   it('mints a new master key when keychainRetrieve throws AND vault is empty', () => {
     state.platform = 'darwin'
     state.keychainAvailable = true

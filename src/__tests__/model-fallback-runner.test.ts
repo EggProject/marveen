@@ -355,7 +355,7 @@ describe('main agent: reading the model from .claude/settings.json', () => {
   })
 })
 
-// DEFECT PINNING -- model-fallback-runner-writemainmodel-nonobject
+// DEFECT PINNING -- writeMainModel guarded only JSON parse failure, not non-object body
 //
 // writeMainModel() only guarded a JSON *parse* failure before the fix; a
 // valid-JSON non-object body (null / number / string / array) flowed into

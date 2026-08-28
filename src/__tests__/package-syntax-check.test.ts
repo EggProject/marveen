@@ -1,4 +1,4 @@
-// PINNING syntax-check-executes-web-bundle
+// PINNING: syntax-check executes web/app.js as a server runtime instead of validating syntax
 //
 // `bun --check` is not a Bun flag: Bun ignores it and treats every following
 // argument as an entrypoint to execute. `web/app.js` is a browser bundle, so

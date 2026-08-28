@@ -117,7 +117,7 @@ describe('notifyChannel', () => {
     expect(notifyTelegram).toBe(notifyChannel)
   })
 
-  // Pinned defect -- notify-fallback-repeats-head
+  // Pinned defect: per-chunk fallback used to re-send the same first 4096 chars, dropping the tail
   it('re-sends the failing chunk (not the full outbound head) on each fallback attempt', async () => {
     const long = `${'x'.repeat(4096)}TAIL`
     markIfTestRun.mockReturnValue(long)
@@ -142,7 +142,7 @@ describe('notifyChannel', () => {
     expect(fallbacks[0]?.[2]).not.toContain('TAIL')
   })
 
-  // PINNING notify-fallback-hardcodes-telegram-limit
+  // PINNING: per-chunk fallback hardcoded the Telegram 4096-char limit for every provider
   it('uses provider splitMessage for the fallback chunk', async () => {
     state.provider = 'discord'
     const long = 'y'.repeat(3000)

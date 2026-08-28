@@ -543,8 +543,8 @@ describe('.env-backed exports', () => {
     expect(config.BRAND_NAME).toBe('Zed')
   })
 
-  // This was the defect described in config-empty-env-blanks-identity.md;
-  // after the fix, the constants now match the resolveBrandName guard.
+  // This was the empty-env-blanks-identity defect; after the fix,
+  // the constants now match the resolveBrandName guard.
   it('routes empty .env values through the envOr default guard', async () => {
     const { config } = await loadConfig({
       env: { BOT_NAME: '', BRAND_NAME: '', OWNER_NAME: '', WEB_HOST: '', MAIN_AGENT_ID: '' },

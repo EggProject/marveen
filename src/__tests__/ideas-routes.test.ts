@@ -34,10 +34,10 @@
 // second line of defence rather than the primary one.
 //
 // Pinned defects (NOT fixed here):
-//   * routes-ideas-promote-double       -- re-promoting orphans the first kanban card
-//   * routes-ideas-body-parse-500       -- malformed/`null` JSON body throws out of the handler
-//   * routes-ideas-breakdown-nonerror   -- non-Error throw yields a 500 with an empty body
-//   * routes-ideas-title-validation     -- title is not trimmed nor type-checked
+//   * re-promoting a kanban idea orphans the first card (overwrites kanban_id)
+//   * malformed/`null` JSON body throws out of the handler instead of returning 400
+//   * non-Error throw yields a 500 with an empty body
+//   * title is not trimmed nor type-checked
 
 import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from 'vitest'
 import type http from 'node:http'
@@ -677,7 +677,7 @@ describe('POST /api/ideas/:id/promote', () => {
     expect(r.status).toBe(200)
   })
 
-  // PINNED DEFECT -- routes-ideas-promote-double
+  // PINNED DEFECT -- re-promoting a kanban idea would orphan the first card
   it('returns 409 with the existing kanban_id when re-promoting a kanban idea', async () => {
     seedIdea({ id: 'idea-1', status: 'kanban', kanban_id: 'regi-kartya' })
 
@@ -766,7 +766,7 @@ describe('POST /api/ideas/:id/promote-breakdown', () => {
     expect(r.body).toEqual({ error: 'Ötlet nem található' })
   })
 
-  // PINNED DEFECT -- routes-ideas-promote-double (sibling)
+  // PINNED DEFECT -- same as above via the promote-breakdown path
   it('returns 409 with the existing kanban_id when re-promoting a kanban idea via breakdown', async () => {
     seedIdea({ id: 'idea-1', status: 'kanban', kanban_id: 'regi-kartya' })
 
@@ -1024,7 +1024,7 @@ describe('pinned defects', () => {
     expect(db.addIdeaComment).not.toHaveBeenCalled()
   })
 
-  // routes-ideas-title-validation
+  // Pinned defect: title is not trimmed nor type-checked
   it('creates an idea whose title is only whitespace', async () => {
     const r = await call('POST', '/api/ideas', JSON.stringify({ title: '   ' }))
     expect(r.status).toBe(400)
@@ -1037,7 +1037,7 @@ describe('pinned defects', () => {
     expect(db.createIdea).not.toHaveBeenCalled()
   })
 
-  // routes-ideas-body-parse-500
+  // Pinned defect: malformed body throws out of the handler instead of returning 400
   it.each([
     ['POST', '/api/ideas'],
     ['PUT', '/api/ideas/idea-1'],
