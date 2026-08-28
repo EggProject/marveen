@@ -863,6 +863,24 @@ describe('startInviteMonitor / stopInviteMonitor', () => {
     }
   })
 
+  it('defaults intervalMs to 3000 when called without the third argument (L260 default-arg branch[0])', () => {
+    // A \`startInviteMonitor(mainAgentId, agentsRoot, intervalMs = 3000)\` (L260)
+    // default parametere csak akkor fut le, ha a harmadik arg undefined. A
+    // korabbi tesztek mindig atadtak (5000), igy a default-ag soha nem volt
+    // coverage-olve. Ezzel a teszttel a 3000-as default aktiválódik, és az
+    // interval setInterval a fakeTimers-en keresztul megfigyelheto.
+    vi.useFakeTimers()
+    try {
+      ci.startInviteMonitor('mainagent', AGENTS_ROOT)
+      // 3000 ms-es default -- 2999-re meg nem, 3001-re mar igen.
+      vi.advanceTimersByTime(2999)
+      // stop utan a clearInterval meghívódik, es nem dob.
+      ci.stopInviteMonitor()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('catches and logs an exception thrown by the first tick', () => {
     // Install a fault that throws on the first existsSync call against
     // `.../access.json`. The SUT's first line in runInviteMonitorTick is

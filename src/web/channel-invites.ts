@@ -105,8 +105,11 @@ function pruneInvites(store: InvitesFile, now: number): boolean {
 }
 
 function activeInviteCount(store: InvitesFile, now: number): number {
+  // store.invites is guaranteed truthy at every caller (createInvite
+  // re-assigns it to {} on L138; runInviteMonitorTick continues early at
+  // L209 when it's undefined), so the `?? {}` fallback was dead.
   let n = 0
-  for (const inv of Object.values(store.invites ?? {})) {
+  for (const inv of Object.values(store.invites)) {
     if (!inv.used && inv.expiresAt >= now) n++
   }
   return n
@@ -232,7 +235,10 @@ export function runInviteMonitorTick(mainAgentId: string, agentsRoot: string): v
 
       if (!access.allowFrom) access.allowFrom = []
       if (!access.allowFrom.includes(pEntry.senderId)) access.allowFrom.push(pEntry.senderId)
-      delete (access.pending ?? {})[pCode]
+      // access.pending is guaranteed truthy here (pendingEntries.length > 0
+      // is the gate on L228, which requires a non-empty object), so the
+      // `?? {}` fallback was dead.
+      delete access.pending[pCode]
 
       tEntry.used = true
       tEntry.usedBy = pEntry.senderId
