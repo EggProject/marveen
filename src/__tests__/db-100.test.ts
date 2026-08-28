@@ -2364,3 +2364,97 @@ describe('default-arg branches', () => {
     expect(Array.isArray(listOtelTraces())).toBe(true)
   })
 })
+
+// ---------------------------------------------------------------------------
+// `?? undefined` defensive-fallback branches.
+//
+// Several accessors take a string/number `id` and pass `id ?? undefined` to
+// the SQLite query. When the caller hands in `null`, the `?? undefined`
+// fallback fires (branch[1]). The earlier tests always pass a real id, so
+// this branch is uncovered. Calling each helper with `null` (cast to the
+// declared param type, since the runtime accepts null only via the
+// `?? undefined` defensive guard) exercises it without needing the DB to
+// return anything different -- .get() still returns undefined either way.
+// ---------------------------------------------------------------------------
+describe('id-??-undefined defensive fallback (null id)', () => {
+  it('exercises the `?? undefined` binary-expr branch on every accessor', () => {
+    // Helper: call fn with null cast to its declared param type. The query
+    // result is the same as for a missing id (undefined), so we just assert
+    // the call does not throw and returns a defined-shape value.
+    const call = <T extends (...args: never[]) => unknown>(fn: T, ...args: unknown[]): unknown => fn(...(args as never[]))
+
+    // L1000: incrementSessionCount
+    expect(call(incrementSessionCount, null)).toBe(0)
+
+    // L1539: getBackgroundTask
+    expect(getBackgroundTask(null as unknown as string)).toBeUndefined()
+
+    // L1677: getKanbanCard
+    expect(getKanbanCard(null as unknown as string)).toBeUndefined()
+
+    // L1727: moveKanbanCard (id ?? undefined inside the prev-status lookup)
+    expect(moveKanbanCard(null as unknown as string, 'in_progress', 0)).toBe(false)
+
+    // L1867: findActiveKanbanCardByTitle
+    expect(findActiveKanbanCardByTitle(null as unknown as string)).toBeUndefined()
+
+    // L1909: getLabel
+    expect(getLabel(null as unknown as string)).toBeUndefined()
+
+    // L2310: getAgentMessage
+    expect(getAgentMessage(null as unknown as number)).toBeUndefined()
+
+    // L2673: revertIdeaFromKanban
+    expect(revertIdeaFromKanban(null as unknown as string)).toBeNull()
+
+    // L3047: getVaultSshKey
+    expect(getVaultSshKey(null as unknown as string)).toBeUndefined()
+
+    // L3100: getVaultSshServer
+    expect(getVaultSshServer(null as unknown as string)).toBeUndefined()
+
+    // L3183: getApproval
+    expect(getApproval(null as unknown as string)).toBeUndefined()
+  })
+
+  it('exercises the `success = true` default-arg on logToolCall (L2687)', () => {
+    // Pass exactly 3 positional args (sessionId, toolName, inputSummary).
+    // `success` falls back to its default `true`, exercising branch[0].
+    logToolCall('default-sess', 'DefaultTool', 'desc')
+    // The insert succeeded if the row exists with success=1.
+    const row = getDb().prepare('SELECT success FROM tool_call_log WHERE session_id=? AND tool_name=?').get('default-sess', 'DefaultTool') as { success: number } | undefined
+    expect(row?.success).toBe(1)
+  })
+
+  it('covers the `?? undefined` fallback in initDatabase migrations (L193, L276)', () => {
+    // L193 and L276 read sqlite_master to look up the schema for kanban_cards
+    // and memories. In normal flow the tables were just CREATEd, so the
+    // query returns a row and the `?? undefined` fallback never fires.
+    // The fallback IS reachable when the schema lookup returns null --
+    // monkey-patch Database.prototype.prepare to swap the schema queries
+    // for fake statements whose .get() returns undefined, simulating a
+    // table that vanished between CREATE and the migration check.
+    const tmpDb = join(tmpDir, 'no-schema.db')
+    initDatabase(tmpDb)
+    const original = Database.prototype.prepare
+    const targets = [
+      "SELECT sql FROM sqlite_master WHERE type='table' AND name='kanban_cards'",
+      "SELECT sql FROM sqlite_master WHERE name='memories'",
+    ]
+    Database.prototype.prepare = function (sql: string) {
+      if (targets.includes(sql)) {
+        // Return a fake statement whose .get() returns undefined.
+        return { get: () => undefined, all: () => [], run: () => ({ changes: 0 }), iterate: function* () {} } as unknown as ReturnType<typeof Database.prototype.prepare>
+      }
+      return original.call(this, sql)
+    } as typeof Database.prototype.prepare
+    try {
+      initDatabase(tmpDb)
+      // Both branches fired without throwing.
+      expect(true).toBe(true)
+    } finally {
+      Database.prototype.prepare = original
+      initDatabase(':memory:')
+    }
+  })
+})
