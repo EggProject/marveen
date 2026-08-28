@@ -371,4 +371,34 @@ describe('__test_dismissMcpMenu', () => {
       expect.stringContaining('pane NOT confirmed idle'),
     )
   })
+
+  it('does NOT warn when the post-loop capture IS captured AND looks idle (L49 branch[1] else path)', async () => {
+    // L49 condition is `if (!pane || !paneLooksIdle(pane))`. branch[1] is the
+    // FALSE path of that condition (else): pane captured AND looks idle, so
+    // no warn fires. The 4 in-loop captures must each be non-idle so the
+    // loop exhausts the budget (otherwise it returns early at L43).
+    const { logger } = await import('../logger.js')
+    const warnSpy = vi.spyOn(logger, 'warn')
+    const busyPane = '· Synthesizing… (esc to interrupt)'
+    const idlePane = [
+      '────────────────────────',
+      '  ❯ ',
+      '────────────────────────',
+      'bypass permissions on (shift+tab to cycle)',
+    ].join('\n')
+    mockCapturePane
+      .mockReturnValueOnce(busyPane) // iter 1
+      .mockReturnValueOnce(busyPane) // iter 2
+      .mockReturnValueOnce(busyPane) // iter 3
+      .mockReturnValueOnce(busyPane) // iter 4
+      .mockReturnValueOnce(idlePane) // post-loop capture: pane + looks idle -> no warn
+
+    __test_dismissMcpMenu('agent-samu')
+
+    // No stuck-modal warn.
+    const stuckWarn = warnSpy.mock.calls.find(
+      (c) => typeof c[0] === 'object' && c[1] && String(c[1]).includes('NOT confirmed idle'),
+    )
+    expect(stuckWarn).toBeUndefined()
+  })
 })
