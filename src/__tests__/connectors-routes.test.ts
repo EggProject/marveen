@@ -1969,6 +1969,29 @@ describe('/api/vault/bindings', () => {
     expect(bindingArg.headerScheme).toBe('Bearer')
   })
 
+  // src/web/routes/connectors.ts:788 -- branch[1] (else) of
+  //   if (data.serverName && targets.length === 0) { ... search ... }
+  // When the caller supplies explicit targets, the search block is skipped
+  // entirely and the supplied targets pass straight through.
+  it('POST skips the target-search block when explicit targets are supplied', async () => {
+    H.listAgentNames.mockReturnValue([]) // would have been searched otherwise
+    H.readFileOr.mockImplementation((_p: string, fallback: string) => fallback) // would have matched 'h' otherwise
+    const { res, json } = await call('POST', '/api/vault/bindings', {
+      body: {
+        vaultSecretId: 'sec',
+        envVar: 'TOKEN',
+        targets: [{ mcpFilePath: '/explicit/.mcp.json', serverName: 'h' }],
+      },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(json()).toEqual({ ok: true, synced: 1, errors: [] })
+    expect(H.addBinding).toHaveBeenCalledWith({
+      vaultSecretId: 'sec',
+      envVar: 'TOKEN',
+      targets: [{ mcpFilePath: '/explicit/.mcp.json', serverName: 'h' }],
+    })
+  })
+
   it('POST header binding defaults the scheme to Bearer when headerScheme is omitted', async () => {
     H.readFileOr.mockImplementation((p: string, fallback: string) => {
       if (p === join(H.PROJECT_ROOT, '.mcp.json')) {
