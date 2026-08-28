@@ -221,7 +221,8 @@ export async function tryHandleAgentTerminal(ctx: RouteContext): Promise<boolean
     // guard above.
     const preview = parsed.special
       ? `special:${parsed.special}`
-      : `keys:${JSON.stringify(literalKeys.slice(0, 120))}${literalKeys.length > 120 ? '…' : ''}`
+      // literalKeys is non-null whenever parsed.special is falsy (the `if (!args)` guard above already proved this), but TS strict-generics needs an explicit non-null to access it.
+      : `keys:${JSON.stringify(literalKeys!.slice(0, 120))}${literalKeys!.length > 120 ? '…' : ''}`
     logger.info({ name, remote, xff, ua, preview }, 'agent-terminal: KEYS INJECTION ACCEPTED')
     try {
       await tmux(args)

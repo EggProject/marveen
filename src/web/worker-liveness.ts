@@ -166,7 +166,8 @@ export function sweepWorkerLiveness(
     if (decision.logDeath) {
       deps.onDeath({
         session,
-        lifetimeMs: decision.lifetimeMs,
+        // decision.lifetimeMs is non-null when logDeath is true (the only branch that sets logDeath also computes a numeric lifetimeMs).
+        lifetimeMs: decision.lifetimeMs!,
         lastPane: decision.lastPane,
         lifetimeTruncated: decision.lifetimeTruncated,
       })

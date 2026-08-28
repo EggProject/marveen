@@ -238,7 +238,7 @@ export function runInviteMonitorTick(mainAgentId: string, agentsRoot: string): v
       // access.pending is guaranteed truthy here (pendingEntries.length > 0
       // is the gate on L228, which requires a non-empty object), so the
       // `?? {}` fallback was dead.
-      delete access.pending[pCode]
+      delete access.pending![pCode]
 
       tEntry.used = true
       tEntry.usedBy = pEntry.senderId
