@@ -72,8 +72,7 @@ async function lookupChannelName(agent: string, channelId: string): Promise<void
   // telegram between the outer guard and this read would route the inner path
   // through readChannelToken('telegram', ...) and ship the TELEGRAM_BOT_TOKEN as
   // Authorization: Bearer to slack.com/api/conversations.info. That is a real
-  // cross-vendor token leak, not a coverage-only defect. See
-  // docs/needs-to-be-fix/channel-request-watcher-unreachable-provider-check.md.
+  // cross-vendor token leak, not a coverage-only defect.
   if (provider !== 'slack') return
   const stateDir = channelStateDir(provider, agentDir(agent))
   const token = readChannelToken(provider, join(stateDir, '.env'))

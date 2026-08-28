@@ -61,8 +61,7 @@ export default defineConfig({
         // type changes so the 3 RHS arms disappear (the MD's option (a),
         // blocked by task rule "NEVER modify src/web/message-router.ts"), or
         // vitest adds an exclude-from-global knob, the message-router coverage
-        // gate cannot be made green from config alone. MD left open at
-        // docs/needs-to-be-fix/message-router-cache-fallback-unreachable.md.
+        // gate cannot be made green from config alone.
       },
       // json-summary + json are both required by the CI coverage PR comment
       // (davelosert/vitest-coverage-report-action): the summary drives the
