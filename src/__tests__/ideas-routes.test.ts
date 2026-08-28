@@ -486,6 +486,17 @@ describe('PUT /api/ideas/:id', () => {
     expect(db.logIdeaStatusChange).not.toHaveBeenCalled()
   })
 
+  it('returns 400 title required when title is provided as a non-string (null/number)', async () => {
+    // ideas.ts:130 ternary branch[1] (typeof !== 'string' -> trimmed = '')
+    // plus the `if (!trimmed)` branch on line 131. A title present but not
+    // a string must NOT be accepted: trimmed defaults to '' and validation
+    // rejects with the same 400 as a missing title.
+    seedIdea({ id: 'idea-1' })
+    const r = await call('PUT', '/api/ideas/idea-1', JSON.stringify({ title: 42 }))
+    expect(r.status).toBe(400)
+    expect(r.body).toEqual({ error: 'title required' })
+  })
+
   it('rounds fractional impact/effort before the update', async () => {
     seedIdea({ id: 'idea-1' })
     await call('PUT', '/api/ideas/idea-1', JSON.stringify({ impact: 2.5, effort: 4.4 }))
