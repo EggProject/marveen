@@ -1733,6 +1733,23 @@ describe('ensureGovernanceGateCommands', () => {
       JSON.stringify({ hooks: {} }))
     expect(scaffold.ensureGovernanceGateCommands('samu')).toBe(true)
   })
+
+  it('handles a settings.json with NO hooks key at all (agent-scaffold.ts:602 ?? {} fallback)', () => {
+    // A `(settings.hooks ?? {})` guard (src/web/agent-scaffold.ts:602) csak
+    // akkor fut le a fallback agra, ha a settings.json-ban EGYALTALAN nincs
+    // `hooks` kulcs. A korabbi tesztek mindig `hooks: {}` -t irtak, ami a
+    // truthy agat nyitja, nem a fallback-et. Ez a teszt a friss-installalt
+    // allapotot szimulalja: a settings megvan, de meg nem tartalmaz hook-ot.
+    const agentDir = join(SANDBOX, 'agents', 'samu')
+    mkdirSync(join(agentDir, '.claude'), { recursive: true })
+    writeFileSync(join(agentDir, '.claude', 'settings.json'),
+      JSON.stringify({ someOtherKey: 'kept' }))
+    expect(scaffold.ensureGovernanceGateCommands('samu')).toBe(true)
+    const written = JSON.parse(readFileSync(join(agentDir, '.claude', 'settings.json'), 'utf-8'))
+    // A fallback ag utan is be kellett injektalni a kapukat.
+    expect(Array.isArray(written.hooks?.PreToolUse)).toBe(true)
+    expect(written.someOtherKey).toBe('kept')
+  })
 })
 
 // ===========================================================================
