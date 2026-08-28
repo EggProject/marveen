@@ -259,6 +259,25 @@ describe('startStuckInputWatcher -- sub-agent paths', () => {
     clearInterval(timer)
   })
 
+  // Covers src/web/stuck-input-watcher.ts:264 -- the `if (!recoverParkedPaste(...))`
+  // branch[1] (when recoverParkedPaste returns truthy, i.e. a parked paste was
+  // detected). The local sub-agent path then SKIPS checkLocalSession exactly
+  // like the main session path does (already covered at line 244).
+  it('skips checkLocalSession for a local sub-agent when a parked paste is detected', async () => {
+    mockListAgentNames.mockReturnValue(['samu'])
+    mockIsAgentRunning.mockReturnValue(true)
+    mockResolveSession.mockReturnValue('agent-samu')
+    mockReadHost.mockReturnValue(null)
+    mockCapture.mockReturnValue(PARKED_PASTE)
+
+    const timer = startStuckInputWatcher()
+    await vi.advanceTimersByTimeAsync(20_000)
+
+    // Paste hit -> recoverParkedPaste returns true -> checkLocalSession NOT called.
+    expect(recoverCallsFor('agent-samu').length).toBe(0)
+    clearInterval(timer)
+  })
+
   it('does NOT route a remote running sub-agent through recoverStuckInputForSession', async () => {
     mockListAgentNames.mockReturnValue(['laptop-boni'])
     mockIsAgentRunning.mockReturnValue(true)
