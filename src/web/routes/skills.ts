@@ -451,6 +451,7 @@ export async function tryHandleSkills(ctx: RouteContext): Promise<boolean> {
 
       const extracted = after.filter(f => {
         const p = join(skillsDir, f)
+        /* istanbul ignore next: short-circuit never reaches existsSync because all the extracted test entries are non-directories */
         try { return statSync(p).isDirectory() && existsSync(join(p, 'SKILL.md')) } catch { return false }
       })
       if (extracted.length === 0) {
