@@ -1652,9 +1652,6 @@ window._i18n.hu = {
   'channel.tg_howto.start_li': 'Az illető indítsa el a botot a Telegramban (<code>/start</code>) és írjon neki egy üzenetet.',
   'channel.tg_howto.group_li': 'Hívd meg a botot egy meglévő Telegram csoportba (csoport beállítások &rarr; Tagok &rarr; Hozzáadás).',
   'channel.tg_howto.pair_li': 'A csoportban írj <code>/pair</code>-t (vagy a bot által megadott parancsot).',
-  'agents.deepseek_hint_pre': 'DeepSeek-V4-Pro nincs konfigurálva.',
-  'agents.deepseek_link': 'API kulcs hozzáadása',
-  'agents.deepseek_hint_post': 'a Vault oldalon.',
   'channel.btn.slack_manifest': 'Slack App létrehozása (manifest)',
 
   // --- Fleet Migration ---

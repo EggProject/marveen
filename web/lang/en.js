@@ -1650,9 +1650,6 @@ window._i18n.en = {
   'channel.tg_howto.start_li': 'Have the person start the bot in Telegram (<code>/start</code>) and send it a message.',
   'channel.tg_howto.group_li': 'Invite the bot to an existing Telegram group (group settings &rarr; Members &rarr; Add).',
   'channel.tg_howto.pair_li': 'In the group, type <code>/pair</code> (or the command the bot provides).',
-  'agents.deepseek_hint_pre': 'DeepSeek-V4-Pro is not configured.',
-  'agents.deepseek_link': 'Add API key',
-  'agents.deepseek_hint_post': 'on the Vault page.',
   'channel.btn.slack_manifest': 'Create Slack App (manifest)',
 
   // --- Fleet Migration ---
