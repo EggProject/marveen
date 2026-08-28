@@ -86,4 +86,31 @@ describe('global cap', () => {
     for (let i = 0; i < 50; i++) recordFailure(`user${i}`, t0)
     expect(isGlobalLimited(t0 + 61 * 60 * 1000)).toBe(false)
   })
+
+  it('isGlobalLimited() called without args uses the Date.now() default (login-throttle.ts:81 branch[0])', () => {
+    // A `now: number = Date.now()` default parameter (L81) csak akkor fut le,
+    // ha a fuggvenyt argumentum nelkul hívjak. Az eddigi tesztek mindig
+    // explicit `t0`-val vagy `t0 + offset`-tel hivtak. Ez a teszt argumentum
+    // nelkul hívja, miutan 50 recordFailure-ral a globalis cap-hoz nyomta a
+    // számlálót -- a default-ág megnyílik, es a return true.
+    // A Date.now()-hoz KÖZELI timestamp kell, mert a pruneGlobal(now) kidobja
+    // az 1 óránál regebbi bejegyzéseket -- egy régi t0 = 1_700_000_000_000
+    // azonnal kiürülne.
+    const now = Date.now()
+    for (let i = 0; i < 50; i++) recordFailure(`user${i}`, now)
+    expect(isGlobalLimited()).toBe(true)
+  })
+
+  it('recordFailure() and checkThrottle() called without a `now` use the Date.now() default (L64 / L51 branch[0])', () => {
+    // A `now: number = Date.now()` default parameter a recordFailure (L64) és
+    // checkThrottle (L51) fuggvenyeken is létezik -- egyiket sem hívták eddig
+    // argumentum nelkül. Az 5 hibás próbálkozás utan az 5. recordFailure
+    // lezarja a felhasznalot (lockedUntil = now + 30s), es a checkThrottle a
+    // default `now` értékkel ezt latja -- a teszt nem allit be Date.now()
+    // mockot, igy a valós Date.now() és a L64/L51 default ágak egyarant futnak.
+    for (let i = 0; i < 5; i++) recordFailure('ghost-default')
+    const s = checkThrottle('ghost-default')
+    expect(s.locked).toBe(true)
+    expect(s.retryAfterS).toBeGreaterThan(0)
+  })
 })
