@@ -1291,6 +1291,22 @@ describe('POST /api/agents/:name/avatar', () => {
     expect(json()).toEqual({ ok: true })
   })
 
+  it('gallery pick: swallows sendAvatarChangeMessage rejection (line 944 .catch anon)', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    const avatarsDir = join(H.webDir, 'avatars')
+    mkdirSync(avatarsDir, { recursive: true })
+    writeFileSync(join(avatarsDir, 'kitten.png'), 'PNGDATA')
+    H.sendAvatarChangeMessage.mockRejectedValueOnce(new Error('send-failed'))
+    const { res, json } = await call('POST', '/api/agents/a/avatar', { body: { galleryAvatar: 'kitten.png' }, headers: { 'content-type': 'application/json' } })
+    // The route returns 200 BEFORE awaiting the rejection (the .catch is a
+    // fire-and-forget unhandled-rejection guard); the request itself succeeds.
+    expect(res.statusCode).toBe(200)
+    expect(json()).toEqual({ ok: true })
+    // Drain microtasks so the .catch handler runs and any unhandled rejection
+    // would surface here.
+    await new Promise((r) => setTimeout(r, 0))
+  })
+
   it('gallery pick: removes pre-existing avatar files before writing the new one', async () => {
     // Pre-create all four extension variants so the per-format unlinkSync
     // branches fire.
@@ -1331,6 +1347,22 @@ describe('POST /api/agents/:name/avatar', () => {
     })
     expect(res.statusCode).toBe(200)
     expect(json()).toEqual({ ok: true })
+  })
+
+  it('multipart upload: swallows sendAvatarChangeMessage rejection (line 953 .catch anon)', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.parseMultipart.mockReturnValue({
+      file: { name: 'p.png', data: Buffer.from('PNGDATA') },
+      fields: {},
+    })
+    H.sendAvatarChangeMessage.mockRejectedValueOnce(new Error('send-failed'))
+    const { res, json } = await call('POST', '/api/agents/a/avatar', {
+      headers: { 'content-type': 'multipart/form-data; boundary=---' },
+      body: {},
+    })
+    expect(res.statusCode).toBe(200)
+    expect(json()).toEqual({ ok: true })
+    await new Promise((r) => setTimeout(r, 0))
   })
 })
 
@@ -1684,6 +1716,20 @@ describe('POST /api/agents/:name/channels/:provider (setup)', () => {
     expect(json()).toMatchObject({ ok: true, botName: 'b', restarted: true, wasRunning: true })
     expect(H.writeAgentChannelProvider).toHaveBeenCalledWith('a', 'telegram')
     expect(H.sendWelcomeMessage).toHaveBeenCalledWith('a', 'T')
+  })
+
+  it('telegram sub-agent: swallows sendWelcomeMessage rejection (line 1180 .catch anon)', async () => {
+    H.listAgentNames.mockReturnValue(['a'])
+    H.getProvider.mockReturnValue({ validateToken: vi.fn(async () => ({ ok: true, botName: 'b' })) })
+    H.readAgentChannelProvider.mockReturnValue('telegram')
+    H.isAgentRunning.mockReturnValue(true)
+    H.stopAgentProcess.mockReturnValue({ ok: true })
+    H.startAgentProcess.mockReturnValue({ ok: true })
+    H.sendWelcomeMessage.mockRejectedValueOnce(new Error('welcome-failed'))
+    const { res, json } = await call('POST', '/api/agents/a/channels/telegram', { body: { botToken: 'T' } })
+    expect(res.statusCode).toBe(200)
+    expect(json()).toMatchObject({ ok: true, botName: 'b' })
+    await new Promise((r) => setTimeout(r, 0))
   })
 
   it('writes for a not-running sub-agent without restart', async () => {
