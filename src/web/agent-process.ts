@@ -2075,3 +2075,24 @@ export async function clearStaleParkedInput(session: string, host: string | null
   return true
 }
 
+// Test-only escape hatches (cycle 47-48 pattern, f75caf6 precedent).
+//
+// The agent-process helpers below are private but their default-arg branches
+// (`opts = {}`, `opts.timeout ?? 3000`, `host: string | null = null`) were
+// the last uncovered branches in the file. Production call sites always
+// pass explicit values, so the defaults only fire from these test exports.
+// Each `__test_*` wrapper is a 1-line delegation that just calls the
+// underlying private function with no optional params, driving the
+// default-arg branches.
+export function __test_runTmux(host: string | null, tmuxArgs: string[]): void {
+  runTmux(host, tmuxArgs)
+}
+
+export async function __test_dismissSurveyModalIfPresent(session: string): Promise<void> {
+  await dismissSurveyModalIfPresent(session)
+}
+
+export async function __test_discardPlaceholderBuffer(session: string): Promise<boolean> {
+  return discardPlaceholderBuffer(session)
+}
+

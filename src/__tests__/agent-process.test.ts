@@ -2939,3 +2939,69 @@ describe('clearStaleParkedInput -- main-agent failure accounting', () => {
     expect(third?.obj).toMatchObject({ fails: 1 })
   })
 })
+
+// =========================================================================
+// Default-arg branches on the private tmux + modal helpers.
+//
+// runTmux(host, tmuxArgs, opts = {}): caller-provided opts vs the {} default.
+// runTmux(..., opts.timeout ?? 3000): explicit timeout vs the 3000 default.
+// dismissSurveyModalIfPresent(session, host = null): host omitted vs explicit.
+// discardPlaceholderBuffer(session, host = null): host omitted vs explicit.
+//
+// Production call sites always pass opts/host explicitly, so the defaults
+// never fire. The __test_* wrappers (cycle 47-48 pattern, f75caf6) expose
+// each helper with no optional params, so calling them exercises the
+// default-arg branch on the underlying private function.
+// =========================================================================
+describe('__test_runTmux (default args)', () => {
+  it('uses the `opts = {}` default when the caller passes none (L765)', () => {
+    AP.__test_runTmux(null, ['list-sessions'])
+    // opts defaulted -> opts.timeout ?? 3000 fires -> timeout = 3000.
+    expect(H.execFileSync.mock.calls.at(-1)?.[2]).toMatchObject({ timeout: 3000 })
+  })
+
+  it('uses the `opts.timeout ?? 3000` default when opts is `{}` (L776)', () => {
+    AP.__test_runTmux(null, ['list-sessions'])
+    // Same call; the second coverage dimension is the ?? 3000 fallback when
+    // opts has no `.timeout` key. Asserting timeout=3000 already pins both.
+    expect(H.execFileSync.mock.calls.at(-1)?.[2]).toMatchObject({ timeout: 3000 })
+  })
+})
+
+describe('__test_dismissSurveyModalIfPresent (default host = null)', () => {
+  it('uses host=null when the caller omits it (L1397)', async () => {
+    paneSequence(['How is Claude doing this session'])
+    await AP.__test_dismissSurveyModalIfPresent('agent-zara')
+    // captureTmux is called with host=null -> local tmux (not ssh).
+    expect(calls().some((c) => c.file === '/usr/bin/tmux')).toBe(true)
+  })
+
+  it('no-ops when the modal marker is absent', async () => {
+    paneSequence(['some unrelated pane content'])
+    H.execFileSync.mockClear()
+    await AP.__test_dismissSurveyModalIfPresent('agent-zara')
+    expect(calls().find((c) => c.args[0] === 'send-keys')).toBeUndefined()
+  })
+})
+
+describe('__test_discardPlaceholderBuffer (default host = null)', () => {
+  it('uses host=null when the caller omits it (L1659)', async () => {
+    // Mock detectsPastePlaceholder: true for placeholder text, false for clean.
+    H.detectsPastePlaceholder.mockImplementation((pane: string) => pane.includes('[paste]'))
+    // Pane shows placeholder -> the helper sends Ctrl-C repeatedly until
+    // the placeholder is gone (or PLACEHOLDER_DISCARD_MAX retries).
+    paneSequence(['[paste] placeholder-1', '[paste] placeholder-2', 'plain'])
+    const ok = await AP.__test_discardPlaceholderBuffer('agent-zara')
+    expect(ok).toBe(true)
+    // local tmux path: send-keys via local /usr/bin/tmux.
+    expect(calls().some((c) => c.file === '/usr/bin/tmux' && c.args[0] === 'send-keys')).toBe(true)
+  })
+
+  it('returns false when the placeholder is never cleared', async () => {
+    // Stub detectsPastePlaceholder to always detect the placeholder.
+    H.detectsPastePlaceholder.mockReturnValue(true)
+    paneSequence(Array(10).fill('[paste] still-here'))
+    const ok = await AP.__test_discardPlaceholderBuffer('agent-zara')
+    expect(ok).toBe(false)
+  })
+})
