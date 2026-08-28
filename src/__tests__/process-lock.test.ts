@@ -310,6 +310,24 @@ describe('terminateProcesses', () => {
     await expect(terminateProcesses([200], ctx, { graceMs: 10 })).resolves.toBeUndefined()
     expect(logs.some(l => l.level === 'error' && /SIGKILL failed/.test(l.msg))).toBe(true)
   })
+
+  it('does not log "SIGTERM sent" when signal returns "gone" (process-lock.ts:136 branch[1])', async () => {
+    // A \`signal(pid, 'SIGTERM')\` hivasa csak akkor ter vissza 'gone'-nal
+    // (es nem dob), ha a process mar nem letezik EPPEN a kill elott. Ez a
+    // boundary case kihagyja az `if (out === 'sent')` info-log sort -- az
+    // eddigi tesztek mind a 'sent' agat exercise-elték (100% branch[0]).
+    const signalOverride: ProcessLockContext['signal'] = (_pid, sig) => {
+      if (sig === 'SIGTERM') return 'gone'
+      if (sig === 0) return 'gone'
+      return 'sent'
+    }
+    const { ctx, logs } = makeCtx({ signalOverride })
+    await terminateProcesses([200], ctx, { graceMs: 10 })
+    expect(logs.some(l => l.level === 'info' && /SIGTERM sent to previous instance/.test(l.msg))).toBe(false)
+    // A grace utan a signal(0) is 'gone' volt, tehat nem eskalalunk -- de a
+    // SIGTERM-et sem logoltuk, mert a signal() mondta hogy 'gone'.
+    expect(logs.some(l => l.level === 'warn' && /escalating to SIGKILL/.test(l.msg))).toBe(false)
+  })
 })
 
 describe('acquirePortLock', () => {
