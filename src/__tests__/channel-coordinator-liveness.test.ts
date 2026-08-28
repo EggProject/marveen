@@ -201,6 +201,20 @@ describe('getClaudePidForSession', () => {
     expect(getClaudePidForSession('main')).toBeNull()
   })
 
+  it('returns null when pgrep exits 0 with an empty stdout (the `if (child)` false branch, L43)', async () => {
+    // L43: `if (child) return parseInt(...)`. The false branch fires when
+    // pgrep exits 0 but produces no rows -- different from the throw branch
+    // above (exit code != 0). Both end up returning null, but they take
+    // distinct paths through the function. Without this test the empty-pgrep
+    // branch is uncovered.
+    const { getClaudePidForSession } = await importFresh()
+    m.execFileSync
+      .mockReturnValueOnce(`${CLAUDE_PID}\n`)
+      .mockReturnValueOnce('bash\n')
+      .mockReturnValueOnce('') // pgrep exit 0, no stdout
+    expect(getClaudePidForSession('main')).toBeNull()
+  })
+
   it('returns null when the pane_pid is non-numeric (parseInt branch)', async () => {
     const { getClaudePidForSession } = await importFresh()
     m.execFileSync.mockReturnValueOnce('garbage\n')
