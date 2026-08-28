@@ -102,12 +102,12 @@ function mkRes(): MockRes {
  *  'data'/'end'/'error' listeners. */
 function mkReq(opts: {
   body?: Buffer | string
-  bodyError?: Error
+  bodyError?: unknown
 }): {
   req: http.IncomingMessage
   emitData: (chunk: Buffer) => void
   emitEnd: () => void
-  emitError: (err: Error) => void
+  emitError: (err: unknown) => void
 } {
   const ee = new EventEmitter()
   const req = Object.assign(ee, {
@@ -125,7 +125,7 @@ interface CallOpts {
   method?: string
   path?: string
   body?: Buffer | string
-  bodyError?: Error
+  bodyError?: unknown
 }
 
 async function call(opts: CallOpts): Promise<{
@@ -512,6 +512,21 @@ describe('tryHandleFleetQ -- PUT request body failure paths', () => {
     expect(res.statusCode).toBe(400)
     expect(json()).toEqual({ error: 'Kérés olvasási hiba: socket reset' })
     expect(H.writeAgentCapabilities).not.toHaveBeenCalled()
+  })
+
+  // Cover fleet-q.ts:33 branch[1]: when the underlying readBody rejects with
+  // something that isn't an Error instance, the cond-expr falls through to
+  // String(err) -- a plain object yields '[object Object]', a string yields
+  // itself.
+  it('returns 400 with String(err) when readBody rejects with a non-Error value', async () => {
+    const { res, handled, json } = await call({
+      method: 'PUT',
+      path: '/api/agents/agent-a/capabilities',
+      bodyError: { code: 'BADGER' }, // non-Error throw -- String() yields [object Object]
+    })
+    expect(handled).toBe(true)
+    expect(res.statusCode).toBe(400)
+    expect(json()).toEqual({ error: 'Kérés olvasási hiba: [object Object]' })
   })
 
   it('returns 400 with Érvénytelen JSON törzs when the body is malformed', async () => {

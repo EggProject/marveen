@@ -217,6 +217,21 @@ describe('pollPeerManifests state machine', () => {
     const [st] = getFederationStatus() // before any poll of cecil
     expect(st).toMatchObject({ id: 'cecil', state: 'unknown', lastChecked: 0 })
   })
+
+  // Cover the `fetchImpl = fetch` default-parameter branch on
+  // src/web/federation/poller.ts:217. Every other test in this file passes
+  // an explicit fetchReturning(...); this one deliberately omits it so the
+  // default globalThis.fetch is used. The poll itself short-circuits on
+  // `enabled = false` and never actually issues a request, so the test
+  // stays hermetic.
+  it('uses the default fetchImpl when none is supplied (default parameter)', async () => {
+    enabledConfig()
+    // Disable federation so pollPeerManifests returns [] without hitting the
+    // network. We still pass no fetchImpl so the default branch is taken.
+    writeConfigFile({ enabled: false, systemId: 'localsys', peers: [] })
+    const out = await pollPeerManifests(NOW)
+    expect(out).toEqual([])
+  })
 })
 
 describe('refreshFederationStatus single-flight', () => {

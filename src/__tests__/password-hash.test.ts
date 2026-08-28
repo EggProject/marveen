@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { Buffer } from 'node:buffer'
+import * as passwordHashModule from '../web/password-hash.js'
 import {
   hashPassword,
   verifyPassword,
@@ -174,6 +175,64 @@ describe('hashPassword / verifyPassword', () => {
       // that an unparseable argon2 hash returns false cleanly (not throws).
       expect(await verifyPassword('any-pw-here', '$argon2id$malformed')).toBe(false)
     }
+  })
+
+  // --- Bun.password.verify missing branch (password-hash.ts:120, 127-128) ---
+  // Under bun runtime `globalThis.Bun` is non-configurable and non-writable --
+  // `Object.defineProperty`, `vi.stubGlobal`, and `vi.spyOn(obj, 'Bun', 'get')`
+  // all throw "Attempting to change ... of unconfigurable property". The
+  // module exposes the lookup behind the `_internals.lookupBunPasswordVerify`
+  // property specifically so a test can vi.spyOn the property and the
+  // module-internal call (`_internals.lookupBunPasswordVerify()`) reads
+  // through that property at every invocation.
+  it('returns false and warns when _internals.lookupBunPasswordVerify yields null (Bun absent)', async () => {
+    const { logger } = await import('../logger.js')
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined)
+    const lookupSpy = vi.spyOn(passwordHashModule._internals, 'lookupBunPasswordVerify').mockReturnValue(undefined)
+
+    try {
+      expect(await verifyPassword('any-pw-here', '$argon2id$v=19$m=65536,t=2,p=1$abc$def')).toBe(false)
+      expect(warnSpy).toHaveBeenCalledWith(
+        'argon2 password hash requires the Bun runtime; reset the password via the dashboard-user CLI',
+      )
+    } finally {
+      lookupSpy.mockRestore()
+      warnSpy.mockRestore()
+    }
+  })
+
+  it('returns false (no warn) when Bun.password.verify throws', async () => {
+    // The try/catch at password-hash.ts:142-145 -- when Bun.password.verify
+    // is present but rejects, the function returns false silently instead of
+    // propagating the throw (which would surface as a 500 to the dashboard).
+    const lookupSpy = vi.spyOn(passwordHashModule._internals, 'lookupBunPasswordVerify').mockReturnValue(
+      () => Promise.reject(new Error('boom')),
+    )
+    try {
+      expect(await verifyPassword('any-pw-here', '$argon2id$any')).toBe(false)
+    } finally {
+      lookupSpy.mockRestore()
+    }
+  })
+
+  // Direct invocation of the real lookup function. Under bun runtime globalThis.Bun.password.verify is
+  // always present, so this asserts the success-arm return path. The other two branches
+  // (Bun undefined, Bun.password.verify undefined) are structurally unreachable from the live
+  // global under bun, so we exercise them via the parameterised lookup function below.
+  it('_lookupBunPasswordVerify returns Bun.password.verify when present', () => {
+    const verify = passwordHashModule._lookupBunPasswordVerify({ password: { verify: () => Promise.resolve(true) } })
+    expect(typeof verify).toBe('function')
+  })
+
+  it('_lookupBunPasswordVerify returns undefined when Bun is undefined', () => {
+    expect(passwordHashModule._lookupBunPasswordVerify(undefined)).toBeUndefined()
+  })
+
+  it('_lookupBunPasswordVerify returns undefined when Bun.password.verify is missing', () => {
+    // Bun present, password present, verify absent -> optional-chain falsy
+    expect(passwordHashModule._lookupBunPasswordVerify({ password: {} })).toBeUndefined()
+    // Bun present, password absent entirely -> optional-chain falsy
+    expect(passwordHashModule._lookupBunPasswordVerify({})).toBeUndefined()
   })
 
 })

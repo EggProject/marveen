@@ -188,6 +188,54 @@ describe('keychainStore - add-generic-password', () => {
       if (err instanceof Error) expect(err.message).toContain('ENOENT')
     }
   })
+
+  // --- keychainStore: non-Error branches (keychain.ts:36-38) -----------
+  // The catch at line 35 builds the user-facing message from THREE cond-exprs:
+  //   L36 status      = isExecError(err) && typeof err.status === 'number' ? err.status : 'unknown'
+  //   L37 message     = err instanceof Error ? err.message.trim() : ''
+  //   L38 detail      = originalMessage !== '' ? originalMessage : 'see launchd logs'
+  // The existing suite only throws Error instances (which short-circuit the
+  // typeguard and the Error instanceof check true). These cases exercise the
+  // `else` arms: a non-Error throw forces both L36 and L37 to their falsy
+  // side, AND a whitespace-only message forces L38 to its 'see launchd logs'
+  // fallback.
+  it('falls back to status "unknown" for a non-Error throw in keychainStore', () => {
+    // Plain object with no `status` field: isExecError returns true (it's
+    // a non-null object) but typeof err.status === 'number' is false, so the
+    // L36 cond-expr takes the 'unknown' arm.
+    mocks.execFileSync.mockImplementation(() => { throw { code: 'locked' } })
+    try {
+      keychainStore('k')
+      throw new Error('expected keychainStore to throw')
+    } catch (err) {
+      expect(err).toBeInstanceOf(KeychainUnavailableError)
+      if (err instanceof Error) expect(err.message).toContain('status unknown')
+    }
+  })
+
+  it('uses "see launchd logs" when a non-Error throw has no message', () => {
+    // No message field at all -> originalMessage === '' -> L38 else arm.
+    mocks.execFileSync.mockImplementation(() => { throw { status: 36 } })
+    try {
+      keychainStore('k')
+      throw new Error('expected keychainStore to throw')
+    } catch (err) {
+      expect(err).toBeInstanceOf(KeychainUnavailableError)
+      if (err instanceof Error) expect(err.message).toContain('see launchd logs')
+    }
+  })
+
+  it('uses "see launchd logs" when an Error throws with a whitespace-only message', () => {
+    // err.message.trim() === '' -> originalMessage === '' -> L38 else arm.
+    mocks.execFileSync.mockImplementation(() => { throw new Error('   \n  ') })
+    try {
+      keychainStore('k')
+      throw new Error('expected keychainStore to throw')
+    } catch (err) {
+      expect(err).toBeInstanceOf(KeychainUnavailableError)
+      if (err instanceof Error) expect(err.message).toContain('see launchd logs')
+    }
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -257,6 +305,58 @@ describe('keychainRetrieve - find-generic-password', () => {
       throw Object.assign(new Error('spawnSync /usr/bin/security ENOENT'), { code: 'ENOENT' })
     })
     expect(() => keychainRetrieve()).toThrow(KeychainUnavailableError)
+  })
+
+  // --- isExecError non-Error object branch (keychain.ts:12-13) ----------
+  // The typeguard `e instanceof Error || (typeof e === 'object' && e !== null)`
+  // has 3 evaluation paths in Istanbul: short-circuit true (e is Error), full
+  // evaluation true (e is non-null object), short-circuit false (e is null/
+  // primitive). The existing suite only throws real `Error` instances, which
+  // always take the short-circuit. To exercise the `(typeof e === 'object' &&
+  // e !== null)` disjunct we throw a plain object -- a shape `execFileSync`
+  // itself never produces, but the guard exists for defensive symmetry so the
+  // branch is worth a test.
+  it('handles a non-Error object throw in keychainRetrieve (defensive typeguard branch)', () => {
+    // status: 36 -> not exit-44, so the throw path at line 64 fires. The
+    // throw wraps `err.message` via `err instanceof Error ? err.message :
+    // String(err)` -- the String(err) arm IS the branch we want to exercise.
+    const notAnError = { status: 36, code: 'EACCES', message: 'not an Error instance' }
+    mocks.execFileSync.mockImplementation(() => { throw notAnError })
+    try {
+      keychainRetrieve()
+      throw new Error('expected keychainRetrieve to throw')
+    } catch (err) {
+      expect(err).toBeInstanceOf(KeychainUnavailableError)
+      // String(err) on a plain object yields '[object Object]', so the
+      // wrapped message must contain that sentinel.
+      if (err instanceof Error) expect(err.message).toContain('[object Object]')
+    }
+  })
+
+  it('handles a primitive (string) throw in keychainRetrieve (typeguard falsy path)', () => {
+    // A bare string throws lands on the falsy arm of the typeguard -- never
+    // an Error instance and never an object -- so the message is captured
+    // via String(err) (which yields the string itself).
+    mocks.execFileSync.mockImplementation(() => { throw 'a string was thrown' })
+    try {
+      keychainRetrieve()
+      throw new Error('expected keychainRetrieve to throw')
+    } catch (err) {
+      expect(err).toBeInstanceOf(KeychainUnavailableError)
+      if (err instanceof Error) expect(err.message).toContain('a string was thrown')
+    }
+  })
+
+  it('handles a null throw in keychainRetrieve (typeguard null check)', () => {
+    // `typeof null === 'object'` is true but `e !== null` is false -- the
+    // second disjunct short-circuits false and isExecError returns false.
+    mocks.execFileSync.mockImplementation(() => { throw null })
+    try {
+      keychainRetrieve()
+      throw new Error('expected keychainRetrieve to throw')
+    } catch (err) {
+      expect(err).toBeInstanceOf(KeychainUnavailableError)
+    }
   })
 })
 

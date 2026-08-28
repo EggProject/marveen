@@ -1048,6 +1048,16 @@ describe('startScheduleRunner: boot logging', () => {
     await expect(tickOnce()).resolves.toBeUndefined()
   })
 
+  // loadScheduleLastRun's `raw && typeof raw === 'object'` guard: covers the
+  // branch where JSON.parse succeeds but yields something other than an object
+  // (null, string, number, array). The existing suite only covered
+  // (a) malformed JSON (parse throws) and (b) a valid object.
+  it('handles schedule-last-run whose parsed value is not an object', async () => {
+    mockState.scheduleLastRunJson = JSON.stringify(null)
+    mockState.scheduleLastRunExists = true
+    await expect(tickOnce()).resolves.toBeUndefined()
+  })
+
   it('handles tick state when present (no warn on small gap)', async () => {
     mockState.tickStateJson = JSON.stringify({ lastTickMs: Date.now() - 5000 })
     mockState.tickStateExists = true

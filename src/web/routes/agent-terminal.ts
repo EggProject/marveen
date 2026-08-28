@@ -212,12 +212,16 @@ export async function tryHandleAgentTerminal(ctx: RouteContext): Promise<boolean
     }
     // AUDIT every accepted injection. Preview reflects the SANITIZED payload
     // actually sent (truncated so a long paste does not bloat the log, but
-    // present so a forged prompt is traceable).
+    // present so a forged prompt is traceable). The two remaining branches
+    // are exhaustive: by the time we reach this line, `args` is truthy,
+    // which means either parsed.special was truthy (and specialKeyArgs
+    // returned args) or literalKeys was truthy (and literalKeyArgs returned
+    // args). The previous third `''` arm was structurally unreachable
+    // because both being falsy would have triggered the `if (!args)` 400
+    // guard above.
     const preview = parsed.special
       ? `special:${parsed.special}`
-      : literalKeys
-        ? `keys:${JSON.stringify(literalKeys.slice(0, 120))}${literalKeys.length > 120 ? '…' : ''}`
-        : '' // unreachable: if (!args) already returned
+      : `keys:${JSON.stringify(literalKeys.slice(0, 120))}${literalKeys.length > 120 ? '…' : ''}`
     logger.info({ name, remote, xff, ua, preview }, 'agent-terminal: KEYS INJECTION ACCEPTED')
     try {
       await tmux(args)

@@ -147,7 +147,7 @@ export interface WorkerLivenessDeps {
   sessions: () => Array<{ session: string }>
   isAlive: (session: string) => boolean
   capture: (session: string) => string | null
-  onDeath: (info: { session: string; lifetimeMs: number | null; lastPane: string | null; lifetimeTruncated: boolean }) => void
+  onDeath: (info: { session: string; lifetimeMs: number; lastPane: string | null; lifetimeTruncated: boolean }) => void
   now: () => number
 }
 
@@ -193,7 +193,12 @@ export function startWorkerLivenessMonitor(): NodeJS.Timeout {
         {
           session,
           lifetimeMs,
-          lifetimeMin: lifetimeMs == null ? null : Math.round(lifetimeMs / 60_000),
+          // decideWorkerLiveness only sets lifetimeMs to a number when logDeath
+          // is true (the !alive && lastSeenAliveAtMs != null branch computes
+          // prev.lastSeenAliveAtMs - prev.firstSeenAtMs, always a number).
+          // The earlier optional `lifetimeMs: number | null` type allowed for
+          // a null here that was structurally unreachable.
+          lifetimeMin: Math.round(lifetimeMs / 60_000),
           // The session predated this monitor process, so the figure above is a
           // LOWER BOUND. Said out loud rather than estimated: a truncated
           // lifetime reads like a fast death and would point at the launch line.
