@@ -239,18 +239,11 @@ export function runInviteMonitorTick(mainAgentId: string, agentsRoot: string): v
       if (!access.allowFrom) access.allowFrom = []
       if (!access.allowFrom.includes(pEntry.senderId)) access.allowFrom.push(pEntry.senderId)
       // access.pending is guaranteed truthy here (pendingEntries.length > 0
-<<<<<<< HEAD
-      // is the gate on L228, which requires a non-empty object), so the
-      // `?? {}` fallback was dead. Use a narrowing typeguard via Object.values
-      // instead of `!` per the project rule against non-null assertions.
-      if (access.pending) delete access.pending[pCode]
-=======
       // is the gate on L228, which requires a non-empty object).
       const pending = access.pending
       /* istanbul ignore next: structurally unreachable -- the L231 `if (pendingEntries.length === 0) continue` gate guarantees access.pending is a non-empty object at this point */
       if (pending == null) continue
       delete pending[pCode]
->>>>>>> bcb7298 (fix(ts-strict): replace ! non-null assertions with typed local narrowing in channel-invites)
 
       tEntry.used = true
       tEntry.usedBy = pEntry.senderId
