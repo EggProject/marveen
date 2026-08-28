@@ -67,7 +67,7 @@ let runAgentShouldThrow = false
 let mkdirShouldThrow = false
 const mkdirCalls: string[] = []
 const writeFileCalls: Array<{ path: string; content: string }> = []
-const existsReturn = false
+let existsReturn = false
 
 // ---------------------------------------------------------------------------
 // vi.mock factories
@@ -202,6 +202,7 @@ beforeEach(() => {
   mkdirShouldThrow = false
   mkdirCalls.length = 0
   writeFileCalls.length = 0
+  existsReturn = false
   logDebugMock.mockReset()
   logInfoMock.mockReset()
   logErrorMock.mockReset()
@@ -568,5 +569,23 @@ describe('ensureDigestCwd / ensureDigestConfigDir fallback branches', () => {
     // tmpdir() for each, but cwd/config dir are still passed to runAgent.
     const call = runAgentCalls[0]!
     expect(call.env!.CLAUDE_CONFIG_DIR).toBeTruthy()
+  })
+
+  it('ensureDigestConfigDir skips the settings.json write when the file already exists (memory.ts:63 branch[1])', async () => {
+    // Az `if (!existsSync(settingsPath))` (src/memory.ts:63) másik ága: ha a
+    // settings.json MÁR létezik, a writeFileSync NEM hivodik. Az eredeti mock
+    // mindig false-t adott vissza, ezért a writeFile mindig lefutott -- a
+    // "skip" ag soha nem volt coverage-ölve. existsReturn=true-val a write
+    // elmarad, igy az L63 masik aga is zöld lesz.
+    existsReturn = true
+    vi.resetModules()
+    const memReimport = await import('../memory.js')
+    memoriesForChat.push(mem({ created_at: Math.floor(Date.now() / 1000) - 60 }))
+    memoriesForChat.push(mem({ created_at: Math.floor(Date.now() / 1000) - 30 }))
+    await memReimport.runDailyDigest('chat-1')
+    // A writeFile nem hivodik settings.json-ra -- csak az esetleges mas
+    // writeFile-ok lehetnek a writeFileCalls-ban (pl. a kanban-jelentes).
+    const settingsWrites = writeFileCalls.filter((c) => c.path.endsWith('settings.json'))
+    expect(settingsWrites).toHaveLength(0)
   })
 })
