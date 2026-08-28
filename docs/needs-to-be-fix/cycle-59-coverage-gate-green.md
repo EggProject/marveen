@@ -121,6 +121,11 @@ Batch E (4 commits, final istanbul ignore markers):
 | --- | --- | --- |
 | `c8057ab` | 3 source files | Non-null assertion annotations on guards removed in batch B (`store.invites!`, `access.pending!`, `literalKeys!`, `decision.lifetimeMs!`) |
 | `5e73696` | `src/web/channel-invites.ts` | Same for L112 (`store.invites!` on the Object.values) |
+| `92eff4f` | `src/web/channel-invites.ts` | Typeguard rewrite -- typed local + `if (pending == null) continue` + `if (invites == null) throw` + istanbul ignore |
+| `c637235` | `src/web/routes/agent-terminal.ts` | Typeguard rewrite -- extracted `computeLiteralKeysPreview(literalKeys: string)` helper with REQUIRED parameter |
+| `10394d4` | `src/web/worker-liveness.ts` | Typeguard rewrite -- typed local + `if (firstSeenAtMs == null) throw` + istanbul ignore |
+| `8d1e531` | `src/web/channel-invites.ts` | Resolve cherry-pick conflict on L241 (kept typeguard form per CLAUDE.md) |
+| `9b5edc5` | `low.md` + new MD + channel-invites.ts | Mark `test-suite-forbid-incomplete-coverage` Resolved Full; add this MD; cycle-59 typeguard first pass |
 
 `low.md` row for `test-suite-forbid-incomplete-coverage` updated from
 "Resolved (Partial, 2026-08-28)" to "Resolved (Full, 2026-08-28)".
