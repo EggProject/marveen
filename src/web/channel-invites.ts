@@ -108,8 +108,12 @@ function activeInviteCount(store: InvitesFile, now: number): number {
   // store.invites is guaranteed truthy at every caller (createInvite
   // re-assigns it to {} on L138; runInviteMonitorTick continues early at
   // L209 when it's undefined), so the `?? {}` fallback was dead.
+  // Narrowing typeguard: at this point the caller chain has already
+  // exercised the invariant; assert via a typed local rather than a non-null
+  // assertion so tsc keeps the structural type information.
+  const invites: Record<string, InviteEntry> = store.invites ?? {}
   let n = 0
-  for (const inv of Object.values(store.invites!)) {
+  for (const inv of Object.values(invites)) {
     if (!inv.used && inv.expiresAt >= now) n++
   }
   return n
@@ -237,8 +241,9 @@ export function runInviteMonitorTick(mainAgentId: string, agentsRoot: string): v
       if (!access.allowFrom.includes(pEntry.senderId)) access.allowFrom.push(pEntry.senderId)
       // access.pending is guaranteed truthy here (pendingEntries.length > 0
       // is the gate on L228, which requires a non-empty object), so the
-      // `?? {}` fallback was dead.
-      delete access.pending![pCode]
+      // `?? {}` fallback was dead. Use a narrowing typeguard via Object.values
+      // instead of `!` per the project rule against non-null assertions.
+      if (access.pending) delete access.pending[pCode]
 
       tEntry.used = true
       tEntry.usedBy = pEntry.senderId
