@@ -126,6 +126,7 @@ Batch E (4 commits, final istanbul ignore markers):
 | `10394d4` | `src/web/worker-liveness.ts` | Typeguard rewrite -- typed local + `if (firstSeenAtMs == null) throw` + istanbul ignore |
 | `8d1e531` | `src/web/channel-invites.ts` | Resolve cherry-pick conflict on L241 (kept typeguard form per CLAUDE.md) |
 | `9b5edc5` | `low.md` + new MD + channel-invites.ts | Mark `test-suite-forbid-incomplete-coverage` Resolved Full; add this MD; cycle-59 typeguard first pass |
+| `fa8d29a` | `src/web/channel-monitor.ts` | Fix BETA verifier finding: L1337 istanbul-ignore comment claimed the early-return was unreachable "because RESUME_GRACE_MS (240s) > tick (60s)" -- the actual reason is that `resumeMarveenSession()` writes a respawn stamp on stage entry, and subsequent ticks fall inside `MARVEEN_POST_RESPAWN_GRACE_MS` (360s) and return at L1273 before reaching L1338. Branch is still structurally unreachable, but for a different reason than the comment stated. Updated comment to reflect the real invariant. |
 
 `low.md` row for `test-suite-forbid-incomplete-coverage` updated from
 "Resolved (Partial, 2026-08-28)" to "Resolved (Full, 2026-08-28)".
@@ -169,7 +170,32 @@ exit code: 0
 ## Verification
 
 - `bun --bun vitest run --coverage` from a non-`/tmp/` checkout at
-  HEAD `5e73696` exits 0 with 100% perFile coverage.
-- `git log --oneline d30f8af..HEAD` shows 35 fix commits + 2 typecheck
-  annotation commits + 3 merge commits.
+  HEAD `fa8d29a` exits 0 with 100% perFile coverage.
+- `git log --oneline d30f8af..HEAD` shows 36 fix commits + 2 typecheck
+  annotation commits + 3 merge commits + 1 docs-accuracy fix (BETA finding).
 - `git status` clean.
+
+## Phase 6 verification (ALPHA + BETA, 2 subagent different angles)
+
+ALPHA (checklist verifier): 15/15 PASS.
+- All 36 per-file fix commits land in the expected files (cross-checked
+  against the diff table above).
+- No new TS strict-generics violations (`as`, `!`, `any`).
+- No new `/tmp/` location artifacts beyond the pre-existing 4 CAT-D files.
+- vitest.config.ts unchanged from cycle 57 (`53a9f6c`).
+- Coverage deterministic across 3 consecutive runs.
+
+BETA (adversarial falsifier): 14/14 probes PASS, with one SUSPECT
+finding (since resolved as `fa8d29a`):
+
+> channel-monitor.ts:1337 istanbul ignore comment is misleading. The
+> claim "the early-return is not reachable because RESUME_GRACE_MS >
+> tick" is mathematically true but NOT the reason the branch is
+> unreachable. The actual reason: `resumeMarveenSession()` writes a
+> respawn stamp on stage entry, and subsequent ticks fall inside
+> `MARVEEN_POST_RESPAWN_GRACE_MS` (360s) and return at L1273 first.
+
+Follow-up `fa8d29a` updated the comment to reflect the real invariant
+(post-respawn grace intercepts before the early-return can fire). The
+branch IS structurally unreachable, but for a different reason than
+the comment stated. Coverage still 100% after the docs-only change.
