@@ -24,16 +24,16 @@ const GOOD_MAP_STATE = validateModelProfileMap({
   profiles: {
     premium_reasoning: 'claude-opus-5',
     build_strong: 'claude-sonnet-5',
-    analysis_efficient: 'deepseek-v4-pro',
-    routine_lowcost: 'deepseek-v4-pro',
+    analysis_efficient: 'claude-haiku-4-5-20251001',
+    routine_lowcost: 'claude-haiku-4-5-20251001',
   },
 }) as Extract<ModelProfileMapState, { ok: true }>;
 
 const PROFILE_MAP = {
   premium_reasoning: 'claude-opus-5',
   build_strong: 'claude-sonnet-5',
-  analysis_efficient: 'deepseek-v4-pro',
-  routine_lowcost: 'deepseek-v4-pro',
+  analysis_efficient: 'claude-haiku-4-5-20251001',
+  routine_lowcost: 'claude-haiku-4-5-20251001',
 } as const;
 
 describe('model profile map validation', () => {
@@ -78,8 +78,8 @@ describe('model profile map validation', () => {
       profiles: {
         premium_reasoning: 'claude-opus-5',
         build_strong: '   ',
-        analysis_efficient: 'deepseek-v4-pro',
-        routine_lowcost: 'deepseek-v4-pro',
+        analysis_efficient: 'claude-haiku-4-5-20251001',
+        routine_lowcost: 'claude-haiku-4-5-20251001',
       },
     });
     expect(state.ok).toBe(false);
@@ -151,10 +151,10 @@ describe('resolver precedence', () => {
 
   it('an explicit model BEATS a modelProfile', () => {
     const r = resolveAgentModelFromConfig(
-      { model: 'deepseek-v4-pro', modelProfile: 'premium_reasoning' },
+      { model: 'claude-haiku-4-5-20251001', modelProfile: 'premium_reasoning' },
       GOOD_MAP_STATE, DEFAULT_MODEL, alias,
     );
-    expect(r.model).toBe('deepseek-v4-pro');
+    expect(r.model).toBe('claude-haiku-4-5-20251001');
     expect(r.source).toBe('explicit_model');
   });
 
@@ -256,20 +256,23 @@ describe('failure semantics -- no silent model change', () => {
 
   it('a broken map does NOT disturb an agent that names an explicit model', () => {
     const r = resolveAgentModelFromConfig(
-      { model: 'deepseek-v4-pro', modelProfile: 'build_strong' },
+      { model: 'claude-haiku-4-5-20251001', modelProfile: 'build_strong' },
       { ok: false, error: 'profile_map_unparseable' },
       DEFAULT_MODEL, alias,
     );
-    expect(r.model).toBe('deepseek-v4-pro');
+    expect(r.model).toBe('claude-haiku-4-5-20251001');
     expect(r.error).toBe(undefined);
   });
 });
 
 describe('behaviour neutrality (spec 5.5 acceptance)', () => {
-  // The live fleet snapshot recorded at build time, 2026-07-29.
+  // Originally the live fleet snapshot recorded at build time, 2026-07-29. The
+  // research agent ran deepseek-v4-pro back then; that id was repointed at a
+  // Claude model when third-party providers were removed. The fixture still
+  // serves its purpose: two agents, two profiles, explicit == via-profile.
   const LIVE_SNAPSHOT: Array<{ agent: string; model: string; profile: string }> = [
     { agent: 'buildfejleszto', model: 'claude-sonnet-5', profile: 'build_strong' },
-    { agent: 'research', model: 'deepseek-v4-pro', profile: 'analysis_efficient' },
+    { agent: 'research', model: 'claude-haiku-4-5-20251001', profile: 'analysis_efficient' },
   ];
 
   it.each(LIVE_SNAPSHOT)(
@@ -285,7 +288,7 @@ describe('behaviour neutrality (spec 5.5 acceptance)', () => {
   );
 
   it('every profile in the shipped map resolves to a model the fleet already runs', () => {
-    const live = new Set(['claude-opus-5', 'claude-sonnet-5', 'deepseek-v4-pro']);
+    const live = new Set(['claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5-20251001']);
     for (const id of MODEL_PROFILE_IDS) {
       expect(live.has(GOOD_MAP_STATE.map.profiles[id])).toBe(true);
     }

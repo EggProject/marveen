@@ -41,8 +41,8 @@ const MAP = {
   profiles: {
     premium_reasoning: 'claude-opus-5',
     build_strong: 'claude-sonnet-5',
-    analysis_efficient: 'deepseek-v4-pro',
-    routine_lowcost: 'deepseek-v4-pro',
+    analysis_efficient: 'claude-haiku-4-5-20251001',
+    routine_lowcost: 'claude-haiku-4-5-20251001',
   },
 };
 
@@ -50,7 +50,7 @@ const MAP = {
 const FIXTURES: Record<string, Record<string, unknown>> = {
   'mp-legacy-explicit': { model: 'claude-sonnet-5' },
   'mp-canary-build': { model: 'claude-sonnet-5', modelProfile: 'build_strong' },
-  'mp-canary-research': { model: 'deepseek-v4-pro', modelProfile: 'analysis_efficient' },
+  'mp-canary-research': { model: 'claude-haiku-4-5-20251001', modelProfile: 'analysis_efficient' },
   'mp-profile-only': { modelProfile: 'analysis_efficient' },
   'mp-bad-profile': { modelProfile: 'turbo' },
 };
@@ -87,14 +87,14 @@ describe('additive over the existing selector', () => {
     // canary agents keep their explicit model AND gain a profile, and the
     // resolved-model diff is empty.
     expect(readAgentModel('mp-canary-build')).toBe('claude-sonnet-5');
-    expect(readAgentModel('mp-canary-research')).toBe('deepseek-v4-pro');
+    expect(readAgentModel('mp-canary-research')).toBe('claude-haiku-4-5-20251001');
     expect(resolveAgentModelDetailed('mp-canary-build').source).toBe('explicit_model');
     expect(resolveAgentModelDetailed('mp-canary-research').source).toBe('explicit_model');
   });
 
   it('an agent with ONLY a profile resolves through the map', () => {
     const r = resolveAgentModelDetailed('mp-profile-only');
-    expect(r.model).toBe('deepseek-v4-pro');
+    expect(r.model).toBe('claude-haiku-4-5-20251001');
     expect(r.source).toBe('model_profile');
   });
 

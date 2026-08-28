@@ -103,7 +103,7 @@ describe('contextLimitForModel / calibrateLimit', () => {
     expect(contextLimitForModel('claude-sonnet-5')).toBe(200_000)
     expect(contextLimitForModel('claude-haiku-4-5')).toBe(200_000)
     expect(contextLimitForModel('claude-opus-4-5')).toBe(200_000)
-    expect(contextLimitForModel('deepseek-v4-pro')).toBe(200_000)
+    expect(contextLimitForModel('qwen3.6:27b')).toBe(200_000)
     expect(contextLimitForModel(null)).toBe(200_000)
   })
 
