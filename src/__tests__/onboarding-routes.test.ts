@@ -114,6 +114,16 @@ vi.mock('node:os', async (orig) => {
   }
 })
 
+// Default: execFileSync throws (the real /usr/bin/security is not present in
+// the sandbox). The single happy-path keychain test below overrides this
+// mock to return successfully, exercising onboarding.ts line 62 (the
+// `return true` arm of keychainHasClaudeCredentials).
+vi.mock('node:child_process', () => ({
+  execFileSync: vi.fn(() => {
+    throw new Error('sandbox: security binary missing')
+  }),
+}))
+
 // Import AFTER every mock is registered.
 const { tryHandleOnboarding, identitySavePlan } = await import('../web/routes/onboarding.js')
 const { atomicWriteFileSync } = await import('../web/atomic-write.js')
@@ -123,6 +133,7 @@ const { hardRestartMarveenChannels, mainChannelsSessionExists, createMainChannel
   await import('../web/channel-monitor.js')
 const { liveProbeAuth, stampTokenVerified } = await import('../web/claude-credentials-guard.js')
 const { logger } = await import('../logger.js')
+const { execFileSync } = await import('node:child_process')
 
 // ---------------------------------------------------------------------------
 // HTTP harness
@@ -233,6 +244,13 @@ beforeEach(() => {
   vi.mocked(liveProbeAuth).mockReset()
   vi.mocked(liveProbeAuth).mockResolvedValue('ok')
   vi.mocked(stampTokenVerified).mockReset()
+
+  // Default: keychain binary "missing" (throws). Tests that want to hit the
+  // happy keychain path override this mock.
+  vi.mocked(execFileSync).mockReset()
+  vi.mocked(execFileSync).mockImplementation(() => {
+    throw new Error('sandbox: security binary missing')
+  })
 
   vi.mocked(logger.info).mockClear()
   vi.mocked(logger.warn).mockClear()
@@ -1219,6 +1237,22 @@ describe('process.platform / userInfo branches inside claudeAuthPresent', () => 
     Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
     const { json } = await call('GET', '/api/onboarding/status')
     expect(json()).toBeDefined()
+  })
+
+  it('reports claudeAuthPresent=true on darwin when the keychain lookup succeeds', async () => {
+    // Hit onboarding.ts line 62 (`return true` inside keychainHasClaudeCredentials):
+    // a darwin platform AND a successful execFileSync(/usr/bin/security ...) must
+    // be reported as authenticated via the keychain leg.
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
+    vi.mocked(execFileSync).mockImplementation(() => Buffer.alloc(0))
+    const { json } = await call('GET', '/api/onboarding/status')
+    expect((json() as { claudeAuthPresent: boolean }).claudeAuthPresent).toBe(true)
+    // The probe must have been called with the exact keychain service name.
+    expect(execFileSync).toHaveBeenCalledWith(
+      '/usr/bin/security',
+      ['find-generic-password', '-s', 'Claude Code-credentials', '-a', expect.any(String)],
+      { timeout: 3000, stdio: 'ignore' },
+    )
   })
 
   it('does not crash when the home credentials file lookup fails inside the inner try/catch', async () => {

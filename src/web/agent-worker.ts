@@ -310,6 +310,13 @@ function withWorkerLockFor<T>(ctx: WorkerCtx, fn: () => Promise<T>): Promise<T> 
   return run
 }
 
+// Exported for tests so they can drive the chain rejection arm (the
+// `() => undefined` onRejected at L309) without standing up the full
+// runViaWorker machinery.
+export function __test_withWorkerLockFor<T>(ctx: WorkerCtx, fn: () => Promise<T>): Promise<T> {
+  return withWorkerLockFor(ctx, fn)
+}
+
 // --- isolated worker cwd / config ---------------------------------------------
 
 function lstatSyncSafe(p: string): ReturnType<typeof lstatSync> | null {
@@ -771,6 +778,7 @@ export async function runViaWorker(
     // Every iteration of the for loop above returns from inside it; reaching this
     // point is structurally impossible. Kept as an explicit marker so the function's
     // return type is satisfied without an implicit undefined.
+    /* istanbul ignore next: structurally unreachable -- every loop iteration returns */
     return { text: null, error: 'unreachable', authFailed: true }
   })
 }

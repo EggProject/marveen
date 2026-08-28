@@ -532,6 +532,43 @@ describe('GET /api/skills', () => {
     })
   })
 
+  it('returns a plugin skill whose last path segment is NOT version-like (lastIdx >= 1 but VERSION_LIKE.test=false)', async () => {
+    // skills.ts:122 binary-expr FALSE branch: lastIdx >= 1 is true (multi-segment
+    // packagePath) but the last segment does NOT match the version-like regex,
+    // so shortPluginIdx stays at lastIdx (the segment itself becomes the plugin id).
+    seedPluginSkill(['myplugin', 'notaversion'], 'do-stuff', { description: 'no-version' })
+    const { json } = await call('GET', '/api/skills')
+    const arr = json() as Array<Record<string, unknown>>
+    expect(arr).toHaveLength(1)
+    expect(arr[0]).toMatchObject({
+      name: 'myplugin/notaversion:do-stuff',
+      label: 'notaversion:do-stuff',
+      pluginPackage: 'myplugin/notaversion',
+      source: 'plugin',
+    })
+  })
+
+  it('skips dot-prefixed and `skills`-named entries when walking the plugin cache (line 144 true side)', async () => {
+    // skills.ts:144 walks every entry at the current depth; the TRUE branch
+    // (skip) must fire for entries that start with '.' or are literally named
+    // 'skills' (those are handled separately as a skill-list leaf).
+    //   - .dotdir/skills/foo  -> outer walker skips .dotdir
+    //   - skillsdir/skills/foo -> outer walker skips 'skills' at depth 1
+    //                                but the inner block runs from the parent
+    //                                call (PLUGINS_CACHE_DIR = skillsdir parent)
+    // Seed BOTH to drive both `||` short-circuit arms at line 144.
+    mkdirSync(join(HOME, '.claude', 'plugins', 'cache', '.dotdir', 'skills', 'foo'),
+      { recursive: true })
+    writeFileSync(join(HOME, '.claude', 'plugins', 'cache', '.dotdir', 'skills', 'foo', 'SKILL.md'),
+      '---\nname: foo\ndescription: hidden\n---\n')
+    seedPluginSkill(['myplugin', '1.0.0'], 'visible')
+    const { json } = await call('GET', '/api/skills')
+    const arr = json() as Array<Record<string, unknown>>
+    // Only the visible one survives; the .dotdir entry was skipped at L144.
+    expect(arr).toHaveLength(1)
+    expect(arr[0]?.label).toBe('myplugin:visible')
+  })
+
   it('returns a plugin skill with an RC version suffix', async () => {
     seedPluginSkill(['myplugin', 'rc1'], 'beta-skill', { description: 'beta' })
     const { json } = await call('GET', '/api/skills')
@@ -665,6 +702,52 @@ describe('GET /api/skills', () => {
       'a-user', 'm-user', 'z-user',
       'aaa:aplug', 'mmm:mplug', 'zzz:zplug',
     ])
+  })
+
+  it('exercises the sort comparator a.source !== "user" branch (line 156 false side)', async () => {
+    // Force V8 to compare a=plugin, b=user so the ternary's FALSE arm runs
+    // (returning 1 to push the plugin AFTER the user). The labels are
+    // arranged so the plugin comes alphabetically BEFORE the user in the
+    // original seed order; V8 must swap them, and the comparator must be
+    // called with (a=plugin, b=user).
+    seedUserSkill('aaa')
+    seedPluginSkill(['bbb', '1.0.0'], 'plug')
+    seedUserSkill('ccc')
+    seedPluginSkill(['ddd', '1.0.0'], 'plug')
+    const { json } = await call('GET', '/api/skills')
+    const arr = json() as Array<Record<string, unknown>>
+    // Users come first, plugins after.
+    expect(arr.map((s) => s.source)).toEqual(['user', 'user', 'plugin', 'plugin'])
+    expect(arr.map((s) => s.label)).toEqual(['aaa', 'ccc', 'bbb:plug', 'ddd:plug'])
+  })
+
+  it('exercises the sort comparator a.source === "user" branch (line 156 true side, 3-item)', async () => {
+    // V8's sort comparator is called with (run[j], new_item) during insertion
+    // sort, so for a source-different pair we usually only hit the FALSE
+    // arm (a=plugin). To hit the TRUE arm (a=user) the binary search must
+    // compare the new item (user) with a run element (plugin) such that the
+    // new item belongs earlier -- here a user label `c` inserted between two
+    // plugins forces that call.
+    seedPluginSkill(['aaa', '1.0.0'], 'p1')
+    seedUserSkill('c-user')
+    seedPluginSkill(['ddd', '1.0.0'], 'p2')
+    const { json } = await call('GET', '/api/skills')
+    const arr = json() as Array<Record<string, unknown>>
+    expect(arr.map((s) => s.label)).toEqual(['c-user', 'aaa:p1', 'ddd:p2'])
+  })
+
+  it('seeds a top-level skills/ dir so the inner block runs with packagePath=[] (L122 if false arm)', async () => {
+    // skills.ts:122 if FALSE branch: packagePath=[] when the walker enters
+    // the inner block at PLUGINS_CACHE_DIR itself. lastIdx=-1, lastIdx >= 1
+    // is false, so shortPluginIdx stays at lastIdx (and shortPlugin falls
+    // back to 'plugin' via the L125 `|| 'plugin'`).
+    const dir = join(HOME, '.claude', 'plugins', 'cache', 'skills', 'toplevel')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'SKILL.md'),
+      '---\nname: toplevel\ndescription: tl\n---\n')
+    const { json } = await call('GET', '/api/skills')
+    const arr = json() as Array<Record<string, unknown>>
+    expect(arr.some((s) => s.label === 'plugin:toplevel')).toBe(true)
   })
 
   it('parses a keywords frontmatter field with empty values', async () => {

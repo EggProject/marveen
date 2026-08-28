@@ -2318,3 +2318,49 @@ describe('initDatabase: full branch coverage', () => {
     initDatabase(':memory:')
   })
 })
+
+// ---------------------------------------------------------------------------
+// Default-arg branches: every exported helper that takes an optional limit /
+// status / agent-id argument MUST also be exercised without that argument so
+// the parameter's default value is the one actually used.
+// ---------------------------------------------------------------------------
+describe('default-arg branches', () => {
+  it('calls helpers without their optional argument so the default fires', () => {
+    // Memories
+    expect(Array.isArray(recentMemories('mem-default'))).toBe(true)
+    expect(Array.isArray(getMemoriesForChat('mem-default'))).toBe(true)
+    expect(Array.isArray(searchMemories('q', 'mem-default'))).toBe(true)
+
+    // Agent-scoped memories
+    expect(Array.isArray(getAgentMemories('agent-default'))).toBe(true)
+    expect(Array.isArray(searchAgentMemories('agent-default', 'q'))).toBe(true)
+    expect(Array.isArray(getDailyLogDates('agent-default'))).toBe(true)
+
+    // Agent messages
+    expect(Array.isArray(listAgentMessages())).toBe(true)
+    expect(Array.isArray(getAgentConversation('agent-default'))).toBe(true)
+
+    // Task-run history status default = 'fired'
+    appendTaskRun('default-task', 'agent-default')
+    expect(getActiveScheduledTaskCount()).toBeDefined()
+  })
+
+  it('exercises additional defaults: hybridSearch / tool-call / audit / otel defaults', async () => {
+    // hybridSearch default limit = 10.
+    const hs = await hybridSearch('agent-default', 'some query')
+    expect(Array.isArray(hs)).toBe(true)
+
+    // logToolCall: success defaults to true. Caller does not pass it.
+    logToolCall('agent-default', 'm-1', 'mcp__server__tool', '{"k":"v"}', null)
+    expect(Array.isArray(getRecentToolCalls(3600))).toBe(true)
+
+    // analyzeWorkflowCandidates + pruneToolCallLog defaults.
+    expect(Array.isArray(analyzeWorkflowCandidates())).toBe(true)
+    expect(() => pruneToolCallLog()).not.toThrow()
+
+    // Config + store-file audit + otel default limits.
+    expect(Array.isArray(getRecentConfigChanges())).toBe(true)
+    expect(Array.isArray(getRecentStoreFileEvents())).toBe(true)
+    expect(Array.isArray(listOtelTraces())).toBe(true)
+  })
+})

@@ -1128,6 +1128,21 @@ describe('withWorkerLockFor -- serialization', () => {
     expect(rb.text).toBe('concurrent')
     expect(maxActive).toBe(1)
   })
+
+  it('keeps the chain alive when the inner fn rejects (line 309 anon onRejected)', async () => {
+    // Drive the `() => undefined` onRejected of
+    // `run.then(() => undefined, () => undefined)`. With a fresh ctx, the
+    // first call's fn rejects -- the chain must NOT propagate that
+    // rejection to ctx.chain, so a follow-up call still gets to run.
+    const ctx = { chain: Promise.resolve() } as unknown as Parameters<typeof AW.__test_withWorkerLockFor>[0]
+    await expect(AW.__test_withWorkerLockFor(ctx, async () => {
+      throw new Error('inner boom')
+    })).rejects.toThrow('inner boom')
+    // A subsequent call must NOT see the prior rejection -- the chain has
+    // been replaced with `run.then(() => undefined, () => undefined)`.
+    const ok = await AW.__test_withWorkerLockFor(ctx, async () => 'ok')
+    expect(ok).toBe('ok')
+  })
 })
 
 // ===========================================================================
