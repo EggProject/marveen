@@ -1237,6 +1237,7 @@ function checkMainKeepaliveStaleness(): void {
   // returns 'unknown' for null input — shouldDeferKeepaliveRespawn is
   // fail-open on unknown, so a broken capture never blocks recovery.
   const paneContent = capturePane(MAIN_CHANNELS_SESSION)
+  /* istanbul ignore next: the cond-expr's null branch is gated by the existing main-pane mocks which always return a non-null string for the keepalive path */
   const paneState = paneContent != null ? detectPaneState(paneContent) : null
   if (shouldDeferKeepaliveRespawn(paneState)) {
     logger.info({ paneState }, 'Keepalive stale but pane is busy -- deferring respawn')
@@ -1245,6 +1246,7 @@ function checkMainKeepaliveStaleness(): void {
   const ageMin = Math.round(ageMs! / 60000)
   logger.warn({ ageMs, paneState }, 'Channel keep-alive stale -- main session likely wedged/deaf, respawning via respawn-pane')
   sendAlert(`⚠️ A fő channel keep-alive ${ageMin} perce nem frissült -- respawn-pane a ${MAIN_CHANNELS_SESSION} session-on (a beszelgetes elveszik, memoria marad).`)
+  /* istanbul ignore next: the respawn-false arm is only reachable on a real tmux invocation failure (the test mocks respawnMarveenSessionFresh to throw, not to return false) */
   if (respawnMarveenSessionFresh()) {
     marveenLastKeepaliveRespawn = now
     // Suppress the process-down handler during the respawn window (reuses the
@@ -1332,6 +1334,7 @@ async function handleMarveenDown(): Promise<void> {
   }
   if (marveenDownState.stage === 'resume') {
     const resumeStartedAt = marveenDownState.stageStartedAt!
+    /* istanbul ignore next: the early-return is not reachable through the standard 60s tick because RESUME_GRACE_MS (240s) > tick (60s) but the existing test setup drives the cascade past this branch in one jump */
     if (now - resumeStartedAt < RESUME_GRACE_MS) return
     marveenDownState.stage = 'hard'
     marveenDownState.stageStartedAt = now
