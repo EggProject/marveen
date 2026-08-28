@@ -190,6 +190,14 @@ on `deepseek-v4-pro`, 7 on `claude-sonnet-5`, 2 on `claude-opus-5`):
 Two profiles pointing at the same model is intentional. Phase 1 abstracts; it
 does not re-tier.
 
+> **Addendum, 2026-08-28.** The `deepseek-v4-pro` entries above are the
+> historical record of what shipped on 2026-07-29 and are left as written.
+> DeepSeek and OpenRouter support has since been removed, so
+> `config-examples/model-profile-map.example.json` now points
+> `analysis_efficient` and `routine_lowcost` at `claude-haiku-4-5-20251001`.
+> A deployment-local `store/model-profile-map.json` still naming a
+> `deepseek-*` id will make the launcher refuse to start that agent.
+
 ### Canary result
 
 `buildfejleszto → build_strong` and `research → analysis_efficient`, applied

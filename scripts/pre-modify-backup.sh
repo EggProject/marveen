@@ -8,7 +8,7 @@
 #
 # Rolling retention: keep the newest $KEEP snapshots, prune the rest.
 # Usage: scripts/pre-modify-backup.sh [label]
-#   label is an optional short tag for the snapshot dir (e.g. "openrouter-ui").
+#   label is an optional short tag for the snapshot dir (e.g. "vault-ui").
 set -uo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
@@ -31,7 +31,7 @@ fi
 # Small critical state git does not track. Explicit list -- store/ also holds
 # ~1.7G of large/regenerable data we deliberately do NOT copy.
 for f in vault.json .vault-key .dashboard-token \
-         openrouter-models.json agents-desired.json autonomy-config.json \
+         agents-desired.json autonomy-config.json \
          auto-restart.json command-task-health.json schedule-last-run.json; do
   [ -f "$STORE/$f" ] && cp -p "$STORE/$f" "$DEST/" 2>/dev/null
 done
