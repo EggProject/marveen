@@ -224,3 +224,31 @@ export async function probeHighWater(token: string): Promise<number | null> {
   const last = json.result && json.result.length ? json.result[json.result.length - 1] : null
   return last ? last.update_id : null
 }
+
+/**
+ * Class wrapper for the 3 telegram-poll free functions. The class form
+ * delegates to the free functions so behaviour stays byte-identical
+ * (per 100% perFile coverage gate at vitest.config.ts:42-48 — parallel
+ * bodies would duplicate 79 of 85 branches and break CI).
+ *
+ * Constructor is implicit (TS default) — env/db/log dependencies are
+ * deferred to G.4 ChannelCoordinator orchestrator.
+ */
+export class TelegramClient {
+  getUpdates(
+    token: string,
+    offset: number,
+    timeout: number,
+    limit: number,
+  ): Promise<RawUpdate[]> {
+    return getUpdates(token, offset, timeout, limit)
+  }
+
+  probeHighWater(token: string): Promise<number | null> {
+    return probeHighWater(token)
+  }
+
+  mapUpdate(u: RawUpdate): NormalizedEvent | null {
+    return mapUpdate(u)
+  }
+}
