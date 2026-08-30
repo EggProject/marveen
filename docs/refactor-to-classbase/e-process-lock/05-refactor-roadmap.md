@@ -22,7 +22,7 @@ worktree must be on a `$HOME/claw-test` clean detached HEAD (not
 
 ## Phase E.1 — `PortLockAcquirer` class extraction
 
-> **LANDED in `48cb770`**, together with E.2 (one commit, same file). Three
+> **LANDED in `57c78d0`**, together with E.2 (one commit, same file). Three
 > items below were deliberately NOT implemented; see "Deviations from the
 > E.1/E.2 spec as landed" after E.2.
 
@@ -76,7 +76,7 @@ worktree must be on a `$HOME/claw-test` clean detached HEAD (not
 
 ## Phase E.2 — `PidfileLockAcquirer` class extraction
 
-> **LANDED in `48cb770`** (same commit as E.1).
+> **LANDED in `57c78d0`** (same commit as E.1).
 
 - **Goal:** introduce the `PidfileLockAcquirer` class alongside
   `acquirePidfileLock`. Same shape as E.1: literal translation of
@@ -119,7 +119,7 @@ worktree must be on a `$HOME/claw-test` clean detached HEAD (not
 
 ---
 
-## Deviations from the E.1/E.2 spec as landed (`48cb770`)
+## Deviations from the E.1/E.2 spec as landed (`57c78d0`)
 
 E.1 and E.2 shipped as ONE commit touching two files: `src/process-lock.ts`
 and the new `src/__tests__/process-lock-classes.test.ts` (7 `it()` cases).
@@ -368,8 +368,8 @@ H.1 (LoggerLike) ──────────┐
 
 | Phase | Risk | Files touched | Rollback granularity |
 |---|---|---|---|
-| E.1 | Low | 1 | commit (landed `48cb770`) |
-| E.2 | Low–Medium | 1 | commit (landed `48cb770`) |
+| E.1 | Low | 1 | commit (landed `57c78d0`) |
+| E.2 | Low–Medium | 1 | commit (landed `57c78d0`) |
 | E.3 | Low | 2 | commit |
 | E.4 | Low–Medium | 2 | commit |
 | E.5 | Medium | 3 | per-function commit |
