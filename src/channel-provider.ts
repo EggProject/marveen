@@ -164,11 +164,15 @@ export class SlackProvider implements ChannelProvider {
       throw new Error(`Slack getUploadURL: ${urlData.error || 'unknown error'}`)
     }
 
-    await fetch(urlData.upload_url, {
+    const uploadResp = await fetch(urlData.upload_url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/octet-stream' },
       body: fileData,
     })
+    if (!uploadResp.ok) {
+      const text = await uploadResp.text().catch(() => '')
+      throw new Error(`Slack upload ${uploadResp.status}: ${text.slice(0, 200)}`)
+    }
 
     const completeResp = await fetch('https://slack.com/api/files.completeUploadExternal', {
       method: 'POST',
@@ -241,7 +245,11 @@ export class DiscordProvider implements ChannelProvider {
 
   async sendPhoto(token: string, chatId: string, photoPath: string, caption: string): Promise<void> {
     const fileData = readFileSync(photoPath)
-    const filename = photoPath.split('/').pop() || 'image.png'
+    // Strip control characters and quotes from the filename before injecting
+    // it raw into the multipart Content-Disposition header. A photoPath whose
+    // basename contains a CR/LF or quote would otherwise forge an extra
+    // header section in the body (CRLF injection).
+    const filename = (photoPath.split('/').pop() || 'image.png').replace(/[\r\n"\\]/g, '_')
     const boundary = `----FormBoundary${Date.now()}`
     const parts: Buffer[] = []
     const payloadJson = JSON.stringify({
@@ -520,14 +528,17 @@ const providers: Record<ChannelProviderType, ChannelProvider> = {
 // routes), and any of them reached from a test run must label its outbound
 // message. markIfTestRun is a no-op in production and idempotent, so the
 // wrapper is safe to layer under callers that already mark.
-function withTestRunMarking(provider: ChannelProvider): ChannelProvider {
+//
+// Spread `...provider` to copy own enumerable fields (preserves forward-compat
+// when new fields are added to ChannelProvider) and to keep the wrapper
+// instanceof-clean. Class prototype methods (validateToken, formatMessage,
+// splitMessage, sendMessage, sendPhoto) are not own properties on a class
+// instance, so they are explicitly delegated. envKeys is shallow-copied to
+// prevent callers from mutating the provider's array via the wrapper.
+export function withTestRunMarking(provider: ChannelProvider): ChannelProvider {
   return {
-    type: provider.type,
-    pluginId: provider.pluginId,
-    pluginPaneId: provider.pluginPaneId,
-    envKeys: provider.envKeys,
-    stateDir: provider.stateDir,
-    chatIdFormat: provider.chatIdFormat,
+    ...provider,
+    envKeys: [...provider.envKeys],
     sendMessage: (token, chatId, text, parseMode) =>
       provider.sendMessage(token, chatId, markIfTestRun(text), parseMode),
     sendPhoto: (token, chatId, photoPath, caption) =>
