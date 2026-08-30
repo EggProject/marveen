@@ -88,12 +88,14 @@ describe('validateToken return shape (ValidateTokenResult named type)', () => {
   })
 
   it('googlechat class returns ValidateTokenResult with botName=Google Chat', async () => {
-    const r = await new GooglechatProvider().validateToken('any')
+    const p: ChannelProvider = new GooglechatProvider()
+    const r = await p.validateToken('any')
     expect(r).toEqual({ ok: true, botName: 'Google Chat' })
   })
 
   it('teams class returns ValidateTokenResult with botName=Microsoft Teams', async () => {
-    const r = await new TeamsProvider().validateToken('any')
+    const p: ChannelProvider = new TeamsProvider()
+    const r = await p.validateToken('any')
     expect(r).toEqual({ ok: true, botName: 'Microsoft Teams' })
   })
 })
@@ -136,33 +138,42 @@ describe('splitMessage non-empty array for direct-send providers', () => {
 })
 
 describe('googlechat/teams send throws the unsupported-direct-send template', () => {
+  // The throw checks below exercise the runtime contract via the ChannelProvider
+  // interface type (not the concrete class type) so the missing interface
+  // parameters on the abstract base's method definitions stay type-safe --
+  // matching the pre-D.2 object-literal behavior where calling with extra
+  // arguments through `getProvider(...)` was also valid.
   it('googlechat.sendMessage throws with the type-templated message', async () => {
+    const p: ChannelProvider = new GooglechatProvider()
     await expect(
-      new GooglechatProvider().sendMessage('tok', 'space-x', 'msg'),
+      p.sendMessage('tok', 'space-x', 'msg'),
     ).rejects.toThrow(
       'googlechat: direct dashboard send not supported (delivery via plugin MCP tools)',
     )
   })
 
   it('googlechat.sendPhoto throws with the type-templated message', async () => {
+    const p: ChannelProvider = new GooglechatProvider()
     await expect(
-      new GooglechatProvider().sendPhoto('tok', 'space-x', '/nonexistent.png', 'cap'),
+      p.sendPhoto('tok', 'space-x', '/nonexistent.png', 'cap'),
     ).rejects.toThrow(
       'googlechat: direct dashboard send not supported (delivery via plugin MCP tools)',
     )
   })
 
   it('teams.sendMessage throws with the type-templated message', async () => {
+    const p: ChannelProvider = new TeamsProvider()
     await expect(
-      new TeamsProvider().sendMessage('tok', 'conv-id', 'msg'),
+      p.sendMessage('tok', 'conv-id', 'msg'),
     ).rejects.toThrow(
       'teams: direct dashboard send not supported (delivery via plugin MCP tools)',
     )
   })
 
   it('teams.sendPhoto throws with the type-templated message', async () => {
+    const p: ChannelProvider = new TeamsProvider()
     await expect(
-      new TeamsProvider().sendPhoto('tok', 'conv-id', '/nonexistent.png', 'cap'),
+      p.sendPhoto('tok', 'conv-id', '/nonexistent.png', 'cap'),
     ).rejects.toThrow(
       'teams: direct dashboard send not supported (delivery via plugin MCP tools)',
     )

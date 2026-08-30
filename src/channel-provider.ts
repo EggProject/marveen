@@ -301,6 +301,11 @@ export abstract class UnsupportedDirectSendProvider implements ChannelProvider {
   protected abstract readonly displayName: string
   protected abstract readonly maxLength: number
 
+  // The 3 methods below ignore their arguments: the dashboard has no direct
+  // send path for these channels (delivery goes through the plugin MCP tools).
+  // The interface declares the full signature so callers pass tokens/etc, and
+  // fewer-parameter method definitions are assignable to more-parameter method
+  // types in TS (matches the pre-D.2 object-literal behavior).
   async sendMessage(): Promise<void> {
     throw new Error(`${this.type}: direct dashboard send not supported (delivery via plugin MCP tools)`)
   }
