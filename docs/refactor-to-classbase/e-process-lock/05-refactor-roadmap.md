@@ -1,0 +1,368 @@
+# E (process-lock) — Refactor roadmap
+
+Ordered phases for the E subsystem only. Each phase is
+**independently shippable**: mergeable, revertable, and gated on its
+own test coverage. The framework's Phase 2
+(`05-refactor-roadmap.md:50-75`) is the coarse-grained counterpart;
+this document decomposes Phase 2 into E.1 through E.6 and pins the
+gates per phase.
+
+The "parallelizable" marker means the phase can be executed by two
+agents concurrently on disjoint file sets with no merge conflicts
+beyond trivial import-line additions.
+
+**Pre-condition (CLAUDE.md §8):** before any phase runs vitest, the
+worktree must be on a `$HOME/claw-test` clean detached HEAD (not
+`/tmp/`). The framework's `PROJECT_ROOT = join(__dirname, '..')`
+(`src/config.ts:12`) picks up the worktree path, and the
+`_TMP_PREFIXES` guard at `src/web/agent-scaffold.ts:144` rejects
+`/tmp/` hook registrations — 19 spurious test fails in 4 CAT-D files.
+
+---
+
+## Phase E.1 — `PortLockAcquirer` class extraction
+
+- **Goal:** introduce the `PortLockAcquirer` class in
+  `src/process-lock.ts` alongside the existing `acquirePortLock`
+  free function. The class is a literal translation of the function
+  body; the free function becomes a thin wrapper that constructs a
+  one-shot instance and calls `.acquire(port)`. The two surfaces
+  share the body via a private implementation method.
+- **Files touched:**
+  - `src/process-lock.ts` — add `class PortLockAcquirer`; keep
+    `acquirePortLock` as `export function acquirePortLock(port, ctx,
+    opts) { return new PortLockAcquirer(ctx, opts).acquire(port) }`;
+    keep `findOwnNodeHolders`, `findOwnBinaryMatches`,
+    `terminateProcesses`, `writeBufferFully`, `SignalOutcome`,
+    `ProcessLockContext`, `AcquirePortLockOptions` unchanged.
+  - **None else.** `src/index.ts` is untouched in E.1; the
+    `acquirePortLock` call site at `index.ts:341` keeps working
+    against the wrapper.
+  - `src/__tests__/process-lock.test.ts` — add a small new test file
+    or `describe` block that exercises `new PortLockAcquirer(ctx,
+    opts).acquire(port)` directly. The 8 existing `acquirePortLock`
+    cases (`:333-528`) keep passing unchanged.
+- **Risk:** **Low.** The class is a pure translation. The only
+  behaviour-affecting risk is that the wrapper inadvertently
+  re-evaluates defaults (`process-lock.ts:174-176`) on every call
+  instead of once at construction — but the current behaviour
+  re-evaluates defaults per call too, so a per-call wrapper
+  preserves the exact semantics.
+- **Test coverage requirement:**
+  - All 33 existing `process-lock.test.ts` cases pass against the
+    wrapper (no behaviour change).
+  - New tests cover the class API:
+    - Construction with `opts` resolves defaults at `acquire()` time
+      (verified: pass `{}`, assert `graceMs === 1500` via log spy or
+      via observed `ctx.sleep` calls).
+    - `release()` is a no-op (verified: no `ctx.*` calls).
+    - `acquire(port, overrides)` per-call override semantics
+      [ASSUMPTION: only if E.1 lands with the `overrides?`
+      parameter; otherwise drop this case].
+  - `index.test.ts:876` ('defers to a legitimate alive peer that is
+    not yet on the port') continues to pass — exercises the mock
+    factory at `:173` against the wrapper, not the class.
+- **Rollback strategy:** single commit. Revert is `git revert <sha>`;
+  the wrapper signature is identical to the pre-E.1 function
+  signature, so no downstream files need adjustment on rollback.
+- **Parallelizable:** **no** — touches `src/process-lock.ts`, which
+  is the same file E.2 will modify. E.1 must land before E.2.
+
+---
+
+## Phase E.2 — `PidfileLockAcquirer` class extraction
+
+- **Goal:** introduce the `PidfileLockAcquirer` class alongside
+  `acquirePidfileLock`. Same shape as E.1: literal translation of
+  the function body, free function becomes a wrapper, shared body
+  via private implementation method.
+- **Files touched:**
+  - `src/process-lock.ts` — add `class PidfileLockAcquirer`; keep
+    `acquirePidfileLock`, `DeferToPeerError`, `ExclusiveCreateOutcome`,
+    `PidfileLockContext`, `AcquirePidfileLockOptions` unchanged.
+  - **None else.** `src/index.ts` is untouched; the
+    `acquirePidfileLock` call site at `index.ts:348` keeps working
+    against the wrapper.
+  - `src/__tests__/process-lock.test.ts` — add new tests that
+    exercise the class API directly (atomic-create, stale-unlink,
+    defer-throws-DeferToPeerError, maxAttempts-give-up).
+- **Risk:** **Low–Medium.** Higher than E.1 because of
+  `DeferToPeerError`. The throw site at `process-lock.ts:347` moves
+  from a free function body to a method body, but the throw
+  *itself* is byte-identical (`throw new DeferToPeerError(recorded)`
+  with the same `recorded` value). The `instanceof DeferToPeerError`
+  consumer at `index.ts:555` continues to discriminate correctly.
+  Detail in `06-risks-and-mitigations.md` ER4.
+- **Test coverage requirement:**
+  - All 14 existing `acquirePidfileLock` cases (`:532-749`) pass
+    against the wrapper.
+  - New tests cover the class API:
+    - `acquire(path)` constructs, calls the right sequence of `ctx`
+      methods.
+    - `release()` reads pidfile and unlinks iff `recorded === selfPid`
+      (replaces the free `releaseLock()` at `index.ts:356-364` once
+      E.4 migrates — the E.2 test covers the *behaviour*, E.4 covers
+      the *call site*).
+    - `DeferToPeerError` thrown from `acquire()` with
+      `onLiveLegitimate: 'defer'` carries `peerPid === recorded`.
+  - `index.test.ts:1545`, `:1910`, `:1949`, `:2207` continue to pass
+    — they exercise the mock factory at `:173` against the wrapper.
+- **Rollback strategy:** single commit. Revert restores the
+  pre-E.2 function.
+- **Parallelizable:** **no** — same file as E.1. E.2 must follow E.1.
+
+---
+
+## Phase E.3 — PortLock consumer migration (proof)
+
+- **Goal:** migrate the single production consumer of `acquirePortLock`
+  from `acquirePortLock(WEB_PORT, procCtx, { binaryPattern: … })`
+  (`src/index.ts:341`) to the class form. This is the proof consumer
+  for E.1; once it passes, E.1 is validated end-to-end.
+- **Files touched:**
+  - `src/index.ts` — construct a `PortLockAcquirer` instance (either
+    locally inside `acquireLock()` at `:337-351` or held on a
+    future `class App` per Phase 7) and call
+    `await portLockAcquirer.acquire(WEB_PORT, { binaryPattern: … })`.
+    Keep `acquirePortLock` imported only if other call sites exist
+    (verified: zero — `index.ts` is the only production importer).
+  - `src/__tests__/index.test.ts` — the `vi.mock('../process-lock.js')`
+    factory at `:173` continues to mock the legacy free functions;
+    no change. The 40+ `mockAcquirePortLock` assertions keep working.
+    The `withRealAcquirePortLock` helper at `:1363` keeps routing
+    through `vi.importActual` and the wrapper; no change.
+  - **Test fixture at `process-lock.test.ts`** — if any of the 8
+    `acquirePortLock` cases (`:333-528`) need updating to use the
+    class form, do it in lockstep. Otherwise leave them (they
+    exercise the wrapper, which is also a class).
+- **Risk:** **Low.** Single call site; the change is a
+  constructor + method-call rewrite with byte-identical semantics.
+- **Test coverage requirement:**
+  - The full `bun --bun vitest run` suite passes (target: same
+    total/passing count as the Phase 0 baseline).
+  - `index.test.ts:876` ('defers to a legitimate alive peer that is
+    not yet on the port') continues to pass.
+  - The 33 `process-lock.test.ts` cases pass unchanged.
+- **Rollback strategy:** single commit. Revert restores
+  `acquirePortLock(WEB_PORT, procCtx, { binaryPattern: … })`.
+- **Parallelizable:** **yes** — E.3 and E.4 can run concurrently
+  once E.1 and E.2 have both landed, because `src/index.ts:341` and
+  `:348` are independent call sites and the test updates touch
+  disjoint describe blocks.
+
+---
+
+## Phase E.4 — PidfileLock consumer migration (proof)
+
+- **Goal:** migrate the single production consumer of
+  `acquirePidfileLock` at `src/index.ts:348` to the class form,
+  and migrate the `releaseLock()` body at `:356-364` to
+  `pidfileLockAcquirer.release()`.
+- **Files touched:**
+  - `src/index.ts` — construct a `PidfileLockAcquirer` (either
+    locally in `acquireLock()` or held on a future `class App`),
+    pass `process.pid` via the constructor (so `selfPid` is
+    captured once), call `.acquire(PID_FILE, { onLiveLegitimate:
+    'defer' })`. Replace `releaseLock()` at `:356-364` with
+    `await pidfileLockAcquirer.release()`. The call sites of
+    `releaseLock()` are at `:393, :402, :408, :413, :411-415`
+    (per `01-module-state-analysis.md` §6 "Integration in
+    `src/index.ts`'s boot flow") — each becomes
+    `await pidfileLockAcquirer.release()`.
+  - `src/__tests__/index.test.ts` — the `vi.mock` factory at
+    `:173` substitutes `mockAcquirePidfileLock` (default
+    `mockResolvedValue(undefined)` at `:321`); the
+    `mockAcquirePidfileLock.mockResolvedValueOnce(…)` overrides at
+    `:1545`, `:1910`, `:1949`, `:2207` etc. continue to work
+    because the production code never directly calls the legacy
+    free function anymore — but the mock factory still returns
+    it. If E.5 (free function removal) runs first, the mock factory
+    must change shape; if not, it stays as-is.
+- **Risk:** **Low–Medium.** Same shape as E.3 but for the path
+  that carries `DeferToPeerError`. The `instanceof DeferToPeerError`
+  consumer at `index.ts:555` continues to work because the class
+  is still the top-level export. Detail in `06-risks-and-mitigations.md`
+  ER4.
+- **Test coverage requirement:**
+  - Full vitest suite passes.
+  - The 14 `acquirePidfileLock` cases in `process-lock.test.ts`
+    continue to pass against the wrapper OR against the class
+    (whichever the test file ends up exercising after E.5).
+  - The five `releaseLock()` call sites in `index.ts:393, :402,
+    :408, :413, :411-415` are exercised by the integration
+    shutdown test added in Phase 7 (per framework R9 mitigation
+    "Test exercises the full shutdown").
+- **Rollback strategy:** single commit. Revert restores the
+  free-function call sites.
+- **Parallelizable:** **yes** — disjoint from E.3.
+
+---
+
+## Phase E.5 — Free function removal
+
+- **Goal:** remove the `acquirePortLock` and `acquirePidfileLock`
+  free functions from `src/process-lock.ts` once every consumer has
+  migrated to the class form. Remove the legacy `releaseLock()`
+  free function at `src/index.ts:356-364` (absorbed by
+  `PidfileLockAcquirer.release()` in E.4).
+- **Files touched:**
+  - `src/process-lock.ts` — delete the two wrapper `export function
+    acquirePortLock` / `acquirePidfileLock` declarations. Keep
+    `findOwnNodeHolders`, `findOwnBinaryMatches`, `terminateProcesses`,
+    `writeBufferFully`, `SignalOutcome`, `ExclusiveCreateOutcome`,
+    `DeferToPeerError`, `ProcessLockContext`, `PidfileLockContext`,
+    `AcquirePortLockOptions`, `AcquirePidfileLockOptions`.
+  - `src/__tests__/process-lock.test.ts` — update imports and any
+    direct-exercise cases that call the removed free functions. The
+    `process-lock.test.ts:5, :6, :7` imports of `findOwnNodeHolders`,
+    `findOwnBinaryMatches`, `terminateProcesses` stay. The
+    `acquirePortLock` / `acquirePidfileLock` import lines (`:8, :9`)
+    are removed and the cases rewritten to use `new
+    PortLockAcquirer(ctx).acquire(port)` etc.
+  - `src/__tests__/index.test.ts` — the `vi.mock('../process-lock.js')`
+    factory at `:173` must change shape: it no longer mocks the
+    free functions (they don't exist) but still mocks the
+    *constructors* OR — more likely — `index.ts:341` no longer
+    imports anything from `process-lock.js` (it constructs the
+    class locally), so the `vi.mock` factory is removed entirely
+    OR reduced to mocking only `writeBufferFully` / `DeferToPeerError`.
+    [ASSUMPTION: the exact factory shape depends on whether
+    `index.ts` constructs the acquirers inline or via a `class
+    App` factory. If inline, the factory may disappear. If via
+    `class App`, the factory mocks the constructor.]
+  - `src/__tests__/index.test.ts:1363` (`withRealAcquirePortLock`)
+    and `:1314` (`withRealAcquirePidfileLock`) — these helpers
+    delegate to `actual.acquirePortLock` /
+    `actual.acquirePidfileLock` via `vi.importActual`. After E.5
+    the imports return `undefined`; the helpers must be rewritten
+    to construct a real instance OR removed entirely. The 13+ test
+    groups that use these helpers (`:1377-1481`, `:2743-2790+`,
+    `:2206+`, `:2148+`, `:876+` per `01-module-state-analysis.md`
+    §8 "Test groups that depend on the real acquire functions")
+    must be updated or deleted.
+- **Risk:** **Medium.** E.5 is the irreversible step. The gate is
+  mechanical: `grep -rln "acquirePortLock\|acquirePidfileLock" src/
+  --include='*.ts' | grep -v __tests__` must return only the
+  internal references inside `src/process-lock.ts` (the class
+  definitions themselves) and `src/index.ts` (the class instantiation
+  sites). If any test file outside `__tests__` imports the free
+  function, E.5 must not run.
+- **Test coverage requirement:**
+  - Full vitest suite passes.
+  - No `import { acquirePortLock, acquirePidfileLock }` exists
+    outside `src/process-lock.ts` and `src/__tests__/*`.
+  - The `vi.mock('../process-lock.js')` factory is updated and
+    continues to provide whatever `index.ts` now imports from that
+    module (the classes, plus `writeBufferFully` and
+    `DeferToPeerError` if they are still imported).
+  - The `withReal*` helpers at `index.test.ts:1363` and `:1314`
+    are removed or rewritten; the 13+ dependent test groups pass.
+- **Rollback strategy:** per-function commits. E.5a removes
+  `acquirePortLock` after its consumer at `index.ts:341` migrates;
+  E.5b removes `acquirePidfileLock` after `:348`. Each is
+  independently revertable.
+- **Parallelizable:** **no** — touches the same file as every prior
+  E phase and modifies the `vi.mock` factory that
+  `index.test.ts:173` already pins. E.5 must follow E.3 + E.4
+  sequentially.
+
+---
+
+## Phase E.6 — `LogFn` removal (H.1 + H.2 dependency)
+
+- **Goal:** delete the local `type LogFn` alias at
+  `src/process-lock.ts:19`; replace the two `log: { info: LogFn;
+  warn: LogFn; error: LogFn }` fields at `:49` and `:253` with
+  `log: LoggerLike` (imported from `src/logger.ts`); collapse the
+  two adapter literals at `src/index.ts:171-175` and `:280-287` to
+  `log: logger`; fix the off-by-one comment at `index.ts:283`
+  (`1382` → `1383`).
+- **Files touched:**
+  - `src/process-lock.ts` — delete `type LogFn` at `:19`; add
+    `import type { LoggerLike } from './logger.js'`; replace the
+    two `log: { info: LogFn; warn: LogFn; error: LogFn }` fields
+    with `log: LoggerLike`.
+  - `src/index.ts` — collapse `log: { info: (obj, msg) =>
+    logger.info(obj, msg), warn: …, error: … }` to
+    `log: logger` at both sites; fix the `1382` → `1383` comment.
+  - `src/__tests__/process-lock.test.ts:81` and `:515` — add
+    `debug: log('debug')` stub to satisfy `LoggerLike` conformance.
+- **Risk:** **Low.** Pure type-side change. All 13 in-file call
+  sites (`:107, :112, :136, :138, :155, :158, :181, :196, :301,
+  :328, :336, :346, :350, :352, :362`) use the obj-first form
+  and satisfy `LoggerLike.LogFn` without modification. The
+  widening from `Record<string, unknown>` to `object` is a
+  superset direction.
+- **Test coverage requirement:**
+  - All `process-lock.test.ts` cases pass.
+  - The pin test at `index.test.ts:1383` ('forwards pidfile
+    context errors to logger.error') continues to pass.
+  - `bun tsc --noEmit` delta from the baseline is **zero** (this
+    phase should produce no type errors).
+- **Rollback strategy:** single commit. Revert restores the
+  `LogFn` alias.
+- **Parallelizable:** **yes** — `src/process-lock.ts` is shared
+  with prior E phases but the changes are local (delete one line,
+  modify two fields, add one import). E.6 can run in parallel
+  with E.5 if the file has been refactored to be just-class
+  (no free-function wrappers); otherwise E.6 follows E.5.
+
+---
+
+## Summary dependency graph (E only)
+
+```
+H.1 (LoggerLike) ──────────┐
+                           │
+                           v
+                E.1 (PortLockAcquirer class) ─── E.3 (consumer migrate)
+                           │                            │
+                           │                            │
+                E.2 (PidfileLockAcquirer class) ── E.4 (consumer migrate)
+                           │                            │
+                           │                            v
+                           └──────────► E.5 (free fn removal) ◄──┘
+                                                  │
+                                                  v
+                                       E.6 (LogFn removal, gated on H.1 + H.2)
+```
+
+## Risk-level summary
+
+| Phase | Risk | Files touched | Rollback granularity |
+|---|---|---|---|
+| E.1 | Low | 1 | commit |
+| E.2 | Low–Medium | 1 | commit |
+| E.3 | Low | 2 | commit |
+| E.4 | Low–Medium | 2 | commit |
+| E.5 | Medium | 3 | per-function commit |
+| E.6 | Low | 3 | commit |
+
+## Pre-conditions for E.5 (free function removal)
+
+E.5 must not run until:
+
+1. E.1, E.2, E.3, E.4 have all merged to `feature-develop`.
+2. The full test suite passes on the merged branch.
+3. The mechanical gate holds:
+   `grep -rln "acquirePortLock\|acquirePidfileLock" src/ --include='*.ts'
+   | grep -v __tests__` returns only `src/index.ts` (or empty if
+   `index.ts` also migrated to inline construction) and the
+   internal references inside `src/process-lock.ts`.
+4. The `vi.mock('../process-lock.js')` factory at
+   `index.test.ts:173` has been updated for the new export shape
+   (the helpers at `:1363` and `:1314` too).
+
+## Pre-conditions for E.6 (`LogFn` removal)
+
+E.6 must not run until:
+
+1. H.1 has landed: `src/logger.ts` exports `LoggerLike`.
+2. H.2 has shipped a proof consumer (per the framework roadmap
+   `05-refactor-roadmap.md` Phase 1.5 / 2 boundary) so the
+   constructor-injection pattern is verified to work before E
+   adopts it.
+3. E.5 has either landed OR is in flight — E.6 and E.5 can
+   parallelise only if they touch disjoint lines (E.5 removes
+   free functions; E.6 modifies field types). Verify with a
+   `git diff` against the E.5 baseline.
