@@ -59,7 +59,7 @@ export interface ValidateTokenResult {
 }
 
 export class TelegramProvider implements ChannelProvider {
-  readonly type = 'telegram' as const
+  readonly type: ChannelProviderType = 'telegram'
   readonly pluginId = 'telegram@claude-plugins-official'
   readonly pluginPaneId = 'plugin:telegram:telegram'
   readonly envKeys: string[] = ['TELEGRAM_BOT_TOKEN']
@@ -117,7 +117,7 @@ export class TelegramProvider implements ChannelProvider {
 }
 
 export class SlackProvider implements ChannelProvider {
-  readonly type = 'slack' as const
+  readonly type: ChannelProviderType = 'slack'
   readonly pluginId = 'slack-channel@marveen-marketplace'
   readonly pluginPaneId = 'plugin:slack-channel:marveen-marketplace'
   readonly envKeys: string[] = ['SLACK_BOT_TOKEN', 'SLACK_APP_TOKEN']
@@ -217,7 +217,7 @@ export class SlackProvider implements ChannelProvider {
 }
 
 export class DiscordProvider implements ChannelProvider {
-  readonly type = 'discord' as const
+  readonly type: ChannelProviderType = 'discord'
   readonly pluginId = 'discord@claude-plugins-official'
   readonly pluginPaneId = 'plugin:discord:discord'
   readonly envKeys: string[] = ['DISCORD_BOT_TOKEN']
@@ -328,7 +328,7 @@ export abstract class UnsupportedDirectSendProvider implements ChannelProvider {
 }
 
 export class GooglechatProvider extends UnsupportedDirectSendProvider {
-  readonly type = 'googlechat' as const
+  readonly type: ChannelProviderType = 'googlechat'
   readonly pluginId = 'googlechat@claude-channel-googlechat'
   readonly pluginPaneId = 'plugin:googlechat:googlechat'
   readonly envKeys: string[] = ['GOOGLE_APPLICATION_CREDENTIALS', 'GOOGLECHAT_PROJECT_ID', 'GOOGLECHAT_SUBSCRIPTION']
@@ -339,7 +339,7 @@ export class GooglechatProvider extends UnsupportedDirectSendProvider {
 }
 
 export class TeamsProvider extends UnsupportedDirectSendProvider {
-  readonly type = 'teams' as const
+  readonly type: ChannelProviderType = 'teams'
   readonly pluginId = 'teams@marveen-marketplace'
   readonly pluginPaneId = 'plugin:teams:marveen-marketplace'
   readonly envKeys: string[] = ['TEAMS_BOT_APP_ID', 'TEAMS_BOT_APP_PASSWORD', 'TEAMS_BOT_TENANT_ID']
