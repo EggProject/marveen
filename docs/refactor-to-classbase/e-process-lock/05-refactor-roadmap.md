@@ -22,6 +22,10 @@ worktree must be on a `$HOME/claw-test` clean detached HEAD (not
 
 ## Phase E.1 — `PortLockAcquirer` class extraction
 
+> **LANDED in `48cb770`**, together with E.2 (one commit, same file). Three
+> items below were deliberately NOT implemented; see "Deviations from the
+> E.1/E.2 spec as landed" after E.2.
+
 - **Goal:** introduce the `PortLockAcquirer` class in
   `src/process-lock.ts` alongside the existing `acquirePortLock`
   free function. The class is a literal translation of the function
@@ -72,6 +76,8 @@ worktree must be on a `$HOME/claw-test` clean detached HEAD (not
 
 ## Phase E.2 — `PidfileLockAcquirer` class extraction
 
+> **LANDED in `48cb770`** (same commit as E.1).
+
 - **Goal:** introduce the `PidfileLockAcquirer` class alongside
   `acquirePidfileLock`. Same shape as E.1: literal translation of
   the function body, free function becomes a wrapper, shared body
@@ -110,6 +116,37 @@ worktree must be on a `$HOME/claw-test` clean detached HEAD (not
 - **Rollback strategy:** single commit. Revert restores the
   pre-E.2 function.
 - **Parallelizable:** **no** — same file as E.1. E.2 must follow E.1.
+
+---
+
+## Deviations from the E.1/E.2 spec as landed (`48cb770`)
+
+E.1 and E.2 shipped as ONE commit touching two files: `src/process-lock.ts`
+and the new `src/__tests__/process-lock-classes.test.ts` (7 `it()` cases).
+Three items specified above were deliberately NOT implemented:
+
+| Spec above | What landed instead | Why |
+|---|---|---|
+| `new PortLockAcquirer(ctx, opts).acquire(port)` — options in the **constructor** (E.1, "Files touched") | The constructor takes only `ctx`; options are a per-call method parameter: `acquire(port, opts = {})`. | The pre-refactor code re-evaluates the `??` defaults on every call. Per-call options preserve that exactly, which E.1's own "Risk: Low" note already argued for. It also makes one acquirer reusable across ports. |
+| `release()` method (E.1 "Test coverage requirement", E.2 same) | Not added. | No such method exists today; `releaseLock()` lives at `src/index.ts:356-364` and is unrelated to the acquirer. A new method with no production caller is dead code, which `/code-review` flags as CRITICAL. Belongs to E.4, not here. |
+| `acquire(port, overrides)` per-call override semantics (E.1) | Not added. | Already marked `[ASSUMPTION]` in the spec, and no caller asks for it. |
+
+Two further design points that the spec did not pin down:
+
+- **Where the `= {}` default lives.** Only on the class methods. The free
+  function wrappers declare `opts?: Type` with no default and forward it
+  unconditionally. A default on both layers would leave the method-side
+  default branch unreachable via the wrapper path and break the
+  `perFile: true` 100% coverage gate (`vitest.config.ts:42-48`).
+- **Wrapper declaration form.** `export function name(...): Promise<void>`
+  without `async`, matching `src/web/agent-process.ts:63` and
+  `src/web/mcp-list.ts:78`. Behaviour is identical because the wrapper body
+  cannot throw synchronously.
+
+Measured after landing, flag-free: 384 test files / 11218 tests passing,
+`src/process-lock.ts` at 100% lines (115/115), functions (15/15), statements
+(129/129) and branches (66/66); `bun tsc --noEmit` unchanged at 1729 errors
+and `bun run lint` unchanged at 10048 problems (both pre-existing baselines).
 
 ---
 
@@ -331,8 +368,8 @@ H.1 (LoggerLike) ──────────┐
 
 | Phase | Risk | Files touched | Rollback granularity |
 |---|---|---|---|
-| E.1 | Low | 1 | commit |
-| E.2 | Low–Medium | 1 | commit |
+| E.1 | Low | 1 | commit (landed `48cb770`) |
+| E.2 | Low–Medium | 1 | commit (landed `48cb770`) |
 | E.3 | Low | 2 | commit |
 | E.4 | Low–Medium | 2 | commit |
 | E.5 | Medium | 3 | per-function commit |

@@ -1,8 +1,16 @@
 # E (process-lock) — Executive summary
 
+> **Status: E.1 and E.2 LANDED in `48cb770`** (branch `refactor/classbase`).
+> `PortLockAcquirer` and `PidfileLockAcquirer` now exist in
+> `src/process-lock.ts` (392 lines post-refactor); the five exported free
+> functions survive as thin delegation wrappers, so `src/index.ts`,
+> `src/__tests__/index.test.ts` and `src/__tests__/process-lock.test.ts` were
+> not touched. E.3–E.6 remain open. See `05-refactor-roadmap.md` for the three
+> deliberate deviations from the E.1/E.2 spec below.
+
 Synthesis of `01-module-state-analysis.md` (module/state lens) and
 `02-type-interface-analysis.md` (types/interfaces lens), cross-checked
-against `src/process-lock.ts` (365 lines, measured 2026-08-30) and
+against `src/process-lock.ts` (364 lines pre-E.1/E.2, measured 2026-08-30) and
 `src/index.ts` on the same date. **Planning only — no source files were
 modified.**
 
@@ -34,10 +42,10 @@ that survives the conversion untouched.
 
 | File | Why | Phase |
 |---|---|---|
-| `src/process-lock.ts` (365 lines, 9 sections) | extract `PortLockAcquirer` and `PidfileLockAcquirer` classes; keep free functions as thin wrappers until every consumer migrates | E.1, E.2, E.5, E.6 |
+| `src/process-lock.ts` (364 lines pre-E.1/E.2, 392 after, 9 sections) | extract `PortLockAcquirer` and `PidfileLockAcquirer` classes; keep free functions as thin wrappers until every consumer migrates | E.1, E.2, E.5, E.6 |
 | `src/index.ts` | the sole production consumer (`acquirePortLock` at `:341`, `acquirePidfileLock` at `:348`, `DeferToPeerError` re-export at `:31`, throw at `:324`, `instanceof` discriminant at `:555`); construct the two acquirers and pass them into `acquireLock()` | E.3, E.4 |
-| `src/__tests__/process-lock.test.ts` | 33 `it()` cases over the free functions; update import + per-case construction to the class API in lockstep with each consumer migration | E.3, E.4, E.5 |
-| `src/__tests__/index.test.ts` | the single `vi.mock('../process-lock.js', …)` factory at `:173` must keep returning assignable symbols for the legacy call sites; the `withRealAcquirePortLock` / `withRealAcquirePidfileLock` helpers at `:1363` and `:1314` route through `vi.importActual` and must keep working | E.3, E.4, E.5 |
+| `src/__tests__/process-lock.test.ts` | 50 `it()` call sites plus 2 `it.each` blocks (`:798` with 5 entries, `:808` with 6) = 61 executed cases over the free functions; update import + per-case construction to the class API in lockstep with each consumer migration | E.3, E.4, E.5 |
+| `src/__tests__/index.test.ts` | the single `vi.mock('../process-lock.js', …)` factory at `:173` must keep returning assignable symbols for the legacy call sites; the `withRealAcquirePortLock` / `withRealAcquirePidfileLock` helpers at `:1365` and `:1317` route through `vi.importActual` and must keep working | E.3, E.4, E.5 |
 
 ### Files this plan does NOT touch
 
