@@ -489,11 +489,19 @@ const providers: Record<ChannelProviderType, ChannelProvider> = {
 // wrapper is safe to layer under callers that already mark.
 function withTestRunMarking(provider: ChannelProvider): ChannelProvider {
   return {
-    ...provider,
+    type: provider.type,
+    pluginId: provider.pluginId,
+    pluginPaneId: provider.pluginPaneId,
+    envKeys: provider.envKeys,
+    stateDir: provider.stateDir,
+    chatIdFormat: provider.chatIdFormat,
     sendMessage: (token, chatId, text, parseMode) =>
       provider.sendMessage(token, chatId, markIfTestRun(text), parseMode),
     sendPhoto: (token, chatId, photoPath, caption) =>
       provider.sendPhoto(token, chatId, photoPath, markIfTestRun(caption)),
+    validateToken: (token) => provider.validateToken(token),
+    formatMessage: (text) => provider.formatMessage(text),
+    splitMessage: (text) => provider.splitMessage(text),
   }
 }
 
