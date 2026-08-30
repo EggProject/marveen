@@ -50,24 +50,32 @@ function telegramHttpPost(token: string, method: string, body: string, contentTy
   })
 }
 
-const telegramProvider: ChannelProvider = {
-  type: 'telegram',
-  pluginId: 'telegram@claude-plugins-official',
-  pluginPaneId: 'plugin:telegram:telegram',
-  envKeys: ['TELEGRAM_BOT_TOKEN'],
-  stateDir: 'telegram',
-  chatIdFormat: 'numeric (e.g. 1268077055)',
+// -- Provider classes (D.2) --
 
-  async sendMessage(token, chatId, text, parseMode) {
+export interface ValidateTokenResult {
+  readonly ok: boolean
+  readonly botName?: string
+  readonly error?: string
+}
+
+export class TelegramProvider implements ChannelProvider {
+  readonly type = 'telegram' as const
+  readonly pluginId = 'telegram@claude-plugins-official'
+  readonly pluginPaneId = 'plugin:telegram:telegram'
+  readonly envKeys: string[] = ['TELEGRAM_BOT_TOKEN']
+  readonly stateDir = 'telegram'
+  readonly chatIdFormat = 'numeric (e.g. 1268077055)'
+
+  async sendMessage(token: string, chatId: string, text: string, parseMode?: string): Promise<void> {
     const payload: Record<string, string> = { chat_id: chatId, text }
     if (parseMode) payload.parse_mode = parseMode
     const body = JSON.stringify(payload)
     await telegramHttpPost(token, 'sendMessage', body, 'application/json')
-  },
+  }
 
-  async sendPhoto(token, chatId, photoPath, caption) {
+  async sendPhoto(token: string, chatId: string, photoPath: string, caption: string): Promise<void> {
     const fileData = readFileSync(photoPath)
-    const boundary = '----FormBoundary' + Date.now()
+    const boundary = `----FormBoundary${Date.now()}`
     const parts: Buffer[] = []
     parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="chat_id"\r\n\r\n${chatId}\r\n`))
     parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="caption"\r\n\r\n${caption}\r\n`))
@@ -84,9 +92,9 @@ const telegramProvider: ChannelProvider = {
       const text = await resp.text().catch(() => '')
       throw new Error(`Telegram sendPhoto ${resp.status}: ${text.slice(0, 200)}`)
     }
-  },
+  }
 
-  async validateToken(token) {
+  async validateToken(token: string): Promise<ValidateTokenResult> {
     try {
       const resp = await fetch(`https://api.telegram.org/bot${token}/getMe`)
       const data = await resp.json() as { ok: boolean; result?: { username: string; id: number } }
@@ -97,49 +105,26 @@ const telegramProvider: ChannelProvider = {
     } catch {
       return { ok: false, error: 'Failed to connect to Telegram API' }
     }
-  },
+  }
 
-  formatMessage: formatForTelegram,
-  splitMessage: (text) => splitMessage(text),
+  formatMessage(text: string): string {
+    return formatForTelegram(text)
+  }
+
+  splitMessage(text: string): string[] {
+    return splitMessage(text)
+  }
 }
 
-// -- Slack implementation (stub) --
-// The actual Slack channel plugin (jeremylongshore/claude-code-slack-channel)
-// handles message delivery via its own MCP tools. This stub provides the
-// notification path (direct API calls for alerts/heartbeats outside the
-// plugin's scope) and token validation.
+export class SlackProvider implements ChannelProvider {
+  readonly type = 'slack' as const
+  readonly pluginId = 'slack-channel@marveen-marketplace'
+  readonly pluginPaneId = 'plugin:slack-channel:marveen-marketplace'
+  readonly envKeys: string[] = ['SLACK_BOT_TOKEN', 'SLACK_APP_TOKEN']
+  readonly stateDir = 'slack'
+  readonly chatIdFormat = 'Slack channel/DM ID (e.g. C01234ABCDE)'
 
-const SLACK_MAX_MESSAGE_LENGTH = 4000
-
-export function formatForSlackMrkdwn(text: string): string {
-  // Slack uses mrkdwn, not HTML. The subset that matters:
-  // bold: *text*, italic: _text_, strikethrough: ~text~,
-  // code: `code`, code block: ```code```, link: <url|text>
-  let result = text
-
-  result = result.replace(/^#{1,6}\s+(.+)$/gm, '*$1*')
-  result = result.replace(/\*\*(.+?)\*\*/g, '*$1*')
-  result = result.replace(/__(.+?)__/g, '*$1*')
-  result = result.replace(/~~(.+?)~~/g, '~$1~')
-  result = result.replace(/\[(.+?)\]\((.+?)\)/g, '<$2|$1>')
-  result = result.replace(/^- \[ \]/gm, ':white_square: ')
-  result = result.replace(/^- \[x\]/gm, ':white_check_mark: ')
-
-  result = result.replace(/^---+$/gm, '')
-  result = result.replace(/^\*\*\*+$/gm, '')
-
-  return result.trim()
-}
-
-const slackProvider: ChannelProvider = {
-  type: 'slack',
-  pluginId: 'slack-channel@marveen-marketplace',
-  pluginPaneId: 'plugin:slack-channel:marveen-marketplace',
-  envKeys: ['SLACK_BOT_TOKEN', 'SLACK_APP_TOKEN'],
-  stateDir: 'slack',
-  chatIdFormat: 'Slack channel/DM ID (e.g. C01234ABCDE)',
-
-  async sendMessage(token, chatId, text) {
+  async sendMessage(token: string, chatId: string, text: string): Promise<void> {
     const resp = await fetch('https://slack.com/api/chat.postMessage', {
       method: 'POST',
       headers: {
@@ -160,10 +145,9 @@ const slackProvider: ChannelProvider = {
     if (!data.ok) {
       throw new Error(`Slack API error: ${data.error}`)
     }
-  },
+  }
 
-  async sendPhoto(token, chatId, photoPath, caption) {
-    // Slack file upload v2: get upload URL, upload file, complete
+  async sendPhoto(token: string, chatId: string, photoPath: string, caption: string): Promise<void> {
     const fileData = readFileSync(photoPath)
     const filename = photoPath.split('/').pop() || 'image.png'
 
@@ -202,9 +186,9 @@ const slackProvider: ChannelProvider = {
     if (!completeData.ok) {
       throw new Error(`Slack completeUpload: ${completeData.error}`)
     }
-  },
+  }
 
-  async validateToken(token) {
+  async validateToken(token: string): Promise<ValidateTokenResult> {
     try {
       const resp = await fetch('https://slack.com/api/auth.test', {
         method: 'POST',
@@ -221,34 +205,26 @@ const slackProvider: ChannelProvider = {
     } catch {
       return { ok: false, error: 'Failed to connect to Slack API' }
     }
-  },
+  }
 
-  formatMessage: formatForSlackMrkdwn,
-  splitMessage: (text) => splitMessage(text, SLACK_MAX_MESSAGE_LENGTH),
+  formatMessage(text: string): string {
+    return formatForSlackMrkdwn(text)
+  }
+
+  splitMessage(text: string): string[] {
+    return splitMessage(text, SLACK_MAX_MESSAGE_LENGTH)
+  }
 }
 
-// -- Discord implementation --
+export class DiscordProvider implements ChannelProvider {
+  readonly type = 'discord' as const
+  readonly pluginId = 'discord@claude-plugins-official'
+  readonly pluginPaneId = 'plugin:discord:discord'
+  readonly envKeys: string[] = ['DISCORD_BOT_TOKEN']
+  readonly stateDir = 'discord'
+  readonly chatIdFormat = 'Discord channel ID (e.g. 1234567890123456789)'
 
-const DISCORD_MAX_MESSAGE_LENGTH = 2000
-
-function formatForDiscord(text: string): string {
-  // Discord natively renders GFM markdown (bold, italic, code blocks, links).
-  // Only convert task-list checkboxes which Discord does not support.
-  let result = text
-  result = result.replace(/^- \[ \]/gm, '☐')
-  result = result.replace(/^- \[x\]/gm, '☑')
-  return result
-}
-
-const discordProvider: ChannelProvider = {
-  type: 'discord',
-  pluginId: 'discord@claude-plugins-official',
-  pluginPaneId: 'plugin:discord:discord',
-  envKeys: ['DISCORD_BOT_TOKEN'],
-  stateDir: 'discord',
-  chatIdFormat: 'Discord channel ID (e.g. 1234567890123456789)',
-
-  async sendMessage(token, chatId, text) {
+  async sendMessage(token: string, chatId: string, text: string): Promise<void> {
     const resp = await fetch(`https://discord.com/api/v10/channels/${chatId}/messages`, {
       method: 'POST',
       headers: {
@@ -261,12 +237,12 @@ const discordProvider: ChannelProvider = {
       const body = await resp.text().catch(() => '')
       throw new Error(`Discord API ${resp.status}: ${body.slice(0, 200)}`)
     }
-  },
+  }
 
-  async sendPhoto(token, chatId, photoPath, caption) {
+  async sendPhoto(token: string, chatId: string, photoPath: string, caption: string): Promise<void> {
     const fileData = readFileSync(photoPath)
     const filename = photoPath.split('/').pop() || 'image.png'
-    const boundary = '----FormBoundary' + Date.now()
+    const boundary = `----FormBoundary${Date.now()}`
     const parts: Buffer[] = []
     const payloadJson = JSON.stringify({
       content: caption || undefined,
@@ -289,9 +265,9 @@ const discordProvider: ChannelProvider = {
       const text = await resp.text().catch(() => '')
       throw new Error(`Discord sendPhoto ${resp.status}: ${text.slice(0, 200)}`)
     }
-  },
+  }
 
-  async validateToken(token) {
+  async validateToken(token: string): Promise<ValidateTokenResult> {
     try {
       const resp = await fetch('https://discord.com/api/v10/users/@me', {
         headers: { 'Authorization': `Bot ${token}` },
@@ -304,11 +280,116 @@ const discordProvider: ChannelProvider = {
     } catch {
       return { ok: false, error: 'Failed to connect to Discord API' }
     }
-  },
+  }
 
-  formatMessage: formatForDiscord,
-  splitMessage: (text) => splitMessage(text, DISCORD_MAX_MESSAGE_LENGTH),
+  formatMessage(text: string): string {
+    return formatForDiscord(text)
+  }
+
+  splitMessage(text: string): string[] {
+    return splitMessage(text, DISCORD_MAX_MESSAGE_LENGTH)
+  }
 }
+
+export abstract class UnsupportedDirectSendProvider implements ChannelProvider {
+  abstract readonly type: ChannelProviderType
+  abstract readonly pluginId: string
+  abstract readonly pluginPaneId: string
+  abstract readonly envKeys: string[]
+  abstract readonly stateDir: string
+  abstract readonly chatIdFormat: string
+  protected abstract readonly displayName: string
+  protected abstract readonly maxLength: number
+
+  async sendMessage(): Promise<void> {
+    throw new Error(`${this.type}: direct dashboard send not supported (delivery via plugin MCP tools)`)
+  }
+
+  async sendPhoto(): Promise<void> {
+    throw new Error(`${this.type}: direct dashboard send not supported (delivery via plugin MCP tools)`)
+  }
+
+  async validateToken(): Promise<ValidateTokenResult> {
+    return { ok: true, botName: this.displayName }
+  }
+
+  formatMessage(text: string): string {
+    return text
+  }
+
+  splitMessage(text: string): string[] {
+    return splitMessage(text, this.maxLength)
+  }
+}
+
+export class GooglechatProvider extends UnsupportedDirectSendProvider {
+  readonly type = 'googlechat' as const
+  readonly pluginId = 'googlechat@claude-channel-googlechat'
+  readonly pluginPaneId = 'plugin:googlechat:googlechat'
+  readonly envKeys: string[] = ['GOOGLE_APPLICATION_CREDENTIALS', 'GOOGLECHAT_PROJECT_ID', 'GOOGLECHAT_SUBSCRIPTION']
+  readonly stateDir = 'googlechat'
+  readonly chatIdFormat = 'space resource name (e.g. spaces/AAAA)'
+  protected readonly displayName = 'Google Chat'
+  protected readonly maxLength = GOOGLECHAT_MAX_MESSAGE_LENGTH
+}
+
+export class TeamsProvider extends UnsupportedDirectSendProvider {
+  readonly type = 'teams' as const
+  readonly pluginId = 'teams@marveen-marketplace'
+  readonly pluginPaneId = 'plugin:teams:marveen-marketplace'
+  readonly envKeys: string[] = ['TEAMS_BOT_APP_ID', 'TEAMS_BOT_APP_PASSWORD', 'TEAMS_BOT_TENANT_ID']
+  readonly stateDir = 'teams'
+  readonly chatIdFormat = 'Teams conversation id (managed by the plugin per pairing)'
+  protected readonly displayName = 'Microsoft Teams'
+  protected readonly maxLength = TEAMS_MAX_MESSAGE_LENGTH
+}
+
+const telegramProvider: ChannelProvider = new TelegramProvider()
+
+// -- Slack implementation (stub) --
+// The actual Slack channel plugin (jeremylongshore/claude-code-slack-channel)
+// handles message delivery via its own MCP tools. This stub provides the
+// notification path (direct API calls for alerts/heartbeats outside the
+// plugin's scope) and token validation.
+
+const SLACK_MAX_MESSAGE_LENGTH = 4000
+
+export function formatForSlackMrkdwn(text: string): string {
+  // Slack uses mrkdwn, not HTML. The subset that matters:
+  // bold: *text*, italic: _text_, strikethrough: ~text~,
+  // code: `code`, code block: ```code```, link: <url|text>
+  let result = text
+
+  result = result.replace(/^#{1,6}\s+(.+)$/gm, '*$1*')
+  result = result.replace(/\*\*(.+?)\*\*/g, '*$1*')
+  result = result.replace(/__(.+?)__/g, '*$1*')
+  result = result.replace(/~~(.+?)~~/g, '~$1~')
+  result = result.replace(/\[(.+?)\]\((.+?)\)/g, '<$2|$1>')
+  result = result.replace(/^- \[ \]/gm, ':white_square: ')
+  result = result.replace(/^- \[x\]/gm, ':white_check_mark: ')
+
+  result = result.replace(/^---+$/gm, '')
+  result = result.replace(/^\*\*\*+$/gm, '')
+
+  return result.trim()
+}
+
+const slackProvider: ChannelProvider = new SlackProvider()
+
+// -- Discord implementation --
+
+const DISCORD_MAX_MESSAGE_LENGTH = 2000
+
+function formatForDiscord(text: string): string {
+  // Discord natively renders GFM markdown (bold, italic, code blocks, links).
+  // Only convert task-list checkboxes which Discord does not support.
+  let result = text
+  result = result.replace(/^- \[ \]/gm, '☐')
+  result = result.replace(/^- \[x\]/gm, '☑')
+  return result
+}
+
+const discordProvider: ChannelProvider = new DiscordProvider()
 
 // -- Google Chat implementation --
 //
@@ -321,33 +402,7 @@ const discordProvider: ChannelProvider = {
 
 const GOOGLECHAT_MAX_MESSAGE_LENGTH = 4096
 
-const googlechatProvider: ChannelProvider = {
-  type: 'googlechat',
-  pluginId: 'googlechat@claude-channel-googlechat',
-  pluginPaneId: 'plugin:googlechat:googlechat',
-  envKeys: ['GOOGLE_APPLICATION_CREDENTIALS', 'GOOGLECHAT_PROJECT_ID', 'GOOGLECHAT_SUBSCRIPTION'],
-  stateDir: 'googlechat',
-  chatIdFormat: 'space resource name (e.g. spaces/AAAA)',
-
-  async sendMessage() {
-    // Direct dashboard send is not supported for Google Chat; the agent
-    // delivers via the plugin's reply tool inside its own session.
-    throw new Error('googlechat: direct dashboard send not supported (delivery via plugin MCP tools)')
-  },
-
-  async sendPhoto() {
-    throw new Error('googlechat: direct dashboard send not supported (delivery via plugin MCP tools)')
-  },
-
-  async validateToken() {
-    // No token model; real validation happens in the plugin (service-account
-    // key + Pub/Sub). Report ok so channel-config flows don't false-negative.
-    return { ok: true, botName: 'Google Chat' }
-  },
-
-  formatMessage: (text) => text,
-  splitMessage: (text) => splitMessage(text, GOOGLECHAT_MAX_MESSAGE_LENGTH),
-}
+const googlechatProvider: ChannelProvider = new GooglechatProvider()
 
 // -- Microsoft Teams implementation --
 //
@@ -361,34 +416,7 @@ const googlechatProvider: ChannelProvider = {
 
 const TEAMS_MAX_MESSAGE_LENGTH = 28000
 
-const teamsProvider: ChannelProvider = {
-  type: 'teams',
-  pluginId: 'teams@marveen-marketplace',
-  pluginPaneId: 'plugin:teams:marveen-marketplace',
-  envKeys: ['TEAMS_BOT_APP_ID', 'TEAMS_BOT_APP_PASSWORD', 'TEAMS_BOT_TENANT_ID'],
-  stateDir: 'teams',
-  chatIdFormat: 'Teams conversation id (managed by the plugin per pairing)',
-
-  async sendMessage() {
-    // Direct dashboard send is not supported for Teams; the agent delivers via
-    // the plugin's reply tool inside its own session (Bot Framework outbound
-    // needs the per-conversation serviceUrl + a client_credentials token).
-    throw new Error('teams: direct dashboard send not supported (delivery via plugin MCP tools)')
-  },
-
-  async sendPhoto() {
-    throw new Error('teams: direct dashboard send not supported (delivery via plugin MCP tools)')
-  },
-
-  async validateToken() {
-    // No simple token model; real validation happens in the plugin (app id +
-    // secret + tenant, JWT). Report ok so channel-config flows don't false-negative.
-    return { ok: true, botName: 'Microsoft Teams' }
-  },
-
-  formatMessage: (text) => text,
-  splitMessage: (text) => splitMessage(text, TEAMS_MAX_MESSAGE_LENGTH),
-}
+const teamsProvider: ChannelProvider = new TeamsProvider()
 
 // -- Slack App manifest --
 
