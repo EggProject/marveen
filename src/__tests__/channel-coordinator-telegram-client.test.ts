@@ -27,14 +27,13 @@
 //     200 ok=true with single result, 200 ok=true with multiple results
 //     (last-wins), 401 / 409 / 5xx, body must NOT include allowed_updates
 
-import { describe, it, expect, vi, beforeEach, afterEach, test } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   ALLOWED_UPDATES,
   mapUpdate,
   getUpdates,
   probeHighWater,
   TelegramApiError,
-  TelegramClient,
 } from '../channel-coordinator/telegram-client.js'
 
 // ---------------------------------------------------------------------------
@@ -739,42 +738,5 @@ describe('probeHighWater', () => {
     expect(result).toBeInstanceOf(TelegramApiError)
     expect((result as TelegramApiError).kind).toBe('transient')
     expect((result as TelegramApiError).message).toMatch(/high-water probe ok=false: unknown/)
-  })
-})
-
-describe('TelegramClient class form', () => {
-  test('class methods produce identical results to free functions', () => {
-    const client = new TelegramClient()
-
-    // mapUpdate: class method delegates to free function (covers 1 branch)
-    const rawUpdate = {
-      update_id: 1,
-      message: {
-        message_id: 10,
-        text: 'hello',
-        chat: { id: 100 },
-        from: { id: 1, username: 'alice' },
-        date: 1700000000,
-      },
-    }
-    expect(client.mapUpdate(rawUpdate)).toEqual(mapUpdate(rawUpdate))
-    expect(client.mapUpdate(rawUpdate)).not.toBeNull()
-  })
-
-  test('class getUpdates delegates to free function', async () => {
-    const client = new TelegramClient()
-    // The free-function test suite already exercises every branch via the
-    // free functions. This test confirms the class wrapper resolves to
-    // the same code path.
-    setFetchImpl(() => Promise.resolve(jsonResponse({ ok: true, result: [] })))
-    const result = await client.getUpdates('test-token', 0, 0, 1)
-    expect(result).toEqual([])
-  })
-
-  test('class probeHighWater delegates to free function', async () => {
-    const client = new TelegramClient()
-    setFetchImpl(() => Promise.resolve(jsonResponse({ ok: true, result: [] })))
-    const result = await client.probeHighWater('test-token')
-    expect(result).toBeNull()
   })
 })
