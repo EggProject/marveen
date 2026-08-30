@@ -2,8 +2,11 @@
 
 > **Status: E.1 and E.2 LANDED in `57c78d0`** (branch `refactor/classbase`).
 > `PortLockAcquirer` and `PidfileLockAcquirer` now exist in
-> `src/process-lock.ts` (392 lines post-refactor); the five exported free
-> functions survive as thin delegation wrappers, so `src/index.ts`,
+> `src/process-lock.ts` (392 lines post-refactor); five of the six exported
+> free functions (`findOwnNodeHolders`, `findOwnBinaryMatches`,
+> `terminateProcesses`, `acquirePortLock`, `acquirePidfileLock`) survive as
+> thin delegation wrappers and the sixth (`writeBufferFully`) is untouched,
+> so `src/index.ts`,
 > `src/__tests__/index.test.ts` and `src/__tests__/process-lock.test.ts` were
 > not touched. E.3–E.6 remain open. See `05-refactor-roadmap.md` for the three
 > deliberate deviations from the E.1/E.2 spec below.
