@@ -122,7 +122,8 @@ worktree must be on a `$HOME/claw-test` clean detached HEAD (not
 ## Deviations from the E.1/E.2 spec as landed (`57c78d0`)
 
 E.1 and E.2 shipped as ONE commit touching two files: `src/process-lock.ts`
-and the new `src/__tests__/process-lock-classes.test.ts` (7 `it()` cases).
+and the new `src/__tests__/process-lock-classes.test.ts` (9 `it()` cases;
+landed with 7, raised to 9 by the `/code-review max --fix` pass in `bf5eb9d`).
 Three items specified above were deliberately NOT implemented:
 
 | Spec above | What landed instead | Why |
@@ -143,10 +144,22 @@ Two further design points that the spec did not pin down:
   `src/web/mcp-list.ts:78`. Behaviour is identical because the wrapper body
   cannot throw synchronously.
 
-Measured after landing, flag-free: 384 test files / 11218 tests passing,
+Measured after landing, flag-free: 384 test files / 11220 tests passing,
 `src/process-lock.ts` at 100% lines (115/115), functions (15/15), statements
 (129/129) and branches (66/66); `bun tsc --noEmit` unchanged at 1729 errors
 and `bun run lint` unchanged at 10048 problems (both pre-existing baselines).
+
+A caveat on that per-file number: it was already 100% before this refactor,
+because the 61 cases in `process-lock.test.ts` exercise every line through
+the wrappers. It therefore says nothing about whether the class-API tests in
+`process-lock-classes.test.ts` are meaningful. Two of the original seven were
+not: they built a ctx whose `getProcessCommand` returned `null`, so
+`filterOwnNodeCandidates` discarded every candidate (`process-lock.ts:102`)
+and the assertions held vacuously. `bf5eb9d` rewrote them against inline
+fixtures that return real commands and assert the filtered result, and added
+two cases for the `binaryPattern` ternary and the post-kill drain loop, which
+until then were reached only via the wrappers and would have been left
+uncovered once E.5 removes them.
 
 ---
 
