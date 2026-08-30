@@ -69,131 +69,153 @@ const DEFAULT_POST_KILL_DRAIN_MS = 2000
 const DEFAULT_POST_KILL_POLL_MS = 100
 
 /**
- * Enumerate port holders that are safe to terminate: own-UID node/tsx
- * processes, excluding the current PID. Foreign-UID holders and non-node
- * commands are left alone and logged so the caller doesn't silently kill
- * an unrelated process (e.g. a dev server that happens to share the port).
+ * Enumerate port holders and terminate everything that looks like a previous
+ * dashboard instance. The class is the canonical implementation; the free
+ * functions below are thin one-line delegation wrappers for callers that
+ * already hold a `ctx` and don't want to allocate.
  */
-export function findOwnNodeHolders(port: number, ctx: ProcessLockContext): number[] {
-  const raw = ctx.listPortHolders(port)
-  return filterOwnNodeCandidates(raw, ctx)
-}
+export class PortLockAcquirer {
+  constructor(private readonly ctx: ProcessLockContext) {}
 
-/**
- * Enumerate own-UID node/tsx processes whose argv matches `pattern`,
- * excluding the current PID. Complements `findOwnNodeHolders` for the
- * case where a previous dashboard is still running but already lost its
- * listening socket.
- */
-export function findOwnBinaryMatches(pattern: RegExp, ctx: ProcessLockContext): number[] {
-  const raw = ctx.listOwnProcessesMatching(pattern)
-  return filterOwnNodeCandidates(raw, ctx)
-}
+  /**
+   * Enumerate port holders that are safe to terminate: own-UID node/tsx
+   * processes, excluding the current PID. Foreign-UID holders and non-node
+   * commands are left alone and logged so the caller doesn't silently kill
+   * an unrelated process (e.g. a dev server that happens to share the port).
+   */
+  findOwnNodeHolders(port: number): number[] {
+    const raw = this.ctx.listPortHolders(port)
+    return this.filterOwnNodeCandidates(raw)
+  }
 
-function filterOwnNodeCandidates(pids: number[], ctx: ProcessLockContext): number[] {
-  const seen = new Set<number>()
-  const holders: number[] = []
-  for (const pid of pids) {
-    if (!Number.isFinite(pid) || pid <= 0) continue
-    if (pid === ctx.currentPid) continue
-    if (seen.has(pid)) continue
-    seen.add(pid)
-    const cmd = ctx.getProcessCommand(pid)
-    if (cmd == null) continue
-    if (ctx.uid != null) {
-      const ownerUid = ctx.getProcessUid(pid)
-      if (ownerUid == null) continue
-      if (ownerUid !== ctx.uid) {
-        ctx.log.warn({ pid, ownerUid }, 'Port/binary holder owned by different UID, leaving alone')
+  /**
+   * Enumerate own-UID node/tsx processes whose argv matches `pattern`,
+   * excluding the current PID. Complements `findOwnNodeHolders` for the
+   * case where a previous dashboard is still running but already lost its
+   * listening socket.
+   */
+  findOwnBinaryMatches(pattern: RegExp): number[] {
+    const raw = this.ctx.listOwnProcessesMatching(pattern)
+    return this.filterOwnNodeCandidates(raw)
+  }
+
+  private filterOwnNodeCandidates(pids: number[]): number[] {
+    const seen = new Set<number>()
+    const holders: number[] = []
+    for (const pid of pids) {
+      if (!Number.isFinite(pid) || pid <= 0) continue
+      if (pid === this.ctx.currentPid) continue
+      if (seen.has(pid)) continue
+      seen.add(pid)
+      const cmd = this.ctx.getProcessCommand(pid)
+      if (cmd == null) continue
+      if (this.ctx.uid != null) {
+        const ownerUid = this.ctx.getProcessUid(pid)
+        if (ownerUid == null) continue
+        if (ownerUid !== this.ctx.uid) {
+          this.ctx.log.warn({ pid, ownerUid }, 'Port/binary holder owned by different UID, leaving alone')
+          continue
+        }
+      }
+      if (!/node|tsx/i.test(cmd)) {
+        this.ctx.log.warn({ pid, cmd }, 'Port/binary holder is not a node/tsx process, leaving alone')
         continue
       }
+      holders.push(pid)
     }
-    if (!/node|tsx/i.test(cmd)) {
-      ctx.log.warn({ pid, cmd }, 'Port/binary holder is not a node/tsx process, leaving alone')
-      continue
-    }
-    holders.push(pid)
+    return holders
   }
-  return holders
+
+  /**
+   * Best-effort terminate every PID in the list. Sends SIGTERM in parallel,
+   * waits the grace window, then SIGKILLs any survivors. A liveness-probe
+   * error that isn't ESRCH is treated as "still alive" so we escalate rather
+   * than silently assume death (EPERM means the process exists but we can't
+   * signal it; guessing 'gone' would leave a zombie running).
+   */
+  async terminateProcesses(pids: number[], opts: { graceMs: number }): Promise<void> {
+    if (!pids.length) return
+    for (const pid of pids) {
+      try {
+        const out = this.ctx.signal(pid, 'SIGTERM')
+        if (out === 'sent') this.ctx.log.info({ pid }, 'SIGTERM sent to previous instance')
+      } catch (err) {
+        this.ctx.log.warn({ pid, err }, 'SIGTERM failed, will still try SIGKILL after grace')
+      }
+    }
+    await this.ctx.sleep(opts.graceMs)
+    for (const pid of pids) {
+      let alive = true
+      try {
+        const out = this.ctx.signal(pid, 0)
+        alive = out !== 'gone'
+      } catch {
+        // Non-ESRCH error: assume still alive and escalate. Missing a SIGKILL
+        // to an already-dead process is harmless; skipping SIGKILL on a live
+        // zombie is the bug this helper exists to prevent.
+        alive = true
+      }
+      if (!alive) continue
+      try {
+        this.ctx.log.warn({ pid }, 'Previous instance still alive after SIGTERM, escalating to SIGKILL')
+        this.ctx.signal(pid, 'SIGKILL')
+      } catch (err) {
+        this.ctx.log.error({ pid, err }, 'SIGKILL failed')
+      }
+    }
+  }
+
+  /**
+   * Make sure we are the only node/tsx dashboard process. If any own-UID
+   * holders exist (listening on `port` OR matching `binaryPattern`), SIGTERM
+   * then SIGKILL them. Returns once every holder is dead; the caller is free
+   * to call server.listen() afterwards.
+   */
+  async acquire(port: number, opts: AcquirePortLockOptions = {}): Promise<void> {
+    const graceMs = opts.graceMs ?? DEFAULT_GRACE_MS
+    const drainMs = opts.postKillDrainMs ?? DEFAULT_POST_KILL_DRAIN_MS
+    const pollMs = opts.postKillPollMs ?? DEFAULT_POST_KILL_POLL_MS
+    const byPort = this.findOwnNodeHolders(port)
+    const byBinary = opts.binaryPattern ? this.findOwnBinaryMatches(opts.binaryPattern) : []
+    const victims = Array.from(new Set([...byPort, ...byBinary]))
+    if (!victims.length) return
+    this.ctx.log.warn({ port, victims, matchedBy: { byPort, byBinary } }, 'Previous dashboard instance(s) detected, taking over')
+    await this.terminateProcesses(victims, { graceMs })
+    if (drainMs <= 0 || pollMs <= 0) return
+    // Poll for the kernel to release the listening socket. Without this, a
+    // SIGKILLed predecessor can leave the port in TIME_WAIT / LAST_ACK and
+    // server.listen() will fail EADDRINUSE immediately after we return. The
+    // post-sleep re-check matters: without it, the port might clear during
+    // the final sleep and we'd still log "still held" noise.
+    let waited = 0
+    while (true) {
+      if (!this.findOwnNodeHolders(port).length) return
+      if (waited >= drainMs) break
+      await this.ctx.sleep(pollMs)
+      waited += pollMs
+    }
+    this.ctx.log.warn({ port }, 'Port still held after drain window, server.listen may hit EADDRINUSE and recover via reclaim')
+  }
 }
 
-/**
- * Best-effort terminate every PID in the list. Sends SIGTERM in parallel,
- * waits the grace window, then SIGKILLs any survivors. A liveness-probe
- * error that isn't ESRCH is treated as "still alive" so we escalate rather
- * than silently assume death (EPERM means the process exists but we can't
- * signal it; guessing 'gone' would leave a zombie running).
- */
-export async function terminateProcesses(
-  pids: number[],
-  ctx: ProcessLockContext,
-  opts: { graceMs: number },
-): Promise<void> {
-  if (!pids.length) return
-  for (const pid of pids) {
-    try {
-      const out = ctx.signal(pid, 'SIGTERM')
-      if (out === 'sent') ctx.log.info({ pid }, 'SIGTERM sent to previous instance')
-    } catch (err) {
-      ctx.log.warn({ pid, err }, 'SIGTERM failed, will still try SIGKILL after grace')
-    }
-  }
-  await ctx.sleep(opts.graceMs)
-  for (const pid of pids) {
-    let alive = true
-    try {
-      const out = ctx.signal(pid, 0)
-      alive = out !== 'gone'
-    } catch {
-      // Non-ESRCH error: assume still alive and escalate. Missing a SIGKILL
-      // to an already-dead process is harmless; skipping SIGKILL on a live
-      // zombie is the bug this helper exists to prevent.
-      alive = true
-    }
-    if (!alive) continue
-    try {
-      ctx.log.warn({ pid }, 'Previous instance still alive after SIGTERM, escalating to SIGKILL')
-      ctx.signal(pid, 'SIGKILL')
-    } catch (err) {
-      ctx.log.error({ pid, err }, 'SIGKILL failed')
-    }
-  }
+// Free-function wrappers: same observable behavior as before, now backed by
+// a freshly-allocated PortLockAcquirer. Existing callers (index.ts, the rest
+// of the codebase) keep using these and the public surface stays identical.
+
+export function findOwnNodeHolders(port: number, ctx: ProcessLockContext): number[] {
+  return new PortLockAcquirer(ctx).findOwnNodeHolders(port)
 }
 
-/**
- * Make sure we are the only node/tsx dashboard process. If any own-UID
- * holders exist (listening on `port` OR matching `binaryPattern`), SIGTERM
- * then SIGKILL them. Returns once every holder is dead; the caller is free
- * to call server.listen() afterwards.
- */
-export async function acquirePortLock(
-  port: number,
-  ctx: ProcessLockContext,
-  opts: AcquirePortLockOptions = {},
-): Promise<void> {
-  const graceMs = opts.graceMs ?? DEFAULT_GRACE_MS
-  const drainMs = opts.postKillDrainMs ?? DEFAULT_POST_KILL_DRAIN_MS
-  const pollMs = opts.postKillPollMs ?? DEFAULT_POST_KILL_POLL_MS
-  const byPort = findOwnNodeHolders(port, ctx)
-  const byBinary = opts.binaryPattern ? findOwnBinaryMatches(opts.binaryPattern, ctx) : []
-  const victims = Array.from(new Set([...byPort, ...byBinary]))
-  if (!victims.length) return
-  ctx.log.warn({ port, victims, matchedBy: { byPort, byBinary } }, 'Previous dashboard instance(s) detected, taking over')
-  await terminateProcesses(victims, ctx, { graceMs })
-  if (drainMs <= 0 || pollMs <= 0) return
-  // Poll for the kernel to release the listening socket. Without this, a
-  // SIGKILLed predecessor can leave the port in TIME_WAIT / LAST_ACK and
-  // server.listen() will fail EADDRINUSE immediately after we return. The
-  // post-sleep re-check matters: without it, the port might clear during
-  // the final sleep and we'd still log "still held" noise.
-  let waited = 0
-  while (true) {
-    if (!findOwnNodeHolders(port, ctx).length) return
-    if (waited >= drainMs) break
-    await ctx.sleep(pollMs)
-    waited += pollMs
-  }
-  ctx.log.warn({ port }, 'Port still held after drain window, server.listen may hit EADDRINUSE and recover via reclaim')
+export function findOwnBinaryMatches(pattern: RegExp, ctx: ProcessLockContext): number[] {
+  return new PortLockAcquirer(ctx).findOwnBinaryMatches(pattern)
+}
+
+export function terminateProcesses(pids: number[], ctx: ProcessLockContext, opts: { graceMs: number }): Promise<void> {
+  return new PortLockAcquirer(ctx).terminateProcesses(pids, opts)
+}
+
+export function acquirePortLock(port: number, ctx: ProcessLockContext, opts?: AcquirePortLockOptions): Promise<void> {
+  return new PortLockAcquirer(ctx).acquire(port, opts)
 }
 
 /**
@@ -285,80 +307,86 @@ export class DeferToPeerError extends Error {
  * legitimate (PID recycled to an unrelated process) -> treat as stale and
  * unlink; gone -> unlink. Bounded retry so a permanent problem fails loud
  * instead of spinning.
+ *
+ * Class-backed; the free function below is a thin wrapper for callers that
+ * already hold a `ctx`.
  */
-export async function acquirePidfileLock(
-  path: string,
-  selfPid: number,
-  ctx: PidfileLockContext,
-  opts: AcquirePidfileLockOptions = {},
-): Promise<void> {
-  const maxAttempts = opts.maxAttempts ?? 5
-  const graceMs = opts.graceMs ?? DEFAULT_GRACE_MS
-  const onLiveLegitimate = opts.onLiveLegitimate ?? 'sigterm'
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const outcome = ctx.tryCreateExclusive(path, selfPid)
-    if (outcome === 'created') {
-      ctx.log.info({ pid: selfPid, path }, 'Pidfile lock acquired')
-      return
-    }
+export class PidfileLockAcquirer {
+  constructor(private readonly ctx: PidfileLockContext) {}
 
-    const recorded = ctx.readRecordedPid(path)
-    if (recorded == null) {
-      // File exists but parses to nothing (truncated write, corrupt). Only
-      // unlink if the content is still non-parseable: a concurrent peer
-      // may have rewritten it between our read and this call.
-      ctx.unlinkIfMatches(path, null)
-      continue
-    }
-    if (recorded === selfPid) {
-      // Self-recorded from an earlier run whose PID happened to match
-      // ours after recycling. Drop and retry (only if still unchanged).
-      ctx.unlinkIfMatches(path, selfPid)
-      continue
-    }
+  async acquire(path: string, selfPid: number, opts: AcquirePidfileLockOptions = {}): Promise<void> {
+    const maxAttempts = opts.maxAttempts ?? 5
+    const graceMs = opts.graceMs ?? DEFAULT_GRACE_MS
+    const onLiveLegitimate = opts.onLiveLegitimate ?? 'sigterm'
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const outcome = this.ctx.tryCreateExclusive(path, selfPid)
+      if (outcome === 'created') {
+        this.ctx.log.info({ pid: selfPid, path }, 'Pidfile lock acquired')
+        return
+      }
 
-    let alive = false
-    try {
-      alive = ctx.probeAlive(recorded)
-    } catch {
-      // Can't probe -- be conservative and assume alive.
-      alive = true
-    }
-    if (!alive) {
-      ctx.log.warn({ recorded }, 'Pidfile references dead PID, unlinking stale file')
-      ctx.unlinkIfMatches(path, recorded)
-      continue
-    }
+      const recorded = this.ctx.readRecordedPid(path)
+      if (recorded == null) {
+        // File exists but parses to nothing (truncated write, corrupt). Only
+        // unlink if the content is still non-parseable: a concurrent peer
+        // may have rewritten it between our read and this call.
+        this.ctx.unlinkIfMatches(path, null)
+        continue
+      }
+      if (recorded === selfPid) {
+        // Self-recorded from an earlier run whose PID happened to match
+        // ours after recycling. Drop and retry (only if still unchanged).
+        this.ctx.unlinkIfMatches(path, selfPid)
+        continue
+      }
 
-    if (!ctx.isLegitimatePredecessor(recorded)) {
-      // PID was recycled to an unrelated program. SIGTERMing it would be
-      // dangerous; instead treat the file as stale and move on.
-      ctx.log.warn({ recorded }, 'Pidfile PID alive but not a dashboard process, treating as stale')
-      ctx.unlinkIfMatches(path, recorded)
-      continue
-    }
+      let alive = false
+      try {
+        alive = this.ctx.probeAlive(recorded)
+      } catch {
+        // Can't probe -- be conservative and assume alive.
+        alive = true
+      }
+      if (!alive) {
+        this.ctx.log.warn({ recorded }, 'Pidfile references dead PID, unlinking stale file')
+        this.ctx.unlinkIfMatches(path, recorded)
+        continue
+      }
 
-    if (onLiveLegitimate === 'defer') {
-      // Fresh-startup race: the peer won the O_EXCL race and is mid-init.
-      // SIGTERMing them here could corrupt state (e.g. SQLite WAL, half-
-      // applied migrations) because they have not yet installed their
-      // signal handlers. Back off and let them proceed.
-      ctx.log.info({ recorded }, 'Pidfile held by legitimate peer, deferring')
-      throw new DeferToPeerError(recorded)
-    }
+      if (!this.ctx.isLegitimatePredecessor(recorded)) {
+        // PID was recycled to an unrelated program. SIGTERMing it would be
+        // dangerous; instead treat the file as stale and move on.
+        this.ctx.log.warn({ recorded }, 'Pidfile PID alive but not a dashboard process, treating as stale')
+        this.ctx.unlinkIfMatches(path, recorded)
+        continue
+      }
 
-    ctx.log.warn({ recorded }, 'Pidfile held by live predecessor, sending SIGTERM and retrying')
-    try { ctx.sendTerm(recorded) } catch (err) {
-      ctx.log.warn({ recorded, err }, 'SIGTERM to predecessor failed')
+      if (onLiveLegitimate === 'defer') {
+        // Fresh-startup race: the peer won the O_EXCL race and is mid-init.
+        // SIGTERMing them here could corrupt state (e.g. SQLite WAL, half-
+        // applied migrations) because they have not yet installed their
+        // signal handlers. Back off and let them proceed.
+        this.ctx.log.info({ recorded }, 'Pidfile held by legitimate peer, deferring')
+        throw new DeferToPeerError(recorded)
+      }
+
+      this.ctx.log.warn({ recorded }, 'Pidfile held by live predecessor, sending SIGTERM and retrying')
+      try { this.ctx.sendTerm(recorded) } catch (err) {
+        this.ctx.log.warn({ recorded, err }, 'SIGTERM to predecessor failed')
+      }
+      await this.ctx.sleep(graceMs)
+      // Important: only unlink if the file still records THIS predecessor.
+      // During our sleep, the predecessor's own releaseLock may have removed
+      // it and a third startup's tryCreateExclusive may have written its
+      // own PID into the slot -- unconditional unlink would nuke that
+      // peer's legitimate lock and let two dashboards run concurrently.
+      this.ctx.unlinkIfMatches(path, recorded)
     }
-    await ctx.sleep(graceMs)
-    // Important: only unlink if the file still records THIS predecessor.
-    // During our sleep, the predecessor's own releaseLock may have removed
-    // it and a third startup's tryCreateExclusive may have written its
-    // own PID into the slot -- unconditional unlink would nuke that
-    // peer's legitimate lock and let two dashboards run concurrently.
-    ctx.unlinkIfMatches(path, recorded)
+    this.ctx.log.error({ path, maxAttempts, selfPid }, `Failed to acquire pidfile lock after ${maxAttempts} attempts`)
+    throw new Error(`Failed to acquire pidfile lock at ${path} after ${maxAttempts} attempts`)
   }
-  ctx.log.error({ path, maxAttempts, selfPid }, `Failed to acquire pidfile lock after ${maxAttempts} attempts`)
-  throw new Error(`Failed to acquire pidfile lock at ${path} after ${maxAttempts} attempts`)
+}
+
+export function acquirePidfileLock(path: string, selfPid: number, ctx: PidfileLockContext, opts?: AcquirePidfileLockOptions): Promise<void> {
+  return new PidfileLockAcquirer(ctx).acquire(path, selfPid, opts)
 }
