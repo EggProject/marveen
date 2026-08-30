@@ -5,6 +5,7 @@ import {
   DeferToPeerError,
   type ProcessLockContext,
   type PidfileLockContext,
+  type SignalOutcome,
 } from '../process-lock.js'
 
 // Direct contract tests for the PortLockAcquirer + PidfileLockAcquirer
@@ -34,7 +35,7 @@ function buildPortCtx(opts: {
     listOwnProcessesMatching: () => [],
     getProcessCommand: () => null,
     getProcessUid: () => uid,
-    signal: opts.signal ?? (() => 'sent' as const),
+    signal: opts.signal ?? ((): SignalOutcome => 'sent'),
     sleep: opts.sleep ?? noopAsync,
     log: noopLog,
   }
