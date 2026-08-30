@@ -120,24 +120,15 @@ describe('LazyBin', () => {
     expect(mockExecSync).toHaveBeenCalledTimes(1)
   })
 
-  it('invalidate() drops the memoised value (execSync called again)', () => {
-    mockExecSync.mockReturnValueOnce('/opt/homebrew/bin/claude\n')
-    mockExecSync.mockReturnValueOnce('/opt/homebrew/bin/claude\n')
-    const bin = new LazyBin('claude')
-    expect(bin.resolve()).toBe('/opt/homebrew/bin/claude')
-    expect(mockExecSync).toHaveBeenCalledTimes(1)
-    bin.invalidate()
-    expect(bin.resolve()).toBe('/opt/homebrew/bin/claude')
-    expect(mockExecSync).toHaveBeenCalledTimes(2)
-  })
-
-  it('re-resolve after invalidate() observes PATH changes (e.g. after install)', () => {
+  it('invalidate() drops the memoised value and observes PATH changes (e.g. after install)', () => {
     mockExecSync.mockReturnValueOnce('/opt/homebrew/bin/claude\n')
     mockExecSync.mockReturnValueOnce('/usr/local/bin/claude\n')
     const bin = new LazyBin('claude')
     expect(bin.resolve()).toBe('/opt/homebrew/bin/claude')
+    expect(mockExecSync).toHaveBeenCalledTimes(1)
     bin.invalidate()
     expect(bin.resolve()).toBe('/usr/local/bin/claude')
+    expect(mockExecSync).toHaveBeenCalledTimes(2)
   })
 
   it('surfaces the not-found error on first use, not at import (class form)', () => {
@@ -145,5 +136,35 @@ describe('LazyBin', () => {
     mockExistsSync.mockReturnValue(false)
     const bin = new LazyBin('claude')
     expect(() => bin.resolve()).toThrow(/Required binary not found/)
+  })
+
+  it('retries the resolver after a thrown resolve() (cached stays null on throw)', () => {
+    // Regression cover for the cached-failure path: a transient PATH gap
+    // (the original 2026-08-13 incident) makes the first resolve() throw;
+    // a later resolve() against a recovered PATH must succeed. If `cached`
+    // were assigned a sentinel on throw, this test would FAIL because the
+    // second resolve() would return the sentinel rather than re-call.
+    mockExecSync.mockImplementationOnce(() => { throw new Error('which failed: PATH gap') })
+    mockExecSync.mockReturnValueOnce('/opt/homebrew/bin/claude\n')
+    const bin = new LazyBin('claude')
+    expect(() => bin.resolve()).toThrow(/Required binary not found/)
+    expect(bin.resolve()).toBe('/opt/homebrew/bin/claude')
+  })
+
+  it('uses an injected resolver in place of the default resolveFromPath', () => {
+    // Pins the `resolver` constructor parameter. Without this test, the
+    // parameter could be deleted (or hardcoded to resolveFromPath) without
+    // any test failing -- the class would still pass every other assertion.
+    let calls = 0
+    const bin = new LazyBin('claude', (name) => {
+      calls += 1
+      return `/custom/path/to/${name}`
+    })
+    expect(bin.resolve()).toBe('/custom/path/to/claude')
+    expect(bin.resolve()).toBe('/custom/path/to/claude')
+    expect(calls).toBe(1)
+    bin.invalidate()
+    expect(bin.resolve()).toBe('/custom/path/to/claude')
+    expect(calls).toBe(2)
   })
 })

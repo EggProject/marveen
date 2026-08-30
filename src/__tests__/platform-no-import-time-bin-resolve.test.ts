@@ -41,7 +41,24 @@ function tsFiles(dir: string): string[] {
 
 // A top-level call is one that starts at column 0: an indented call sits inside
 // a function body and is therefore already lazy.
-const TOP_LEVEL_RESOLVE = /^(?:export\s+)?(?:const|let|var)\s+\w+\s*(?::[^=]+)?=\s*(?:resolveFromPath\(|new\s+LazyBin\(.*?\)\.resolve\(\))/
+//
+// All three eager shapes land here:
+//   1. resolveFromPath(<name>)                       -- pre-state hazard
+//   2. new LazyBin(<name>).resolve()                 -- H.3 class hazard (HR5)
+//   3. makeLazyBinResolver(<name>)()                 -- invoked factory, also eager
+//
+// Variant notes:
+// - `new LazyBin` may carry an explicit type argument (`new LazyBin<'tmux'>(...)`)
+//   -- the `TName` generic is part of the public API.
+// - `new` may be wrapped in parens (`(new LazyBin(...)).resolve()`).
+// - `new` may be awaited (`await new LazyBin(...).resolve()`).
+// - The LHS may have a `() => <ret>` type annotation that contains `=`; the
+//   `(?:=>[^=]+)*` repetition in the annotation group lets `=` inside `=>`
+//   pass through without short-circuiting the type-annotation match.
+// The LazyBin branch requires `.resolve()` to follow the constructor call, so
+// a bare `new LazyBin('tmux')` at module scope (lazy constructor) is NOT
+// flagged -- verified by the negative test at L82.
+const TOP_LEVEL_RESOLVE = /^(?:export\s+)?(?:const|let|var)\s+\w+\s*(?::[^=]+(?:=>[^=]+)*)?=\s*(?:resolveFromPath\(|makeLazyBinResolver\([^)]*\)\s*\(|makeLazyBinResolver\([^)]*\)\s*\([^)]*\)|(?:await\s+)?\(?\s*new\s+LazyBin(?:\s*<[^>]+>)?\s*\(.*?\)\.resolve\(\))/
 
 describe('no import-time binary resolution', () => {
   const files = tsFiles(SRC)
@@ -62,7 +79,7 @@ describe('no import-time binary resolution', () => {
     }
     expect(
       offenders,
-      'Use makeLazyBinResolver(name) instead - resolveFromPath at module scope throws at import time when the binary is missing, which kills unrelated test suites and the dashboard boot.',
+      'Use makeLazyBinResolver(name) instead (or `new LazyBin(name)` if you need invalidate()), or move the call inside a function so it runs at first use -- resolveFromPath / new LazyBin(...).resolve() / makeLazyBinResolver(...)() at module scope throws at import time when the binary is missing, which kills unrelated test suites and the dashboard boot.',
     ).toEqual([])
   })
 
@@ -76,6 +93,22 @@ describe('no import-time binary resolution', () => {
     expect(TOP_LEVEL_RESOLVE.test("const X = new LazyBin('tmux').resolve()")).toBe(true)
     expect(TOP_LEVEL_RESOLVE.test("export const X = new LazyBin('tmux').resolve()")).toBe(true)
     expect(TOP_LEVEL_RESOLVE.test("const X: string = new LazyBin('tmux').resolve()")).toBe(true)
+    // Explicit type argument (`new LazyBin<'tmux'>(...)`) -- the `TName` generic
+    // is part of the public API and the idiomatic way to write a typed call.
+    expect(TOP_LEVEL_RESOLVE.test("const X = new LazyBin<string>('tmux').resolve()")).toBe(true)
+    // Parenthesized `new` -- common when grouping a constructor expression.
+    expect(TOP_LEVEL_RESOLVE.test("const X = (new LazyBin('tmux')).resolve()")).toBe(true)
+    // Awaited `new` -- legal at module top level in ESM (and the value is
+    // synchronous so this is just sugar over `.resolve()`).
+    expect(TOP_LEVEL_RESOLVE.test("const X = await new LazyBin('tmux').resolve()")).toBe(true)
+    expect(TOP_LEVEL_RESOLVE.test("const X = await (new LazyBin('tmux')).resolve()")).toBe(true)
+    // Function-type annotation containing `=>` -- the annotation group must
+    // span the `=` inside the arrow without short-circuiting.
+    expect(TOP_LEVEL_RESOLVE.test("const X: () => string = new LazyBin('tmux').resolve()")).toBe(true)
+    // Invoked factory: `makeLazyBinResolver(name)()` resolves at import time
+    // exactly like `resolveFromPath(name)` does.
+    expect(TOP_LEVEL_RESOLVE.test("const X = makeLazyBinResolver('tmux')()")).toBe(true)
+    expect(TOP_LEVEL_RESOLVE.test("const X = makeLazyBinResolver('tmux')('foo')")).toBe(true)
     // Factory call is allowed (no .resolve() at module scope -> lazy).
     expect(TOP_LEVEL_RESOLVE.test("const X = makeLazyBinResolver('tmux')")).toBe(false)
     // `new LazyBin(...)` without `.resolve()` is harmless (constructor is no-I/O).
@@ -83,5 +116,7 @@ describe('no import-time binary resolution', () => {
     // Indented = inside a function body = already lazy, must NOT be flagged.
     expect(TOP_LEVEL_RESOLVE.test("    const bin = resolveFromPath('claude')")).toBe(false)
     expect(TOP_LEVEL_RESOLVE.test("    const bin = new LazyBin('claude').resolve()")).toBe(false)
+    expect(TOP_LEVEL_RESOLVE.test("    const bin = await new LazyBin('tmux').resolve()")).toBe(false)
+    expect(TOP_LEVEL_RESOLVE.test("    const bin = makeLazyBinResolver('tmux')()")).toBe(false)
   })
 })
