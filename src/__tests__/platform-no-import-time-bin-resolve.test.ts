@@ -41,7 +41,7 @@ function tsFiles(dir: string): string[] {
 
 // A top-level call is one that starts at column 0: an indented call sits inside
 // a function body and is therefore already lazy.
-const TOP_LEVEL_RESOLVE = /^(?:export\s+)?(?:const|let|var)\s+\w+\s*(?::[^=]+)?=\s*resolveFromPath\(/
+const TOP_LEVEL_RESOLVE = /^(?:export\s+)?(?:const|let|var)\s+\w+\s*(?::[^=]+)?=\s*(?:resolveFromPath\(|new\s+LazyBin\(.*?\)\.resolve\(\))/
 
 describe('no import-time binary resolution', () => {
   const files = tsFiles(SRC)
@@ -70,7 +70,18 @@ describe('no import-time binary resolution', () => {
     expect(TOP_LEVEL_RESOLVE.test("const TMUX = resolveFromPath('tmux')")).toBe(true)
     expect(TOP_LEVEL_RESOLVE.test("export const CLAUDE = resolveFromPath('claude')")).toBe(true)
     expect(TOP_LEVEL_RESOLVE.test("const TMUX: string = resolveFromPath('tmux')")).toBe(true)
+    // LazyBin-shaped resolution must also be caught (HR5 / H.3): a module-scope
+    // `const X = new LazyBin('tmux').resolve()` reproduces the 2026-08-13 CI
+    // incident -- .resolve() runs at import time and throws on a missing binary.
+    expect(TOP_LEVEL_RESOLVE.test("const X = new LazyBin('tmux').resolve()")).toBe(true)
+    expect(TOP_LEVEL_RESOLVE.test("export const X = new LazyBin('tmux').resolve()")).toBe(true)
+    expect(TOP_LEVEL_RESOLVE.test("const X: string = new LazyBin('tmux').resolve()")).toBe(true)
+    // Factory call is allowed (no .resolve() at module scope -> lazy).
+    expect(TOP_LEVEL_RESOLVE.test("const X = makeLazyBinResolver('tmux')")).toBe(false)
+    // `new LazyBin(...)` without `.resolve()` is harmless (constructor is no-I/O).
+    expect(TOP_LEVEL_RESOLVE.test("const X = new LazyBin('tmux')")).toBe(false)
     // Indented = inside a function body = already lazy, must NOT be flagged.
     expect(TOP_LEVEL_RESOLVE.test("    const bin = resolveFromPath('claude')")).toBe(false)
+    expect(TOP_LEVEL_RESOLVE.test("    const bin = new LazyBin('claude').resolve()")).toBe(false)
   })
 })

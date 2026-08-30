@@ -70,11 +70,25 @@ export function resolveFromPath(name: string): string {
 // this defers resolution to first use. A boot that happens during a PATH gap
 // therefore succeeds; only the first actual use of the binary can throw, and
 // that call site can handle it. The resolved path is cached after the first
-// successful lookup.
-export function makeLazyBinResolver(name: string): () => string {
-  let cached: string | null = null
-  return () => {
-    if (cached === null) cached = resolveFromPath(name)
-    return cached
+// successful lookup. `invalidate()` drops the memoised value so tests (and any
+// future caller that wants to re-probe after an install change) can force a
+// fresh lookup.
+export class LazyBin<TName extends string = string> {
+  readonly name: TName
+  private cached: string | null = null
+  constructor(name: TName, private readonly resolver: (name: TName) => string = resolveFromPath) {
+    this.name = name
   }
+  resolve(): string {
+    if (this.cached === null) this.cached = this.resolver(this.name)
+    return this.cached
+  }
+  invalidate(): void {
+    this.cached = null
+  }
+}
+
+export function makeLazyBinResolver(name: string): () => string {
+  const bin = new LazyBin(name)
+  return () => bin.resolve()
 }

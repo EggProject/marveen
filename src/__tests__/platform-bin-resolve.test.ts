@@ -20,7 +20,7 @@ vi.mock('node:fs', async (importOriginal) => {
   return { ...real, existsSync: (p: string) => mockExistsSync(p) }
 })
 
-import { tryResolveFromPath, resolveFromPath, makeLazyBinResolver } from '../platform.js'
+import { tryResolveFromPath, resolveFromPath, makeLazyBinResolver, LazyBin } from '../platform.js'
 
 beforeEach(() => {
   mockExecSync.mockReset()
@@ -89,6 +89,10 @@ describe('makeLazyBinResolver', () => {
     makeLazyBinResolver('claude')
     expect(mockExecSync).not.toHaveBeenCalled()
     expect(mockExistsSync).not.toHaveBeenCalled()
+    // LazyBin form (H.3): same contract -- constructor is no-I/O.
+    new LazyBin('claude')
+    expect(mockExecSync).not.toHaveBeenCalled()
+    expect(mockExistsSync).not.toHaveBeenCalled()
   })
 
   it('resolves on first call and memoises the result', () => {
@@ -104,5 +108,42 @@ describe('makeLazyBinResolver', () => {
     mockExistsSync.mockReturnValue(false)
     const claudeBin = makeLazyBinResolver('claude')
     expect(() => claudeBin()).toThrow(/Required binary not found/)
+  })
+})
+
+describe('LazyBin', () => {
+  it('resolves on first call and memoises the result (class form)', () => {
+    mockExecSync.mockReturnValue('/opt/homebrew/bin/tmux\n')
+    const bin = new LazyBin('tmux')
+    expect(bin.resolve()).toBe('/opt/homebrew/bin/tmux')
+    expect(bin.resolve()).toBe('/opt/homebrew/bin/tmux')
+    expect(mockExecSync).toHaveBeenCalledTimes(1)
+  })
+
+  it('invalidate() drops the memoised value (execSync called again)', () => {
+    mockExecSync.mockReturnValueOnce('/opt/homebrew/bin/claude\n')
+    mockExecSync.mockReturnValueOnce('/opt/homebrew/bin/claude\n')
+    const bin = new LazyBin('claude')
+    expect(bin.resolve()).toBe('/opt/homebrew/bin/claude')
+    expect(mockExecSync).toHaveBeenCalledTimes(1)
+    bin.invalidate()
+    expect(bin.resolve()).toBe('/opt/homebrew/bin/claude')
+    expect(mockExecSync).toHaveBeenCalledTimes(2)
+  })
+
+  it('re-resolve after invalidate() observes PATH changes (e.g. after install)', () => {
+    mockExecSync.mockReturnValueOnce('/opt/homebrew/bin/claude\n')
+    mockExecSync.mockReturnValueOnce('/usr/local/bin/claude\n')
+    const bin = new LazyBin('claude')
+    expect(bin.resolve()).toBe('/opt/homebrew/bin/claude')
+    bin.invalidate()
+    expect(bin.resolve()).toBe('/usr/local/bin/claude')
+  })
+
+  it('surfaces the not-found error on first use, not at import (class form)', () => {
+    mockExecSync.mockImplementation(() => { throw new Error('which failed') })
+    mockExistsSync.mockReturnValue(false)
+    const bin = new LazyBin('claude')
+    expect(() => bin.resolve()).toThrow(/Required binary not found/)
   })
 })
