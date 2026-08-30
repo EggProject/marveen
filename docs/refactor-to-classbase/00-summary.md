@@ -1,0 +1,144 @@
+# Refactor Plan — Summary
+
+Synthesis of `01-module-state-analysis.md` and `02-type-interface-analysis.md`.
+Planning only; no source files were modified.
+
+## Executive summary
+
+The codebase is function-shaped at the top level (44 top-level `src/` files,
+only two true `class` declarations exist today: `DeferToPeerError` at
+`src/process-lock.ts:272` and `RemoteEnrollError` at
+`src/remote-enroll-core.ts:30`), but the data and behavior already cluster
+into ~15 natural entities whose `*.find` / `*.get` / `*.upsert` /
+`*.transition` free-function surface is begging for owner instances. The
+refactor thesis is **convert three layers, leave two alone**: convert the
+runner-as-start-fn layer (`web/`, `heartbeat.ts`, `store-watcher.ts`,
+`settings-store.ts`, `channel-coordinator.ts`), the per-entity DB surface
+(`Memory`, `KanbanCard`, `AgentMessage`, `ScheduledTask`, `BackgroundTask`,
+`Approval`, `OtelSpan`, `IdeaBoxRow`, `VaultSshKey/Server`, `SettingDefinition`,
+`ChannelProvider`), and the lazy-cache singletons (`agent.ts`,
+`google-api.ts`, `graph-mail.ts`, `platform.ts`); leave the 18 pure utility
+modules (`format.ts`, `auto-restrict.ts`, `pending-retries.ts`,
+`mcp-list-parser.ts`, `prompt-safety.ts` constants, `config-registry.ts`,
+`tool-timeouts.ts`, etc.) as namespaces; and treat `config.ts`, `db.ts`,
+`web.ts`, and `index.ts` as the keystone conversions that land last because
+every other module depends on at least one of them. Net effect: roughly
+**~22 files become classes** (with another ~10 inside `web/` adopting a
+generic `*Runner<T>` shape), **~18 stay as utility modules**, and the
+single biggest behavioral change is that ~126 `vi.mock('../config.js', ...)`
+plus ~35 `vi.mock('../db.js', ...)` sites in `src/__tests__/` get rewritten
+to constructor injection.
+
+## Scope estimate
+
+| Category | Files | Disposition |
+|---|---:|---|
+| Per-entity stores (new classes) | ~12 | `MemoryStore` (replaces ~17 free fns in `db.ts` + `memory.ts`), `KanbanCards` (~18), `MessageBus` (~13), `Scheduler` (~10), `BackgroundTaskPool` (~7), `ApprovalStore` (~5), `SpanStore` (~4), `IdeaStore` (~9), `SshVault` (~9), `SettingsRegistry` (~3), `SettingsStore` (replaces `settings-store.ts`), `ChannelProviderRegistry` (~5 implementations + decorator) |
+| Runner-as-class (new classes) | ~10 | `heartbeat.ts`, `store-watcher.ts`, `settings-store.ts`, `web/heartbeat-agent-scaffold.ts`, `web/agent-process.ts`, `web/agent-scaffold.ts`, plus 7 named runners in `web/` (`message-router`, `schedule-runner`, `channel-monitor`, `inbound-prober`, `channel-health-monitor`, `stuck-input-watcher`, `inbox-nudge-watcher`, `stuck-tool-call-watcher`, `reauth-healer`, `auto-restart-runner`, `model-fallback-runner`, `context-guard-runner`, `update-checker`, `federation-poller`, `capability-summary-runner`, `invite-monitor`, `channel-request-watcher`, `costs-sync-task`, `approval-timeout-sweeper`) |
+| Lazy-cache singletons (new classes) | 4 | `agent.ts` (`ClaudeCodeBinResolver`), `google-api.ts` (`GoogleTokenCache`), `graph-mail.ts` (`GraphMailCredentialsCache` + `GraphMailTokenCache`), `platform.ts` (`LazyBin`) |
+| Utility modules (no conversion) | ~18 | `auto-restart.ts` constants, `format.ts`, `mcp-list-parser.ts`, `pending-retries.ts`, `prompt-safety.ts` (constants stay), `config-registry.ts` data, `tool-timeouts.ts`, `team-trust.ts`, `test-run-marker.ts`, `update-agent-capability.ts`, `update-preflight.ts`, `env.ts`, `kanban-dispatch.ts`, `model-fallback.ts` (decide fns), `model-profiles.ts`, `context-guard.ts` (decide fn), `costops/*` (both files), `db/sqlite.ts` |
+| Keystone (deferred to final phase) | 4 | `config.ts`, `db.ts`, `web.ts`, `index.ts` |
+
+**Total: ~22 files become classes, ~18 stay as utility modules, 4 are
+keystones deferred to the final coordinated patch.**
+
+The 4 keystones are NOT counted in the 22 because their conversion is not
+"add a class wrapper" but "rewrite to per-entity store classes inside the
+file" (see Phase 7 below).
+
+## Top 3 highest-risk conversions
+
+1. **`src/db.ts` → per-entity store classes** — touches ~30 importing
+   modules (`memory.ts`, `heartbeat.ts`, `agent.ts`, `costops/ledger.ts`,
+   `index.ts`, and ~25 `web/*.ts` files). The current `let db: Database`
+   singleton at `src/db.ts:10` plus the ~200 free functions that close over
+   it make this the single broadest blast radius in the codebase. Risk
+   surface: every test that currently calls `initDatabase(':memory:')`
+   has to switch to constructor injection, plus ~25 `web/` route files
+   have to acquire a `DbClient` instance instead of importing free
+   functions. Mitigated by landing in entity-by-entity slices behind
+   parallel-running legacy + class exports (see Phase 7).
+
+2. **`src/index.ts` → `class App`** — the orchestrator owns 6 module-level
+   `let` bindings (`webServer`, `decayInterval`, `digestTimer`,
+   `digestInterval`, `shuttingDown`, `exitCode`), 2 module-level regexes
+   (`PID_FILE`, `DASHBOARD_BINARY_PATTERN`, `BANNER`), the `acquireLock()`
+   / `releaseLock()` / `shutdown()` / `main()` lifecycle, plus 70+
+   imports. Converting it forces every cross-module wiring (config, db,
+   web, heartbeat, store-watcher, settings-store, decay sweep, process
+   lock) to become constructor args on `new App({config, db, web, ...})`,
+   which is the natural seam for swapping real vs. test instances. Risk
+   surface: the shutdown sequence is order-sensitive (digest timer before
+   decay before web before channel); one missed disposal causes double
+   shutdown or hanging handles.
+
+3. **`src/web.ts` → `class DashboardServer`** — the 1500-line closure
+   that handles every HTTP route. The current shape captures
+   `DASHBOARD_TOKEN` and `allowedOrigins` at startup and inlines all
+   route handlers; a class refactor moves each route handler to a method
+   on the server class, and the auth kind projection (the
+   `auth.kind === 'token' ? { kind: 'token' as const } : ...` ternary
+   chain at `src/web.ts:155-159`) becomes the `AuthContext` sealed class
+   hierarchy (see `04-generic-interfaces.md` D1). Risk surface: routes
+   are 40+ `tryHandle*` functions in `src/web/routes/`; the refactor
+   must not break the `RouteContext` DI seam that handlers depend on.
+
+## Top 3 lowest-risk wins
+
+1. **`src/channel-provider.ts` → `class TelegramChannelProvider` etc.**
+   Five implementations of one interface (`ChannelProvider` at
+   `src/channel-provider.ts:11`) plus `withTestRunMarking`
+   (`src/channel-provider.ts:490`) decorator already exists. Pure
+   mechanical: turn each `const xProvider: ChannelProvider = {...}`
+   into `class XChannelProvider implements ChannelProvider`, turn
+   `withTestRunMarking` into `new TestRunMarkingDecorator(inner)`. Zero
+   behavior change. Touches `notify.ts` (one import) and the route
+   handlers (transparent).
+
+2. **`src/process-lock.ts` → `class PortLockAcquirer` + `class
+   PidfileLockAcquirer`** — `acquirePortLock(port, ctx, opts)` and
+   `acquirePidfileLock(path, selfPid, ctx, opts)` already take a
+   `ProcessLockContext` / `PidfileLockContext` DI bag
+   (`src/process-lock.ts:26`, `src/process-lock.ts:226`). The class
+   version puts the `ctx` on `this`, eliminating the per-call argument.
+   Every test that builds a fake `ctx` becomes `new
+   PortLockAcquirer(mockFs).acquire(port)` — same mocks, cleaner call
+   site. Touches `index.ts` (one call site).
+
+3. **`src/auto-restart.ts` namespace → `class AutoRestartSchedule`**
+   pure constants + 3 decision functions (`parseHHMM`, `restartDue`,
+   `dailyPhaseAtMs`) become static methods. Zero behavior change,
+   consolidates the `DEFAULT_AUTO_RESTART` constant alongside the
+   decision logic, and the `AutoRestartConfig` type stays the same.
+
+## Explicitly OUT OF SCOPE
+
+- **All test files** (`src/__tests__/`, `src/**/__tests__/`). Tests get
+  *updated* to match new class APIs but their coverage requirements,
+  layout, and the test runner (`bun --bun vitest`) are not in scope.
+- **`vitest.config.ts`, `tsconfig.json`, `bun.lockb`, package
+  metadata**, build scripts, and CI workflows (`.github/workflows/`).
+- **All markdown documentation outside `docs/refactor-to-classbase/`**
+  (the existing MDs in `docs/` may need cross-reference updates when
+  line numbers shift, but that is Phase 8 territory).
+- **Subdirectory-specific refactors inside `src/channel-coordinator/`,
+  `src/costops/`, `src/db/`, `src/web/`** that are not initiated by the
+  top-level class conversions listed in scope. (Examples: the
+  `telegram-client.ts` `TelegramApiError` class, the `costops/ledger.ts`
+  report-generation, and `web/atomic-write.ts` are flagged but deferred.)
+- **The existing `DeferToPeerError` (`src/process-lock.ts:272`) and
+  `RemoteEnrollError` (`src/remote-enroll-core.ts:30`) classes** —
+  these already follow the `XxxError extends Error` convention; new
+  exceptions follow the same pattern, no migration needed.
+- **Generic variance tuning beyond what is needed for the new
+  `*Store<T>` / `*Runner<T>` shapes** listed in
+  `04-generic-interfaces.md`. Per-file variance audit is not in scope.
+- **Public API of any package that consumes `src/`** — there are no
+  published packages; the only external consumers are internal scripts.
+  The CLI scripts in `bin/` will be updated but their shape is not
+  redesigned.
+
+[ASSUMPTION: The test count `~126` for `vi.mock('../config.js', ...)`
+includes the 3 patterns listed (`../config.js`, `../config`, `../config.ts`);
+the test count `~35` for `vi.mock('../db.js', ...)` is from the grep in
+`01-module-state-analysis.md` Section 7 and not re-verified here.]
