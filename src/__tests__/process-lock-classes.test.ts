@@ -12,7 +12,8 @@ import {
 // classes. The wrappers in process-lock.test.ts already cover the
 // free-function shapes; this file pins the public class API as the future
 // migration path (E.3+) will consume it. Compact inline ctx literals -- the
-// full process-table mock from process-lock.test.ts is overkill for 7 cases.
+// full process-table mock from process-lock.test.ts is overkill for this
+// surface area.
 
 const noop = (): undefined => undefined
 const noopAsync = async (): Promise<void> => { await Promise.resolve() }
@@ -22,7 +23,6 @@ function buildPortCtx(opts: {
   currentPid?: number
   uid?: number | null
   portHolders?: number[]
-  argv?: RegExp
   signal?: ProcessLockContext['signal']
   sleep?: ProcessLockContext['sleep']
 } = {}): ProcessLockContext {
@@ -77,32 +77,58 @@ function buildPidfileCtx(opts: {
 
 describe('PortLockAcquirer', () => {
   it('findOwnNodeHolders delegates to ctx.listPortHolders + the own-UID filter', () => {
-    // Pin the public method shape and prove the ctx flows through.
-    const ctx = buildPortCtx({
+    // Build the ctx inline so getProcessCommand returns a real value: the
+    // buildPortCtx defaults return null command which would skip every
+    // candidate and reduce this test to a no-op (the result would be []
+    // regardless of what listPortHolders returned). Set up: 7 is currentPid
+    // (skipped), 11 is foreign-UID (skipped), 13 is own-UID node (kept).
+    const seenPorts: number[] = []
+    const ctx: ProcessLockContext = {
       currentPid: 7,
       uid: 42,
-      portHolders: [7, 11, 13],
-    })
+      listPortHolders(port) {
+        seenPorts.push(port)
+        return [7, 11, 13]
+      },
+      listOwnProcessesMatching: () => [],
+      getProcessCommand: (pid) => pid === 11 ? null : 'node',
+      getProcessUid: (pid) => pid === 11 ? 999 : 42,
+      signal: () => 'sent',
+      sleep: noopAsync,
+      log: noopLog,
+    }
     const acquirer = new PortLockAcquirer(ctx)
     const result = acquirer.findOwnNodeHolders(3420)
-    expect(Array.isArray(result)).toBe(true)
+    expect(result).toEqual([13])
+    expect(seenPorts).toEqual([3420])
     // Pin that findOwnNodeHolders does NOT take a ctx parameter:
     expect(acquirer.findOwnNodeHolders.length).toBe(1)
   })
 
-  it('findOwnBinaryMatches delegates to ctx.listOwnProcessesMatching', () => {
-    const ctx = buildPortCtx({ argv: /dashboard/ })
-    // Override listOwnProcessesMatching so we exercise the second path.
+  it('findOwnBinaryMatches delegates to ctx.listOwnProcessesMatching + the filter', () => {
+    // Build inline so getProcessCommand can return a real value: buildPortCtx
+    // defaults return null which would filter every candidate out, making
+    // the test a no-op. listOwnProcessesMatching returns [11, 13, 7]; 7 is
+    // currentPid (skipped), 11 is foreign-UID (skipped), 13 is own-UID node
+    // (kept). Verify both delegation AND filter outcome.
     const seen: RegExp[] = []
-    const wrapped: ProcessLockContext = {
-      ...ctx,
+    const ctx: ProcessLockContext = {
+      currentPid: 7,
+      uid: 42,
+      listPortHolders: () => [],
       listOwnProcessesMatching(pattern) {
         seen.push(pattern)
-        return [42]
+        return [7, 11, 13]
       },
+      getProcessCommand: (pid) => pid === 11 ? null : 'node',
+      getProcessUid: (pid) => pid === 11 ? 999 : 42,
+      signal: () => 'sent',
+      sleep: noopAsync,
+      log: noopLog,
     }
-    const acquirer = new PortLockAcquirer(wrapped)
-    acquirer.findOwnBinaryMatches(/dashboard/)
+    const acquirer = new PortLockAcquirer(ctx)
+    const result = acquirer.findOwnBinaryMatches(/dashboard/)
+    expect(result).toEqual([13])
     expect(seen).toEqual([/dashboard/])
     expect(acquirer.findOwnBinaryMatches.length).toBe(1)
   })
@@ -152,26 +178,105 @@ describe('PortLockAcquirer', () => {
     // Same instance, two different ports -> proves ctx is shared instance
     // state (this.ctx), not a per-call argument, AND covers the
     // `opts: AcquirePortLockOptions = {}` default branch on the method.
+    // Build the ctx inline (not via buildPortCtx) so getProcessCommand
+    // returns 'node' and the default graceMs/drainMs branches actually run
+    // -- the buildPortCtx defaults return null command which would skip
+    // every holder and trigger the early return before any `opts.*` field
+    // is accessed.
     const holdersByPort: Record<number, number[]> = {
       3420: [200],
       3421: [300],
     }
     const seenPorts: number[] = []
+    const sleptFor: number[] = []
     const ctx: ProcessLockContext = {
-      ...buildPortCtx({ signal: () => 'sent' }),
+      currentPid: 1000,
+      uid: 501,
       listPortHolders(port) {
         seenPorts.push(port)
         return holdersByPort[port] ?? []
       },
-      sleep: noopAsync,
+      listOwnProcessesMatching: () => [],
+      getProcessCommand: () => 'node',
+      getProcessUid: () => 501,
+      signal: () => 'sent',
+      sleep: async (ms) => { sleptFor.push(ms) },
+      log: noopLog,
     }
     const acquirer = new PortLockAcquirer(ctx)
     await acquirer.acquire(3420)
     await acquirer.acquire(3421)
     expect(seenPorts).toContain(3420)
     expect(seenPorts).toContain(3421)
+    // Default graceMs (1500) and postKillDrainMs (2000) actually applied
+    // because victims were non-empty. drainMs + pollMs > 0 short-circuit is
+    // the first branch we want to confirm exercises the body past the
+    // early-return. The first sleep should be graceMs (1500); the drain
+    // polls are 100 each until either the port frees or drainMs elapses.
+    expect(sleptFor[0]).toBe(1500)
     // Signature: only port is positional, opts is the default.
     expect(acquirer.acquire.length).toBe(1)
+  })
+
+  it('acquire(port, { binaryPattern }) integrates findOwnBinaryMatches into victim selection', async () => {
+    // Direct class-path test for the `opts.binaryPattern` ternary on
+    // process-lock.ts:179 -- not just findOwnBinaryMatches in isolation.
+    // The port is empty (no listeners) but a binary-pattern match picks up
+    // the zombie process that already lost the port. Without binaryPattern,
+    // acquire would return early with no victims.
+    const signalCalls: { pid: number; sig: string }[] = []
+    const ctx: ProcessLockContext = {
+      currentPid: 1000,
+      uid: 501,
+      listPortHolders: () => [],
+      listOwnProcessesMatching: () => [200],
+      getProcessCommand: () => 'node',
+      getProcessUid: () => 501,
+      signal: (pid, sig) => {
+        signalCalls.push({ pid, sig: String(sig) })
+        return 'sent'
+      },
+      sleep: noopAsync,
+      log: noopLog,
+    }
+    await new PortLockAcquirer(ctx).acquire(3420, {
+      graceMs: 5,
+      binaryPattern: /dist\/index\.js/,
+      postKillDrainMs: 0,
+    })
+    expect(signalCalls.some(c => c.pid === 200 && c.sig === 'SIGTERM')).toBe(true)
+  })
+
+  it('acquire polls listPortHolders during the post-kill drain window', async () => {
+    // Direct class-path test for the drain loop on process-lock.ts:191-196.
+    // listPortHolders returns the holder for the first 3 polls, then drops
+    // it. Drain budget is 4 polls * 25ms = 100ms; the holder clears at poll
+    // 3 (waited=75ms) so the loop must return at the top of the next iter
+    // without logging the "still held" warning.
+    const polls: number[] = []
+    let pollCount = 0
+    const ctx: ProcessLockContext = {
+      currentPid: 1000,
+      uid: 501,
+      listPortHolders() {
+        polls.push(Date.now())
+        pollCount += 1
+        return pollCount > 3 ? [] : [200]
+      },
+      listOwnProcessesMatching: () => [],
+      getProcessCommand: () => 'node',
+      getProcessUid: () => 501,
+      signal: () => 'sent',
+      sleep: noopAsync,
+      log: noopLog,
+    }
+    await new PortLockAcquirer(ctx).acquire(3420, {
+      graceMs: 5,
+      postKillDrainMs: 100,
+      postKillPollMs: 25,
+    })
+    // At least 3 drain polls happened (the third returns empty and exits).
+    expect(pollCount).toBeGreaterThanOrEqual(3)
   })
 })
 
@@ -181,10 +286,11 @@ describe('PidfileLockAcquirer', () => {
     // free function did, and that `this.ctx.tryCreateExclusive` is called.
     const files = new Map<string, number>()
     const ctx = buildPidfileCtx({ files })
-    await new PidfileLockAcquirer(ctx).acquire('/tmp/test.pid', 42)
+    const acquirer = new PidfileLockAcquirer(ctx)
+    await acquirer.acquire('/tmp/test.pid', 42)
     expect(files.get('/tmp/test.pid')).toBe(42)
     // Signature pins: no positional opts.
-    expect(new PidfileLockAcquirer(ctx).acquire.length).toBe(2)
+    expect(acquirer.acquire.length).toBe(2)
   })
 
   it('acquire with onLiveLegitimate=defer throws DeferToPeerError via the class path', async () => {
