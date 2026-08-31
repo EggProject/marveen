@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-deprecated -- this file intentionally exercises both class API (AutoRestartSchedule.X) and @deprecated wrapper API (X, DEFAULT_AUTO_RESTART) to assert equivalence and referential identity; see plan §Test plan: anti-vacuous assertions */
 import { describe, it, expect } from 'vitest'
 import {
   AutoRestartSchedule,

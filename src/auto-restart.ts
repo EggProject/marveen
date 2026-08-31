@@ -42,6 +42,7 @@ export interface AutoRestartConfig {
  * intentionally observable through the legacy `DEFAULT_AUTO_RESTART`
  * re-export -- both names refer to the same object.
  */
+// eslint-disable-next-line @typescript-eslint/no-extraneous-class -- static-only utility namespace; see plan §Concrete class shape
 export class AutoRestartSchedule {
   static readonly DEFAULT: AutoRestartConfig = {
     enabled: false,
@@ -81,9 +82,12 @@ export class AutoRestartSchedule {
    * never crash the runner or yield a half-set config.
    */
   static normalizeAutoRestartConfig(raw: unknown): AutoRestartConfig {
-    const o = (raw && typeof raw === 'object') ? raw as Record<string, unknown> : {}
+    const o: Record<string, unknown> = (typeof raw === 'object' && raw !== null && !Array.isArray(raw)) ? raw : {}
     const mode: AutoRestartMode = o.mode === 'fresh' ? 'fresh' : 'continue'
-    const dailyTime = AutoRestartSchedule.parseHHMM(o.dailyTime) !== null ? (o.dailyTime as string).trim() : null
+    const dailyTimeRaw = o.dailyTime
+    const dailyTime = typeof dailyTimeRaw === 'string' && AutoRestartSchedule.parseHHMM(dailyTimeRaw) !== null
+      ? dailyTimeRaw.trim()
+      : null
     let intervalHours: number | null = null
     if (typeof o.intervalHours === 'number' && Number.isFinite(o.intervalHours) && o.intervalHours > 0) {
       intervalHours = o.intervalHours
