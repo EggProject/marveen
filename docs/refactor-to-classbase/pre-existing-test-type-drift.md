@@ -19,6 +19,7 @@ real shape does not get re-buried under 'pre-existing' again.
 | 2026-08-31 (HEAD pre-cycle-1) | 1729 | After 100% coverage push |
 | 2026-08-31 (HEAD post-cycle-1) | 1368 | Cycle 1 (channel-monitor.test.ts) |
 | 2026-08-31 (HEAD post-cycle-2) | 1055 | Cycle 2 (agents-routes.test.ts) |
+| 2026-08-31 (HEAD post-cycle-3) | 798 | Cycle 3 (schedule-runner-full.test.ts) |
 
 The +1294 jump between 2026-08-06 and 2026-08-31 came from these
 'baseline tests lift coverage' commits:
@@ -44,13 +45,13 @@ signatures.
 |---|---|---|
 | src/__tests__/channel-monitor.test.ts | 361 | Cycle 1 (this commit) |
 | src/__tests__/agents-routes.test.ts | 0 | Cycle 2 (landed 6c6327e) |
-| src/__tests__/schedule-runner-full.test.ts | 257 | Cycle 3 |
+| src/__tests__/schedule-runner-full.test.ts | 0 | Cycle 3 (landed 7ddcc5b) |
 | src/__tests__/channel-monitor-coverage.test.ts | 224 | Cycle 4 |
 | src/__tests__/channel-monitor-baseline.test.ts | 118 | Cycle 5 |
-| (smaller files, totals in subsequent cycles) | ~425 | Cycles 6-N |
+| (smaller files, totals in subsequent cycles) | ~168 | Cycles 6-N |
 | src/db.ts (bun:sqlite drift) | 30 | Future (separate MD) |
 | src/channel-coordinator.ts | 1 | Future |
-| Total | 1055 | (measured 2026-08-31 post-cycle-2; was 1729) |
+| Total | 798 | (measured 2026-08-31 post-cycle-3; was 1729) |
 
 ## Cycle 1 - what was done
 
@@ -80,6 +81,18 @@ as 'import type'. Same pattern as Cycle 1, applied to the second-largest
 offender.
 
 tsc: 1368 -> 1055 (delta -313, matching the row above).
+vitest: 384/11225/0 (preserved).
+
+## Cycle 3 - what was done
+
+(See commit 7ddcc5b4d73a5cd35742fe2964be2e114dc01cb8 on refactor/classbase.)
+
+Schedule-runner-full.test.ts mock factory rewritten: each vi.fn() now uses
+vi.fn<ReturnType<typeof productionFn>>() with production types imported
+as 'import type'. Same pattern as Cycles 1 and 2, applied to the
+third-largest offender. 257 errors fixed via strict typeof prodFn pattern.
+
+tsc: 1055 -> 798 (delta -257, matching the row above).
 vitest: 384/11225/0 (preserved).
 
 ## What cleanup means going forward
