@@ -17,6 +17,8 @@ real shape does not get re-buried under 'pre-existing' again.
 | 2026-04-08 (f24eacc, initial release) | 2 | Original baseline |
 | 2026-08-06 (0b800e0) | 435 | ~120 days of organic growth |
 | 2026-08-31 (HEAD pre-cycle-1) | 1729 | After 100% coverage push |
+| 2026-08-31 (HEAD post-cycle-1) | 1368 | Cycle 1 (channel-monitor.test.ts) |
+| 2026-08-31 (HEAD post-cycle-2) | 1055 | Cycle 2 (agents-routes.test.ts) |
 
 The +1294 jump between 2026-08-06 and 2026-08-31 came from these
 'baseline tests lift coverage' commits:
@@ -41,14 +43,14 @@ signatures.
 | File | errors | Cleanup cycle |
 |---|---|---|
 | src/__tests__/channel-monitor.test.ts | 361 | Cycle 1 (this commit) |
-| src/__tests__/agents-routes.test.ts | 313 | Cycle 2 |
+| src/__tests__/agents-routes.test.ts | 0 | Cycle 2 (landed 6c6327e) |
 | src/__tests__/schedule-runner-full.test.ts | 257 | Cycle 3 |
 | src/__tests__/channel-monitor-coverage.test.ts | 224 | Cycle 4 |
 | src/__tests__/channel-monitor-baseline.test.ts | 118 | Cycle 5 |
-| (smaller files, totals in subsequent cycles) | ~426 | Cycles 6-N |
+| (smaller files, totals in subsequent cycles) | ~425 | Cycles 6-N |
 | src/db.ts (bun:sqlite drift) | 30 | Future (separate MD) |
 | src/channel-coordinator.ts | 1 | Future |
-| Total | 1729 | |
+| Total | 1055 | (measured 2026-08-31 post-cycle-2; was 1729) |
 
 ## Cycle 1 - what was done
 
@@ -67,6 +69,18 @@ as 'import type'. No 'as' casts, no 'any' introduced (CLAUDE.md §7).
 | TS2322 (object shape) | 63 | explicit type annotation via Parameters/ReturnType |
 | TS2353 (object literal) | 1 | typed object literal |
 | TS2344 (constraint) | 1 | satisfies form constraint |
+
+## Cycle 2 - what was done
+
+(See commit 6c6327e9f5d724c1a637b1c94a1b20560202ec7d on refactor/classbase.)
+
+Agents-routes.test.ts mock factory rewritten: each vi.fn() now uses
+vi.fn<ReturnType<typeof productionFn>>() with production types imported
+as 'import type'. Same pattern as Cycle 1, applied to the second-largest
+offender.
+
+tsc: 1368 -> 1055 (delta -313, matching the row above).
+vitest: 384/11225/0 (preserved).
 
 ## What cleanup means going forward
 
