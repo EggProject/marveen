@@ -1,5 +1,18 @@
 # I (auto-restart) — `/code-review max --fix` handoff
 
+## Update 2026-08-31 (post-ceremony)
+
+Commit `8f1906c` ("refactor(auto-restart): replace ceremony class with module-level functions") superseded this work CODE-side. The class form violated `.claude/rules/class-vs-functional-decision.md` (0/5 IGEN on the decision tree — no instance state, no `implements X`, no lifecycle, no DI, no per-test isolation). Per the user standing rule (no amend/revert/reset), the 4 ceremony commits remain in branch history; the supersession is by CODE, not history rewrite.
+
+Post-supersession state on `refactor/classbase`:
+- `src/auto-restart.ts`: byte-identical to the `fbe7750` pre-refactor (122 lines, 0 class, no @deprecated, no eslint-disable)
+- `src/__tests__/auto-restart-class.test.ts`: deleted
+- 4 pre-existing test files (91/91): unchanged, still green
+- `bun run lint` problem count: back to Phase 0 baseline (10049)
+- Consumer files (`src/web/auto-restart-runner.ts` + 4 test files): byte-identical to `fbe7750`
+
+This handoff is preserved as the verifier trail for the ceremony cycle; for the post-supersession state, see the new "I LANDED via 8f1906c" framing in `00-summary.md`.
+
 ## Status
 
 I LANDED. Two commits on `refactor/classbase`, fast-forwarded from `fbe7750` to `584135d`:

@@ -105,11 +105,7 @@ file" (see Phase 7 below).
    PortLockAcquirer(mockFs).acquire(port)` — same mocks, cleaner call
    site. Touches `index.ts` (one call site).
 
-3. **`src/auto-restart.ts` namespace → `class AutoRestartSchedule`**
-   pure constants + 3 decision functions (`parseHHMM`, `restartDue`,
-   `dailyPhaseAtMs`) become static methods. Zero behavior change,
-   consolidates the `DEFAULT_AUTO_RESTART` constant alongside the
-   decision logic, and the `AutoRestartConfig` type stays the same.
+3. ~~`src/auto-restart.ts` → `class AutoRestartSchedule`~~ — WITHDRAWN (2026-08-31). Superseded by commit 8f1906c; the class form violated `.claude/rules/class-vs-functional-decision.md` (0/5 IGEN on the decision tree). See `i-auto-restart/code-review-handoff.md` for the full verifier trail.
 
 ## Explicitly OUT OF SCOPE
 
