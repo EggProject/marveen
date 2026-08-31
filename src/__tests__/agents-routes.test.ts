@@ -25,12 +25,24 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { __test_parseChannelProvider } from '../web/routes/agents.js'
 import type { Mock } from 'vitest'
-import type { writeAgentModelProfile, writeAgentRemoteConfig } from '../web/agent-config.js'
+import type {
+  writeAgentModelProfile,
+  writeAgentRemoteConfig,
+  extractDescriptionFromClaudeMd,
+  findAvatarForAgent,
+  resolveAgentModelDetailed,
+  readModelProfileMap,
+  writeAgentChannelProvider,
+  writeAgentClaudePlan,
+  writeAgentVoiceConfig,
+  readAgentAuthMode,
+  writeAgentAuthMode,
+} from '../web/agent-config.js'
 import type { sendPromptToSession } from '../web/agent-process.js'
 import type { attemptChannelMcpReconnect, ReconnectResult } from '../web/channel-mcp-reconnect.js'
 import type { createInvite, listInvites, revokeInvite, CreateInviteResult } from '../web/channel-invites.js'
 import type { resolveProfilePlaceholders, loadProfileTemplate, ProfileTemplate } from '../web/profiles.js'
-import type { peekBundleKind } from '../web/agent-bundle.js'
+import type { peekBundleKind, importAgentBundle, importAllAgentsBundle } from '../web/agent-bundle.js'
 import type { detectPermissionMode } from '../pane-state.js'
 import type { getContextGuardStatus } from '../web/context-guard-runner.js'
 
@@ -72,12 +84,12 @@ const H = vi.hoisted(() => {
     agentConfigRoot: vi.fn<(name: string) => string>((name: string) => (name === 'marveen' ? projectRoot : join(projectRoot, 'agents', name))),
     DEFAULT_MODEL: 'claude-opus-4-8[1m]',
     readFileOr: vi.fn<(_p: string, fallback: string) => string>((_p: string, fallback: string) => fallback),
-    extractDescriptionFromClaudeMd: vi.fn<() => string | null>(() => 'desc'),
-    findAvatarForAgent: vi.fn<() => string | null>(() => null),
+    extractDescriptionFromClaudeMd: vi.fn<typeof extractDescriptionFromClaudeMd>(() => 'desc'),
+    findAvatarForAgent: vi.fn<typeof findAvatarForAgent>(() => null),
     resolveModelId: vi.fn<(raw: string) => string>((raw: string) => raw || 'claude-opus-4-8[1m]'),
     readAgentModel: vi.fn<(name: string) => string>(() => 'claude-opus-4-8[1m]'),
-    resolveAgentModelDetailed: vi.fn<() => { model: string; source: string; error: string | null }>(() => ({ model: 'claude-opus-4-8[1m]', source: 'default', error: null })),
-    readModelProfileMap: vi.fn<() => null | Record<string, unknown>>(() => null),
+    resolveAgentModelDetailed: vi.fn<typeof resolveAgentModelDetailed>(() => ({ model: 'claude-opus-4-8[1m]', source: 'default' })),
+    readModelProfileMap: vi.fn<typeof readModelProfileMap>(() => null),
     writeAgentModelProfile: vi.fn<typeof writeAgentModelProfile>(),
     writeAgentModel: mkFn<[name: string, model: string]>(),
     readAgentDisplayName: vi.fn<(name: string) => string | null>(() => 'display'),
@@ -87,11 +99,11 @@ const H = vi.hoisted(() => {
     listAgentNames: vi.fn<() => string[]>(() => []),
     isKnownAgent: vi.fn<(name: string) => boolean>(() => false),
     readAgentChannelProvider: vi.fn<(name: string) => string | null>(() => 'telegram'),
-    writeAgentChannelProvider: mkFn<[name: string, provider: string | null]>(),
-    readAgentAuthMode: vi.fn<(name: string) => string>(() => 'shared'),
-    writeAgentAuthMode: mkFn<[name: string, mode: string]>(),
+    writeAgentChannelProvider: vi.fn<typeof writeAgentChannelProvider>(),
+    readAgentAuthMode: vi.fn<typeof readAgentAuthMode>(() => 'shared'),
+    writeAgentAuthMode: vi.fn<typeof writeAgentAuthMode>(),
     readAgentClaudePlan: vi.fn<(name: string) => string | null>(() => null),
-    writeAgentClaudePlan: mkFn<[name: string, plan: string | null]>(),
+    writeAgentClaudePlan: vi.fn<typeof writeAgentClaudePlan>(),
     readAgentMemoryIsolation: vi.fn<(name: string) => boolean>(() => false),
     writeAgentMemoryIsolation: mkFn<[name: string, value: boolean]>(),
     readAgentClaudeConfigDir: vi.fn<(name: string) => string | null>(() => null),
@@ -99,7 +111,7 @@ const H = vi.hoisted(() => {
     readAgentRemoteHost: vi.fn<(name: string) => string | null>(() => null),
     writeAgentRemoteConfig: vi.fn<typeof writeAgentRemoteConfig>(() => ({ ok: true, remote: { host: '', workdir: '' } })),
     readAgentVoiceConfig: vi.fn<(name: string) => { responseMode: string; voiceModel: string | null }>(() => ({ responseMode: 'auto', voiceModel: null })),
-    writeAgentVoiceConfig: mkFn<[name: string, config: { responseMode: string; voiceModel: string | null }]>(),
+    writeAgentVoiceConfig: vi.fn<typeof writeAgentVoiceConfig>(),
     KNOWN_VOICE_MODELS: new Set(['nova', 'ember', 'whisper']),
 
     // agent-process
@@ -153,14 +165,14 @@ const H = vi.hoisted(() => {
 
     // agent-bundle
     exportAgentBundle: vi.fn<(name: string, outPath: string, ...args: unknown[]) => unknown>(() => Buffer.alloc(0)),
-    importAgentBundle: vi.fn<(name: string, buf: Buffer, outPath?: string) => { name: string; overwritten: boolean; manifest: { includesSecrets: boolean } }>(() => ({
+    importAgentBundle: vi.fn<typeof importAgentBundle>(() => ({
       name: 'x',
       overwritten: false,
-      manifest: { includesSecrets: false },
+      manifest: { schemaVersion: 1, agentName: 'x', includesSecrets: false },
     })),
     exportAllAgentsBundle: vi.fn<(outPath: string, ...args: unknown[]) => unknown>(() => Buffer.alloc(0)),
-    importAllAgentsBundle: vi.fn<(buf: Buffer, outPath?: string) => { imported: Array<{ name: string }>; skipped: Array<{ name: string; reason?: string; [k: string]: unknown } | string>; includesSecrets: boolean }>(() => ({
-      imported: [{ name: 'a' }],
+    importAllAgentsBundle: vi.fn<typeof importAllAgentsBundle>(() => ({
+      imported: [{ name: 'a', overwritten: false }],
       skipped: [],
       includesSecrets: false,
     })),
@@ -773,7 +785,7 @@ beforeEach(() => {
   H.writeAgentRemoteConfig.mockReset().mockReturnValue({ ok: true, remote: { host: '', workdir: '' } })
   H.writeAgentVoiceConfig.mockReset()
   H.readAgentVoiceConfig.mockReset().mockReturnValue({ responseMode: 'auto', voiceModel: null })
-  H.resolveAgentModelDetailed.mockReset().mockReturnValue({ model: 'claude-opus-4-8[1m]', source: 'default', error: null })
+  H.resolveAgentModelDetailed.mockReset().mockReturnValue({ model: 'claude-opus-4-8[1m]', source: 'default' })
   H.readModelProfileMap.mockReset().mockReturnValue(null)
   H.readAgentSecurityProfile.mockReset().mockReturnValue('default')
   H.readAgentAuthMode.mockReset().mockReturnValue('shared')
@@ -823,11 +835,11 @@ beforeEach(() => {
   H.importAgentBundle.mockReset().mockReturnValue({
     name: 'x',
     overwritten: false,
-    manifest: { includesSecrets: false },
+    manifest: { schemaVersion: 1, agentName: 'x', includesSecrets: false },
   })
   H.exportAllAgentsBundle.mockReset()
   H.importAllAgentsBundle.mockReset().mockReturnValue({
-    imported: [{ name: 'a' }],
+    imported: [{ name: 'a', overwritten: false }],
     skipped: [],
     includesSecrets: false,
   })
@@ -2708,7 +2720,7 @@ describe('POST /api/agents/import', () => {
     H.importAgentBundle.mockReturnValue({
       name: 'a',
       overwritten: true,
-      manifest: { includesSecrets: false },
+      manifest: { schemaVersion: 1, agentName: 'a', includesSecrets: false },
     })
     const { res, json } = await call('POST', '/api/agents/import', {
       headers: { 'content-type': 'multipart/form-data; boundary=---' },
@@ -2722,7 +2734,7 @@ describe('POST /api/agents/import', () => {
     H.importAgentBundle.mockReturnValue({
       name: 'b',
       overwritten: false,
-      manifest: { includesSecrets: false },
+      manifest: { schemaVersion: 1, agentName: 'b', includesSecrets: false },
     })
     const { res } = await call('POST', '/api/agents/import?name=b', { raw: Buffer.from('gzdata') })
     expect(res.statusCode).toBe(200)
@@ -2736,7 +2748,7 @@ describe('POST /api/agents/import', () => {
     })
     H.peekBundleKind.mockReturnValue('fleet')
     H.importAllAgentsBundle.mockReturnValue({
-      imported: [{ name: 'a' }],
+      imported: [{ name: 'a', overwritten: false }],
       skipped: [{ name: 'b', reason: 'already exists' }],
       includesSecrets: false,
     })
@@ -2754,7 +2766,7 @@ describe('POST /api/agents/import', () => {
     })
     H.peekBundleKind.mockReturnValue('fleet')
     H.importAllAgentsBundle.mockReturnValue({
-      imported: [{ name: 'a' }],
+      imported: [{ name: 'a', overwritten: false }],
       skipped: [],
       includesSecrets: false,
     })
@@ -2797,7 +2809,7 @@ describe('POST /api/agents/import', () => {
     H.importAgentBundle.mockReturnValue({
       name: 'c',
       overwritten: false,
-      manifest: { includesSecrets: false },
+      manifest: { schemaVersion: 1, agentName: 'c', includesSecrets: false },
     })
     const { res } = await call('POST', '/api/agents/import?name=c&overwrite=1', { raw: Buffer.from('gzdata') })
     expect(res.statusCode).toBe(200)
@@ -2948,7 +2960,7 @@ describe('PUT /api/agents/:name', () => {
 
   it('400s when the model-profile map is unusable', async () => {
     H.isKnownAgent.mockReturnValue(true)
-    H.readModelProfileMap.mockReturnValue({ ok: false, error: 'corrupt' } as unknown as null)
+    H.readModelProfileMap.mockReturnValue({ ok: false, error: 'corrupt' })
     const { res, json } = await call('PUT', '/api/agents/a', { body: { modelProfile: 'premium_reasoning' } })
     expect(res.statusCode).toBe(400)
     expect((json() as Record<string, string>).error).toMatch(/unusable/)
@@ -2956,7 +2968,10 @@ describe('PUT /api/agents/:name', () => {
 
   it('writes a valid modelProfile', async () => {
     H.isKnownAgent.mockReturnValue(true)
-    H.readModelProfileMap.mockReturnValue({ ok: true } as unknown as null)
+    H.readModelProfileMap.mockReturnValue({
+      ok: true,
+      map: { profiles: { premium_reasoning: 'm', build_strong: 'm', analysis_efficient: 'm', routine_lowcost: 'm' } },
+    })
     const { res } = await call('PUT', '/api/agents/a', { body: { modelProfile: 'premium_reasoning' } })
     expect(res.statusCode).toBe(200)
     expect(H.writeAgentModelProfile).toHaveBeenCalledWith('a', 'premium_reasoning')
@@ -2964,7 +2979,10 @@ describe('PUT /api/agents/:name', () => {
 
   it('400s when modelProfile is an unknown id', async () => {
     H.isKnownAgent.mockReturnValue(true)
-    H.readModelProfileMap.mockReturnValue({ ok: true } as unknown as null)
+    H.readModelProfileMap.mockReturnValue({
+      ok: true,
+      map: { profiles: { premium_reasoning: 'm', build_strong: 'm', analysis_efficient: 'm', routine_lowcost: 'm' } },
+    })
     const { res, json } = await call('PUT', '/api/agents/a', { body: { modelProfile: 'no-such-id' } })
     expect(res.statusCode).toBe(400)
     expect((json() as Record<string, string>).error).toMatch(/must be one of/)
@@ -3823,7 +3841,7 @@ describe('baseline: import with query string name', () => {
     H.importAgentBundle.mockReturnValue({
       name: 'fromquery',
       overwritten: false,
-      manifest: { includesSecrets: false },
+      manifest: { schemaVersion: 1, agentName: 'fromquery', includesSecrets: false },
     })
     const { res, json } = await call('POST', '/api/agents/import?name=fromquery', { raw: Buffer.from('gzdata') })
     expect(res.statusCode).toBe(200)
@@ -3840,7 +3858,7 @@ describe('baseline: import with query string name', () => {
     H.importAgentBundle.mockReturnValue({
       name: 'x',
       overwritten: false,
-      manifest: { includesSecrets: false },
+      manifest: { schemaVersion: 1, agentName: 'x', includesSecrets: false },
     })
     const { res } = await call('POST', '/api/agents/import', { raw: Buffer.from('gzdata') })
     expect(res.statusCode).toBe(200)
@@ -4123,7 +4141,7 @@ describe('baseline: import with file in multipart', () => {
     H.importAgentBundle.mockReturnValue({
       name: 'a',
       overwritten: false,
-      manifest: { includesSecrets: false },
+      manifest: { schemaVersion: 1, agentName: 'a', includesSecrets: false },
     })
     const { res, json } = await call('POST', '/api/agents/import', {
       headers: { 'content-type': 'multipart/form-data; boundary=---' },
@@ -4383,7 +4401,7 @@ describe('baseline: req.url falsy fallback in export / import', () => {
     H.importAgentBundle.mockReturnValue({
       name: 'x',
       overwritten: false,
-      manifest: { includesSecrets: false },
+      manifest: { schemaVersion: 1, agentName: 'x', includesSecrets: false },
     })
     // POST /api/agents/import raw body-val, content-type NEM multipart, és
     // req.url nincs beállítva. A handler az else ágba megy és `req.url || ''`
