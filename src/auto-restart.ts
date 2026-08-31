@@ -18,6 +18,19 @@ export type AutoRestartMode = 'fresh' | 'continue'
 /** How the MAIN channels session is restarted on this host. */
 export type MainRestartMechanism = 'launchd' | 'tmux-respawn'
 
+/**
+ * Pick the main-session restart mechanism from what the host actually has.
+ *
+ * The predicate is the launchctl BINARY, not process.platform: the bug this
+ * replaces was not "wrong OS" but "the binary this code exec'd unconditionally
+ * does not exist here", and the binary is what decides whether the call can
+ * work at all. Kept here, in the dependency-free module, so it is unit-testable
+ * without a filesystem -- same reason the due-logic lives here.
+ */
+export function mainRestartMechanism(launchctlPresent: boolean): MainRestartMechanism {
+  return launchctlPresent ? 'launchd' : 'tmux-respawn'
+}
+
 export interface AutoRestartConfig {
   /** Master toggle. When false the agent is never auto-restarted. */
   enabled: boolean
@@ -32,148 +45,78 @@ export interface AutoRestartConfig {
   handoff: boolean
 }
 
-/**
- * User-defined type guard: `raw` is a JSON-style plain object (not an array,
- * not null, not a primitive). Mirrors `src/web/agent-process.ts:442` so the
- * same narrowing pattern is available wherever JSON-shaped unknown input
- * needs to be normalised.
- */
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
+export const DEFAULT_AUTO_RESTART: AutoRestartConfig = {
+  enabled: false,
+  mode: 'continue',
+  dailyTime: null,
+  intervalHours: null,
+  handoff: false,
 }
 
-/**
- * Static-only utility class for the auto-restart schedule decision logic.
- *
- * Mirrors the e-process-lock / h3-lazybin pattern: a class form for callers
- * that prefer namespace imports, alongside the legacy free-function exports
- * below. The 5 methods are pure functions (no `this`, no DI); the `DEFAULT`
- * field is the canonical default config. Mutation of `DEFAULT.mode` etc. is
- * intentionally observable through the legacy `DEFAULT_AUTO_RESTART`
- * re-export -- both names refer to the same object.
- */
-// eslint-disable-next-line @typescript-eslint/no-extraneous-class -- static-only utility namespace; see plan §Concrete class shape
-export class AutoRestartSchedule {
-  static readonly DEFAULT: AutoRestartConfig = {
-    enabled: false,
-    mode: 'continue',
-    dailyTime: null,
-    intervalHours: null,
-    handoff: false,
-  }
-
-  /**
-   * Pick the main-session restart mechanism from what the host actually has.
-   *
-   * The predicate is the launchctl BINARY, not process.platform: the bug this
-   * replaces was not "wrong OS" but "the binary this code exec'd unconditionally
-   * does not exist here", and the binary is what decides whether the call can
-   * work at all. Kept here, in the dependency-free module, so it is unit-testable
-   * without a filesystem -- same reason the due-logic lives here.
-   */
-  static mainRestartMechanism(launchctlPresent: boolean): MainRestartMechanism {
-    return launchctlPresent ? 'launchd' : 'tmux-respawn'
-  }
-
-  /** Parse 'HH:MM' (24h) into minutes since local midnight, or null if invalid. */
-  static parseHHMM(s: unknown): number | null {
-    if (typeof s !== 'string') return null
-    const m = /^(\d{1,2}):(\d{2})$/.exec(s.trim())
-    if (!m) return null
-    const h = Number(m[1])
-    const min = Number(m[2])
-    if (h < 0 || h > 23 || min < 0 || min > 59) return null
-    return h * 60 + min
-  }
-
-  /**
-   * Coerce arbitrary parsed JSON into a safe, fully-populated config. Unknown /
-   * malformed fields fall back to defaults, so a hand-edited or older store can
-   * never crash the runner or yield a half-set config.
-   */
-  static normalizeAutoRestartConfig(raw: unknown): AutoRestartConfig {
-    const o: Record<string, unknown> = isPlainObject(raw) ? raw : {}
-    const mode: AutoRestartMode = o.mode === 'fresh' ? 'fresh' : 'continue'
-    const dailyTimeRaw = o.dailyTime
-    const dailyTime = typeof dailyTimeRaw === 'string' && AutoRestartSchedule.parseHHMM(dailyTimeRaw) !== null
-      ? dailyTimeRaw.trim()
-      : null
-    let intervalHours: number | null = null
-    if (typeof o.intervalHours === 'number' && Number.isFinite(o.intervalHours) && o.intervalHours > 0) {
-      intervalHours = o.intervalHours
-    }
-    // dailyTime takes precedence: never keep both, so the schedule is unambiguous.
-    if (dailyTime !== null) intervalHours = null
-    return {
-      enabled: o.enabled === true,
-      mode,
-      dailyTime,
-      intervalHours,
-      handoff: o.handoff === true,
-    }
-  }
-
-  /**
-   * Pure decision: is a restart due *now*?
-   *
-   * `dueAtMs` is the timestamp the caller computed for the next scheduled restart
-   * (today's HH:MM for the daily schedule, or lastRestart + interval for the
-   * interval schedule). A restart is due when now has reached it AND we have not
-   * already restarted at or after it (so it fires once per scheduled point, not
-   * every tick in the window).
-   *
-   * @param lastRestartAtMs  When this agent was last auto-restarted, or null if never.
-   * @param nowMs            Current clock (ms).
-   * @param dueAtMs          The scheduled restart timestamp to compare against.
-   */
-  static restartDue(lastRestartAtMs: number | null, nowMs: number, dueAtMs: number): boolean {
-    if (!Number.isFinite(dueAtMs)) return false
-    if (nowMs < dueAtMs) return false
-    if (lastRestartAtMs !== null && lastRestartAtMs >= dueAtMs) return false
-    return true
-  }
-
-  /**
-   * Start-of-local-day timestamp for the day containing `nowMs`, given the
-   * environment's local-midnight offset already applied by the caller. Kept here
-   * as a pure helper that takes the local Y/M/D components so it is testable
-   * without a timezone: the runner passes `new Date(nowMs)` getFullYear/Month/Date.
-   */
-  static dailyDueAtMs(
-    localMidnightMs: number,
-    minutesSinceMidnight: number,
-  ): number {
-    return localMidnightMs + minutesSinceMidnight * 60_000
-  }
-}
-
-/** @deprecated Use `AutoRestartSchedule.DEFAULT`. */
-export const DEFAULT_AUTO_RESTART: AutoRestartConfig = AutoRestartSchedule.DEFAULT
-
-/** @deprecated Use `AutoRestartSchedule.mainRestartMechanism`. */
-export function mainRestartMechanism(launchctlPresent: boolean): MainRestartMechanism {
-  return AutoRestartSchedule.mainRestartMechanism(launchctlPresent)
-}
-
-/** @deprecated Use `AutoRestartSchedule.parseHHMM`. */
+/** Parse 'HH:MM' (24h) into minutes since local midnight, or null if invalid. */
 export function parseHHMM(s: unknown): number | null {
-  return AutoRestartSchedule.parseHHMM(s)
+  if (typeof s !== 'string') return null
+  const m = /^(\d{1,2}):(\d{2})$/.exec(s.trim())
+  if (!m) return null
+  const h = Number(m[1])
+  const min = Number(m[2])
+  if (h < 0 || h > 23 || min < 0 || min > 59) return null
+  return h * 60 + min
 }
 
-/** @deprecated Use `AutoRestartSchedule.normalizeAutoRestartConfig`. */
+/**
+ * Coerce arbitrary parsed JSON into a safe, fully-populated config. Unknown /
+ * malformed fields fall back to defaults, so a hand-edited or older store can
+ * never crash the runner or yield a half-set config.
+ */
 export function normalizeAutoRestartConfig(raw: unknown): AutoRestartConfig {
-  return AutoRestartSchedule.normalizeAutoRestartConfig(raw)
+  const o = (raw && typeof raw === 'object') ? raw as Record<string, unknown> : {}
+  const mode: AutoRestartMode = o.mode === 'fresh' ? 'fresh' : 'continue'
+  const dailyTime = parseHHMM(o.dailyTime) !== null ? (o.dailyTime as string).trim() : null
+  let intervalHours: number | null = null
+  if (typeof o.intervalHours === 'number' && Number.isFinite(o.intervalHours) && o.intervalHours > 0) {
+    intervalHours = o.intervalHours
+  }
+  // dailyTime takes precedence: never keep both, so the schedule is unambiguous.
+  if (dailyTime !== null) intervalHours = null
+  return {
+    enabled: o.enabled === true,
+    mode,
+    dailyTime,
+    intervalHours,
+    handoff: o.handoff === true,
+  }
 }
 
-/** @deprecated Use `AutoRestartSchedule.restartDue`. */
+/**
+ * Pure decision: is a restart due *now*?
+ *
+ * `dueAtMs` is the timestamp the caller computed for the next scheduled restart
+ * (today's HH:MM for the daily schedule, or lastRestart + interval for the
+ * interval schedule). A restart is due when now has reached it AND we have not
+ * already restarted at or after it (so it fires once per scheduled point, not
+ * every tick in the window).
+ *
+ * @param lastRestartAtMs  When this agent was last auto-restarted, or null if never.
+ * @param nowMs            Current clock (ms).
+ * @param dueAtMs          The scheduled restart timestamp to compare against.
+ */
 export function restartDue(lastRestartAtMs: number | null, nowMs: number, dueAtMs: number): boolean {
-  return AutoRestartSchedule.restartDue(lastRestartAtMs, nowMs, dueAtMs)
+  if (!Number.isFinite(dueAtMs)) return false
+  if (nowMs < dueAtMs) return false
+  if (lastRestartAtMs !== null && lastRestartAtMs >= dueAtMs) return false
+  return true
 }
 
-/** @deprecated Use `AutoRestartSchedule.dailyDueAtMs`. */
+/**
+ * Start-of-local-day timestamp for the day containing `nowMs`, given the
+ * environment's local-midnight offset already applied by the caller. Kept here
+ * as a pure helper that takes the local Y/M/D components so it is testable
+ * without a timezone: the runner passes `new Date(nowMs)` getFullYear/Month/Date.
+ */
 export function dailyDueAtMs(
   localMidnightMs: number,
   minutesSinceMidnight: number,
 ): number {
-  return AutoRestartSchedule.dailyDueAtMs(localMidnightMs, minutesSinceMidnight)
+  return localMidnightMs + minutesSinceMidnight * 60_000
 }
