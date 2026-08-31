@@ -33,6 +33,16 @@ export interface AutoRestartConfig {
 }
 
 /**
+ * User-defined type guard: `raw` is a JSON-style plain object (not an array,
+ * not null, not a primitive). Mirrors `src/web/agent-process.ts:442` so the
+ * same narrowing pattern is available wherever JSON-shaped unknown input
+ * needs to be normalised.
+ */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
  * Static-only utility class for the auto-restart schedule decision logic.
  *
  * Mirrors the e-process-lock / h3-lazybin pattern: a class form for callers
@@ -82,7 +92,7 @@ export class AutoRestartSchedule {
    * never crash the runner or yield a half-set config.
    */
   static normalizeAutoRestartConfig(raw: unknown): AutoRestartConfig {
-    const o: Record<string, unknown> = (typeof raw === 'object' && raw !== null && !Array.isArray(raw)) ? raw : {}
+    const o: Record<string, unknown> = isPlainObject(raw) ? raw : {}
     const mode: AutoRestartMode = o.mode === 'fresh' ? 'fresh' : 'continue'
     const dailyTimeRaw = o.dailyTime
     const dailyTime = typeof dailyTimeRaw === 'string' && AutoRestartSchedule.parseHHMM(dailyTimeRaw) !== null
