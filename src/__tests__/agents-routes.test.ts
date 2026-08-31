@@ -24,6 +24,7 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync, readFileSync
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { __test_parseChannelProvider } from '../web/routes/agents.js'
+import type { Mock } from 'vitest'
 
 // --- hoisted harness --------------------------------------------------------
 
@@ -40,7 +41,7 @@ const H = vi.hoisted(() => {
   fs.mkdirSync(webDir, { recursive: true })
   fs.mkdirSync(personasDir, { recursive: true })
 
-  const mkFn = () => vi.fn()
+  const mkFn = <A extends unknown[] = [], R = void>(): Mock<(...a: A) => R> => vi.fn<(...a: A) => R>()
   return {
     tmp,
     projectRoot,
@@ -50,84 +51,84 @@ const H = vi.hoisted(() => {
 
     // config
     MAIN_AGENT_ID: 'marveen',
-    currentBotName: vi.fn(() => 'Marveen'),
+    currentBotName: vi.fn<() => string>(() => 'Marveen'),
 
     // logger
-    loggerInfo: mkFn(),
-    loggerWarn: mkFn(),
-    loggerError: mkFn(),
-    loggerDebug: mkFn(),
+    loggerInfo: mkFn<[message: string, ...args: unknown[]]>(),
+    loggerWarn: mkFn<[message: string, ...args: unknown[]]>(),
+    loggerError: mkFn<[message: string, ...args: unknown[]]>(),
+    loggerDebug: mkFn<[message: string, ...args: unknown[]]>(),
 
     // agent-config
-    agentDir: vi.fn((name: string) => join(projectRoot, 'agents', name)),
-    agentConfigRoot: vi.fn((name: string) => (name === 'marveen' ? projectRoot : join(projectRoot, 'agents', name))),
+    agentDir: vi.fn<(name: string) => string>((name: string) => join(projectRoot, 'agents', name)),
+    agentConfigRoot: vi.fn<(name: string) => string>((name: string) => (name === 'marveen' ? projectRoot : join(projectRoot, 'agents', name))),
     DEFAULT_MODEL: 'claude-opus-4-8[1m]',
-    readFileOr: vi.fn((_p: string, fallback: string) => fallback),
-    extractDescriptionFromClaudeMd: vi.fn(() => 'desc'),
-    findAvatarForAgent: vi.fn(() => null),
-    resolveModelId: vi.fn((raw: string) => raw || 'claude-opus-4-8[1m]'),
-    readAgentModel: vi.fn(() => 'claude-opus-4-8[1m]'),
-    resolveAgentModelDetailed: vi.fn(() => ({ model: 'claude-opus-4-8[1m]', source: 'default', error: null })),
-    readModelProfileMap: vi.fn(() => null),
-    writeAgentModelProfile: mkFn(),
-    writeAgentModel: mkFn(),
-    readAgentDisplayName: vi.fn(() => 'display'),
-    writeAgentDisplayName: mkFn(),
-    readAgentSecurityProfile: vi.fn(() => 'default'),
-    writeAgentSecurityProfile: mkFn(),
-    listAgentNames: vi.fn(() => []),
-    isKnownAgent: vi.fn(() => false),
-    readAgentChannelProvider: vi.fn(() => 'telegram'),
-    writeAgentChannelProvider: mkFn(),
-    readAgentAuthMode: vi.fn(() => 'shared'),
-    writeAgentAuthMode: mkFn(),
-    readAgentClaudePlan: vi.fn(() => null),
-    writeAgentClaudePlan: mkFn(),
-    readAgentMemoryIsolation: vi.fn(() => false),
-    writeAgentMemoryIsolation: mkFn(),
-    readAgentClaudeConfigDir: vi.fn(() => null),
-    readAgentRemoteConfig: vi.fn(() => ({ host: null, workdir: null })),
-    readAgentRemoteHost: vi.fn(() => null),
-    writeAgentRemoteConfig: vi.fn(() => ({ ok: true, remote: { host: '', workdir: '' } })),
-    readAgentVoiceConfig: vi.fn(() => ({ responseMode: 'auto', voiceModel: null })),
-    writeAgentVoiceConfig: vi.fn(),
+    readFileOr: vi.fn<(_p: string, fallback: string) => string>((_p: string, fallback: string) => fallback),
+    extractDescriptionFromClaudeMd: vi.fn<() => string | null>(() => 'desc'),
+    findAvatarForAgent: vi.fn<() => string | null>(() => null),
+    resolveModelId: vi.fn<(raw: string) => string>((raw: string) => raw || 'claude-opus-4-8[1m]'),
+    readAgentModel: vi.fn<(name: string) => string>(() => 'claude-opus-4-8[1m]'),
+    resolveAgentModelDetailed: vi.fn<() => { model: string; source: string; error: string | null }>(() => ({ model: 'claude-opus-4-8[1m]', source: 'default', error: null })),
+    readModelProfileMap: vi.fn<() => null | Record<string, unknown>>(() => null),
+    writeAgentModelProfile: mkFn<[name: string]>(),
+    writeAgentModel: mkFn<[name: string, model: string]>(),
+    readAgentDisplayName: vi.fn<(name: string) => string | null>(() => 'display'),
+    writeAgentDisplayName: mkFn<[name: string, value: string]>(),
+    readAgentSecurityProfile: vi.fn<(name: string) => string>(() => 'default'),
+    writeAgentSecurityProfile: mkFn<[name: string, profile: string]>(),
+    listAgentNames: vi.fn<() => string[]>(() => []),
+    isKnownAgent: vi.fn<(name: string) => boolean>(() => false),
+    readAgentChannelProvider: vi.fn<(name: string) => string | null>(() => 'telegram'),
+    writeAgentChannelProvider: mkFn<[name: string, provider: string | null]>(),
+    readAgentAuthMode: vi.fn<(name: string) => string>(() => 'shared'),
+    writeAgentAuthMode: mkFn<[name: string, mode: string]>(),
+    readAgentClaudePlan: vi.fn<(name: string) => string | null>(() => null),
+    writeAgentClaudePlan: mkFn<[name: string, plan: string | null]>(),
+    readAgentMemoryIsolation: vi.fn<(name: string) => boolean>(() => false),
+    writeAgentMemoryIsolation: mkFn<[name: string, value: boolean]>(),
+    readAgentClaudeConfigDir: vi.fn<(name: string) => string | null>(() => null),
+    readAgentRemoteConfig: vi.fn<(name: string) => { host: string | null; workdir: string | null }>(() => ({ host: null, workdir: null })),
+    readAgentRemoteHost: vi.fn<(name: string) => string | null>(() => null),
+    writeAgentRemoteConfig: vi.fn<(name: string, host: string | null, workdir: string | null) => { ok: boolean; remote?: { host: string; workdir: string }; error?: string }>(() => ({ ok: true, remote: { host: '', workdir: '' } })),
+    readAgentVoiceConfig: vi.fn<(name: string) => { responseMode: string; voiceModel: string | null }>(() => ({ responseMode: 'auto', voiceModel: null })),
+    writeAgentVoiceConfig: mkFn<[name: string, config: { responseMode: string; voiceModel: string | null }]>(),
     KNOWN_VOICE_MODELS: new Set(['nova', 'ember', 'whisper']),
 
     // agent-process
-    isAgentRunning: vi.fn(() => false),
-    agentRunState: vi.fn(() => 'stopped'),
-    startAgentProcess: vi.fn(() => ({ ok: true })),
-    stopAgentProcess: vi.fn(() => ({ ok: true })),
-    restartAgentProcess: vi.fn(() => ({ ok: true })),
-    getAgentRunningSince: vi.fn(() => null),
-    getAgentProcessInfo: vi.fn(() => ({ running: false })),
-    agentSessionName: vi.fn((name: string) => `agent-${name}`),
-    sendPromptToSession: vi.fn(async () => {}),
-    capturePane: vi.fn(() => null),
+    isAgentRunning: vi.fn<(name: string) => boolean>(() => false),
+    agentRunState: vi.fn<(name: string) => 'running' | 'stopped' | 'unreachable'>(() => 'stopped' as 'stopped'),
+    startAgentProcess: vi.fn<(name: string, opts?: { fresh?: boolean }) => { ok: boolean; pid?: number; error?: string }>(() => ({ ok: true })),
+    stopAgentProcess: vi.fn<(name: string) => { ok: boolean; error?: string }>(() => ({ ok: true })),
+    restartAgentProcess: vi.fn<(name: string, opts?: { fresh?: boolean }) => { ok: boolean; pid?: number; error?: string }>(() => ({ ok: true })),
+    getAgentRunningSince: vi.fn<(name: string) => number | null>(() => null),
+    getAgentProcessInfo: vi.fn<(name: string) => { running: boolean; session?: string; pid?: number; [k: string]: unknown }>(() => ({ running: false })),
+    agentSessionName: vi.fn<(name: string) => string>((name: string) => `agent-${name}`),
+    sendPromptToSession: vi.fn<(session: string, text: string) => Promise<void>>(async () => {}),
+    capturePane: vi.fn<(session: string, host: string | null) => string | null>(() => null),
 
     // db
-    getDb: vi.fn(() => ({
+    getDb: vi.fn<() => unknown>(() => ({
       prepare: vi.fn(() => ({
         run: vi.fn(),
         get: vi.fn(),
         all: vi.fn(() => []),
       })),
     })),
-    createAgentMessage: mkFn(),
-    listPendingChannelRequests: vi.fn(() => []),
-    updateChannelRequestStatus: vi.fn(() => true),
-    claimPendingForAgent: vi.fn(() => []),
-    markMessageFailed: vi.fn(() => true),
+    createAgentMessage: mkFn<[{ agent: string; channel: string; text: string; [k: string]: unknown }]>(),
+    listPendingChannelRequests: vi.fn<() => unknown[]>(() => []),
+    updateChannelRequestStatus: mkFn<[id: number, status: string, err?: string | null], boolean>(),
+    claimPendingForAgent: vi.fn<(agent: string) => unknown[]>(() => []),
+    markMessageFailed: mkFn<[id: number, error: string], boolean>(),
 
     // auth-gate
     authGateExports: {},
 
     // vault
-    getSecret: vi.fn(() => null),
+    getSecret: vi.fn<(key: string) => string | null>(() => null),
 
     // execSync (auth/init loop + slack smoke-test script)
-    execSync: vi.fn(),
-    execFileSync: vi.fn(),
+    execSync: vi.fn<(cmd: string) => string>(),
+    execFileSync: vi.fn<(cmd: string, args?: readonly string[]) => string>(),
 
     // platform() -- agents.ts uses it to compute MANAGED_SETTINGS_PATH so
     // isManagedSettingsReady() can find the right file. Tests flip this
@@ -138,75 +139,75 @@ const H = vi.hoisted(() => {
     managedSettingsMissing: false,
     managedSettingsCorrupt: false,
     controlledChannelsEnabled: undefined as boolean | undefined,
-    setSecret: mkFn(),
-    deleteSecret: mkFn(),
-    listSecrets: vi.fn(() => []),
+    setSecret: mkFn<[key: string, value: string]>(),
+    deleteSecret: mkFn<[key: string]>(),
+    listSecrets: vi.fn<() => Array<{ key: string; value: string; [k: string]: unknown }>>(() => []),
 
     // agent-bundle
-    exportAgentBundle: mkFn(),
-    importAgentBundle: vi.fn(() => ({
+    exportAgentBundle: vi.fn<(name: string, outPath: string, ...args: unknown[]) => unknown>(() => Buffer.alloc(0)),
+    importAgentBundle: vi.fn<(name: string, buf: Buffer, outPath?: string) => { name: string; overwritten: boolean; manifest: { includesSecrets: boolean } }>(() => ({
       name: 'x',
       overwritten: false,
       manifest: { includesSecrets: false },
     })),
-    exportAllAgentsBundle: mkFn(),
-    importAllAgentsBundle: vi.fn(() => ({
+    exportAllAgentsBundle: vi.fn<(outPath: string, ...args: unknown[]) => unknown>(() => Buffer.alloc(0)),
+    importAllAgentsBundle: vi.fn<(buf: Buffer, outPath?: string) => { imported: Array<{ name: string }>; skipped: Array<{ name: string; reason?: string; [k: string]: unknown } | string>; includesSecrets: boolean }>(() => ({
       imported: [{ name: 'a' }],
       skipped: [],
       includesSecrets: false,
     })),
-    peekBundleKind: vi.fn(() => 'agent'),
-    bundleFilename: vi.fn((name: string) => `${name}.tar.gz`),
-    fleetBundleFilename: vi.fn(() => 'fleet.tar.gz'),
+    peekBundleKind: vi.fn<(buf: Buffer) => 'agent' | 'fleet' | 'unknown'>(() => 'agent' as 'agent'),
+    bundleFilename: vi.fn<(name: string) => string>((name: string) => `${name}.tar.gz`),
+    fleetBundleFilename: vi.fn<() => string>(() => 'fleet.tar.gz'),
 
     // agent-team
-    readAgentTeam: vi.fn(() => ({ role: 'member', reportsTo: null, delegatesTo: [], autoDelegation: false, trustFrom: [] })),
-    writeAgentTeam: mkFn(),
-    sanitizeTeamConfig: vi.fn((_n: string, t: unknown) => ({ team: t, warnings: [] })),
-    cleanupTeamReferences: mkFn(),
-    reportsToCreatesCycle: vi.fn(() => false),
+    readAgentTeam: vi.fn<(name: string) => { role: string; reportsTo: string | null; delegatesTo: string[]; autoDelegation: boolean; trustFrom: string[] }>(() => ({ role: 'member', reportsTo: null, delegatesTo: [], autoDelegation: false, trustFrom: [] })),
+    writeAgentTeam: mkFn<[name: string, team: { role: string; reportsTo: string | null; delegatesTo: string[]; autoDelegation: boolean; trustFrom: string[] }]>(),
+    sanitizeTeamConfig: vi.fn<(name: string, raw: unknown) => { team: unknown; warnings: string[] }>((_n: string, t: unknown) => ({ team: t, warnings: [] })),
+    cleanupTeamReferences: mkFn<[removedName: string]>(),
+    reportsToCreatesCycle: vi.fn<(name: string, reportsTo: string | null) => boolean>(() => false),
 
     // telegram (sub-set referenced by handlers)
-    readAgentTelegramConfig: vi.fn(() => ({ hasTelegram: false, botUsername: '' })),
-    readAgentDiscordConfig: vi.fn(() => ({ hasDiscord: false })),
-    readAgentGooglechatConfig: vi.fn(() => ({ hasGooglechat: false })),
-    readAgentTeamsConfig: vi.fn(() => ({ hasTeams: false })),
-    readMarveenTelegramConfig: vi.fn(() => ({ botUsername: '' })),
-    sendAvatarChangeMessage: vi.fn(async () => {}),
-    sendWelcomeMessage: vi.fn(async () => {}),
-    validateTelegramToken: vi.fn(async () => ({ ok: true, botName: 'b' })),
-    parseTelegramToken: vi.fn(() => 'tok'),
+    readAgentTelegramConfig: vi.fn<(name: string) => { hasTelegram: boolean; botUsername: string }>(() => ({ hasTelegram: false, botUsername: '' })),
+    readAgentDiscordConfig: vi.fn<(name: string) => { hasDiscord: boolean }>(() => ({ hasDiscord: false })),
+    readAgentGooglechatConfig: vi.fn<(name: string) => { hasGooglechat: boolean }>(() => ({ hasGooglechat: false })),
+    readAgentTeamsConfig: vi.fn<(name: string) => { hasTeams: boolean }>(() => ({ hasTeams: false })),
+    readMarveenTelegramConfig: vi.fn<() => { botUsername: string }>(() => ({ botUsername: '' })),
+    sendAvatarChangeMessage: vi.fn<(args: { token: string; botUsername: string }) => Promise<void>>(async () => {}),
+    sendWelcomeMessage: vi.fn<(args: { token: string; chatId: string }) => Promise<void>>(async () => {}),
+    validateTelegramToken: vi.fn<(token: string) => Promise<{ ok: boolean; botName?: string; error?: string }>>(async () => ({ ok: true, botName: 'b' })),
+    parseTelegramToken: vi.fn<(raw: string) => string | null>(() => 'tok'),
 
     // channel-invites
-    createInvite: vi.fn(() => ({ token: 'tk', deepLink: '' })),
-    listInvites: vi.fn(() => []),
-    revokeInvite: vi.fn(() => true),
-    agentChannelDir: vi.fn(() => '/x'),
+    createInvite: vi.fn<(args?: unknown) => { token: string; deepLink: string }>(() => ({ token: 'tk', deepLink: '' })),
+    listInvites: vi.fn<() => Array<{ token: string; agent?: string; createdAt?: number; expiresAt?: number; maxUses?: number; used?: number; [k: string]: unknown }>>(() => []),
+    revokeInvite: vi.fn<(token: string) => boolean>(() => true),
+    agentChannelDir: vi.fn<(name: string) => string>(() => '/x'),
 
     // channel-monitor / main-agent
-    hardRestartMarveenChannels: vi.fn(() => ({ ok: true })),
-    isMainChannelsAgent: vi.fn(() => false),
+    hardRestartMarveenChannels: mkFn<[opts?: unknown], { ok: boolean; error?: string }>(),
+    isMainChannelsAgent: vi.fn<(name: string) => boolean>(() => false),
     MAIN_CHANNELS_SESSION: 'marveen-channels',
 
     // channel-provider
-    getProvider: vi.fn(() => ({ validateToken: vi.fn(async () => ({ ok: true, botName: 'b' })) })),
-    channelStateDir: vi.fn((_p: string, base?: string) => join(base ?? projectRoot, '.claude', 'channels')),
-    readChannelToken: vi.fn(() => null),
-    generateSlackAppManifest: vi.fn(() => ({})),
-    getSlackAppSetupInstructions: vi.fn(() => ''),
+    getProvider: vi.fn<(name: string) => { validateToken: (token: string) => Promise<{ ok: boolean; botName?: string; error?: string }> }>(() => ({ validateToken: vi.fn(async () => ({ ok: true, botName: 'b' })) })),
+    channelStateDir: vi.fn<(pluginId: string, base?: string) => string>((_p: string, base?: string) => join(base ?? projectRoot, '.claude', 'channels')),
+    readChannelToken: vi.fn<(pluginId: string, envPath: string) => string | null>(() => null),
+    generateSlackAppManifest: vi.fn<() => Record<string, unknown>>(() => ({})),
+    getSlackAppSetupInstructions: vi.fn<() => string>(() => ''),
 
     // agent-scaffold
-    writeAgentSettingsFromProfile: mkFn(),
-    scaffoldAgentDir: mkFn(),
-    generateClaudeMd: vi.fn(async () => '# CLAUDE\n'),
-    generateSoulMd: vi.fn(async () => '# SOUL\n'),
+    writeAgentSettingsFromProfile: mkFn<[name: string, settings: unknown]>(),
+    scaffoldAgentDir: mkFn<[name: string, opts?: unknown]>(),
+    generateClaudeMd: vi.fn<(name: string) => Promise<string>>(async () => '# CLAUDE\n'),
+    generateSoulMd: vi.fn<(name: string) => Promise<string>>(async () => '# SOUL\n'),
 
     // agent-desired-state
-    addDesiredAgent: mkFn(),
-    removeDesiredAgent: mkFn(),
+    addDesiredAgent: mkFn<[name: string]>(),
+    removeDesiredAgent: mkFn<[name: string]>(),
 
     // remote-status-cache
-    remoteStatusCacheInvalidate: mkFn(),
+    remoteStatusCacheInvalidate: mkFn<[key: string]>(),
     RemoteStatusCache: class {
       invalidate = H.remoteStatusCacheInvalidate
       getOrRefresh = vi.fn((_k: string, _t: number, fn: () => unknown, fallback: unknown) => {
@@ -215,61 +216,61 @@ const H = vi.hoisted(() => {
     },
 
     // active-model
-    readActiveModelFromProjectDir: vi.fn(() => null),
-    readContextTokensFromProjectDir: vi.fn(() => null),
+    readActiveModelFromProjectDir: vi.fn<(dir: string) => string | null>(() => null),
+    readContextTokensFromProjectDir: vi.fn<(dir: string) => number | null>(() => null),
 
     // pane-state
-    detectPaneState: vi.fn(() => 'idle'),
-    detectPermissionMode: vi.fn(() => 'normal'),
+    detectPaneState: vi.fn<(lines: string) => 'idle' | 'busy' | 'typing' | 'unknown' | 'error'>(() => 'idle' as 'idle'),
+    detectPermissionMode: vi.fn<(lines: string) => string>(() => 'normal'),
 
     // agent-put-fields
-    checkAgentPutFields: vi.fn(() => ({ ok: true })),
+    checkAgentPutFields: vi.fn<(body: unknown) => { ok: boolean; writableFields?: readonly string[]; error?: string; message?: string; [k: string]: unknown }>(() => ({ ok: true })),
     AGENT_PUT_WRITABLE_FIELDS: ['claudeMd', 'soulMd'],
 
     // reauth-detect
-    detectReauthNeeded: vi.fn(() => ({ needsReauth: false })),
+    detectReauthNeeded: vi.fn<(lines: string) => { needsReauth: boolean; reason?: string }>(() => ({ needsReauth: false })),
 
     // auto-restart / context-guard stores
-    readAutoRestartConfig: vi.fn(() => ({ enabled: false })),
-    writeAutoRestartConfig: vi.fn(() => ({ enabled: false })),
-    readContextGuardConfig: vi.fn(() => ({ enabled: false })),
-    writeContextGuardConfig: vi.fn(() => ({ enabled: false })),
-    getContextGuardStatus: vi.fn(() => []),
+    readAutoRestartConfig: vi.fn<() => { enabled: boolean }>(() => ({ enabled: false })),
+    writeAutoRestartConfig: vi.fn<(cfg: { enabled: boolean }) => { enabled: boolean }>(() => ({ enabled: false })),
+    readContextGuardConfig: vi.fn<() => { enabled: boolean }>(() => ({ enabled: false })),
+    writeContextGuardConfig: vi.fn<(cfg: { enabled: boolean }) => { enabled: boolean }>(() => ({ enabled: false })),
+    getContextGuardStatus: vi.fn<() => unknown[]>(() => []),
 
     // store-watcher
-    setStoreWriteActor: mkFn(),
+    setStoreWriteActor: mkFn<[actor: string]>(),
 
     // channel-mcp-reconnect / channel-health
-    attemptChannelMcpReconnect: vi.fn(() => ({ ok: true })),
-    getChannelHealth: vi.fn(() => ({ ok: true })),
+    attemptChannelMcpReconnect: vi.fn<(pluginId: string) => Promise<{ ok: boolean; error?: string }> | { ok: boolean; error?: string }>(() => ({ ok: true })),
+    getChannelHealth: vi.fn<(pluginId: string) => { ok: boolean; error?: string; channels?: Array<{ plugin: string; ok: boolean }>; [k: string]: unknown }>(() => ({ ok: true })),
 
     // profiles
-    loadProfileTemplate: vi.fn(() => ({
+    loadProfileTemplate: vi.fn<(id: string) => { id: string; label: string; description: string; permissionMode: string; filesystem: { allow: string[]; deny: string[] } }>(() => ({
       id: 'default',
       label: 'default',
       description: '',
       permissionMode: 'normal',
       filesystem: { allow: ['${HOME}'], deny: ['${HOME}/.ssh'] },
     })),
-    resolveProfilePlaceholders: vi.fn((p: string) => p),
+    resolveProfilePlaceholders: vi.fn<(p: string) => string>((p: string) => p),
 
     // sanitize / http-helpers / multipart
-    sanitizeAgentName: vi.fn((raw: string) => raw.replace(/[^a-zA-Z0-9_-]/g, '_')),
-    safeJoin: vi.fn((base: string, p: string) => join(base, p)),
-    parseMultipart: vi.fn(() => ({ file: null, fields: {} })),
+    sanitizeAgentName: vi.fn<(raw: string) => string>((raw: string) => raw.replace(/[^a-zA-Z0-9_-]/g, '_')),
+    safeJoin: vi.fn<(base: string, p: string) => string>((base: string, p: string) => join(base, p)),
+    parseMultipart: vi.fn<(req: unknown) => { file: { filename?: string; name?: string; data: Buffer } | null; fields: Record<string, string> }>(() => ({ file: null, fields: {} })),
 
     // scheduled-tasks-io
-    listScheduledTasks: vi.fn(() => []),
+    listScheduledTasks: vi.fn<() => Array<{ agent: string; enabled: boolean; schedule: string; [k: string]: unknown }>>(() => []),
 
     // model-suggest
-    suggestForAgent: vi.fn(() => ({ model: 'm' })),
+    suggestForAgent: vi.fn<(name: string) => { model: string; reason?: string }>(() => ({ model: 'm' })),
 
     // token-usage
-    getTokenSummary: vi.fn(() => []),
+    getTokenSummary: vi.fn<() => Array<{ agent: string; day?: string; tokens?: number; totalCalls?: number; totalInput?: number; [k: string]: unknown }>>(() => []),
 
     // claude-plans
-    readClaudePlans: vi.fn(() => []),
-    resolveAgentConfigDir: vi.fn(() => ({ configDir: null })),
+    readClaudePlans: vi.fn<() => Array<{ id: string; label?: string; type?: string; [k: string]: unknown }>>(() => []),
+    resolveAgentConfigDir: vi.fn<(name: string) => { configDir: string | null }>(() => ({ configDir: null })),
 
     // agent-message-wrap -- REAL (covered separately); needed for typing
     // (no mock needed -- the SUT imports the real functions)
