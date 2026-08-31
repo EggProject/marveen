@@ -26,6 +26,20 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, statSync } f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+// Type-only imports of the mocked collaborators. These are erased at compile
+// time, so the vi.hoisted() factory below stays synchronous and keeps using
+// require() for runtime values; `typeof Ns.fn` merely gives each vi.fn() the
+// production signature, which keeps mockReturnValue call sites honest and makes
+// a future signature drift a compile error instead of a silent `never`.
+import type * as AgentProcess from '../web/agent-process.js'
+import type * as AgentConfig from '../web/agent-config.js'
+import type * as ChannelPollerReap from '../web/channel-poller-reap.js'
+import type * as AgentRestartPolicy from '../web/agent-restart-policy.js'
+import type * as Liveness from '../channel-coordinator/liveness.js'
+import type * as InboundProbe from '../web/inbound-probe.js'
+import type * as ChannelProvider from '../channel-provider.js'
+import type * as PaneState from '../pane-state.js'
+
 // ----------------------------------------------------------------------------
 // Sandbox: redirect PROJECT_ROOT / STORE_DIR to a tmpdir BEFORE the SUT loads.
 // The store-pollution guard in the channel-monitor module joins the paths at
@@ -71,15 +85,15 @@ const m = vi.hoisted(() => ({
   // agent-process
   agentHasChannel: vi.fn(() => true),
   agentSessionName: vi.fn((name: string) => `agent-${name}`),
-  capturePane: vi.fn<string | null, [string]>(() => null),
-  captureParkedInputView: vi.fn<string | null, [string]>(() => null),
+  capturePane: vi.fn<typeof AgentProcess.capturePane>(() => null),
+  captureParkedInputView: vi.fn<typeof AgentProcess.captureParkedInputView>(() => null),
   clearInputBuffer: vi.fn(async () => undefined),
   dismissResumeSummaryModalIfPresent: vi.fn(async () => undefined),
   dismissModelConsentDialogIfPresent: vi.fn(async () => undefined),
   stampFableOverageConsentSharedRoots: vi.fn(() => undefined),
-  isAgentRunning: vi.fn(() => false),
+  isAgentRunning: vi.fn<typeof AgentProcess.isAgentRunning>(() => false),
   sendPromptToSession: vi.fn(async () => undefined),
-  startAgentProcess: vi.fn(() => ({ ok: true })),
+  startAgentProcess: vi.fn<typeof AgentProcess.startAgentProcess>(() => ({ ok: true })),
   stopAgentProcess: vi.fn(() => ({ ok: true })),
   scheduleIdentitySetup: vi.fn(() => undefined),
   ensureMainAgentIsolatedConfigDir: vi.fn(() => null),
@@ -88,11 +102,11 @@ const m = vi.hoisted(() => ({
   answerFirstRunGates: vi.fn(async () => 'done'),
   // web/agent-config
   agentDir: vi.fn((name: string) => `/agents/${name}`),
-  listAgentNames: vi.fn<string[]>(() => []),
-  readAgentChannelProvider: vi.fn<string | null, [string]>(() => null),
+  listAgentNames: vi.fn<typeof AgentConfig.listAgentNames>(() => []),
+  readAgentChannelProvider: vi.fn<typeof AgentConfig.readAgentChannelProvider>(() => null),
   // channel-poller-reap
   reapChannelOrphans: vi.fn(() => 0),
-  reapDetachedChannelClaudes: vi.fn<number[], [{ channelNeedle?: string; tmuxPath?: string }?]>(() => []),
+  reapDetachedChannelClaudes: vi.fn<typeof ChannelPollerReap.reapDetachedChannelClaudes>(() => []),
   collectPollerEvidence: vi.fn(() => ({ interpretation: 'missing' as const })),
   // channel-conflict-probe
   probeTelegramConflict: vi.fn(async () => ({ status: 0, conflicted: false, description: '' })),
@@ -103,23 +117,23 @@ const m = vi.hoisted(() => ({
   // channel-mcp-reconnect
   attemptChannelMcpReconnect: vi.fn(() => ({ ok: false, message: 'no' })),
   // agent-restart-policy
-  decideDownAgentAction: vi.fn(() => 'skip' as const),
-  parseEtimeToSeconds: vi.fn<number, [string]>(() => 0),
+  decideDownAgentAction: vi.fn<typeof AgentRestartPolicy.decideDownAgentAction>(() => 'skip'),
+  parseEtimeToSeconds: vi.fn<typeof AgentRestartPolicy.parseEtimeToSeconds>(() => 0),
   // agent-desired-state
   getDesiredAgents: vi.fn(() => new Set<string>()),
   // channel-coordinator/liveness
-  getClaudePidForSession: vi.fn<number | null, [string]>(() => null),
+  getClaudePidForSession: vi.fn<typeof Liveness.getClaudePidForSession>(() => null),
   hasChannelPluginAlive: vi.fn(() => false),
-  probeChannelPluginLiveness: vi.fn<'alive' | 'down' | 'unknown', [number, string, string?]>(() => 'alive' as const),
+  probeChannelPluginLiveness: vi.fn<typeof Liveness.probeChannelPluginLiveness>(() => 'alive'),
   // inbound-probe
-  readLastIngestionTimestamp: vi.fn<number | null, [string]>(() => null),
+  readLastIngestionTimestamp: vi.fn<typeof InboundProbe.readLastIngestionTimestamp>(() => null),
   // channel-provider
   getProvider: vi.fn((type: string) => ({
     type,
     pluginId: `plugin-${type}`,
   })),
   channelStateDir: vi.fn((provider: string, root?: string) => join(root ?? '/tmp', 'channels', provider)),
-  readChannelToken: vi.fn<string | null, [string, string]>(() => null),
+  readChannelToken: vi.fn<typeof ChannelProvider.readChannelToken>(() => null),
   // notify
   notifyChannel: vi.fn(async () => undefined),
   // logger
@@ -130,22 +144,22 @@ const m = vi.hoisted(() => ({
   // platform
   resolveFromPath: vi.fn((name: string) => `/usr/local/bin/${name}`),
   // pane-state
-  detectPaneState: vi.fn(() => 'idle' as const),
-  decidePaneErrorAlert: vi.fn(() => ({ alert: false, next: { firstSeenAt: null, lastAlertAt: null, lastErrorAt: null } })),
+  detectPaneState: vi.fn<typeof PaneState.detectPaneState>(() => 'idle'),
+  decidePaneErrorAlert: vi.fn<typeof PaneState.decidePaneErrorAlert>(() => ({ alert: false, next: { firstSeenAt: null, lastAlertAt: null, lastErrorAt: null } })),
   detectsBlockingMenu: vi.fn(() => false),
-  detectsFirstRunGate: vi.fn(() => null),
+  detectsFirstRunGate: vi.fn<typeof PaneState.detectsFirstRunGate>(() => null),
   detectsModelConsentDialog: vi.fn(() => false),
-  stuckInputSignature: vi.fn(() => null),
-  decideStuckInputRecovery: vi.fn(() => ({ recover: false, next: { parkedSig: null, firstSeenAt: null, lastRecoverAt: null, attempts: 0 } })),
-  parkedChannelInput: vi.fn(() => null),
-  parkedInputText: vi.fn(() => null),
+  stuckInputSignature: vi.fn<typeof PaneState.stuckInputSignature>(() => null),
+  decideStuckInputRecovery: vi.fn<typeof PaneState.decideStuckInputRecovery>(() => ({ recover: false, next: { parkedSig: null, firstSeenAt: null, lastRecoverAt: null, attempts: 0 } })),
+  parkedChannelInput: vi.fn<typeof PaneState.parkedChannelInput>(() => null),
+  parkedInputText: vi.fn<typeof PaneState.parkedInputText>(() => null),
   parkedInputRowCount: vi.fn(() => 0),
   parkedScheduledTaskInput: vi.fn(() => false),
   parkedMachineOriginInput: vi.fn(() => false),
   parkedMainInputHasRemedy: vi.fn(() => false),
   shouldClearTruncatedPreamble: vi.fn(() => false),
   submitLanded: vi.fn(() => false),
-  decideStuckInputAction: vi.fn(() => 'hold' as const),
+  decideStuckInputAction: vi.fn<typeof PaneState.decideStuckInputAction>(() => 'hold'),
   // process.platform
   savedPlatform: process.platform,
 }))
