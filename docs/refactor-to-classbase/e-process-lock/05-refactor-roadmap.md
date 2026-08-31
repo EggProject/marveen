@@ -181,16 +181,22 @@ uncovered once E.5 removes them.
     inside `acquireLock()` at `:337-351` and called
     `await portLockAcquirer.acquire(WEB_PORT, { binaryPattern: … })`,
     replacing the prior `acquirePortLock(WEB_PORT, procCtx, { binaryPattern: … })`
-    call site. Kept `acquirePortLock` imported because the free function
-    wrapper survives from E.1 (verified: `index.ts` is the only
-    production importer, no other call sites exist).
-  - `src/__tests__/index.test.ts` — added six new assertions
-    (`+6` lines) verifying the class form is exercised through
-    `acquireLock()`. The `vi.mock('../process-lock.js')` factory at
-    `:173` continues to mock the legacy free functions; no change.
-    The 40+ `mockAcquirePortLock` assertions keep working. The
+    call site. `acquirePortLock` is dropped from the import at `:28` because
+    `index.ts` was its only production importer (verified: zero other call
+    sites exist). The free function wrapper survives from E.1 for the test
+    consumers in `process-lock.test.ts`.
+  - `src/__tests__/index.test.ts` — extended the
+    `vi.mock('../process-lock.js')` factory at `:173` with a `PortLockAcquirer`
+    mock class that forwards `.acquire(port, opts)` to
+    `mockAcquirePortLock(port, this.ctx, opts)` so the class form resolves
+    to the same `mockAcquirePortLock` vi.fn the suite already configures via
+    `withRealAcquirePortLock` and the suite-level `mockImplementation`. The
+    factory's `acquirePortLock` and `PidfileLockAcquirer` exports were
+    dropped (no remaining consumer: `index.ts` no longer imports
+    `acquirePortLock`, and `acquirePidfileLock` stays mocked via
+    `mockAcquirePidfileLock` so `PidfileLockAcquirer` is unreachable). The
     `withRealAcquirePortLock` helper at `:1363` keeps routing through
-    `vi.importActual` and the wrapper; no change.
+    `vi.importActual` and the real wrapper; no change.
   - `src/__tests__/process-lock.test.ts` — untouched. The 8
     `acquirePortLock` cases (`:333-528`) keep exercising the wrapper
     unchanged (they were already class-equivalent post-E.1).

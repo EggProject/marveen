@@ -5,10 +5,11 @@
 > `src/process-lock.ts` (392 lines post-refactor); five of the six exported
 > free functions (`findOwnNodeHolders`, `findOwnBinaryMatches`,
 > `terminateProcesses`, `acquirePortLock`, `acquirePidfileLock`) survive as
-> thin delegation wrappers and the sixth (`writeBufferFully`) is untouched,
-> so `src/index.ts`,
-> `src/__tests__/index.test.ts` and `src/__tests__/process-lock.test.ts` were
-> not touched. E.3–E.6 remain open. See `05-refactor-roadmap.md` for the three
+> thin delegation wrappers and the sixth (`writeBufferFully`) is untouched.
+> E.3 migrated the sole production consumer of `acquirePortLock`
+> (`src/index.ts:341`) to the class form, so `src/index.ts` and its mock
+> factory in `src/__tests__/index.test.ts` were touched; `src/__tests__/process-lock.test.ts`
+> remains untouched. E.4–E.6 remain open. See `05-refactor-roadmap.md` for the three
 > deliberate deviations from the E.1/E.2 spec below.
 
 Synthesis of `01-module-state-analysis.md` (module/state lens) and

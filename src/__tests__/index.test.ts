@@ -193,8 +193,6 @@ vi.mock('../process-lock.js', async () => {
       acquire = (port: number, opts: unknown = {}): Promise<void> =>
         mockAcquirePortLock(port, this.ctx, opts)
     },
-    PidfileLockAcquirer: actual.PidfileLockAcquirer,
-    acquirePortLock: mockAcquirePortLock,
     acquirePidfileLock: mockAcquirePidfileLock,
     writeBufferFully: actual.writeBufferFully,
     DeferToPeerError: actual.DeferToPeerError,
