@@ -96,7 +96,7 @@ const H = vi.hoisted(() => {
 
     // agent-process
     isAgentRunning: vi.fn<(name: string) => boolean>(() => false),
-    agentRunState: vi.fn<(name: string) => 'running' | 'stopped' | 'unreachable'>(() => 'stopped' as 'stopped'),
+    agentRunState: vi.fn<(name: string) => 'running' | 'stopped' | 'unreachable'>(() => 'stopped'),
     startAgentProcess: vi.fn<(name: string, opts?: { fresh?: boolean }) => { ok: boolean; pid?: number; error?: string }>(() => ({ ok: true })),
     stopAgentProcess: vi.fn<(name: string) => { ok: boolean; error?: string }>(() => ({ ok: true })),
     restartAgentProcess: vi.fn<(name: string, opts?: { fresh?: boolean }) => { ok: boolean; pid?: number; error?: string }>(() => ({ ok: true })),
@@ -156,7 +156,7 @@ const H = vi.hoisted(() => {
       skipped: [],
       includesSecrets: false,
     })),
-    peekBundleKind: vi.fn<(buf: Buffer) => 'agent' | 'fleet' | 'unknown'>(() => 'agent' as 'agent'),
+    peekBundleKind: vi.fn<(buf: Buffer) => 'agent' | 'fleet' | 'unknown'>(() => 'agent'),
     bundleFilename: vi.fn<(name: string) => string>((name: string) => `${name}.tar.gz`),
     fleetBundleFilename: vi.fn<() => string>(() => 'fleet.tar.gz'),
 
@@ -220,7 +220,7 @@ const H = vi.hoisted(() => {
     readContextTokensFromProjectDir: vi.fn<(dir: string) => number | null>(() => null),
 
     // pane-state
-    detectPaneState: vi.fn<(lines: string) => 'idle' | 'busy' | 'typing' | 'unknown' | 'error'>(() => 'idle' as 'idle'),
+    detectPaneState: vi.fn<(lines: string) => 'idle' | 'busy' | 'typing' | 'unknown' | 'error'>(() => 'idle'),
     detectPermissionMode: vi.fn<(lines: string) => string>(() => 'normal'),
 
     // agent-put-fields
