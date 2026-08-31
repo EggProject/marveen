@@ -11,7 +11,7 @@ Post-supersession state on `refactor/classbase`:
 - `bun run lint` problem count: back to Phase 0 baseline (10049)
 - Consumer files (`src/web/auto-restart-runner.ts` + 4 test files): byte-identical to `fbe7750`
 
-This handoff is preserved as the verifier trail for the ceremony cycle; for the post-supersession state, see the new "I LANDED via 8f1906c" framing in `00-summary.md`.
+This handoff is preserved as the verifier trail for the ceremony cycle; for the post-supersession state, see the WITHDRAWN note in `00-summary.md` Top 3 lowest-risk wins (item 3).
 
 ## Status
 
