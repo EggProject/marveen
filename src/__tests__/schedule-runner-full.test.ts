@@ -20,6 +20,36 @@
 
 import { describe, expect, it, vi, beforeEach, afterEach, afterAll } from 'vitest'
 import { mkTempDir, rmTempDir } from './setup/temp-sandbox.js'
+import type { cronPrevOccurrence, effectiveCronTz } from '../web/cron.js'
+import type {
+  appendTaskRun,
+  listPendingTaskRetries,
+  deletePendingTaskRetry,
+  updatePendingTaskRetry,
+  insertPendingTaskRetryIfNew,
+  markPendingTaskRetryAlert,
+  clearPendingTaskRetryAlert,
+  markScheduledTaskKanbanWaiting,
+} from '../db.js'
+import type { toPendingRetryView, classifyTelegramSendError } from '../pending-retries.js'
+import type { wrapScheduledTask } from '../prompt-safety.js'
+import type { readFileOr, readAgentRemoteHost, agentDir, listAgentNames } from '../web/agent-config.js'
+import type { channelStateDir } from '../channel-provider.js'
+import type {
+  agentSessionName,
+  isAgentRunning,
+  isSessionReadyForPrompt,
+  sendPromptToSession,
+  startAgentProcess,
+  sessionExistsOnHost,
+  capturePane,
+  sendEnterToSession,
+  clearStaleParkedInput,
+} from '../web/agent-process.js'
+import type { sendTelegramMessage } from '../web/telegram.js'
+import type { runCommandTask } from '../web/command-task.js'
+import type { paneShowsContextSaturation, detectsFirstRunGate, detectPaneState } from '../pane-state.js'
+import type { checkTaskMcpRequirements } from '../web/schedule-mcp-precheck.js'
 
 // ---------------------------------------------------------------------------
 // Hoisted mock state. vi.mock calls are hoisted BEFORE every import, so the
@@ -62,17 +92,17 @@ const mockState = vi.hoisted(() => {
     atomicWriteFileSync: vi.fn(),
 
     // db
-    appendTaskRun: vi.fn(),
-    listPendingTaskRetries: vi.fn<() => Array<Record<string, unknown>>>(() => []),
-    deletePendingTaskRetry: vi.fn<(name: string, agent: string) => boolean>(() => true),
-    updatePendingTaskRetry: vi.fn<(name: string, agent: string, now: number, reason: string) => boolean>(() => true),
-    insertPendingTaskRetryIfNew: vi.fn<(name: string, agent: string, now: number, reason: string) => boolean>(() => true),
-    markPendingTaskRetryAlert: vi.fn<(name: string, agent: string, ts: number) => boolean>(() => true),
-    clearPendingTaskRetryAlert: vi.fn<(name: string, agent: string) => boolean>(() => true),
-    markScheduledTaskKanbanWaiting: vi.fn<(name: string) => string | null>(() => null),
+    appendTaskRun: vi.fn<typeof appendTaskRun>(),
+    listPendingTaskRetries: vi.fn<typeof listPendingTaskRetries>(() => []),
+    deletePendingTaskRetry: vi.fn<typeof deletePendingTaskRetry>(() => true),
+    updatePendingTaskRetry: vi.fn<typeof updatePendingTaskRetry>(() => true),
+    insertPendingTaskRetryIfNew: vi.fn<typeof insertPendingTaskRetryIfNew>(() => true),
+    markPendingTaskRetryAlert: vi.fn<typeof markPendingTaskRetryAlert>(() => true),
+    clearPendingTaskRetryAlert: vi.fn<typeof clearPendingTaskRetryAlert>(() => true),
+    markScheduledTaskKanbanWaiting: vi.fn<typeof markScheduledTaskKanbanWaiting>(() => null),
 
     // pending-retries
-    toPendingRetryView: vi.fn((row: Record<string, unknown>, now: number) => ({
+    toPendingRetryView: vi.fn<typeof toPendingRetryView>((row, now) => ({
       id: row.id as number,
       taskName: row.task_name as string,
       agentName: row.agent_name as string,
@@ -84,55 +114,55 @@ const mockState = vi.hoisted(() => {
       ageMs: now - (row.first_attempt as number),
       alertDue: false,
     })),
-    classifyTelegramSendError: vi.fn<(msg: string) => 'transient' | 'permanent'>(() => 'transient'),
+    classifyTelegramSendError: vi.fn<typeof classifyTelegramSendError>(() => 'transient'),
 
     // prompt-safety
-    wrapScheduledTask: vi.fn((source: string, content: string | null | undefined) => `<scheduled-task source="${source}">${content ?? ''}</scheduled-task>`),
+    wrapScheduledTask: vi.fn<typeof wrapScheduledTask>((source, content) => `<scheduled-task source="${source}">${content ?? ''}</scheduled-task>`),
 
     // cron
-    cronPrevOccurrence: vi.fn<() => number | null>(() => null),
-    effectiveCronTz: vi.fn<() => { tz: string; source: 'SCHEDULER_TZ' | 'TZ' | 'system-default' }>(() => ({ tz: 'UTC', source: 'system-default' })),
+    cronPrevOccurrence: vi.fn<typeof cronPrevOccurrence>(() => null),
+    effectiveCronTz: vi.fn<typeof effectiveCronTz>(() => ({ tz: 'UTC', source: 'system-default' })),
 
     // scheduled-tasks-io
     listScheduledTasks: vi.fn<() => Array<Record<string, unknown>>>(() => []),
     SCHEDULED_TASKS_DIR: '/tmp/scheduled-tasks',
 
     // agent-config
-    listAgentNames: vi.fn<() => string[]>(() => []),
-    readFileOr: vi.fn<(p: string, f: string) => string>((_p, f) => f),
-    readAgentRemoteHost: vi.fn<(name: string) => string | null>(() => null),
-    agentDir: vi.fn<(name: string) => string>((name) => `/tmp/agents/${name}`),
+    listAgentNames: vi.fn<typeof listAgentNames>(() => []),
+    readFileOr: vi.fn<typeof readFileOr>((_p, f) => f),
+    readAgentRemoteHost: vi.fn<typeof readAgentRemoteHost>(() => null),
+    agentDir: vi.fn<typeof agentDir>((name) => `/tmp/agents/${name}`),
 
     // channel-provider
-    channelStateDir: vi.fn((provider: string, agentDir?: string) => agentDir ? `${agentDir}/channels/${provider}` : `/tmp/channels/${provider}`),
+    channelStateDir: vi.fn<typeof channelStateDir>((provider, agentDirArg) => agentDirArg ? `${agentDirArg}/channels/${provider}` : `/tmp/channels/${provider}`),
 
     // agent-process
-    agentSessionName: vi.fn((name: string) => `agent-${name}`),
-    isAgentRunning: vi.fn<(name: string) => boolean>(() => true),
-    isSessionReadyForPrompt: vi.fn<(s: string, h: string | null) => Promise<boolean>>(async () => true),
-    sendPromptToSession: vi.fn<(s: string, text: string, h: string | null, opts?: { waitForIdle?: boolean }) => Promise<'sent' | 'aborted-busy'>>(async () => 'sent'),
-    startAgentProcess: vi.fn<(name: string) => { ok: boolean; error?: string }>(() => ({ ok: true })),
-    sessionExistsOnHost: vi.fn<(h: string | null, s: string) => boolean>(() => true),
-    capturePane: vi.fn<(s: string, h: string | null) => string | null>(() => 'idle pane'),
-    sendEnterToSession: vi.fn<(s: string, h: string | null) => boolean>(() => true),
-    clearStaleParkedInput: vi.fn<(s: string, h: string | null) => Promise<boolean>>(async () => true),
+    agentSessionName: vi.fn<typeof agentSessionName>((name) => `agent-${name}`),
+    isAgentRunning: vi.fn<typeof isAgentRunning>(() => true),
+    isSessionReadyForPrompt: vi.fn<typeof isSessionReadyForPrompt>(async () => true),
+    sendPromptToSession: vi.fn<typeof sendPromptToSession>(async () => 'sent'),
+    startAgentProcess: vi.fn<typeof startAgentProcess>(() => ({ ok: true })),
+    sessionExistsOnHost: vi.fn<typeof sessionExistsOnHost>(() => true),
+    capturePane: vi.fn<typeof capturePane>(() => 'idle pane'),
+    sendEnterToSession: vi.fn<typeof sendEnterToSession>(() => true),
+    clearStaleParkedInput: vi.fn<typeof clearStaleParkedInput>(async () => true),
 
     // main-agent
     MAIN_CHANNELS_SESSION: 'main-channels',
 
     // telegram
-    sendTelegramMessage: vi.fn<(token: string, chatId: string, text: string) => Promise<void>>(async () => undefined),
+    sendTelegramMessage: vi.fn<typeof sendTelegramMessage>(async () => undefined),
 
     // command-task
-    runCommandTask: vi.fn<(task: Record<string, unknown>, now: number) => void>(() => undefined),
+    runCommandTask: vi.fn<typeof runCommandTask>(() => undefined),
 
     // pane-state
-    paneShowsContextSaturation: vi.fn<(pane: string) => boolean>(() => false),
-    detectsFirstRunGate: vi.fn<(pane: string) => string | null>(() => null),
-    detectPaneState: vi.fn<(pane: string) => 'idle' | 'busy' | 'typing' | 'unknown' | 'error'>(() => 'idle'),
+    paneShowsContextSaturation: vi.fn<typeof paneShowsContextSaturation>(() => false),
+    detectsFirstRunGate: vi.fn<typeof detectsFirstRunGate>(() => null),
+    detectPaneState: vi.fn<typeof detectPaneState>(() => 'idle'),
 
     // schedule-mcp-precheck
-    checkTaskMcpRequirements: vi.fn<() => { ok: boolean; missing?: string[] }>(() => ({ ok: true })),
+    checkTaskMcpRequirements: vi.fn<typeof checkTaskMcpRequirements>(() => ({ ok: true, missing: [], unknown: [] })),
 
     // handlers captured by the global setTimeout / setInterval stub
     setTimeoutHandlers: [] as Array<() => void>,
@@ -181,31 +211,31 @@ vi.mock('../logger.js', () => ({
 }))
 
 vi.mock('../db.js', () => ({
-  appendTaskRun: (...args: unknown[]) => mockState.appendTaskRun(...args),
+  appendTaskRun: mockState.appendTaskRun,
   listPendingTaskRetries: () => mockState.listPendingTaskRetries(),
-  deletePendingTaskRetry: (...args: unknown[]) => mockState.deletePendingTaskRetry(...args),
-  updatePendingTaskRetry: (...args: unknown[]) => mockState.updatePendingTaskRetry(...args),
-  insertPendingTaskRetryIfNew: (...args: unknown[]) => mockState.insertPendingTaskRetryIfNew(...args),
-  markPendingTaskRetryAlert: (...args: unknown[]) => mockState.markPendingTaskRetryAlert(...args),
-  clearPendingTaskRetryAlert: (...args: unknown[]) => mockState.clearPendingTaskRetryAlert(...args),
-  markScheduledTaskKanbanWaiting: (...args: unknown[]) => mockState.markScheduledTaskKanbanWaiting(...args),
+  deletePendingTaskRetry: mockState.deletePendingTaskRetry,
+  updatePendingTaskRetry: mockState.updatePendingTaskRetry,
+  insertPendingTaskRetryIfNew: mockState.insertPendingTaskRetryIfNew,
+  markPendingTaskRetryAlert: mockState.markPendingTaskRetryAlert,
+  clearPendingTaskRetryAlert: mockState.clearPendingTaskRetryAlert,
+  markScheduledTaskKanbanWaiting: mockState.markScheduledTaskKanbanWaiting,
 }))
 
 vi.mock('../pending-retries.js', () => ({
-  toPendingRetryView: (...args: unknown[]) => mockState.toPendingRetryView(...args),
-  classifyTelegramSendError: (...args: unknown[]) => mockState.classifyTelegramSendError(...args),
+  toPendingRetryView: mockState.toPendingRetryView,
+  classifyTelegramSendError: mockState.classifyTelegramSendError,
 }))
 
 vi.mock('../prompt-safety.js', async (orig) => {
   const actual = await orig<typeof import('../prompt-safety.js')>()
   return {
     ...actual,
-    wrapScheduledTask: (...args: unknown[]) => mockState.wrapScheduledTask(...args),
+    wrapScheduledTask: mockState.wrapScheduledTask,
   }
 })
 
 vi.mock('../web/cron.js', () => ({
-  cronPrevOccurrence: (...args: unknown[]) => mockState.cronPrevOccurrence(...args),
+  cronPrevOccurrence: mockState.cronPrevOccurrence,
   effectiveCronTz: () => mockState.effectiveCronTz(),
   cronDueBetween: vi.fn(() => false),
   computeNextRun: vi.fn(() => 0),
@@ -229,9 +259,9 @@ vi.mock('../web/scheduled-tasks-io.js', () => ({
 
 vi.mock('../web/agent-config.js', () => ({
   listAgentNames: () => mockState.listAgentNames(),
-  readFileOr: (...args: unknown[]) => mockState.readFileOr(...args),
-  readAgentRemoteHost: (...args: unknown[]) => mockState.readAgentRemoteHost(...args),
-  agentDir: (...args: unknown[]) => mockState.agentDir(...args),
+  readFileOr: mockState.readFileOr,
+  readAgentRemoteHost: mockState.readAgentRemoteHost,
+  agentDir: mockState.agentDir,
   agentSessionName: (name: string) => `agent-${name}`,
   AGENTS_BASE_DIR: '/tmp/agents',
   DEFAULT_MODEL: 'default',
@@ -270,20 +300,20 @@ vi.mock('../channel-provider.js', async (orig) => {
   const actual = await orig<typeof import('../channel-provider.js')>()
   return {
     ...actual,
-    channelStateDir: (...args: unknown[]) => mockState.channelStateDir(...args),
+    channelStateDir: mockState.channelStateDir,
   }
 })
 
 vi.mock('../web/agent-process.js', () => ({
-  agentSessionName: (...args: unknown[]) => mockState.agentSessionName(...args),
-  isAgentRunning: (...args: unknown[]) => mockState.isAgentRunning(...args),
-  isSessionReadyForPrompt: (...args: unknown[]) => mockState.isSessionReadyForPrompt(...args),
-  sendPromptToSession: (...args: unknown[]) => mockState.sendPromptToSession(...args),
-  startAgentProcess: (...args: unknown[]) => mockState.startAgentProcess(...args),
-  sessionExistsOnHost: (...args: unknown[]) => mockState.sessionExistsOnHost(...args),
-  capturePane: (...args: unknown[]) => mockState.capturePane(...args),
-  sendEnterToSession: (...args: unknown[]) => mockState.sendEnterToSession(...args),
-  clearStaleParkedInput: (...args: unknown[]) => mockState.clearStaleParkedInput(...args),
+  agentSessionName: mockState.agentSessionName,
+  isAgentRunning: mockState.isAgentRunning,
+  isSessionReadyForPrompt: mockState.isSessionReadyForPrompt,
+  sendPromptToSession: mockState.sendPromptToSession,
+  startAgentProcess: mockState.startAgentProcess,
+  sessionExistsOnHost: mockState.sessionExistsOnHost,
+  capturePane: mockState.capturePane,
+  sendEnterToSession: mockState.sendEnterToSession,
+  clearStaleParkedInput: mockState.clearStaleParkedInput,
 }))
 
 vi.mock('../web/main-agent.js', () => ({
@@ -295,7 +325,7 @@ vi.mock('../web/main-agent.js', () => ({
 }))
 
 vi.mock('../web/telegram.js', () => ({
-  sendTelegramMessage: (...args: unknown[]) => mockState.sendTelegramMessage(...args),
+  sendTelegramMessage: mockState.sendTelegramMessage,
   readAgentTelegramConfig: vi.fn(() => ({ hasTelegram: false })),
   readAgentDiscordConfig: vi.fn(() => ({ hasDiscord: false })),
   readAgentGooglechatConfig: vi.fn(() => ({ hasGooglechat: false })),
@@ -318,7 +348,7 @@ vi.mock('../web/telegram.js', () => ({
 }))
 
 vi.mock('../web/command-task.js', () => ({
-  runCommandTask: (...args: unknown[]) => mockState.runCommandTask(...args),
+  runCommandTask: mockState.runCommandTask,
   evaluateCommandResult: vi.fn(() => ({ next: { fails: 0, alerted: false, lastStatus: 'ok', lastRun: 0 }, action: 'none' as const })),
 }))
 
@@ -326,21 +356,21 @@ vi.mock('../pane-state.js', async (orig) => {
   const actual = await orig<typeof import('../pane-state.js')>()
   return {
     ...actual,
-    paneShowsContextSaturation: (...args: unknown[]) => mockState.paneShowsContextSaturation(...args),
-    detectsFirstRunGate: (...args: unknown[]) => mockState.detectsFirstRunGate(...args),
-    detectPaneState: (...args: unknown[]) => mockState.detectPaneState(...args),
+    paneShowsContextSaturation: mockState.paneShowsContextSaturation,
+    detectsFirstRunGate: mockState.detectsFirstRunGate,
+    detectPaneState: mockState.detectPaneState,
   }
 })
 
 vi.mock('../web/schedule-mcp-precheck.js', () => ({
-  checkTaskMcpRequirements: (...args: unknown[]) => mockState.checkTaskMcpRequirements(...args),
+  checkTaskMcpRequirements: mockState.checkTaskMcpRequirements,
   deriveProcessPattern: vi.fn(() => null),
   collectSubtreeCmdlines: vi.fn(() => []),
   decideMcpPrecheck: vi.fn(() => ({ ok: true })),
 }))
 
 vi.mock('../web/atomic-write.js', () => ({
-  atomicWriteFileSync: (...args: unknown[]) => mockState.atomicWriteFileSync(...args),
+  atomicWriteFileSync: mockState.atomicWriteFileSync,
 }))
 
 vi.mock('node:fs', async (orig) => {
@@ -359,7 +389,7 @@ vi.mock('node:fs', async (orig) => {
       // Claim existence for any other path so runPreCheck proceeds to spawnSync
       return true
     },
-    readFileSync: (...args: unknown[]) => {
+    readFileSync: (...args: Parameters<typeof import('node:fs').readFileSync>) => {
       const p = args[0] as string
       if (typeof p === 'string' && p.endsWith('schedule-last-run.json')) {
         if (!mockState.scheduleLastRunExists) throw new Error('ENOENT')
@@ -382,7 +412,7 @@ vi.mock('node:child_process', async (orig) => {
   const actual = await orig<typeof import('node:child_process')>()
   return {
     ...actual,
-    spawnSync: (...args: unknown[]) => mockState.spawnSync(...args),
+    spawnSync: (...args: Parameters<typeof import('node:child_process').spawnSync>) => mockState.spawnSync(...args),
   }
 })
 
@@ -467,7 +497,7 @@ function resetAllMocks(): void {
   mockState.paneShowsContextSaturation.mockReset().mockReturnValue(false)
   mockState.detectsFirstRunGate.mockReset().mockReturnValue(null)
   mockState.detectPaneState.mockReset().mockReturnValue('idle')
-  mockState.checkTaskMcpRequirements.mockReset().mockReturnValue({ ok: true })
+  mockState.checkTaskMcpRequirements.mockReset().mockReturnValue({ ok: true, missing: [], unknown: [] })
   mockState.setTimeoutHandlers.length = 0
   mockState.setIntervalHandlers.length = 0
   mockState.scheduleLastRunJson = ''
@@ -959,7 +989,7 @@ describe('runScheduledTaskNow', () => {
     mockState.listScheduledTasks.mockReturnValue([makeTask({ name: 't', type: 'task', requires: { mcp_servers: ['gmail'] } })])
     mockState.sessionExistsOnHost.mockReturnValue(true)
     mockState.isSessionReadyForPrompt.mockResolvedValue(true)
-    mockState.checkTaskMcpRequirements.mockReturnValue({ ok: false, missing: ['gmail'] })
+    mockState.checkTaskMcpRequirements.mockReturnValue({ ok: false, missing: ['gmail'], unknown: [] })
     const result = await sut.runScheduledTaskNow('t')
     expect(result.ok).toBe(true)
     expect(mockState.insertPendingTaskRetryIfNew).toHaveBeenCalledWith('t', 'marveen', expect.any(Number), 'mcp-missing:gmail')
@@ -1200,7 +1230,7 @@ describe('startScheduleRunner: runCheck branches', () => {
     mockState.listScheduledTasks.mockReturnValue([makeTask({ name: 't', type: 'task', requires: { mcp_servers: ['gmail'] } })])
     mockState.sessionExistsOnHost.mockReturnValue(true)
     mockState.isSessionReadyForPrompt.mockResolvedValue(true)
-    mockState.checkTaskMcpRequirements.mockReturnValue({ ok: false, missing: ['gmail'] })
+    mockState.checkTaskMcpRequirements.mockReturnValue({ ok: false, missing: ['gmail'], unknown: [] })
     await tickOnce()
     expect(mockState.updatePendingTaskRetry).toHaveBeenCalledWith('t', 'marveen', expect.any(Number), 'mcp-missing:gmail')
   })
@@ -1321,7 +1351,7 @@ describe('startScheduleRunner: runCheck branches', () => {
     mockState.cronPrevOccurrence.mockImplementation((_cron, _from, to) => (to as number) - 1)
     mockState.sessionExistsOnHost.mockReturnValue(true)
     mockState.isSessionReadyForPrompt.mockResolvedValue(true)
-    mockState.checkTaskMcpRequirements.mockReturnValue({ ok: false, missing: ['gmail'] })
+    mockState.checkTaskMcpRequirements.mockReturnValue({ ok: false, missing: ['gmail'], unknown: [] })
     await tickOnce()
     expect(mockState.insertPendingTaskRetryIfNew).toHaveBeenCalledWith('t', 'marveen', expect.any(Number), 'mcp-missing:gmail')
   })
@@ -1389,7 +1419,7 @@ describe('startScheduleRunner: runCheck branches', () => {
     mockState.cronPrevOccurrence.mockImplementation((_cron, _from, to) => (to as number) - 1)
     mockState.sessionExistsOnHost.mockReturnValue(true)
     mockState.isSessionReadyForPrompt.mockResolvedValue(true)
-    mockState.checkTaskMcpRequirements.mockReturnValue({ ok: false, missing: ['gmail'] })
+    mockState.checkTaskMcpRequirements.mockReturnValue({ ok: false, missing: ['gmail'], unknown: [] })
     await tickOnce()
     expect(mockState.sendPromptToSession).toHaveBeenCalled()
     expect(mockState.loggerWarn).toHaveBeenCalledWith(
@@ -1523,7 +1553,6 @@ describe('startScheduleRunner: runCheck branches', () => {
     // stuck-looking box so the ladder takes the 'reinject' branch; clearStaleParkedInput
     // then throws to exercise the catch block.
     mockState.capturePane.mockReturnValue('some\n❯ M prompt')
-    mockState.isScheduledPromptStuckHook = () => true
     mockState.clearStaleParkedInput.mockImplementation(() => { throw new Error('fail') })
     // Capture what the post-send path does; the bare sendEnterToSession path
     // ALSO needs to throw to exercise the inner catch.
@@ -1899,7 +1928,7 @@ describe('attemptFireTask: mcpMissingReason interaction', () => {
     mockState.cronPrevOccurrence.mockImplementation((_cron, _from, to) => (to as number) - 1)
     mockState.sessionExistsOnHost.mockReturnValue(true)
     mockState.isSessionReadyForPrompt.mockResolvedValue(true)
-    mockState.checkTaskMcpRequirements.mockReturnValue({ ok: false, missing: ['gmail'] })
+    mockState.checkTaskMcpRequirements.mockReturnValue({ ok: false, missing: ['gmail'], unknown: [] })
     await tickOnce()
     // Two calls: one in the cron loop, one if a subsequent fire
     expect(mockState.insertPendingTaskRetryIfNew).toHaveBeenCalledWith('t', 'marveen', expect.any(Number), 'mcp-missing:gmail')
@@ -1999,8 +2028,8 @@ describe('coverage gap fillers: mcpMissingReason', () => {
     // First call: misses -> lastMcpMissing populated -> reason 'mcp-missing:gmail'
     // Second call: clears cache and re-runs to force the bare fallback.
     mockState.checkTaskMcpRequirements
-      .mockReturnValueOnce({ ok: false, missing: ['gmail'] })
-      .mockReturnValueOnce({ ok: false, missing: [] }) // empty -> the fallback path
+      .mockReturnValueOnce({ ok: false, missing: ['gmail'], unknown: [] })
+      .mockReturnValueOnce({ ok: false, missing: [], unknown: [] }) // empty -> the fallback path
     await tickOnce()
     // The bare fallback is exercised in the second invocation. We cannot
     // inspect the call's reason directly because runCheck swallows it, but
@@ -2042,7 +2071,7 @@ describe('coverage gap fillers: attemptFireTask branches', () => {
     mockState.cronPrevOccurrence.mockImplementation((_c, _f, to) => (to as number) - 1)
     mockState.sessionExistsOnHost.mockReturnValue(true)
     mockState.isSessionReadyForPrompt.mockResolvedValue(true)
-    mockState.checkTaskMcpRequirements.mockReturnValue({ ok: true })
+    mockState.checkTaskMcpRequirements.mockReturnValue({ ok: true, missing: [], unknown: [] })
     await tickOnce()
     // The pre-check pass branch was exercised; fire succeeded.
     expect(mockState.sendPromptToSession).toHaveBeenCalled()
@@ -2405,7 +2434,6 @@ describe('coverage gap fillers: post-fire sweep null-pane branch', () => {
     mockState.setIntervalHandlers.length = 0
     // Second tick: null pane.
     mockState.capturePane.mockReturnValue(null)
-    mockState.detectPaneState.mockReturnValue(null)
     await tickOnce()
     // The sweep ran -- capturePane was called but did not throw.
     expect(mockState.capturePane.mock.calls.length).toBeGreaterThan(0)
@@ -2592,7 +2620,7 @@ describe('coverage gap fillers: more branches', () => {
     mockState.cronPrevOccurrence.mockImplementation((_c, _f, to) => (to as number) - 1)
     mockState.sessionExistsOnHost.mockReturnValue(true)
     mockState.isSessionReadyForPrompt.mockResolvedValue(true)
-    mockState.checkTaskMcpRequirements.mockReturnValue({ ok: false, missing: ['gmail'] })
+    mockState.checkTaskMcpRequirements.mockReturnValue({ ok: false, missing: ['gmail'], unknown: [] })
     await tickOnce()
     // First tick: cache populated; subsequent retry uses cached list.
     expect(mockState.insertPendingTaskRetryIfNew).toHaveBeenCalledWith('t', 'marveen', expect.any(Number), 'mcp-missing:gmail')
@@ -2606,7 +2634,7 @@ describe('coverage gap fillers: more branches', () => {
     mockState.cronPrevOccurrence.mockImplementation((_c, _f, to) => (to as number) - 1)
     mockState.sessionExistsOnHost.mockReturnValue(true)
     mockState.isSessionReadyForPrompt.mockResolvedValue(true)
-    mockState.checkTaskMcpRequirements.mockReturnValue({ ok: false, missing: [] })
+    mockState.checkTaskMcpRequirements.mockReturnValue({ ok: false, missing: [], unknown: [] })
     await tickOnce()
     // The reason is the bare 'mcp-missing' string -- the empty-list branch.
     expect(mockState.insertPendingTaskRetryIfNew).toHaveBeenCalledWith('t', 'marveen', expect.any(Number), 'mcp-missing')
@@ -2628,7 +2656,7 @@ describe('coverage gap fillers: more branches', () => {
     mockState.listScheduledTasks.mockReturnValue([makeTask({ name: 't', type: 'task', agent: 'never-seen', requires: { mcp_servers: ['gmail'] } })])
     mockState.sessionExistsOnHost.mockReturnValue(true)
     mockState.isSessionReadyForPrompt.mockResolvedValue(true)
-    mockState.checkTaskMcpRequirements.mockReturnValue({ ok: false, missing: ['gmail'] })
+    mockState.checkTaskMcpRequirements.mockReturnValue({ ok: false, missing: ['gmail'], unknown: [] })
     await tickOnce()
     // The first retry call populates the cache for the never-seen agent,
     // so we cannot directly hit the ?? [] branch from runCheck. The
@@ -2647,7 +2675,7 @@ describe('coverage gap fillers: more branches', () => {
     mockState.listScheduledTasks.mockReturnValue([makeTask({ name: 't', type: 'task', requires: { mcp_servers: ['gmail'] } })])
     mockState.sessionExistsOnHost.mockReturnValue(true)
     mockState.isSessionReadyForPrompt.mockResolvedValue(true)
-    mockState.checkTaskMcpRequirements.mockReturnValue({ ok: false, missing: ['gmail'] })
+    mockState.checkTaskMcpRequirements.mockReturnValue({ ok: false, missing: ['gmail'], unknown: [] })
     const result = await sut.runScheduledTaskNow('t')
     expect(result.ok).toBe(true)
     expect(mockState.insertPendingTaskRetryIfNew).toHaveBeenCalledWith('t', 'marveen', expect.any(Number), 'mcp-missing:gmail')
