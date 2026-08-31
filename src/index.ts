@@ -25,7 +25,7 @@ import { startChannelRequestWatcher, stopChannelRequestWatcher } from './web/cha
 import { startStoreWatcher, stopStoreWatcher } from './store-watcher.js'
 import { AGENTS_BASE_DIR } from './web/agent-config.js'
 import {
-  acquirePortLock,
+  PortLockAcquirer,
   acquirePidfileLock,
   writeBufferFully,
   DeferToPeerError,
@@ -338,7 +338,7 @@ async function acquireLock(): Promise<void> {
   // anything running the dashboard binary (for the zombie case where the
   // port was released but the process survived). The pidfile alone can
   // lie under launchd KeepAlive because each restart overwrites it.
-  await acquirePortLock(WEB_PORT, procCtx, { binaryPattern: DASHBOARD_BINARY_PATTERN })
+  await new PortLockAcquirer(procCtx).acquire(WEB_PORT, { binaryPattern: DASHBOARD_BINARY_PATTERN })
 
   // Atomic O_EXCL claim on PID_FILE. Serializes any two fresh startups
   // that race past the port check. `onLiveLegitimate: 'defer'` is a

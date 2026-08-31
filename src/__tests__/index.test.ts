@@ -188,6 +188,12 @@ vi.mock('../process-lock.js', async () => {
   // deterministic and isolated from any real fs state.
   const actual = await vi.importActual<typeof import('../process-lock.js')>('../process-lock.js')
   return {
+    PortLockAcquirer: class {
+      constructor(public readonly ctx: unknown) {}
+      acquire = (port: number, opts: unknown = {}): Promise<void> =>
+        mockAcquirePortLock(port, this.ctx, opts)
+    },
+    PidfileLockAcquirer: actual.PidfileLockAcquirer,
     acquirePortLock: mockAcquirePortLock,
     acquirePidfileLock: mockAcquirePidfileLock,
     writeBufferFully: actual.writeBufferFully,
