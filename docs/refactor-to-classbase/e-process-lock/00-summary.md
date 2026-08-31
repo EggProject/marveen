@@ -1,6 +1,6 @@
 # E (process-lock) — Executive summary
 
-> **Status: E.1 and E.2 LANDED in `57c78d0`** (branch `refactor/classbase`).
+> **Status: E.1 and E.2 LANDED in `57c78d0`, E.3 LANDED in `(this commit)`** (branch `refactor/classbase`).
 > `PortLockAcquirer` and `PidfileLockAcquirer` now exist in
 > `src/process-lock.ts` (392 lines post-refactor); five of the six exported
 > free functions (`findOwnNodeHolders`, `findOwnBinaryMatches`,

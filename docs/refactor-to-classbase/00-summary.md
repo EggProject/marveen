@@ -104,6 +104,11 @@ file" (see Phase 7 below).
    Every test that builds a fake `ctx` becomes `new
    PortLockAcquirer(mockFs).acquire(port)` — same mocks, cleaner call
    site. Touches `index.ts` (one call site).
+   **Status:** E.1 + E.2 LANDED (`57c78d0`, classes introduced alongside
+   free-function wrappers); E.3 LANDED (`(this commit)`, port-lock
+   consumer at `index.ts:341` migrated to `new PortLockAcquirer(procCtx)
+   .acquire(...)`); E.4 (pidfile consumer migration), E.5 (free-function
+   removal), E.6 (`LogFn` removal, gated on H.1 + H.2) OPEN.
 
 3. ~~`src/auto-restart.ts` → `class AutoRestartSchedule`~~ — WITHDRAWN (2026-08-31). Superseded by commit 8f1906c; the class form violated `.claude/rules/class-vs-functional-decision.md` (0/5 IGEN on the decision tree). See `i-auto-restart/code-review-handoff.md` for the full verifier trail.
 

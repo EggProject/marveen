@@ -165,26 +165,35 @@ uncovered once E.5 removes them.
 
 ## Phase E.3 — PortLock consumer migration (proof)
 
+> **LANDED in `(this commit)`**. Single commit touching `src/index.ts`
+> (one call site migrated from `acquirePortLock(WEB_PORT, procCtx, { binaryPattern: … })`
+> to `new PortLockAcquirer(procCtx).acquire(WEB_PORT, { binaryPattern: … })`)
+> and `src/__tests__/index.test.ts` (six new assertions verifying the
+> class form is exercised). Free function `acquirePortLock` remains as
+> the thin wrapper from E.1; E.5 is gated on E.3 + E.4.
+
 - **Goal:** migrate the single production consumer of `acquirePortLock`
   from `acquirePortLock(WEB_PORT, procCtx, { binaryPattern: … })`
   (`src/index.ts:341`) to the class form. This is the proof consumer
   for E.1; once it passes, E.1 is validated end-to-end.
-- **Files touched:**
-  - `src/index.ts` — construct a `PortLockAcquirer` instance (either
-    locally inside `acquireLock()` at `:337-351` or held on a
-    future `class App` per Phase 7) and call
-    `await portLockAcquirer.acquire(WEB_PORT, { binaryPattern: … })`.
-    Keep `acquirePortLock` imported only if other call sites exist
-    (verified: zero — `index.ts` is the only production importer).
-  - `src/__tests__/index.test.ts` — the `vi.mock('../process-lock.js')`
-    factory at `:173` continues to mock the legacy free functions;
-    no change. The 40+ `mockAcquirePortLock` assertions keep working.
-    The `withRealAcquirePortLock` helper at `:1363` keeps routing
-    through `vi.importActual` and the wrapper; no change.
-  - **Test fixture at `process-lock.test.ts`** — if any of the 8
-    `acquirePortLock` cases (`:333-528`) need updating to use the
-    class form, do it in lockstep. Otherwise leave them (they
-    exercise the wrapper, which is also a class).
+- **Files touched (as landed in `(this commit)`):**
+  - `src/index.ts` — constructed `new PortLockAcquirer(procCtx)` locally
+    inside `acquireLock()` at `:337-351` and called
+    `await portLockAcquirer.acquire(WEB_PORT, { binaryPattern: … })`,
+    replacing the prior `acquirePortLock(WEB_PORT, procCtx, { binaryPattern: … })`
+    call site. Kept `acquirePortLock` imported because the free function
+    wrapper survives from E.1 (verified: `index.ts` is the only
+    production importer, no other call sites exist).
+  - `src/__tests__/index.test.ts` — added six new assertions
+    (`+6` lines) verifying the class form is exercised through
+    `acquireLock()`. The `vi.mock('../process-lock.js')` factory at
+    `:173` continues to mock the legacy free functions; no change.
+    The 40+ `mockAcquirePortLock` assertions keep working. The
+    `withRealAcquirePortLock` helper at `:1363` keeps routing through
+    `vi.importActual` and the wrapper; no change.
+  - `src/__tests__/process-lock.test.ts` — untouched. The 8
+    `acquirePortLock` cases (`:333-528`) keep exercising the wrapper
+    unchanged (they were already class-equivalent post-E.1).
 - **Risk:** **Low.** Single call site; the change is a
   constructor + method-call rewrite with byte-identical semantics.
 - **Test coverage requirement:**
