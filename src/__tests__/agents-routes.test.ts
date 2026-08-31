@@ -25,6 +25,14 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { __test_parseChannelProvider } from '../web/routes/agents.js'
 import type { Mock } from 'vitest'
+import type { writeAgentModelProfile, writeAgentRemoteConfig } from '../web/agent-config.js'
+import type { sendPromptToSession } from '../web/agent-process.js'
+import type { attemptChannelMcpReconnect, ReconnectResult } from '../web/channel-mcp-reconnect.js'
+import type { createInvite, listInvites, revokeInvite, CreateInviteResult } from '../web/channel-invites.js'
+import type { resolveProfilePlaceholders, loadProfileTemplate, ProfileTemplate } from '../web/profiles.js'
+import type { peekBundleKind } from '../web/agent-bundle.js'
+import type { detectPermissionMode } from '../pane-state.js'
+import type { getContextGuardStatus } from '../web/context-guard-runner.js'
 
 // --- hoisted harness --------------------------------------------------------
 
@@ -70,7 +78,7 @@ const H = vi.hoisted(() => {
     readAgentModel: vi.fn<(name: string) => string>(() => 'claude-opus-4-8[1m]'),
     resolveAgentModelDetailed: vi.fn<() => { model: string; source: string; error: string | null }>(() => ({ model: 'claude-opus-4-8[1m]', source: 'default', error: null })),
     readModelProfileMap: vi.fn<() => null | Record<string, unknown>>(() => null),
-    writeAgentModelProfile: mkFn<[name: string]>(),
+    writeAgentModelProfile: vi.fn<typeof writeAgentModelProfile>(),
     writeAgentModel: mkFn<[name: string, model: string]>(),
     readAgentDisplayName: vi.fn<(name: string) => string | null>(() => 'display'),
     writeAgentDisplayName: mkFn<[name: string, value: string]>(),
@@ -89,7 +97,7 @@ const H = vi.hoisted(() => {
     readAgentClaudeConfigDir: vi.fn<(name: string) => string | null>(() => null),
     readAgentRemoteConfig: vi.fn<(name: string) => { host: string | null; workdir: string | null }>(() => ({ host: null, workdir: null })),
     readAgentRemoteHost: vi.fn<(name: string) => string | null>(() => null),
-    writeAgentRemoteConfig: vi.fn<(name: string, host: string | null, workdir: string | null) => { ok: boolean; remote?: { host: string; workdir: string }; error?: string }>(() => ({ ok: true, remote: { host: '', workdir: '' } })),
+    writeAgentRemoteConfig: vi.fn<typeof writeAgentRemoteConfig>(() => ({ ok: true, remote: { host: '', workdir: '' } })),
     readAgentVoiceConfig: vi.fn<(name: string) => { responseMode: string; voiceModel: string | null }>(() => ({ responseMode: 'auto', voiceModel: null })),
     writeAgentVoiceConfig: mkFn<[name: string, config: { responseMode: string; voiceModel: string | null }]>(),
     KNOWN_VOICE_MODELS: new Set(['nova', 'ember', 'whisper']),
@@ -103,7 +111,7 @@ const H = vi.hoisted(() => {
     getAgentRunningSince: vi.fn<(name: string) => number | null>(() => null),
     getAgentProcessInfo: vi.fn<(name: string) => { running: boolean; session?: string; pid?: number; [k: string]: unknown }>(() => ({ running: false })),
     agentSessionName: vi.fn<(name: string) => string>((name: string) => `agent-${name}`),
-    sendPromptToSession: vi.fn<(session: string, text: string) => Promise<void>>(async () => {}),
+    sendPromptToSession: vi.fn<typeof sendPromptToSession>(async () => 'sent' as const),
     capturePane: vi.fn<(session: string, host: string | null) => string | null>(() => null),
 
     // db
@@ -156,7 +164,7 @@ const H = vi.hoisted(() => {
       skipped: [],
       includesSecrets: false,
     })),
-    peekBundleKind: vi.fn<(buf: Buffer) => 'agent' | 'fleet' | 'unknown'>(() => 'agent'),
+    peekBundleKind: vi.fn<typeof peekBundleKind>(() => 'agent'),
     bundleFilename: vi.fn<(name: string) => string>((name: string) => `${name}.tar.gz`),
     fleetBundleFilename: vi.fn<() => string>(() => 'fleet.tar.gz'),
 
@@ -179,9 +187,9 @@ const H = vi.hoisted(() => {
     parseTelegramToken: vi.fn<(raw: string) => string | null>(() => 'tok'),
 
     // channel-invites
-    createInvite: vi.fn<(args?: unknown) => { token: string; deepLink: string }>(() => ({ token: 'tk', deepLink: '' })),
-    listInvites: vi.fn<() => Array<{ token: string; agent?: string; createdAt?: number; expiresAt?: number; maxUses?: number; used?: number; [k: string]: unknown }>>(() => []),
-    revokeInvite: vi.fn<(token: string) => boolean>(() => true),
+    createInvite: vi.fn<typeof createInvite>(() => ({ token: 'tk', expiresAt: 0 })),
+    listInvites: vi.fn<typeof listInvites>(() => []),
+    revokeInvite: vi.fn<typeof revokeInvite>(() => true),
     agentChannelDir: vi.fn<(name: string) => string>(() => '/x'),
 
     // channel-monitor / main-agent
@@ -221,7 +229,7 @@ const H = vi.hoisted(() => {
 
     // pane-state
     detectPaneState: vi.fn<(lines: string) => 'idle' | 'busy' | 'typing' | 'unknown' | 'error'>(() => 'idle'),
-    detectPermissionMode: vi.fn<(lines: string) => string>(() => 'normal'),
+    detectPermissionMode: vi.fn<typeof detectPermissionMode>(() => 'normal'),
 
     // agent-put-fields
     checkAgentPutFields: vi.fn<(body: unknown) => { ok: boolean; writableFields?: readonly string[]; error?: string; message?: string; [k: string]: unknown }>(() => ({ ok: true })),
@@ -235,24 +243,24 @@ const H = vi.hoisted(() => {
     writeAutoRestartConfig: vi.fn<(cfg: { enabled: boolean }) => { enabled: boolean }>(() => ({ enabled: false })),
     readContextGuardConfig: vi.fn<() => { enabled: boolean }>(() => ({ enabled: false })),
     writeContextGuardConfig: vi.fn<(cfg: { enabled: boolean }) => { enabled: boolean }>(() => ({ enabled: false })),
-    getContextGuardStatus: vi.fn<() => unknown[]>(() => []),
+    getContextGuardStatus: vi.fn<typeof getContextGuardStatus>(() => []),
 
     // store-watcher
     setStoreWriteActor: mkFn<[actor: string]>(),
 
     // channel-mcp-reconnect / channel-health
-    attemptChannelMcpReconnect: vi.fn<(pluginId: string) => Promise<{ ok: boolean; error?: string }> | { ok: boolean; error?: string }>(() => ({ ok: true })),
+    attemptChannelMcpReconnect: vi.fn<typeof attemptChannelMcpReconnect>(() => ({ ok: true, message: '' })),
     getChannelHealth: vi.fn<(pluginId: string) => { ok: boolean; error?: string; channels?: Array<{ plugin: string; ok: boolean }>; [k: string]: unknown }>(() => ({ ok: true })),
 
     // profiles
-    loadProfileTemplate: vi.fn<(id: string) => { id: string; label: string; description: string; permissionMode: string; filesystem: { allow: string[]; deny: string[] } }>(() => ({
+    loadProfileTemplate: vi.fn<typeof loadProfileTemplate>(() => ({
       id: 'default',
       label: 'default',
       description: '',
-      permissionMode: 'normal',
+      permissionMode: 'permissive',
       filesystem: { allow: ['${HOME}'], deny: ['${HOME}/.ssh'] },
     })),
-    resolveProfilePlaceholders: vi.fn<(p: string) => string>((p: string) => p),
+    resolveProfilePlaceholders: vi.fn<typeof resolveProfilePlaceholders>((p: string) => p),
 
     // sanitize / http-helpers / multipart
     sanitizeAgentName: vi.fn<(raw: string) => string>((raw: string) => raw.replace(/[^a-zA-Z0-9_-]/g, '_')),
@@ -721,7 +729,7 @@ beforeEach(() => {
   H.getAgentRunningSince.mockReset().mockReturnValue(null)
   H.getAgentProcessInfo.mockReset().mockReturnValue({ running: false })
   H.agentSessionName.mockReset().mockImplementation((name: string) => `agent-${name}`)
-  H.sendPromptToSession.mockReset().mockResolvedValue(undefined)
+  H.sendPromptToSession.mockReset().mockResolvedValue('sent')
   H.capturePane.mockReset().mockReturnValue(null)
   H.getDb.mockReset().mockReturnValue({
     prepare: vi.fn(() => ({ run: vi.fn(), get: vi.fn(), all: vi.fn(() => []) })),
@@ -744,7 +752,7 @@ beforeEach(() => {
   H.sendWelcomeMessage.mockReset().mockResolvedValue(undefined)
   H.validateTelegramToken.mockReset().mockResolvedValue({ ok: true, botName: 'b' })
   H.parseTelegramToken.mockReset().mockReturnValue('tok')
-  H.createInvite.mockReset().mockReturnValue({ token: 'tk', deepLink: '' })
+  H.createInvite.mockReset().mockReturnValue({ token: 'tk', expiresAt: 0 })
   H.listInvites.mockReset().mockReturnValue([])
   H.revokeInvite.mockReset().mockReturnValue(true)
   H.hardRestartMarveenChannels.mockReset().mockReturnValue({ ok: true })
@@ -793,16 +801,16 @@ beforeEach(() => {
   H.writeContextGuardConfig.mockReset().mockReturnValue({ enabled: false })
   H.getContextGuardStatus.mockReset().mockReturnValue([])
   H.setStoreWriteActor.mockReset()
-  H.attemptChannelMcpReconnect.mockReset().mockReturnValue({ ok: true })
+  H.attemptChannelMcpReconnect.mockReset().mockReturnValue({ ok: true, message: '' })
   H.getChannelHealth.mockReset().mockReturnValue({ ok: true })
   H.loadProfileTemplate.mockReset().mockReturnValue({
     id: 'default',
     label: 'default',
     description: '',
-    permissionMode: 'normal',
+    permissionMode: 'permissive',
     filesystem: { allow: ['${HOME}'], deny: ['${HOME}/.ssh'] },
   })
-  H.resolveProfilePlaceholders.mockReset().mockImplementation((p: string) => p)
+  H.resolveProfilePlaceholders.mockReset().mockImplementation((p: string, _ctx: { HOME: string; AGENT_DIR: string }) => p)
   H.detectReauthNeeded.mockReset().mockReturnValue({ needsReauth: false })
   H.checkAgentPutFields.mockReset().mockReturnValue({ ok: true })
   H.detectPaneState.mockReset().mockReturnValue('idle')
@@ -1713,7 +1721,7 @@ describe('GET /api/agents/:name/security', () => {
       id: 'default',
       label: 'Default',
       description: 'desc',
-      permissionMode: 'normal',
+      permissionMode: 'permissive',
       filesystem: { allow: ['${HOME}/x'], deny: ['${HOME}/.ssh'] },
     })
     const { res, json } = await call('GET', '/api/agents/a/security')
@@ -1733,7 +1741,7 @@ describe('PUT /api/agents/:name/security', () => {
 
   it('400s on an unknown profile id', async () => {
     H.listAgentNames.mockReturnValue(['a'])
-    H.loadProfileTemplate.mockReturnValue({ id: 'default', label: 'd', description: '', permissionMode: 'normal', filesystem: { allow: [], deny: [] } })
+    H.loadProfileTemplate.mockReturnValue({ id: 'default', label: 'd', description: '', permissionMode: 'permissive', filesystem: { allow: [], deny: [] } })
     const { res, json } = await call('PUT', '/api/agents/a/security', { body: { profile: 'no-such' } })
     expect(res.statusCode).toBe(400)
     expect((json() as Record<string, string>).error).toMatch(/Unknown profile/)
@@ -1810,10 +1818,10 @@ describe('PUT /api/agents/:name/context-guard', () => {
 
 describe('GET /api/context-guard', () => {
   it('returns the global guard status', async () => {
-    H.getContextGuardStatus.mockReturnValue([{ name: 'a', phase: 'idle', pct: 0.5 }])
+    H.getContextGuardStatus.mockReturnValue([{ agent: 'a', phase: 'idle', pct: 0.5, enabled: false, saturationRestart: false }])
     const { res, json } = await call('GET', '/api/context-guard')
     expect(res.statusCode).toBe(200)
-    expect(json()).toEqual({ ok: true, agents: [{ name: 'a', phase: 'idle', pct: 0.5 }] })
+    expect(json()).toEqual({ ok: true, agents: [{ agent: 'a', phase: 'idle', pct: 0.5, enabled: false, saturationRestart: false }] })
   })
 })
 
@@ -2078,7 +2086,7 @@ describe('POST /api/agents/:name/channels/:provider/invites', () => {
   it('looks up the bot name from config first, then falls back to a token validation', async () => {
     H.listAgentNames.mockReturnValue(['a'])
     H.readAgentTelegramConfig.mockReturnValue({ hasTelegram: true, botUsername: 'existing_bot' })
-    H.createInvite.mockReturnValue({ token: 'inv1', deepLink: '' })
+    H.createInvite.mockReturnValue({ token: 'inv1', expiresAt: 0 })
     const { res, json } = await call('POST', '/api/agents/a/channels/telegram/invites')
     expect(res.statusCode).toBe(200)
     expect(json()).toMatchObject({ token: 'inv1' })
@@ -2089,14 +2097,14 @@ describe('POST /api/agents/:name/channels/:provider/invites', () => {
     H.readAgentTelegramConfig.mockReturnValue({ hasTelegram: true, botUsername: '' })
     H.readChannelToken.mockReturnValue('T')
     H.getProvider.mockReturnValue({ validateToken: vi.fn(async () => ({ ok: true, botName: 'fallback_bot' })) })
-    H.createInvite.mockReturnValue({ token: 'inv2', deepLink: '' })
+    H.createInvite.mockReturnValue({ token: 'inv2', expiresAt: 0 })
     const { res } = await call('POST', '/api/agents/a/channels/telegram/invites')
     expect(res.statusCode).toBe(200)
   })
 
   it('skips the bot lookup for non-telegram providers', async () => {
     H.listAgentNames.mockReturnValue(['a'])
-    H.createInvite.mockReturnValue({ token: 'inv3', deepLink: '' })
+    H.createInvite.mockReturnValue({ token: 'inv3', expiresAt: 0 })
     const { res } = await call('POST', '/api/agents/a/channels/slack/invites')
     expect(res.statusCode).toBe(200)
   })
@@ -2126,7 +2134,7 @@ describe('GET /api/agents/:name/channels/:provider/invites', () => {
   it('returns the invites list with a t.me deep link when bot name is known', async () => {
     H.listAgentNames.mockReturnValue(['a'])
     H.readAgentTelegramConfig.mockReturnValue({ hasTelegram: true, botUsername: '@invite_bot' })
-    H.listInvites.mockReturnValue([{ token: 'tk', createdAt: 1, expiresAt: 2, maxUses: 5, used: 0 }])
+    H.listInvites.mockReturnValue([{ token: 'tk', createdAt: 1, expiresAt: 2, used: false }])
     const { res, json } = await call('GET', '/api/agents/a/channels/telegram/invites')
     expect(res.statusCode).toBe(200)
     const body = json() as Array<{ deepLink: string }>
@@ -2135,7 +2143,7 @@ describe('GET /api/agents/:name/channels/:provider/invites', () => {
 
   it('omits deepLink for non-telegram providers', async () => {
     H.listAgentNames.mockReturnValue(['a'])
-    H.listInvites.mockReturnValue([{ token: 'tk', createdAt: 1, expiresAt: 2, maxUses: 5, used: 0 }])
+    H.listInvites.mockReturnValue([{ token: 'tk', createdAt: 1, expiresAt: 2, used: false }])
     const { res, json } = await call('GET', '/api/agents/a/channels/slack/invites')
     expect(res.statusCode).toBe(200)
     const body = json() as Array<{ deepLink?: string }>
@@ -3679,7 +3687,7 @@ describe('baseline: invites create with token validation fallback', () => {
   // token -> a `if (token)` true ág + `if (r.ok)` true ág.
   it('POST /invites for the main agent with cached botUsername returns it', async () => {
     H.readMarveenTelegramConfig.mockReturnValue({ botUsername: 'main_bot' })
-    H.createInvite.mockReturnValue({ token: 'tk', deepLink: '' })
+    H.createInvite.mockReturnValue({ token: 'tk', expiresAt: 0 })
     const { res, json } = await call('POST', '/api/agents/marveen/channels/telegram/invites')
     expect(res.statusCode).toBe(200)
     expect(json()).toMatchObject({ token: 'tk' })
@@ -3689,7 +3697,7 @@ describe('baseline: invites create with token validation fallback', () => {
   // true ág.
   it('GET /invites for the main agent uses main cached botUsername', async () => {
     H.readMarveenTelegramConfig.mockReturnValue({ botUsername: '@mainbot' })
-    H.listInvites.mockReturnValue([{ token: 'tk', createdAt: 1, expiresAt: 2, maxUses: 1, used: 0 }])
+    H.listInvites.mockReturnValue([{ token: 'tk', createdAt: 1, expiresAt: 2, used: false }])
     const { res, json } = await call('GET', '/api/agents/marveen/channels/telegram/invites')
     expect(res.statusCode).toBe(200)
     const body = json() as Array<{ deepLink: string }>
@@ -4080,7 +4088,7 @@ describe('baseline: main-agent invites token validation fallback', () => {
     H.readMarveenTelegramConfig.mockReturnValue({ botUsername: '' })
     H.readChannelToken.mockReturnValue('T')
     H.getProvider.mockReturnValue({ validateToken: vi.fn(async () => ({ ok: true, botName: 'valid_bot' })) })
-    H.createInvite.mockReturnValue({ token: 'tk2', deepLink: '' })
+    H.createInvite.mockReturnValue({ token: 'tk2', expiresAt: 0 })
     mkdirSync(join(H.projectRoot, '.claude', 'channels'), { recursive: true })
     const { res, json } = await call('POST', '/api/agents/marveen/channels/telegram/invites')
     expect(res.statusCode).toBe(200)
@@ -4272,7 +4280,7 @@ describe('baseline: main-agent invites r.ok=false branch', () => {
     H.readMarveenTelegramConfig.mockReturnValue({ botUsername: '' })
     H.readChannelToken.mockReturnValue('T')
     H.getProvider.mockReturnValue({ validateToken: vi.fn(async () => ({ ok: false, error: 'bad' })) })
-    H.createInvite.mockReturnValue({ token: 'tk3', deepLink: '' })
+    H.createInvite.mockReturnValue({ token: 'tk3', expiresAt: 0 })
     mkdirSync(join(H.projectRoot, '.claude', 'channels'), { recursive: true })
     const { res } = await call('POST', '/api/agents/marveen/channels/telegram/invites')
     expect(res.statusCode).toBe(200)
