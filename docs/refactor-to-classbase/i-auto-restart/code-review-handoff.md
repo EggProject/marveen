@@ -15,29 +15,30 @@ This handoff is preserved as the verifier trail for the ceremony cycle; for the 
 
 ## Status
 
-I LANDED. Two commits on `refactor/classbase`, fast-forwarded from `fbe7750` to `584135d`:
+I was attempted, but the class-extract form violated `.claude/rules/class-vs-functional-decision.md` (0/5 IGEN on the decision tree — no instance state, no `implements X`, no lifecycle, no DI, no per-test isolation). The class form is now superseded CODE-side; the working tree at HEAD is functionally equivalent to `fbe7750` for `src/auto-restart.ts` and the 4 pre-existing test files.
 
-| SHA | Author | Subject |
+History on `refactor/classbase`, fast-forwarded from `fbe7750` to `99df604`:
+
+| SHA | Role | Subject |
 |---|---|---|
-| `db8b140a` | `EggProjectTeams <eggprojectteams@gmail.com>` | `refactor(auto-restart): extract AutoRestartSchedule class with legacy wrappers` |
-| `584135d` | `EggProjectTeams <eggprojectteams@gmail.com>` | `fix(auto-restart): address verifier findings (as-cast, no-extraneous-class, no-deprecated)` |
+| `db8b140a` | ceremony (superseded) | `refactor(auto-restart): extract AutoRestartSchedule class with legacy wrappers` |
+| `584135d` | ceremony fix (superseded) | `fix(auto-restart): address verifier findings (as-cast, no-extraneous-class, no-deprecated)` |
+| `772f0e5` | ceremony docs (superseded) | `docs(i-auto-restart): handoff for /code-review max --fix` |
+| `635d3c8` | ceremony fix (superseded) | `fix(auto-restart): narrow typeguard for unknown -> Record<string, unknown>` |
+| `8f1906c` | **supersession** | `refactor(auto-restart): replace ceremony class with module-level functions` |
+| `99df604` | docs reconciliation | `docs(refactor-to-classbase): reconcile after ceremony superseded by 8f1906c` |
 
-The second commit exists because the first failed the in-session double
-verification on 3 real findings (CLAUDE.md §8 — the safety net triggered
-before any merge). After the user authorized a follow-up commit (instead of
-amend), the fixes landed as `584135d`. Branch `refactor/classbase`
-fast-forwarded through both.
+The 4 ceremony commits remain in branch history per the user standing rule (no amend/revert/reset). The supersession is by CODE, not history rewrite.
 
-Authorship on both commits: `EggProjectTeams <eggprojectteams@gmail.com>`,
-matches `git config user.email`. No `claude@anthropic.com` anywhere.
+Authorship on all 6 commits: `EggProjectTeams <eggprojectteams@gmail.com>`, matches `git config user.email`. No `claude@anthropic.com` anywhere.
 
-## What shipped
+The "What shipped" / "Verification gates passed" / "Verifier-A" / "Verifier-B" / "User action required" sections below document the in-session verifier trail for the ceremony cycle. Read them as historical record of the safety net that caught the 3 ceremony defects before they reached the user — the user-trusted process worked. For the post-supersession state, see the "Update 2026-08-31 (post-ceremony)" section at the top.
 
-The third of the three "Top 3 lowest-risk wins" listed in
-`00-summary.md:88-112`. The first two (channel-provider D.2 + process-lock
-E.1/E.2) already landed earlier in this branch; I is the last.
+## What shipped (ceremony era — superseded CODE-side by 8f1906c)
 
-### Design: static-only utility class with legacy wrappers
+Ceremony-era design as extracted in commits `db8b140a` + `584135d` + `635d3c8`. The first two "Top 3 lowest-risk wins" (channel-provider D.2 + process-lock E.1/E.2) ARE still legitimately OOP-extracted and remain on the branch. The third entry (this section) is the ceremony, superseded by `8f1906c` — see "Update 2026-08-31 (post-ceremony)" at the top.
+
+### Design: static-only utility class with legacy wrappers (ceremony-era design, now superseded — see "Update 2026-08-31" above)
 
 `src/auto-restart.ts` (now 168 lines, was 122):
 
@@ -56,7 +57,7 @@ E.1/E.2) already landed earlier in this branch; I is the last.
   precedent in this codebase. Surgical disable with rationale, not a
   restructure.
 
-### Fixes from verifier findings (commit `584135d`)
+### Fixes from verifier findings (commit `584135d`) (ceremony-era fix, now superseded — see "Update 2026-08-31" above)
 
 1. **Two `as` casts removed** from `normalizeAutoRestartConfig`. The
    original free function had them too, but the class-body copy surfaced
