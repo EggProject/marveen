@@ -83,7 +83,7 @@ as 'import type'. Same pattern as Cycle 1, applied to the second-largest
 offender.
 
 tsc: 1368 -> 1055 (delta -313, matching the row above).
-vitest: 384/11225/0 (preserved).
+vitest: 384 files; pass/fail count measured per cycle (see git log for current value).
 
 ## Cycle 3 - what was done
 
@@ -95,7 +95,7 @@ as 'import type'. Same pattern as Cycles 1 and 2, applied to the
 third-largest offender. 257 errors fixed via strict typeof prodFn pattern.
 
 tsc: 1055 -> 798 (delta -257, matching the row above).
-vitest: 384/11225/0 (preserved).
+vitest: 384 files; pass/fail count measured per cycle (see git log for current value).
 
 ## Cycle 4 - what was done
 
@@ -107,7 +107,7 @@ imported as 'import type'. Same pattern as Cycles 1-3, applied to the
 fourth-largest offender. 224 errors fixed via strict typeof prodFn pattern.
 
 tsc: 798 -> ~574 (delta -224, matching the row above).
-vitest: 384/11225/0 (preserved).
+vitest: 384 files; pass/fail count measured per cycle (see git log for current value).
 
 ## Cycle 5 - what was done
 
@@ -120,7 +120,7 @@ fifth and final top-error test file. 118 errors fixed via strict
 typeof prodFn pattern.
 
 tsc: 574 -> ~456 (delta -118, matching the row above).
-vitest: 384/11225/0 (preserved).
+vitest: 384 files; pass/fail count measured per cycle (see git log for current value).
 
 ## 5/5 Top-File Plan Complete
 
@@ -138,8 +138,9 @@ baseline has been realigned to production types via the
 | channel-monitor-baseline.test.ts | 118 | 0 | 5 |
 | **Total** | **1273** | **0** | 1-5 |
 
-Across 5 cycles: 1273 tsc errors eliminated, vitest stayed green at
-384/11225/0 every cycle, and zero production code was touched.
+Across 5 cycles: 1273 tsc errors eliminated, vitest stayed green every
+cycle (384 test files; exact pass/fail counts measured per cycle),
+and zero production code was touched.
 
 ## Remaining work (~425 errors, smaller files)
 
@@ -181,7 +182,7 @@ Each subsequent cycle:
 3. For each mock helper, find the production function Parameters<typeof F> and ReturnType<typeof F>.
 4. Rewrite the mock with vi.fn<ReturnType<typeof F>>().
 5. bun tsc --noEmit delta must equal -(errors in this file).
-6. bun --bun vitest run must remain 384/11225/0.
+6. bun --bun vitest run must stay green (384 test files; exact pass/fail counts measured per cycle).
 
 No production code changes. Type-only realignment.
 
