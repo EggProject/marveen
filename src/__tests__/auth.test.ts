@@ -239,8 +239,9 @@ function mkReq(opts: {
   const payload = opts.body === undefined ? [] : [Buffer.from(JSON.stringify(opts.body))]
   const r = Object.assign(
     Readable.from(payload),
-    { headers: (opts.headers ?? {}) as http.IncomingHttpHeaders },
-  ) as http.IncomingMessage
+    { headers: opts.headers ?? {} },
+  )
+  // @ts-expect-error Object.assign returns wider type than http.IncomingMessage
   return r
 }
 
@@ -258,16 +259,19 @@ async function call(
   if (opts.rawBody !== undefined) {
     const r = Object.assign(
       Readable.from([Buffer.from(opts.rawBody)]),
-      { headers: (opts.headers ?? {}) as http.IncomingHttpHeaders },
-    ) as http.IncomingMessage
+      { headers: opts.headers ?? {} },
+    )
+    // @ts-expect-error Object.assign returns wider type than http.IncomingMessage
     req = r
   } else {
     req = mkReq({ headers: opts.headers, body: opts.body })
   }
   const res = mkRes()
+  // @ts-expect-error MockRes is a structural subset of http.ServerResponse
+  const serverRes: http.ServerResponse = res
   const ctx: RouteContext = {
     req,
-    res: res as unknown as http.ServerResponse,
+    res: serverRes,
     path,
     method,
     url: new URL(`http://127.0.0.1:3420${path}`),

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterAll } from 'vitest'
+import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -38,7 +38,7 @@ const GOOD_MANIFEST = {
 }
 
 function fetchReturning(status: number, body: unknown): typeof fetch {
-  return (async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch
+  return vi.fn<typeof fetch>().mockImplementation(async () => new Response(JSON.stringify(body), { status }))
 }
 
 beforeEach(() => {
@@ -167,7 +167,7 @@ describe('pollPeerManifests state machine', () => {
   it('network failure -> unreachable, and the last known manifest is RETAINED', async () => {
     enabledConfig()
     await pollPeerManifests(NOW, fetchReturning(200, GOOD_MANIFEST))
-    const failing = (async () => { throw new Error('ECONNREFUSED') }) as unknown as typeof fetch
+    const failing = vi.fn<typeof fetch>().mockImplementation(async () => { throw new Error('ECONNREFUSED') })
     await pollPeerManifests(NOW + 60_000, failing)
     const [st] = getFederationStatus()
     expect(st.state).toBe('unreachable')
@@ -177,10 +177,10 @@ describe('pollPeerManifests state machine', () => {
 
   it('oversized manifest -> error without buffering it (Content-Length precheck)', async () => {
     enabledConfig()
-    const huge = (async () => new Response('x', {
+    const huge = vi.fn<typeof fetch>().mockImplementation(async () => new Response('x', {
       status: 200,
       headers: { 'content-length': String(MANIFEST_MAX_BODY_BYTES + 1) },
-    })) as unknown as typeof fetch
+    }))
     await pollPeerManifests(NOW, huge)
     const [st] = getFederationStatus()
     expect(st.state).toBe('error')
@@ -190,7 +190,7 @@ describe('pollPeerManifests state machine', () => {
   it('unpaired peer (empty outboundToken) is reported without a network attempt', async () => {
     enabledConfig({ outboundToken: '' })
     let calls = 0
-    const counting = (async () => { calls++; return new Response('{}', { status: 200 }) }) as unknown as typeof fetch
+    const counting = vi.fn<typeof fetch>().mockImplementation(async () => { calls++; return new Response('{}', { status: 200 }) })
     await pollPeerManifests(NOW, counting)
     expect(calls).toBe(0)
     expect(getFederationStatus()[0].state).toBe('unpaired')
@@ -201,7 +201,7 @@ describe('pollPeerManifests state machine', () => {
     await pollPeerManifests(NOW, fetchReturning(200, GOOD_MANIFEST))
     writeConfigFile({ enabled: false, systemId: 'localsys', peers: [] })
     let calls = 0
-    const counting = (async () => { calls++; return new Response('{}', { status: 200 }) }) as unknown as typeof fetch
+    const counting = vi.fn<typeof fetch>().mockImplementation(async () => { calls++; return new Response('{}', { status: 200 }) })
     const out = await pollPeerManifests(NOW + 1, counting)
     expect(calls).toBe(0)
     expect(out).toEqual([])
@@ -238,11 +238,11 @@ describe('refreshFederationStatus single-flight', () => {
   it('concurrent refreshes share one round', async () => {
     enabledConfig()
     let calls = 0
-    const slow = (async () => {
+    const slow = vi.fn<typeof fetch>().mockImplementation(async () => {
       calls++
       await new Promise((r) => setTimeout(r, 20))
       return new Response(JSON.stringify(GOOD_MANIFEST), { status: 200 })
-    }) as unknown as typeof fetch
+    })
     const [a, b] = await Promise.all([refreshFederationStatus(slow), refreshFederationStatus(slow)])
     expect(calls).toBe(1)
     expect(a).toEqual(b)

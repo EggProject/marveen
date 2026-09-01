@@ -174,13 +174,14 @@ describe('module constants', () => {
   })
 
   it('exports the public API surface', () => {
-    for (const name of [
+    const apiKeys = [
       'stageAgentDirForExport', 'stageAgentForExport', 'exportAgentBundle',
       'readBundleManifest', 'sanitizeImportedConfig', 'importAgentBundle',
       'bundleFilename', 'exportAllAgentsBundle', 'readFleetManifest',
       'peekBundleKind', 'importAllAgentsBundle', 'fleetBundleFilename',
-    ]) {
-      expect(typeof ab[name as keyof typeof ab]).toBe('function')
+    ] satisfies ReadonlyArray<keyof typeof ab>
+    for (const name of apiKeys) {
+      expect(typeof ab[name]).toBe('function')
     }
   })
 })

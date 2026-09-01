@@ -221,11 +221,12 @@ function mkReq(body?: string): http.IncomingMessage {
   const headers = body
     ? { 'content-length': String(body.length) }
     : {}
+  // @ts-expect-error minimal IncomingMessage fake via Object.assign
   const ee: http.IncomingMessage = Object.assign(new EventEmitter(), {
     headers,
     url: '/',
     method: 'POST',
-  }) as http.IncomingMessage
+  })
   if (body !== undefined) {
     process.nextTick(() => {
       ee.emit('data', Buffer.from(body))
@@ -262,10 +263,12 @@ function fakeCtx(method: string, path: string, body?: unknown, fedPeer: string |
   const raw = body === undefined ? undefined : (typeof body === 'string' ? body : JSON.stringify(body))
   const req = mkReq(raw)
   const res = mkRes()
+  // @ts-expect-error MockRes is a structural subset of http.ServerResponse
+  const serverRes: http.ServerResponse = res
   return {
     ctx: {
       req,
-      res: res as unknown as http.ServerResponse,
+      res: serverRes,
       path: path.split('?')[0],
       method,
       url: new URL(`http://localhost${path}`),
@@ -1206,20 +1209,23 @@ describe('resolveLang fallback', () => {
 describe('POST /api/federation/inbox -- readBody non-size error re-throws', () => {
   it('rethrows when the request stream errors out (not a size error)', async () => {
     writeConfigFile({ enabled: true, systemId: 'localsys', peers: [{ id: 'teodor', baseUrl: 'https://t.example', inboundToken: 'a'.repeat(64), outboundToken: 'b'.repeat(64) }] })
+    // @ts-expect-error minimal IncomingMessage fake via Object.assign
     const ee: http.IncomingMessage = Object.assign(new EventEmitter(), {
       headers: {} satisfies http.IncomingHttpHeaders,
       url: '/',
       method: 'POST',
       destroy: () => {},
-    }) as http.IncomingMessage
+    })
     process.nextTick(() => {
       ee.emit('error', new Error('stream exploded'))
       ee.emit('end')
     })
     const res = mkRes()
+    // @ts-expect-error MockRes is a structural subset of http.ServerResponse
+    const serverRes: http.ServerResponse = res
     const ctx = {
       req: ee,
-      res: res as unknown as http.ServerResponse,
+      res: serverRes,
       path: '/api/federation/inbox',
       method: 'POST',
       url: new URL('http://localhost/api/federation/inbox'),
@@ -1466,20 +1472,23 @@ describe('POST /api/federation/inbox', () => {
 
   it('413s when the body read itself overflows (no Content-Length)', async () => {
     writeConfigFile({ enabled: true, systemId: 'localsys', peers: [{ id: 'teodor', baseUrl: 'https://t.example', inboundToken: 'a'.repeat(64), outboundToken: 'b'.repeat(64) }] })
+    // @ts-expect-error minimal IncomingMessage fake with destroy hook
     const ee: http.IncomingMessage & { destroy(): void } = Object.assign(new EventEmitter(), {
       headers: {} satisfies http.IncomingHttpHeaders,
       url: '/',
       method: 'POST',
       destroy: () => {},
-    }) as http.IncomingMessage & { destroy(): void }
+    })
     process.nextTick(() => {
       ee.emit('data', Buffer.alloc(64 * 1024 + 1))
       ee.emit('end')
     })
     const res = mkRes()
+    // @ts-expect-error MockRes is a structural subset of http.ServerResponse
+    const serverRes: http.ServerResponse = res
     const ctx = {
       req: ee,
-      res: res as unknown as http.ServerResponse,
+      res: serverRes,
       path: '/api/federation/inbox',
       method: 'POST',
       url: new URL('http://localhost/api/federation/inbox'),

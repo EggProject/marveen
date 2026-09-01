@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterAll } from 'vitest'
+import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -29,7 +29,7 @@ function writeEnabledConfig(): void {
 }
 
 function fetchReturning(status: number, body: unknown): typeof fetch {
-  return (async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch
+  return vi.fn<typeof fetch>().mockImplementation(async () => new Response(JSON.stringify(body), { status }))
 }
 
 async function getDirectory(): Promise<{ statusCode: number; json: any }> {

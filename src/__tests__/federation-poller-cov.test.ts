@@ -63,12 +63,12 @@ const GOOD_MANIFEST = {
 }
 
 function fetchReturning(status: number, body: unknown): typeof fetch {
-  return (async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch
+  return vi.fn<typeof fetch>().mockImplementation(async () => new Response(JSON.stringify(body), { status }))
 }
 
 /** A fetch that returns GOOD_MANIFEST with `system` overwritten to the given id. */
 function fetchManifestFor(system: string): typeof fetch {
-  return (async () => new Response(JSON.stringify({ ...GOOD_MANIFEST, system }), { status: 200 })) as unknown as typeof fetch
+  return vi.fn<typeof fetch>().mockImplementation(async () => new Response(JSON.stringify({ ...GOOD_MANIFEST, system }), { status: 200 }))
 }
 
 beforeEach(() => {
@@ -213,7 +213,7 @@ describe('pollOnePeer: error branches beyond the existing suite', () => {
 
   it('non-JSON body -> error state with "manifest is not JSON"', async () => {
     enabledConfig()
-    const fetchText = (async () => new Response('not-json{', { status: 200 })) as unknown as typeof fetch
+    const fetchText = vi.fn<typeof fetch>().mockImplementation(async () => new Response('not-json{', { status: 200 }))
     await pollPeerManifests(NOW, fetchText)
     const [st] = getFederationStatus()
     expect(st.state).toBe('error')
@@ -233,11 +233,11 @@ describe('pollOnePeer: error branches beyond the existing suite', () => {
     // A fetch whose body reader throws synchronously on read -- NOT a
     // PeerResponseTooLargeError, so poller should fall through to the
     // generic String(err) branch.
-    const fetchWithBodyError = (async () => new Response(new ReadableStream({
+    const fetchWithBodyError = vi.fn<typeof fetch>().mockImplementation(async () => new Response(new ReadableStream({
       start(controller) {
         controller.error(new Error('socket reset'))
       },
-    }), { status: 200 })) as unknown as typeof fetch
+    }), { status: 200 }))
     await pollPeerManifests(NOW, fetchWithBodyError)
     const [st] = getFederationStatus()
     expect(st.state).toBe('error')
@@ -264,7 +264,7 @@ describe('pollOnePeer: error branches beyond the existing suite', () => {
     })
     try {
       let calls = 0
-      const counting = (async () => { calls++; return new Response('{}', { status: 200 }) }) as unknown as typeof fetch
+      const counting = vi.fn<typeof fetch>().mockImplementation(async () => { calls++; return new Response('{}', { status: 200 }) })
       await pollPeerManifests(NOW, counting)
       expect(calls).toBe(0)
       const [st] = getFederationStatus()
@@ -320,13 +320,13 @@ describe('pollPeerManifests: belt catch on pollOnePeer throw', () => {
       ],
     })
     // Per-peer responses so each peer can succeed against its own system id.
-    const fetchFor = (async (input: RequestInfo | URL) => {
+    const fetchFor = vi.fn<typeof fetch>().mockImplementation(async (input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : input.toString()
       if (url.includes('mini.example')) {
         return new Response(JSON.stringify({ ...GOOD_MANIFEST, system: 'teodor' }), { status: 200 })
       }
       return new Response(JSON.stringify({ ...GOOD_MANIFEST, system: 'cecil' }), { status: 200 })
-    }) as unknown as typeof fetch
+    })
     // Arm the map throw ONLY for teodor's 'ok' store. The belt now re-throws,
     // so the round aborts on teodor's throw and cecil is never polled --
     // cecil's cache row stays absent (getFederationStatus synthesizes it as
@@ -366,13 +366,13 @@ describe('resetFederationPollerCache(peerId)', () => {
         { id: 'cecil', baseUrl: 'https://c.example', outboundToken: OUT_TOKEN, inboundToken: 'c'.repeat(64) },
       ],
     })
-    const fetchFor = (async (input: RequestInfo | URL) => {
+    const fetchFor = vi.fn<typeof fetch>().mockImplementation(async (input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : input.toString()
       if (url.includes('mini.example')) {
         return new Response(JSON.stringify({ ...GOOD_MANIFEST, system: 'teodor' }), { status: 200 })
       }
       return new Response(JSON.stringify({ ...GOOD_MANIFEST, system: 'cecil' }), { status: 200 })
-    }) as unknown as typeof fetch
+    })
     await pollPeerManifests(NOW, fetchFor)
     let status = getFederationStatus()
     expect(status.find((s) => s.id === 'teodor')?.state).toBe('ok')
@@ -410,13 +410,13 @@ describe('resetFederationPollerCache(peerId)', () => {
         { id: 'cecil', baseUrl: 'https://c.example', outboundToken: OUT_TOKEN, inboundToken: 'c'.repeat(64) },
       ],
     })
-    const fetchFor = (async (input: RequestInfo | URL) => {
+    const fetchFor = vi.fn<typeof fetch>().mockImplementation(async (input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : input.toString()
       if (url.includes('mini.example')) {
         return new Response(JSON.stringify({ ...GOOD_MANIFEST, system: 'teodor' }), { status: 200 })
       }
       return new Response(JSON.stringify({ ...GOOD_MANIFEST, system: 'cecil' }), { status: 200 })
-    }) as unknown as typeof fetch
+    })
     await pollPeerManifests(NOW, fetchFor)
     resetFederationPollerCache()
     const status = getFederationStatus()
@@ -538,7 +538,7 @@ describe('startFederationPoller', () => {
 describe('refreshFederationStatus: pollOnePeer internal catches', () => {
   it('does not deadlock when pollOnePeer catches a thrown fetchImpl internally', async () => {
     enabledConfig()
-    const failing = (() => { throw new Error('sync boom') }) as unknown as typeof fetch
+    const failing = vi.fn<typeof fetch>().mockImplementation(async () => { throw new Error('sync boom') })
     // The sync-throwing fetchImpl is caught by pollOnePeer's own try/catch
     // (fetch catch), so it is recorded as 'unreachable' rather than escaping
     // to pollPeerManifests's belt. refreshFederationStatus therefore resolves

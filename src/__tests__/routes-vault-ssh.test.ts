@@ -204,7 +204,8 @@ function mkReq(opts: { body?: Buffer | string }): http.IncomingMessage {
   const r = Object.assign(
     Readable.from(payload),
     { headers: {} satisfies http.IncomingHttpHeaders },
-  ) as http.IncomingMessage
+  )
+  // @ts-expect-error minimal IncomingMessage fake via Object.assign
   return r
 }
 
