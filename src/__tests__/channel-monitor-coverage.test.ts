@@ -30,6 +30,27 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs'
 
 // ----------------------------------------------------------------------------
+// Production type imports: each mock declaration uses vi.fn<typeof prodFn>()
+// so the production signature is the single source of truth (cycle 2/3 lesson).
+// ----------------------------------------------------------------------------
+import type { capturePane, captureParkedInputView } from '../web/agent-process.js'
+import type { listAgentNames, readAgentChannelProvider } from '../web/agent-config.js'
+import type { reapDetachedChannelClaudes, collectPollerEvidence } from '../web/channel-poller-reap.js'
+import type { parseEtimeToSeconds, decideDownAgentAction } from '../web/agent-restart-policy.js'
+import type { getClaudePidForSession, probeChannelPluginLiveness } from '../channel-coordinator/liveness.js'
+import type { readLastIngestionTimestamp } from '../web/inbound-probe.js'
+import type { readChannelToken } from '../channel-provider.js'
+import type {
+  stuckInputSignature,
+  decideStuckInputRecovery,
+  parkedChannelInput,
+  decideStuckInputAction,
+  detectPaneState,
+} from '../pane-state.js'
+import type { isAgentRunning, startAgentProcess } from '../web/agent-process.js'
+import type { attemptChannelMcpReconnect } from '../web/channel-mcp-reconnect.js'
+
+// ----------------------------------------------------------------------------
 // SANDBOX: redirect PROJECT_ROOT / STORE_DIR to a tmpdir BEFORE the SUT loads.
 // Same pattern as the primary suite: RESPAWN_STAMP_FILE / KEEPALIVE_FILE /
 // store/.channel-last-respawn are computed at module load, so without this
@@ -58,15 +79,15 @@ const m = vi.hoisted(() => ({
   // agent-process
   agentHasChannel: vi.fn(() => true),
   agentSessionName: vi.fn((name: string) => `agent-${name}`),
-  capturePane: vi.fn<string | null, [string]>(() => null),
-  captureParkedInputView: vi.fn<string | null, [string]>(() => null),
+  capturePane: vi.fn<typeof capturePane>(() => null),
+  captureParkedInputView: vi.fn<typeof captureParkedInputView>(() => null),
   clearInputBuffer: vi.fn(async () => undefined),
   dismissResumeSummaryModalIfPresent: vi.fn(async () => undefined),
   dismissModelConsentDialogIfPresent: vi.fn(async () => undefined),
   stampFableOverageConsentSharedRoots: vi.fn(() => undefined),
-  isAgentRunning: vi.fn(() => false),
+  isAgentRunning: vi.fn<typeof isAgentRunning>(() => false),
   sendPromptToSession: vi.fn(async () => undefined),
-  startAgentProcess: vi.fn(() => ({ ok: true })),
+  startAgentProcess: vi.fn<typeof startAgentProcess>(() => ({ ok: true })),
   stopAgentProcess: vi.fn(() => ({ ok: true })),
   scheduleIdentitySetup: vi.fn(() => undefined),
   ensureMainAgentIsolatedConfigDir: vi.fn(() => null),
@@ -75,12 +96,12 @@ const m = vi.hoisted(() => ({
   answerFirstRunGates: vi.fn(async () => 'done'),
   // web/agent-config
   agentDir: vi.fn((name: string) => `/agents/${name}`),
-  listAgentNames: vi.fn<string[]>(() => []),
-  readAgentChannelProvider: vi.fn<string | null, [string]>(() => null),
+  listAgentNames: vi.fn<typeof listAgentNames>(() => []),
+  readAgentChannelProvider: vi.fn<typeof readAgentChannelProvider>(() => null),
   // channel-poller-reap
   reapChannelOrphans: vi.fn(() => 0),
-  reapDetachedChannelClaudes: vi.fn<number[], [{ channelNeedle?: string; tmuxPath?: string }?]>(() => []),
-  collectPollerEvidence: vi.fn(() => ({ interpretation: 'missing' as const })),
+  reapDetachedChannelClaudes: vi.fn<typeof reapDetachedChannelClaudes>(() => []),
+  collectPollerEvidence: vi.fn<typeof collectPollerEvidence>(() => ({ botPid: null, botPidAlive: false, envScanPids: [], rows: [], interpretation: 'no-poller' })),
   // channel-conflict-probe
   probeTelegramConflict: vi.fn(async () => ({ status: 0, conflicted: false, description: '' })),
   // channel-plugin-unlock
@@ -88,22 +109,22 @@ const m = vi.hoisted(() => ({
   wasPluginConfirmedAbsent: vi.fn(() => false),
   clearPluginAbsent: vi.fn(() => undefined),
   // channel-mcp-reconnect
-  attemptChannelMcpReconnect: vi.fn(() => ({ ok: false, message: 'no' })),
+  attemptChannelMcpReconnect: vi.fn<typeof attemptChannelMcpReconnect>(() => ({ ok: false, message: 'no' })),
   // agent-restart-policy
-  decideDownAgentAction: vi.fn(() => 'skip' as const),
-  parseEtimeToSeconds: vi.fn<number, [string]>(() => 0),
+  decideDownAgentAction: vi.fn<typeof decideDownAgentAction>(() => 'skip'),
+  parseEtimeToSeconds: vi.fn<typeof parseEtimeToSeconds>(() => 0),
   // agent-desired-state
   getDesiredAgents: vi.fn(() => new Set<string>()),
   // channel-coordinator/liveness
-  getClaudePidForSession: vi.fn<number | null, [string]>(() => null),
+  getClaudePidForSession: vi.fn<typeof getClaudePidForSession>(() => null),
   hasChannelPluginAlive: vi.fn(() => false),
-  probeChannelPluginLiveness: vi.fn<'alive' | 'down' | 'unknown', [number, string, string?]>(() => 'alive' as const),
+  probeChannelPluginLiveness: vi.fn<typeof probeChannelPluginLiveness>(() => 'alive'),
   // inbound-probe
-  readLastIngestionTimestamp: vi.fn<number | null, [string]>(() => null),
+  readLastIngestionTimestamp: vi.fn<typeof readLastIngestionTimestamp>(() => null),
   // channel-provider
   getProvider: vi.fn((type: string) => ({ type, pluginId: `plugin-${type}` })),
   channelStateDir: vi.fn((provider: string, root?: string) => `${root ?? '/tmp'}/channels/${provider}`),
-  readChannelToken: vi.fn<string | null, [string, string]>(() => null),
+  readChannelToken: vi.fn<typeof readChannelToken>(() => null),
   // notify
   notifyChannel: vi.fn(async () => undefined),
   // logger
@@ -114,14 +135,14 @@ const m = vi.hoisted(() => ({
   // platform
   resolveFromPath: vi.fn((name: string) => `/usr/local/bin/${name}`),
   // pane-state
-  detectPaneState: vi.fn(() => 'idle' as const),
+  detectPaneState: vi.fn<typeof detectPaneState>(() => 'idle'),
   decidePaneErrorAlert: vi.fn(() => ({ alert: false, next: { firstSeenAt: null, lastAlertAt: null, lastErrorAt: null } })),
   detectsBlockingMenu: vi.fn(() => false),
   detectsFirstRunGate: vi.fn(() => null),
   detectsModelConsentDialog: vi.fn(() => false),
-  stuckInputSignature: vi.fn(() => null),
-  decideStuckInputRecovery: vi.fn(() => ({ recover: false, next: { parkedSig: null, firstSeenAt: null, lastRecoverAt: null, attempts: 0 } })),
-  parkedChannelInput: vi.fn(() => null),
+  stuckInputSignature: vi.fn<typeof stuckInputSignature>(() => null),
+  decideStuckInputRecovery: vi.fn<typeof decideStuckInputRecovery>(() => ({ recover: false, next: { parkedSig: null, firstSeenAt: null, lastRecoverAt: null, attempts: 0 } })),
+  parkedChannelInput: vi.fn<typeof parkedChannelInput>(() => null),
   parkedInputText: vi.fn(() => null),
   parkedInputRowCount: vi.fn(() => 0),
   parkedScheduledTaskInput: vi.fn(() => false),
@@ -129,9 +150,12 @@ const m = vi.hoisted(() => ({
   parkedMainInputHasRemedy: vi.fn(() => false),
   shouldClearTruncatedPreamble: vi.fn(() => false),
   submitLanded: vi.fn(() => false),
-  decideStuckInputAction: vi.fn(() => 'hold' as const),
+  decideStuckInputAction: vi.fn<typeof decideStuckInputAction>(() => 'hold'),
   // process.platform
   savedPlatform: process.platform,
+  // dynamic test-only slots declared up-front so the dynamic assignments at
+  // L1282 stay type-safe (these are not SUT inputs; see test L1282).
+  handleTelegramConflict: vi.fn(),
 }))
 
 vi.mock('node:child_process', () => ({
@@ -348,7 +372,7 @@ beforeEach(() => {
   m.attemptChannelMcpReconnect.mockReturnValue({ ok: false, message: 'no' })
   m.reapChannelOrphans.mockReturnValue(0)
   m.reapDetachedChannelClaudes.mockReturnValue([])
-  m.collectPollerEvidence.mockReturnValue({ interpretation: 'missing' })
+  m.collectPollerEvidence.mockReturnValue({ botPid: null, botPidAlive: false, envScanPids: [], rows: [], interpretation: 'no-poller' })
   m.wasPluginConfirmedAbsent.mockReturnValue(false)
   m.probeTelegramConflict.mockResolvedValue({ status: 0, conflicted: false, description: '' })
   m.parseEtimeToSeconds.mockReturnValue(0)
@@ -921,7 +945,7 @@ describe('coverage: handleMarveenDown: stage soft retry success increments softA
     m.readChannelToken.mockReturnValue('tok')
     m.attemptChannelMcpReconnect
       .mockReturnValueOnce({ ok: false, message: 'no' }) // first escalation: fail
-      .mockReturnValueOnce({ ok: true }) // second escalation: succeed -> lines 1314-1316
+      .mockReturnValueOnce({ ok: true, message: '' }) // second escalation: succeed -> lines 1314-1316
     m.execFileSync.mockReturnValue('')
     m.capturePane.mockReturnValue(null)
     const handle = mod.startChannelPluginMonitor()
@@ -1257,7 +1281,7 @@ describe('coverage: plugin-down forensics orphaned interpretation (line 1629)', 
     m.listAgentNames.mockReturnValue(['sub'])
     m.isAgentRunning.mockReturnValue(true)
     m.agentHasChannel.mockReturnValue(true)
-    m.collectPollerEvidence.mockReturnValue({ interpretation: 'orphaned' })
+    m.collectPollerEvidence.mockReturnValue({ botPid: null, botPidAlive: false, envScanPids: [], rows: [], interpretation: 'orphaned' })
     m.decideDownAgentAction.mockReturnValue('skip')
     m.capturePane.mockReturnValue('pane')
     m.detectPaneState.mockReturnValue('idle')
@@ -1285,7 +1309,7 @@ describe('coverage: plugin-down forensics in-tree interpretation (line 1627)', (
     m.listAgentNames.mockReturnValue(['sub'])
     m.isAgentRunning.mockReturnValue(true)
     m.agentHasChannel.mockReturnValue(true)
-    m.collectPollerEvidence.mockReturnValue({ interpretation: 'in-tree' })
+    m.collectPollerEvidence.mockReturnValue({ botPid: null, botPidAlive: false, envScanPids: [], rows: [], interpretation: 'in-tree' })
     m.decideDownAgentAction.mockReturnValue('skip')
     m.capturePane.mockReturnValue('pane')
     m.detectPaneState.mockReturnValue('idle')
@@ -1819,8 +1843,6 @@ describe('coverage: per-tick target + stage branches', () => {
     m.probeChannelPluginLiveness.mockReturnValue('down')
     m.listAgentNames.mockReturnValue([])
     m.readAgentChannelProvider.mockReturnValue(null)
-    m.mainProvider = 'discord'
-    m.handleTelegramConflict = vi.fn()
     const handle = mod.startChannelPluginMonitor()
     await vi.advanceTimersByTimeAsync(8_000 + 100)
     clearMonitorHandle(handle)
