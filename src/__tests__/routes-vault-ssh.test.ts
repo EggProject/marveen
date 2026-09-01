@@ -176,6 +176,8 @@ interface MockRes {
   end(data?: string | Buffer): void
 }
 
+interface FakeServerResponse extends http.ServerResponse {}
+
 function mkRes(): MockRes {
   return {
     statusCode: 0,
@@ -197,13 +199,17 @@ function mkRes(): MockRes {
   }
 }
 
+interface FakeIncomingMessage extends http.IncomingMessage {}
+
 function mkReq(opts: { body?: Buffer | string }): http.IncomingMessage {
   const payload: Buffer[] = opts.body === undefined
     ? []
     : [Buffer.isBuffer(opts.body) ? opts.body : Buffer.from(opts.body)]
-  const r = Readable.from(payload) as unknown as http.IncomingMessage & Record<string, unknown>
-  r.headers = {} as http.IncomingHttpHeaders
-  return r as http.IncomingMessage
+  const r = Object.assign(
+    Readable.from(payload),
+    { headers: {} as http.IncomingHttpHeaders },
+  ) as FakeIncomingMessage
+  return r
 }
 
 async function call(method: string, path: string, opts: { body?: Buffer | string } = {}): Promise<{

@@ -213,6 +213,8 @@ interface MockRes {
   end(data?: string): void
 }
 
+interface FakeServerResponse extends http.ServerResponse {}
+
 function mkRes(): MockRes {
   return {
     statusCode: 0,
@@ -232,14 +234,18 @@ function mkRes(): MockRes {
   }
 }
 
+interface FakeIncomingMessage extends http.IncomingMessage {}
+
 function mkReq(opts: {
   body?: unknown
   headers?: Record<string, string | string[] | undefined>
 } = {}): http.IncomingMessage {
   const payload = opts.body === undefined ? [] : [Buffer.from(JSON.stringify(opts.body))]
-  const r = Readable.from(payload) as unknown as http.IncomingMessage & Record<string, unknown>
-  r.headers = (opts.headers ?? {}) as http.IncomingHttpHeaders
-  return r as http.IncomingMessage
+  const r = Object.assign(
+    Readable.from(payload),
+    { headers: (opts.headers ?? {}) as http.IncomingHttpHeaders },
+  ) as FakeIncomingMessage
+  return r
 }
 
 async function call(
@@ -254,9 +260,11 @@ async function call(
 ): Promise<{ res: MockRes; handled: boolean; json: () => Record<string, unknown> }> {
   let req: http.IncomingMessage
   if (opts.rawBody !== undefined) {
-    const r = Readable.from([Buffer.from(opts.rawBody)]) as unknown as http.IncomingMessage & Record<string, unknown>
-    r.headers = (opts.headers ?? {}) as http.IncomingHttpHeaders
-    req = r as http.IncomingMessage
+    const r = Object.assign(
+      Readable.from([Buffer.from(opts.rawBody)]),
+      { headers: (opts.headers ?? {}) as http.IncomingHttpHeaders },
+    ) as FakeIncomingMessage
+    req = r
   } else {
     req = mkReq({ headers: opts.headers, body: opts.body })
   }
@@ -283,7 +291,7 @@ function cookieHeader(res: MockRes): string {
 
 const TOKEN_AUTH: RouteContext['auth'] = { kind: 'token' }
 const SESSION_AUTH = (user: string): RouteContext['auth'] => ({ kind: 'session', user })
-const DEVICE_AUTH = { kind: 'device', device: 'myphone', deviceId: 1 } as unknown as RouteContext['auth']
+const DEVICE_AUTH = { kind: 'device', device: 'myphone' } satisfies RouteContext['auth']
 const FEDERATION_AUTH: RouteContext['auth'] = { kind: 'federation', peer: 'test-peer' }
 
 const GOOD_PW = 'super-secret-pw'
@@ -374,7 +382,7 @@ describe('GET /api/auth/status', () => {
   it('returns device:null when a device principal has no device field (auth?.device ?? null)', async () => {
     vi.mocked(dbModule.countDashboardUsers).mockReturnValue(1)
     const { json } = await call('GET', '/api/auth/status', {
-      auth: { kind: 'device', deviceId: 1 } as unknown as RouteContext['auth'],
+      auth: { kind: 'device' } satisfies RouteContext['auth'],
     })
     expect(json()).toMatchObject({ method: 'device', device: null })
   })

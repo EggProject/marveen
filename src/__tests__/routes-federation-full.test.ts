@@ -187,8 +187,8 @@ vi.mock('../web/federation/config.js', async (orig) => {
           if (typeof validated === 'string') return validated
           const remove = H.validateFederationConfigStripRoutingMode()
           if (remove) {
-            const { routingMode: _, ...rest } = validated as unknown as Record<string, unknown>
-            return rest as unknown as typeof validated
+            const { routingMode: _, ...rest } = validated
+            return rest
           }
           return validated
         }
@@ -203,8 +203,8 @@ vi.mock('../web/federation/config.js', async (orig) => {
         return () => {
           const cfg = target.getFederationConfig()
           if (H.getFederationConfigStripRoutingMode() && typeof cfg === 'object') {
-            const { routingMode: _, ...rest } = cfg as Record<string, unknown>
-            return rest as typeof cfg
+            const { routingMode: _, ...rest } = cfg
+            return rest
           }
           return cfg
         }
@@ -218,10 +218,14 @@ vi.mock('../web/federation/config.js', async (orig) => {
 // HTTP harness
 // -----------------------------------------------------------------------
 function mkReq(body?: string): http.IncomingMessage {
-  const ee = new EventEmitter() as unknown as http.IncomingMessage
-  ;(ee as unknown as { headers: Record<string, string> }).headers = body
+  const headers = body
     ? { 'content-length': String(body.length) }
     : {}
+  const ee: http.IncomingMessage = Object.assign(new EventEmitter(), {
+    headers,
+    url: '/',
+    method: 'POST',
+  }) as http.IncomingMessage
   if (body !== undefined) {
     process.nextTick(() => {
       ee.emit('data', Buffer.from(body))
@@ -237,13 +241,14 @@ interface MockRes {
   statusCode: number
   body: string
 }
+interface FakeServerResponse extends http.ServerResponse {}
 function mkRes(): MockRes {
   const state: MockRes = { statusCode: 0, body: '' }
-  const res = {
+  const res: FakeServerResponse = {
     writeHead(code: number) { state.statusCode = code; return res },
     end(data?: unknown) { state.body = String(data ?? '') },
     setHeader() { /* not used by json() */ },
-  } as unknown as http.ServerResponse
+  } as unknown as FakeServerResponse
   return new Proxy(state, {
     get(t, p) {
       if (p === 'writeHead') return (code: number) => { t.statusCode = code; return res }
@@ -251,22 +256,23 @@ function mkRes(): MockRes {
       if (p === 'setHeader') return () => {}
       return Reflect.get(t, p)
     },
-  }) as unknown as MockRes
+  }) satisfies MockRes
 }
 
 function fakeCtx(method: string, path: string, body?: unknown, fedPeer: string | null = null): { ctx: Parameters<typeof tryHandleFederation>[0]; res: MockRes } {
   const raw = body === undefined ? undefined : (typeof body === 'string' ? body : JSON.stringify(body))
   const req = mkReq(raw)
-  const res = mkRes() as unknown as http.ServerResponse
+  const res = mkRes()
   return {
     ctx: {
-      req, res,
+      req,
+      res: res as unknown as http.ServerResponse,
       path: path.split('?')[0],
       method,
       url: new URL(`http://localhost${path}`),
       fedPeer,
     },
-    res: res as unknown as MockRes,
+    res,
   }
 }
 
@@ -394,7 +400,7 @@ describe('GET /api/federation/directory', () => {
     writeConfigFile({ enabled: true, systemId: 'localsys', peers: [] })
     // Re-mock the poller for THIS test only: 30 agents means the slice truncates.
     const pollerMod = await import('../web/federation/poller.js')
-    const stubPeer: PeerStatus = { id: 'teodor', state: 'ok' as PeerPollState, lastOkAt: 100, baseUrl: 'http://teodor.local', lastChecked: 100, manifest: { system: '', marveenVersion: '', federationVersion: 0, agents: Array.from({ length: 30}, (_, i) => ({ id: `a${i}`, displayName: `a${i}`, model: 'm' })), skills: [] } }
+    const stubPeer: PeerStatus = { id: 'teodor', state: 'ok', lastOkAt: 100, baseUrl: 'http://teodor.local', lastChecked: 100, manifest: { system: '', marveenVersion: '', federationVersion: 0, agents: Array.from({ length: 30}, (_, i) => ({ id: `a${i}`, displayName: `a${i}`, model: 'm' })), skills: [] } }
     const spy = vi.spyOn(pollerMod, 'getFederationStatus').mockReturnValueOnce([stubPeer])
     const r = await call('GET', '/api/federation/directory')
     expect(r.json.peers[0].claimedAgents).toHaveLength(25)
@@ -404,7 +410,7 @@ describe('GET /api/federation/directory', () => {
   it('caps skill lists with DIRECTORY_MAX_SKILLS_PER_AGENT', async () => {
     writeConfigFile({ enabled: true, systemId: 'localsys', peers: [] })
     const pollerMod = await import('../web/federation/poller.js')
-    const stubPeer: PeerStatus = { id: 'teodor', state: 'ok' as PeerPollState, lastOkAt: 100, baseUrl: 'http://teodor.local', lastChecked: 100, manifest: { system: '', marveenVersion: '', federationVersion: 0, agents: [{ id: 'k', displayName: 'K', model: 'm'}], skills: Array.from({ length: 12 }, (_, i) => ({ agent: 'k', name: `s${i}`, description: 'd' })) } }
+    const stubPeer: PeerStatus = { id: 'teodor', state: 'ok', lastOkAt: 100, baseUrl: 'http://teodor.local', lastChecked: 100, manifest: { system: '', marveenVersion: '', federationVersion: 0, agents: [{ id: 'k', displayName: 'K', model: 'm'}], skills: Array.from({ length: 12 }, (_, i) => ({ agent: 'k', name: `s${i}`, description: 'd' })) } }
     const spy = vi.spyOn(pollerMod, 'getFederationStatus').mockReturnValueOnce([stubPeer])
     const r = await call('GET', '/api/federation/directory')
     expect(r.json.peers[0].claimedAgents[0].skills).toHaveLength(6)
@@ -415,7 +421,7 @@ describe('GET /api/federation/directory', () => {
     writeConfigFile({ enabled: true, systemId: 'localsys', peers: [] })
     const pollerMod = await import('../web/federation/poller.js')
     const longDesc = 'x'.repeat(300)
-    const stubPeer: PeerStatus = { id: 'teodor', state: 'ok' as PeerPollState, lastOkAt: 100, baseUrl: 'http://teodor.local', lastChecked: 100, manifest: { system: '', marveenVersion: '', federationVersion: 0, agents: [{ id: 'k', displayName: 'K', model: 'm'}], skills: [{ agent: 'k', name: 's', description: longDesc }] } }
+    const stubPeer: PeerStatus = { id: 'teodor', state: 'ok', lastOkAt: 100, baseUrl: 'http://teodor.local', lastChecked: 100, manifest: { system: '', marveenVersion: '', federationVersion: 0, agents: [{ id: 'k', displayName: 'K', model: 'm'}], skills: [{ agent: 'k', name: 's', description: longDesc }] } }
     const spy = vi.spyOn(pollerMod, 'getFederationStatus').mockReturnValueOnce([stubPeer])
     const r = await call('GET', '/api/federation/directory')
     const truncated = r.json.peers[0].claimedAgents[0].skills[0].description
@@ -427,7 +433,7 @@ describe('GET /api/federation/directory', () => {
   it('emits an empty skill list when the peer agent has no matching skills (line 424 fallback branch)', async () => {
     writeConfigFile({ enabled: true, systemId: 'localsys', peers: [] })
     const pollerMod = await import('../web/federation/poller.js')
-    const stubPeer: PeerStatus = { id: 'teodor', state: 'ok' as PeerPollState, lastOkAt: 100, baseUrl: 'http://teodor.local', lastChecked: 100, manifest: { system: '', marveenVersion: '', federationVersion: 0, agents: [{ id: 'unsupported', displayName: 'U', model: 'm'}], skills: [] } }
+    const stubPeer: PeerStatus = { id: 'teodor', state: 'ok', lastOkAt: 100, baseUrl: 'http://teodor.local', lastChecked: 100, manifest: { system: '', marveenVersion: '', federationVersion: 0, agents: [{ id: 'unsupported', displayName: 'U', model: 'm'}], skills: [] } }
     const spy = vi.spyOn(pollerMod, 'getFederationStatus').mockReturnValueOnce([stubPeer])
     const r = await call('GET', '/api/federation/directory')
     expect(r.json.peers[0].claimedAgents[0].skills).toEqual([])
@@ -438,7 +444,7 @@ describe('GET /api/federation/directory', () => {
     // Line 410: st.manifest?.skills ?? []  -- the nullish branch.
     writeConfigFile({ enabled: true, systemId: 'localsys', peers: [] })
     const pollerMod = await import('../web/federation/poller.js')
-    const stubPeer: PeerStatus = { id: 'teodor', state: 'stale' as PeerPollState, lastOkAt: 0, baseUrl: 'http://teodor.local', lastChecked: 0, manifest: { system: '', marveenVersion: '', federationVersion: 0, agents: [{ id: 'k', displayName: 'K', model: 'm' }], skills: [] } }
+    const stubPeer: PeerStatus = { id: 'teodor', state: 'unknown', lastOkAt: 0, baseUrl: 'http://teodor.local', lastChecked: 0, manifest: { system: '', marveenVersion: '', federationVersion: 0, agents: [{ id: 'k', displayName: 'K', model: 'm' }], skills: [] } }
     const spy = vi.spyOn(pollerMod, 'getFederationStatus').mockReturnValueOnce([stubPeer])
     const r = await call('GET', '/api/federation/directory')
     expect(r.json.peers[0].claimedAgents[0].skills).toEqual([])
@@ -452,7 +458,7 @@ describe('GET /api/federation/directory', () => {
     // absent but agents present); here we omit the manifest entirely.
     writeConfigFile({ enabled: true, systemId: 'localsys', peers: [] })
     const pollerMod = await import('../web/federation/poller.js')
-    const stubPeer = { id: 'teodor', state: 'stale' as PeerPollState, lastOkAt: 0, baseUrl: 'http://teodor.local', lastChecked: 0 }
+    const stubPeer: PeerStatus = { id: 'teodor', state: 'unknown', lastOkAt: 0, baseUrl: 'http://teodor.local', lastChecked: 0 }
     const spy = vi.spyOn(pollerMod, 'getFederationStatus').mockReturnValueOnce([stubPeer])
     const r = await call('GET', '/api/federation/directory')
     expect(r.json.peers[0].claimedAgents).toEqual([])
@@ -465,7 +471,7 @@ describe('GET /api/federation/directory', () => {
     // to an empty array, so claimedAgents is empty.
     writeConfigFile({ enabled: true, systemId: 'localsys', peers: [] })
     const pollerMod = await import('../web/federation/poller.js')
-    const stubPeer: PeerStatus = { id: 'teodor', state: 'stale' as PeerPollState, lastOkAt: 0, baseUrl: 'http://teodor.local', lastChecked: 0, manifest: { system: '', marveenVersion: '', federationVersion: 0, agents: [], skills: [] } }
+    const stubPeer: PeerStatus = { id: 'teodor', state: 'unknown', lastOkAt: 0, baseUrl: 'http://teodor.local', lastChecked: 0, manifest: { system: '', marveenVersion: '', federationVersion: 0, agents: [], skills: [] } }
     const spy = vi.spyOn(pollerMod, 'getFederationStatus').mockReturnValueOnce([stubPeer])
     const r = await call('GET', '/api/federation/directory')
     expect(r.json.peers[0].claimedAgents).toEqual([])
@@ -484,7 +490,7 @@ describe('GET /api/federation/directory', () => {
     // Pin CURRENT behaviour: a local agent with no cached summary contributes
     // no capabilitySummary field to the directory listing.
     const capsMod = await import('../web/federation/capabilities.js')
-    const spy = vi.spyOn(capsMod, 'getCapabilitySummary').mockReturnValueOnce({ summary: undefined as unknown as string, fresh: false })
+    const spy = vi.spyOn(capsMod, 'getCapabilitySummary').mockReturnValueOnce({ summary: null, fresh: false })
     writeConfigFile({ enabled: true, systemId: 'localsys', peers: [] })
     const r = await call('GET', '/api/federation/directory')
     expect(r.json.local.agents[1].capabilitySummary).toBeUndefined()
@@ -1071,7 +1077,7 @@ describe('safeOutboundText short-circuits', () => {
     // buildManifest's summaryFor() calls safeOutboundText(undefined), which
     // must short-circuit on the first line and return undefined.
     const capsMod = await import('../web/federation/capabilities.js')
-    const spy = vi.spyOn(capsMod, 'getCapabilitySummary').mockReturnValueOnce({ summary: undefined as unknown as string, fresh: true })
+    const spy = vi.spyOn(capsMod, 'getCapabilitySummary').mockReturnValueOnce({ summary: null, fresh: true })
     writeConfigFile({
       enabled: true, systemId: 'localsys',
       peers: [{ id: 'sharer', baseUrl: 'https://s.example', inboundToken: 'a'.repeat(64), outboundToken: 'b'.repeat(64), shareCapabilitySummaries: true }],
@@ -1201,16 +1207,26 @@ describe('resolveLang fallback', () => {
 describe('POST /api/federation/inbox -- readBody non-size error re-throws', () => {
   it('rethrows when the request stream errors out (not a size error)', async () => {
     writeConfigFile({ enabled: true, systemId: 'localsys', peers: [{ id: 'teodor', baseUrl: 'https://t.example', inboundToken: 'a'.repeat(64), outboundToken: 'b'.repeat(64) }] })
-    const ee = new EventEmitter() as unknown as http.IncomingMessage
-    ;(ee as unknown as { headers: Record<string, string> }).headers = {}
-    ;(ee as unknown as { destroy(): void }).destroy = () => { /* noop */ }
+    const ee: http.IncomingMessage = Object.assign(new EventEmitter(), {
+      headers: {} as Record<string, string | string[] | undefined>,
+      url: '/',
+      method: 'POST',
+      destroy: () => {},
+    }) as http.IncomingMessage
     process.nextTick(() => {
       ee.emit('error', new Error('stream exploded'))
       ee.emit('end')
     })
-    const res = mkRes() as unknown as http.ServerResponse
-    const ctx = { req: ee, res, path: '/api/federation/inbox', method: 'POST', url: new URL('http://localhost/api/federation/inbox'), fedPeer: 'teodor' }
-    await expect(tryHandleFederation(ctx as never)).rejects.toThrow(/stream exploded/)
+    const res = mkRes()
+    const ctx = {
+      req: ee,
+      res: res as unknown as http.ServerResponse,
+      path: '/api/federation/inbox',
+      method: 'POST',
+      url: new URL('http://localhost/api/federation/inbox'),
+      fedPeer: 'teodor',
+    }
+    await expect(tryHandleFederation(ctx satisfies Parameters<typeof tryHandleFederation>[0])).rejects.toThrow(/stream exploded/)
   })
 })
 
@@ -1269,11 +1285,11 @@ describe('marveenVersion truthy-version branch', () => {
     const fresh = await import('../web/routes/federation.js')
     writeConfigFile({ enabled: true, systemId: 'localsys', peers: [] })
     const out: { statusCode: number; body: string } = { statusCode: 0, body: '' }
-    const res = {
+    const res: FakeServerResponse = {
       writeHead(code: number) { out.statusCode = code; return res },
       end(data?: unknown) { out.body = String(data ?? '') },
       setHeader() {},
-    } as unknown as http.ServerResponse
+    } as unknown as FakeServerResponse
     const handled = await fresh.tryHandleFederation({
       req: mkReq(),
       res,
@@ -1451,18 +1467,27 @@ describe('POST /api/federation/inbox', () => {
 
   it('413s when the body read itself overflows (no Content-Length)', async () => {
     writeConfigFile({ enabled: true, systemId: 'localsys', peers: [{ id: 'teodor', baseUrl: 'https://t.example', inboundToken: 'a'.repeat(64), outboundToken: 'b'.repeat(64) }] })
-    const ee = new EventEmitter() as unknown as http.IncomingMessage & { destroy(): void }
-    ;(ee as unknown as { headers: Record<string, string> }).headers = {} // no content-length
-    // readBody calls req.destroy() when the body exceeds the limit -- stub it.
-    ;(ee as unknown as { destroy(): void }).destroy = () => { /* noop */ }
+    const ee: http.IncomingMessage & { destroy(): void } = Object.assign(new EventEmitter(), {
+      headers: {} as Record<string, string | string[] | undefined>,
+      url: '/',
+      method: 'POST',
+      destroy: () => {},
+    }) as http.IncomingMessage & { destroy(): void }
     process.nextTick(() => {
       ee.emit('data', Buffer.alloc(64 * 1024 + 1))
       ee.emit('end')
     })
-    const res = mkRes() as unknown as http.ServerResponse
-    const ctx = { req: ee, res, path: '/api/federation/inbox', method: 'POST', url: new URL('http://localhost/api/federation/inbox'), fedPeer: 'teodor' }
-    expect(await tryHandleFederation(ctx as never)).toBe(true)
-    const state = res as unknown as { statusCode: number; body: string }
+    const res = mkRes()
+    const ctx = {
+      req: ee,
+      res: res as unknown as http.ServerResponse,
+      path: '/api/federation/inbox',
+      method: 'POST',
+      url: new URL('http://localhost/api/federation/inbox'),
+      fedPeer: 'teodor',
+    }
+    expect(await tryHandleFederation(ctx satisfies Parameters<typeof tryHandleFederation>[0])).toBe(true)
+    const state = res as { statusCode: number; body: string }
     expect(state.statusCode).toBe(413)
   })
 })

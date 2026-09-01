@@ -106,7 +106,7 @@ vi.mock('../channel-provider.js', () => ({
 // ---------------------------------------------------------------------------
 
 let SANDBOX = ''
-let fetchMock: ReturnType<typeof vi.fn>
+let fetchMock: ReturnType<typeof vi.fn<typeof fetch>>
 
 beforeEach(async () => {
   SANDBOX = mkdtempSync(join(tmpdir(), 'channel-request-watcher-'))
@@ -131,13 +131,13 @@ beforeEach(async () => {
 
   // Stub global fetch. Each test replaces this with a tailored implementation
   // through fetchMock (re-asserted in tests that need it).
-  fetchMock = vi.fn(async () =>
+  fetchMock = vi.fn<typeof fetch>().mockImplementation(async () =>
     new Response(JSON.stringify({ ok: true, channel: { name: 'resolved-name' } }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     }),
   )
-  globalThis.fetch = fetchMock as unknown as typeof fetch
+  globalThis.fetch = fetchMock
 })
 
 afterEach(() => {
@@ -333,12 +333,12 @@ describe('channel-request-watcher -- scanAuditLog filter branches', () => {
     upsertMock.mockReturnValue(false)
     writeAuditLog('f5', [dropLine({ channel: 'C-DEDUP' })])
     listAgentsMock.mockReturnValue(['f5'])
-    fetchMock = vi.fn(async () =>
+    fetchMock = vi.fn<typeof fetch>().mockImplementation(async () =>
       new Response(JSON.stringify({ ok: true, channel: { name: 'should-not-fetch' } }), {
         status: 200,
       }),
     )
-    globalThis.fetch = fetchMock as unknown as typeof fetch
+    globalThis.fetch = fetchMock
 
     startChannelRequestWatcher()
     await flushMicrotasks()
@@ -426,12 +426,12 @@ describe('channel-request-watcher -- lookupChannelName cache', () => {
       return [{ id: 1, agent: 'c1', channel_id: 'C-CACHE', channel_name: null, user_id: null, requested_at: 1, status: 'pending' }]
     })
     listAgentsMock.mockReturnValue(['c1'])
-    fetchMock = vi.fn(async () =>
+    fetchMock = vi.fn<typeof fetch>().mockImplementation(async () =>
       new Response(JSON.stringify({ ok: true, channel: { name: 'resolved-once' } }), {
         status: 200,
       }),
     )
-    globalThis.fetch = fetchMock as unknown as typeof fetch
+    globalThis.fetch = fetchMock
 
     startChannelRequestWatcher()
     await flushMicrotasks()
@@ -455,8 +455,8 @@ describe('channel-request-watcher -- lookupChannelName cache', () => {
       return [{ id: 1, agent: 'c2', channel_id: 'C-NEG', channel_name: null, user_id: null, requested_at: 1, status: 'pending' }]
     })
     listAgentsMock.mockReturnValue(['c2'])
-    fetchMock = vi.fn(async () => { throw new Error('network down') })
-    globalThis.fetch = fetchMock as unknown as typeof fetch
+    fetchMock = vi.fn<typeof fetch>().mockImplementation(async () => { throw new Error('network down') })
+    globalThis.fetch = fetchMock
 
     startChannelRequestWatcher()
     await flushMicrotasks()
@@ -481,8 +481,8 @@ describe('channel-request-watcher -- lookupChannelName cache', () => {
       return [{ id: 1, agent: 'c3', channel_id: 'C-RETRY', channel_name: null, user_id: null, requested_at: 1, status: 'pending' }]
     })
     listAgentsMock.mockReturnValue(['c3'])
-    fetchMock = vi.fn(async () => { throw new Error('first-call fails') })
-    globalThis.fetch = fetchMock as unknown as typeof fetch
+    fetchMock = vi.fn<typeof fetch>().mockImplementation(async () => { throw new Error('first-call fails') })
+    globalThis.fetch = fetchMock
 
     startChannelRequestWatcher()
     await flushMicrotasks()
@@ -491,12 +491,12 @@ describe('channel-request-watcher -- lookupChannelName cache', () => {
 
     // Flip the network to succeed and tick again past NEGATIVE_CACHE_TTL.
     vi.useFakeTimers({ shouldAdvanceTime: true })
-    fetchMock = vi.fn(async () =>
+    fetchMock = vi.fn<typeof fetch>().mockImplementation(async () =>
       new Response(JSON.stringify({ ok: true, channel: { name: 'now-resolves' } }), {
         status: 200,
       }),
     )
-    globalThis.fetch = fetchMock as unknown as typeof fetch
+    globalThis.fetch = fetchMock
 
     vi.advanceTimersByTime(70_000) // > NEGATIVE_CACHE_TTL (60_000)
     stopChannelRequestWatcher()
@@ -608,10 +608,10 @@ describe('channel-request-watcher -- lookupChannelName API responses', () => {
       return [{ id: 7, agent: 'r1', channel_id: 'C-RESOLVE', channel_name: null, user_id: null, requested_at: 1, status: 'pending' }]
     })
     listAgentsMock.mockReturnValue(['r1'])
-    fetchMock = vi.fn(async () =>
+    fetchMock = vi.fn<typeof fetch>().mockImplementation(async () =>
       new Response(JSON.stringify({ ok: true, channel: { name: 'general' } }), { status: 200 }),
     )
-    globalThis.fetch = fetchMock as unknown as typeof fetch
+    globalThis.fetch = fetchMock
 
     startChannelRequestWatcher()
     await flushMicrotasks()
@@ -621,9 +621,9 @@ describe('channel-request-watcher -- lookupChannelName API responses', () => {
     // URL sanity: must be Slack conversations.info
     const [url, init] = fetchMock.mock.calls[0] ?? []
     expect(url).toBe('https://slack.com/api/conversations.info')
-    expect((init as RequestInit).method).toBe('POST')
-    expect(((init as RequestInit).body as string)).toBe('channel=C-RESOLVE')
-    expect(((init as RequestInit).headers as Record<string, string>).Authorization).toBe('Bearer xoxb-default-token')
+    expect(init?.method).toBe('POST')
+    expect(init?.body as string).toBe('channel=C-RESOLVE')
+    expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer xoxb-default-token')
     expect(updateNameMock).toHaveBeenCalledWith(7, 'general')
     stopChannelRequestWatcher()
   })
@@ -634,10 +634,10 @@ describe('channel-request-watcher -- lookupChannelName API responses', () => {
       return [{ id: 9, agent: 'r2', channel_id: 'C-NOTOK', channel_name: null, user_id: null, requested_at: 1, status: 'pending' }]
     })
     listAgentsMock.mockReturnValue(['r2'])
-    fetchMock = vi.fn(async () =>
+    fetchMock = vi.fn<typeof fetch>().mockImplementation(async () =>
       new Response(JSON.stringify({ ok: false, error: 'channel_not_found' }), { status: 200 }),
     )
-    globalThis.fetch = fetchMock as unknown as typeof fetch
+    globalThis.fetch = fetchMock
 
     startChannelRequestWatcher()
     await flushMicrotasks()
@@ -654,10 +654,10 @@ describe('channel-request-watcher -- lookupChannelName API responses', () => {
       return [{ id: 11, agent: 'r3', channel_id: 'C-NAMELESS', channel_name: null, user_id: null, requested_at: 1, status: 'pending' }]
     })
     listAgentsMock.mockReturnValue(['r3'])
-    fetchMock = vi.fn(async () =>
+    fetchMock = vi.fn<typeof fetch>().mockImplementation(async () =>
       new Response(JSON.stringify({ ok: true }), { status: 200 }),
     )
-    globalThis.fetch = fetchMock as unknown as typeof fetch
+    globalThis.fetch = fetchMock
 
     startChannelRequestWatcher()
     await flushMicrotasks()
@@ -683,10 +683,10 @@ describe('channel-request-watcher -- lookupChannelName API responses', () => {
     // undefined and updateNameMock to not fire.
     // listPending's channel_id is C-OTHER; resolve for C-OTHER. find()
     // returns the row, updateName fires.
-    fetchMock = vi.fn(async () =>
+    fetchMock = vi.fn<typeof fetch>().mockImplementation(async () =>
       new Response(JSON.stringify({ ok: true, channel: { name: 'other-name' } }), { status: 200 }),
     )
-    globalThis.fetch = fetchMock as unknown as typeof fetch
+    globalThis.fetch = fetchMock
 
     startChannelRequestWatcher()
     await flushMicrotasks()
@@ -720,8 +720,8 @@ describe('channel-request-watcher -- lookupChannelName API responses', () => {
       return [{ id: 19, agent: 'r6', channel_id: 'C-THROW', channel_name: null, user_id: null, requested_at: 1, status: 'pending' }]
     })
     listAgentsMock.mockReturnValue(['r6'])
-    fetchMock = vi.fn(async () => { throw new Error('dns exploded') })
-    globalThis.fetch = fetchMock as unknown as typeof fetch
+    fetchMock = vi.fn<typeof fetch>().mockImplementation(async () => { throw new Error('dns exploded') })
+    globalThis.fetch = fetchMock
 
     startChannelRequestWatcher()
     await flushMicrotasks()
@@ -744,8 +744,8 @@ describe('channel-request-watcher -- lookupChannelName API responses', () => {
       return [{ id: 23, agent: 'r7', channel_id: 'C-WARN', channel_name: null, user_id: null, requested_at: 1, status: 'pending' }]
     })
     listAgentsMock.mockReturnValue(['r7'])
-    fetchMock = vi.fn(async () => { throw new Error('fail') })
-    globalThis.fetch = fetchMock as unknown as typeof fetch
+    fetchMock = vi.fn<typeof fetch>().mockImplementation(async () => { throw new Error('fail') })
+    globalThis.fetch = fetchMock
 
     startChannelRequestWatcher()
     await flushMicrotasks()

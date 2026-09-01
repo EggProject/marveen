@@ -906,7 +906,8 @@ describe('writeAgentAuthMode', () => {
 
   it('silently ignores an invalid mode', () => {
     mkdirSync(join(AGENTS_DIR, 'wam2'), { recursive: true })
-    ac.writeAgentAuthMode('wam2', 'mystery' as never)
+    // @ts-expect-error testing invalid authMode literal
+    ac.writeAgentAuthMode('wam2', 'mystery')
     // No file is written: the early return short-circuits before
     // atomicWriteFileSync.
     expect(existsSync(join(AGENTS_DIR, 'wam2', 'agent-config.json'))).toBe(false)
@@ -1087,7 +1088,7 @@ describe('readAgentVoiceConfig', () => {
   })
 
   it('falls back to default responseMode when the configured one is invalid', () => {
-    seedAgent('vc3', { voice: { responseMode: 'shout' as never, voiceModel: 'hu_HU-anna-medium' } })
+    seedAgent('vc3', { voice: { responseMode: 'shout', voiceModel: 'hu_HU-anna-medium' } })
     expect(ac.readAgentVoiceConfig('vc3').responseMode).toBe('text')
     expect(ac.readAgentVoiceConfig('vc3').voiceModel).toBe('hu_HU-anna-medium')
   })
@@ -1141,7 +1142,8 @@ describe('writeAgentVoiceConfig', () => {
 
   it('throws on an invalid responseMode', () => {
     seedAgent('wvc3')
-    expect(() => ac.writeAgentVoiceConfig('wvc3', { responseMode: 'shout' as never }))
+    // @ts-expect-error testing invalid responseMode
+    expect(() => ac.writeAgentVoiceConfig('wvc3', { responseMode: 'shout' }))
       .toThrow(/Invalid responseMode/)
   })
 

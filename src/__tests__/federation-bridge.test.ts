@@ -45,7 +45,7 @@ function enabledConfig(peerOverrides: Record<string, unknown> = {}): void {
 const MSG = { id: 7, from_agent: 'teodor', to_agent: 'arthur/marketing', content: 'hello' }
 
 function fetchReturning(status: number, body: unknown): typeof fetch {
-  return (async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch
+  return vi.fn<typeof fetch>().mockImplementation(async () => new Response(JSON.stringify(body), { status }))
 }
 
 beforeEach(() => {
@@ -96,7 +96,7 @@ describe('sendFederatedMessage -- terminal failures (no network)', () => {
   it('fails terminally (no network attempt) while pairing is incomplete (empty outboundToken)', async () => {
     enabledConfig({ outboundToken: '' })
     let calls = 0
-    const counting = (async () => { calls++; return new Response('{}', { status: 202 }) }) as unknown as typeof fetch
+    const counting = vi.fn<typeof fetch>().mockImplementation(async () => { calls++; return new Response('{}', { status: 202 }) })
     const r = await sendFederatedMessage(MSG, NOW, counting)
     expect(r).toMatchObject({ kind: 'failed' })
     if (r.kind === 'failed') expect(r.error).toContain('Pairing incomplete')
@@ -106,7 +106,7 @@ describe('sendFederatedMessage -- terminal failures (no network)', () => {
   it('fails oversized content terminally without a network attempt', async () => {
     enabledConfig()
     let calls = 0
-    const counting = (async () => { calls++; return new Response('{}', { status: 202 }) }) as unknown as typeof fetch
+    const counting = vi.fn<typeof fetch>().mockImplementation(async () => { calls++; return new Response('{}', { status: 202 }) })
     const r = await sendFederatedMessage({ ...MSG, content: 'x'.repeat(FEDERATION_MAX_CONTENT_BYTES + 1) }, NOW, counting)
     expect(r).toMatchObject({ kind: 'failed' })
     expect(calls).toBe(0)
@@ -118,11 +118,11 @@ describe('sendFederatedMessage -- wire behaviour', () => {
     enabledConfig()
     let seenUrl = ''
     let seenInit: RequestInit | undefined
-    const f = (async (url: string | URL | Request, init?: RequestInit) => {
+    const f = vi.fn<typeof fetch>().mockImplementation(async (url: string | URL | Request, init?: RequestInit) => {
       seenUrl = String(url)
       seenInit = init
       return new Response(JSON.stringify({ id: 456 }), { status: 202 })
-    }) as unknown as typeof fetch
+    })
     const r = await sendFederatedMessage(MSG, NOW, f)
     expect(r).toEqual({ kind: 'delivered', remoteId: '456' })
     expect(seenUrl).toBe('https://macbook.example/api/federation/inbox')
@@ -155,7 +155,7 @@ describe('sendFederatedMessage -- wire behaviour', () => {
 
   it('treats network errors as retryable with backoff', async () => {
     enabledConfig()
-    const f = (async () => { throw new Error('ECONNREFUSED') }) as unknown as typeof fetch
+    const f = vi.fn<typeof fetch>().mockImplementation(async () => { throw new Error('ECONNREFUSED') })
     const r = await sendFederatedMessage(MSG, NOW, f)
     expect(r).toMatchObject({ kind: 'retry' })
     expect(isPeerInBackoff('arthur', NOW + 1)).toBe(true)
@@ -166,7 +166,7 @@ describe('per-peer backoff (circuit breaker)', () => {
   it('skips without a network attempt while backing off, then retries after the window', async () => {
     enabledConfig()
     let calls = 0
-    const failing = (async () => { calls++; return new Response('', { status: 500 }) }) as unknown as typeof fetch
+    const failing = vi.fn<typeof fetch>().mockImplementation(async () => { calls++; return new Response('', { status: 500 }) })
 
     await sendFederatedMessage(MSG, NOW, failing) // 1st failure -> 10s backoff
     expect(calls).toBe(1)
@@ -246,14 +246,14 @@ describe('logFedOut (structured-log helper)', () => {
 describe('sendFederatedMessage -- body parsing edges (covers remaining branches)', () => {
   it('delivers with remoteId="" when the 2xx body is non-JSON (catch branch)', async () => {
     enabledConfig()
-    const f = (async () => new Response('not json at all', { status: 202 })) as unknown as typeof fetch
+    const f = vi.fn<typeof fetch>().mockImplementation(async () => new Response('not json at all', { status: 202 }))
     const r = await sendFederatedMessage(MSG, NOW, f)
     expect(r).toEqual({ kind: 'delivered', remoteId: '' })
   })
 
   it('delivers with remoteId="" when the JSON has no id field (?? branch)', async () => {
     enabledConfig()
-    const f = (async () => new Response(JSON.stringify({ status: 'queued' }), { status: 202 })) as unknown as typeof fetch
+    const f = vi.fn<typeof fetch>().mockImplementation(async () => new Response(JSON.stringify({ status: 'queued' }), { status: 202 }))
     const r = await sendFederatedMessage(MSG, NOW, f)
     expect(r).toEqual({ kind: 'delivered', remoteId: '' })
   })
@@ -276,7 +276,7 @@ describe('sendFederatedMessage -- body parsing edges (covers remaining branches)
   it('truncates a long 4xx body in the failure error (truncate default 300)', async () => {
     enabledConfig()
     const longBody = 'y'.repeat(500)
-    const f = (async () => new Response(longBody, { status: 400 })) as unknown as typeof fetch
+    const f = vi.fn<typeof fetch>().mockImplementation(async () => new Response(longBody, { status: 400 }))
     const r = await sendFederatedMessage(MSG, NOW, f)
     expect(r).toMatchObject({ kind: 'failed' })
     if (r.kind === 'failed') {
@@ -288,7 +288,7 @@ describe('sendFederatedMessage -- body parsing edges (covers remaining branches)
   it('truncates a long 5xx body in the retry error (truncate default 300)', async () => {
     enabledConfig()
     const longBody = 'z'.repeat(500)
-    const f = (async () => new Response(longBody, { status: 502 })) as unknown as typeof fetch
+    const f = vi.fn<typeof fetch>().mockImplementation(async () => new Response(longBody, { status: 502 }))
     const r = await sendFederatedMessage(MSG, NOW, f)
     expect(r).toMatchObject({ kind: 'retry' })
     if (r.kind === 'retry') {
@@ -300,7 +300,7 @@ describe('sendFederatedMessage -- body parsing edges (covers remaining branches)
   it('truncates a long network-error message in the retry error (truncate default 300)', async () => {
     enabledConfig()
     const longMsg = 'e'.repeat(500)
-    const f = (async () => { throw new Error(longMsg) }) as unknown as typeof fetch
+    const f = vi.fn<typeof fetch>().mockImplementation(async () => { throw new Error(longMsg) })
     const r = await sendFederatedMessage(MSG, NOW, f)
     expect(r).toMatchObject({ kind: 'retry' })
     if (r.kind === 'retry') {

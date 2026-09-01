@@ -349,7 +349,8 @@ describe('writeModelFallbackConfig', () => {
     // a normalize a defaultra all. A chain marad a defaultChainForInstall,
     // mert a jelenlegi lanc implicit (a fajl nem letezik) -- a hasExplicitChain
     // hamis, a write a read eredmenyevel dolgozik tovabb.
-    const result = writeModelFallbackConfig(undefined as unknown as Partial<ModelFallbackConfig>)
+    // @ts-expect-error testing undefined input
+    const result = writeModelFallbackConfig(undefined)
     expect(result).toEqual({
       ...DEFAULT_MODEL_FALLBACK,
       chain: defaultChainForInstall(),
@@ -357,7 +358,8 @@ describe('writeModelFallbackConfig', () => {
   })
 
   it('null bemenet eseten a DEFAULT_MODEL_FALLBACK-ot irja', () => {
-    const result = writeModelFallbackConfig(null as unknown as Partial<ModelFallbackConfig>)
+    // @ts-expect-error testing null input
+    const result = writeModelFallbackConfig(null)
     expect(result).toEqual({
       ...DEFAULT_MODEL_FALLBACK,
       chain: defaultChainForInstall(),
@@ -365,7 +367,8 @@ describe('writeModelFallbackConfig', () => {
   })
 
   it('string primitiv bemenet eseten a DEFAULT_MODEL_FALLBACK-ot irja', () => {
-    const result = writeModelFallbackConfig('junk' as unknown as Partial<ModelFallbackConfig>)
+    // @ts-expect-error testing string primitive input
+    const result = writeModelFallbackConfig('junk')
     expect(result).toEqual({
       ...DEFAULT_MODEL_FALLBACK,
       chain: defaultChainForInstall(),
@@ -373,7 +376,8 @@ describe('writeModelFallbackConfig', () => {
   })
 
   it('szam primitiv bemenet eseten a DEFAULT_MODEL_FALLBACK-ot irja', () => {
-    const result = writeModelFallbackConfig(42 as unknown as Partial<ModelFallbackConfig>)
+    // @ts-expect-error testing number primitive input
+    const result = writeModelFallbackConfig(42)
     expect(result).toEqual({
       ...DEFAULT_MODEL_FALLBACK,
       chain: defaultChainForInstall(),
@@ -382,7 +386,8 @@ describe('writeModelFallbackConfig', () => {
 
   it('tomb bemenet eseten a DEFAULT_MODEL_FALLBACK-ot irja', () => {
     // typeof [] === 'object' de a normalize a defaultra all (raw.chain = [] -> length < 2).
-    const result = writeModelFallbackConfig([1, 2, 3] as unknown as Partial<ModelFallbackConfig>)
+    // @ts-expect-error testing array input
+    const result = writeModelFallbackConfig([1, 2, 3])
     expect(result).toEqual({
       ...DEFAULT_MODEL_FALLBACK,
       chain: defaultChainForInstall(),
@@ -447,7 +452,8 @@ describe('writeModelFallbackConfig', () => {
 
   it('a chain-ban a nem string tipusokat kiszuri normalizacio kozben', () => {
     const result = writeModelFallbackConfig({
-      chain: ['claude-A', 'claude-B', 42 as unknown as string, null as unknown as string, true as unknown as string],
+      // @ts-expect-error testing mixed-type chain entries for normalization
+      chain: ['claude-A', 'claude-B', 42, null, true],
     })
     expect(result.chain).toEqual(['claude-A', 'claude-B'])
   })

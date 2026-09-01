@@ -180,7 +180,7 @@ describe('module constants', () => {
       'bundleFilename', 'exportAllAgentsBundle', 'readFleetManifest',
       'peekBundleKind', 'importAllAgentsBundle', 'fleetBundleFilename',
     ]) {
-      expect(typeof (ab as Record<string, unknown>)[name]).toBe('function')
+      expect(typeof ab[name as keyof typeof ab]).toBe('function')
     }
   })
 })
@@ -393,8 +393,8 @@ describe('exportAgentBundle', () => {
     seedAgent('noopts', { 'CLAUDE.md': 'x' })
     const out = join(STORE, 'noopts.tar.gz')
     const manifest = ab.exportAgentBundle('noopts', out)
-    expect((manifest as unknown as Record<string, unknown>).exportedBy).toBeUndefined()
-    expect((manifest as unknown as Record<string, unknown>).exportedAt).toBeUndefined()
+    expect(manifest.exportedBy).toBeUndefined()
+    expect(manifest.exportedAt).toBeUndefined()
   })
 
   it('marks includesSecrets=true when opts.includeSecrets=true', () => {
@@ -485,8 +485,8 @@ describe('readBundleManifest', () => {
     mkdirSync(ext, { recursive: true })
     writeManifest(ext, { schemaVersion: 1, agentName: 'p', exportedBy: 42, exportedAt: false })
     const m = ab.readBundleManifest(ext)
-    expect((m as unknown as Record<string, unknown>).exportedBy).toBeUndefined()
-    expect((m as unknown as Record<string, unknown>).exportedAt).toBeUndefined()
+    expect(m.exportedBy).toBeUndefined()
+    expect(m.exportedAt).toBeUndefined()
   })
 
   it('flags includesSecrets=false unless literally `true`', () => {
@@ -757,8 +757,8 @@ describe('exportAllAgentsBundle', () => {
     seedAgent('nooptsfleet', { 'CLAUDE.md': 'x' })
     const out = join(STORE, 'nooptsfleet.tar.gz')
     const m = ab.exportAllAgentsBundle(out, ['nooptsfleet'])
-    expect((m as unknown as Record<string, unknown>).exportedBy).toBeUndefined()
-    expect((m as unknown as Record<string, unknown>).exportedAt).toBeUndefined()
+    expect(m.exportedBy).toBeUndefined()
+    expect(m.exportedAt).toBeUndefined()
   })
 })
 
@@ -840,8 +840,8 @@ describe('readFleetManifest', () => {
       exportedBy: 99, exportedAt: false,
     })
     const m = ab.readFleetManifest(ext)
-    expect((m as unknown as Record<string, unknown>).exportedBy).toBeUndefined()
-    expect((m as unknown as Record<string, unknown>).exportedAt).toBeUndefined()
+    expect(m.exportedBy).toBeUndefined()
+    expect(m.exportedAt).toBeUndefined()
   })
 
   it('flags includesSecrets=false unless literally true', () => {

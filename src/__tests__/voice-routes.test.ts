@@ -57,10 +57,10 @@ const H = vi.hoisted(() => ({
 
   spawnQueue: [] as SpawnSpec[],
 
-  logInfo: vi.fn(),
-  logWarn: vi.fn(),
-  logError: vi.fn(),
-  logDebug: vi.fn(),
+  logInfo: vi.fn<(obj: unknown, msg?: string) => void>(),
+  logWarn: vi.fn<(obj: unknown, msg?: string) => void>(),
+  logError: vi.fn<(obj: unknown, msg?: string) => void>(),
+  logDebug: vi.fn<(obj: unknown, msg?: string) => void>(),
 
   KNOWN_VOICE_MODELS: new Set<string>(['hu_HU-imre-medium', 'hu_HU-anna-medium']),
   AGENTS_BASE_DIR: '',
@@ -109,7 +109,7 @@ vi.mock('node:fs', async (orig) => {
 // to a vi.fn() that returns a FakeProc built from H.spawnQueue.
 vi.mock('node:child_process', () => ({
   spawn: vi.fn((_cmd: string, _args: string[], _opts: unknown) => {
-    const spec = H.spawnQueue.shift() ?? { stdout: '', stderr: '', code: 0 }
+    const spec: SpawnSpec = H.spawnQueue.shift() ?? { stdout: '', stderr: '', code: 0 }
     const procEE = new EventEmitter()
     const stdoutEE = new EventEmitter()
     const stderrEE = new EventEmitter()
@@ -143,7 +143,8 @@ vi.mock('node:child_process', () => ({
       on(event: string, cb: (...a: unknown[]) => void) {
         if (event === 'close') closeCb = cb as (code: number | null) => void
         if (spec.error) {
-          queueMicrotask(() => cb(spec.error as unknown as Error))
+          const err = spec.error
+          queueMicrotask(() => cb(err))
           return proc
         }
         if (!spec.hang) {
@@ -264,15 +265,19 @@ function mkRes(): MockRes {
   }
 }
 
+interface FakeIncomingMessage extends http.IncomingMessage {}
+
 function mkReq(opts: { body?: unknown; raw?: Buffer | string } = {}): http.IncomingMessage {
   const payload: Buffer[] = opts.raw !== undefined
     ? [typeof opts.raw === 'string' ? Buffer.from(opts.raw) : opts.raw]
     : opts.body !== undefined
       ? [Buffer.from(JSON.stringify(opts.body))]
       : []
-  const r = Readable.from(payload) as unknown as http.IncomingMessage & Record<string, unknown>
-  r.headers = {}
-  return r as http.IncomingMessage
+  const r = Object.assign(
+    Readable.from(payload),
+    { headers: {} as http.IncomingHttpHeaders },
+  ) as FakeIncomingMessage
+  return r
 }
 
 async function call(
@@ -459,7 +464,11 @@ describe('transcribeVoiceFile', () => {
     expect(H.logWarn).toHaveBeenCalled()
     const [obj, msg] = H.logWarn.mock.calls[0]
     expect(msg).toContain('transcribeVoiceFile: whisper failed')
-    expect(((obj as Record<string, unknown>).stderr as string).length).toBeLessThanOrEqual(200)
+    const stderr = (obj as { stderr?: unknown })?.stderr
+    expect(typeof stderr).toBe('string')
+    if (typeof stderr === 'string') {
+      expect(stderr.length).toBeLessThanOrEqual(200)
+    }
   })
 
   it('uses an AGENTS_BASE_DIR-resolved state dir', async () => {
@@ -725,7 +734,8 @@ describe('GET /api/voice/directive', () => {
   })
 
   it('uses DEFAULT_VOICE_CONFIG.voiceModel when voiceCfg.voiceModel is null/undefined', async () => {
-    H.readAgentVoiceConfig.mockReturnValue({ responseMode: 'voice', voiceModel: null as unknown as string })
+    // @ts-expect-error testing null voiceModel
+    H.readAgentVoiceConfig.mockReturnValue({ responseMode: 'voice', voiceModel: null })
     const { json } = await call('GET', '/api/voice/directive', {
       query: { agent: 'marveen', chat: '42' },
     })
@@ -1084,7 +1094,10 @@ describe('POST /api/voice/tts', () => {
     expect(res.statusCode).toBe(500)
     const body = json() as Record<string, unknown>
     expect(body.error).toBe('TTS failed')
-    expect((body.detail as string).length).toBeLessThanOrEqual(200)
+    const detail = body['detail']
+    if (typeof detail === 'string') {
+      expect(detail.length).toBeLessThanOrEqual(200)
+    }
     expect(H.logWarn).toHaveBeenCalled()
   })
 
@@ -1209,7 +1222,10 @@ describe('POST /api/voice/install', () => {
     H.spawnQueue.push({ code: 0, stdout: 'preamble...MISSING' })
     const { res, json } = await call('POST', '/api/voice/install')
     expect(res.statusCode).toBe(200)
-    expect((json() as Record<string, unknown>).needsSudo).toBe(true)
+    const result = json()
+    if (!Array.isArray(result)) {
+      expect(result['needsSudo']).toBe(true)
+    }
   })
 
   it('emits an install-voice.sh spawn when deps are present', async () => {
@@ -1223,7 +1239,10 @@ describe('POST /api/voice/install', () => {
     expect(res.statusCode).toBe(200)
     expect(json()).toEqual({ ok: true, started: true })
     const second = await call('POST', '/api/voice/install')
-    expect((second.json() as Record<string, unknown>).alreadyRunning).toBe(true)
+    const sj = second.json()
+    if (!Array.isArray(sj)) {
+      expect(sj['alreadyRunning']).toBe(true)
+    }
     // Cleanup: vi.resetModules + re-import drops the hung module-scope
     // guard for the next test (the original tryHandleVoice binding still
     // references the previously-imported module otherwise).
@@ -1231,7 +1250,7 @@ describe('POST /api/voice/install', () => {
     await import('../web/routes/voice.js')
     // Replace our top-level tryHandleVoice with the fresh module's view.
     const fresh = await import('../web/routes/voice.js')
-    Object.assign(globalThis as Record<string, unknown>, { __voiceFresh: fresh })
+    Object.assign(globalThis, { __voiceFresh: fresh })
   })
 
   it('handles a spawn error event by clearing the in-progress flag and warning', async () => {
@@ -1245,7 +1264,10 @@ describe('POST /api/voice/install', () => {
     // Allow the error microtask to clear _installInProgress.
     await new Promise((r) => queueMicrotask(r))
     const second = await call('POST', '/api/voice/install')
-    expect((second.json() as Record<string, unknown>).alreadyRunning).toBeUndefined()
+    const sj2 = second.json()
+    if (!Array.isArray(sj2)) {
+      expect(sj2['alreadyRunning']).toBeUndefined()
+    }
     expect(H.logWarn).toHaveBeenCalled()
   })
 
@@ -1257,7 +1279,10 @@ describe('POST /api/voice/install', () => {
     await call('POST', '/api/voice/install')
     await new Promise((r) => queueMicrotask(r))
     const second = await call('POST', '/api/voice/install')
-    expect((second.json() as Record<string, unknown>).alreadyRunning).toBeUndefined()
+    const sj2 = second.json()
+    if (!Array.isArray(sj2)) {
+      expect(sj2['alreadyRunning']).toBeUndefined()
+    }
     expect(H.logWarn).toHaveBeenCalled()
   })
 
@@ -1269,7 +1294,10 @@ describe('POST /api/voice/install', () => {
     await call('POST', '/api/voice/install')
     await new Promise((r) => queueMicrotask(r))
     const second = await call('POST', '/api/voice/install')
-    expect((second.json() as Record<string, unknown>).alreadyRunning).toBeUndefined()
+    const sj3 = second.json()
+    if (!Array.isArray(sj3)) {
+      expect(sj3['alreadyRunning']).toBeUndefined()
+    }
     expect(H.logInfo).toHaveBeenCalled()
   })
 })

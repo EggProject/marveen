@@ -213,7 +213,7 @@ describe('readToken branches', () => {
     } finally {
       teardown()
       rmSync(ctx.stateDir, { recursive: true, force: true })
-      process.argv[1] = undefined as unknown as string
+      process.argv.splice(1, 1)
     }
   })
 
