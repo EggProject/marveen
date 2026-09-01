@@ -170,26 +170,32 @@ uncovered once E.5 removes them.
 > to `new PortLockAcquirer(procCtx).acquire(WEB_PORT, { binaryPattern: … })`)
 > and `src/__tests__/index.test.ts` (the `vi.mock('../process-lock.js')`
 > factory at `:173` was extended with a `PortLockAcquirer` mock class
-> that forwards `.acquire(port, opts)` to `mockAcquirePortLock(port, this.ctx, opts)`,
-> so the existing ~40 `mockAcquirePortLock` assertions now exercise the
-> class form via the mock class — no new `it()` blocks added; the class
-> API is also covered directly by `src/__tests__/process-lock-classes.test.ts`
-> which pre-dates E.3). Free function `acquirePortLock` remains as the
-> thin wrapper from E.1; E.5 is gated on E.3 + E.4.
+> that forwards `.acquire(port, opts)` to `mockAcquirePortLock(port, this.ctx, opts)`).
+> No new `it()` blocks were added; the class API is covered directly by
+> `src/__tests__/process-lock-classes.test.ts` which pre-dates E.3.
+> **Coverage gap:** the mock class wires `.acquire(port, opts)` to
+> `mockAcquirePortLock(port, this.ctx, opts)`, but no test asserts
+> `expect(mockAcquirePortLock).toHaveBeenCalledWith(WEB_PORT, procCtx, …)`,
+> so the `this.ctx` binding is exercised but not directly verified.
+> The class form is otherwise reachable from every existing test that
+> calls `acquireLock()` (L330) and asserts through the mock factory
+> path. Free function `acquirePortLock` remains as the thin wrapper
+> from E.1; E.5 is gated on E.3 + E.4.
 
 - **Goal:** migrate the single production consumer of `acquirePortLock`
   from `acquirePortLock(WEB_PORT, procCtx, { binaryPattern: … })`
-  (`src/index.ts:341`) to the class form. This is the proof consumer
+  (`src/index.ts:344`) to the class form. This is the proof consumer
   for E.1; once it passes, E.1 is validated end-to-end.
 - **Files touched (as landed in `(this commit)`):**
   - `src/index.ts` — constructed `new PortLockAcquirer(procCtx)` locally
-    inside `acquireLock()` at `:337-351` and called
-    `await portLockAcquirer.acquire(WEB_PORT, { binaryPattern: … })`,
-    replacing the prior `acquirePortLock(WEB_PORT, procCtx, { binaryPattern: … })`
-    call site. `acquirePortLock` is dropped from the import at `:28` because
-    `index.ts` was its only production importer (verified: zero other call
-    sites exist). The free function wrapper survives from E.1 for the test
-    consumers in `process-lock.test.ts`.
+    inside `acquireLock()` at `:330` and called
+    `await new PortLockAcquirer(procCtx).acquire(WEB_PORT, { binaryPattern: … })`
+    at `:344`, replacing the prior
+    `acquirePortLock(WEB_PORT, procCtx, { binaryPattern: … })` call site.
+    `acquirePortLock` is dropped from the import block at `:27-34`
+    because `index.ts` was its only production importer (verified: zero
+    other call sites exist). The free function wrapper survives from
+    E.1 for the test consumers in `process-lock.test.ts`.
   - `src/__tests__/index.test.ts` — extended the
     `vi.mock('../process-lock.js')` factory at `:173` with a `PortLockAcquirer`
     mock class that forwards `.acquire(port, opts)` to
@@ -200,24 +206,25 @@ uncovered once E.5 removes them.
     dropped (no remaining consumer: `index.ts` no longer imports
     `acquirePortLock`, and `acquirePidfileLock` stays mocked via
     `mockAcquirePidfileLock` so `PidfileLockAcquirer` is unreachable). The
-    `withRealAcquirePortLock` helper at `:1363` keeps routing through
+    `withRealAcquirePortLock` helper at `:1369` keeps routing through
     `vi.importActual` and the real wrapper; no change.
-  - `src/__tests__/process-lock.test.ts` — untouched. The 8
-    `acquirePortLock` cases (`:333-528`) keep exercising the wrapper
-    unchanged (they were already class-equivalent post-E.1).
+  - `src/__tests__/process-lock.test.ts` — untouched. The 10
+    `acquirePortLock` cases in the `describe('acquirePortLock')` block
+    at `:333-531` keep exercising the wrapper unchanged (they were
+    already class-equivalent post-E.1).
 - **Risk:** **Low.** Single call site; the change is a
   constructor + method-call rewrite with byte-identical semantics.
 - **Test coverage requirement:**
   - The full `bun --bun vitest run` suite passes (target: same
     total/passing count as the Phase 0 baseline).
-  - `index.test.ts:876` ('defers to a legitimate alive peer that is
-    not yet on the port') continues to pass.
+  - `index.test.ts:880` ('defers to a legitimate alive peer that is
+    not yet on the port (throws DeferToPeerError)') continues to pass.
   - The 33 `process-lock.test.ts` cases pass unchanged.
 - **Rollback strategy:** single commit. Revert restores
   `acquirePortLock(WEB_PORT, procCtx, { binaryPattern: … })`.
 - **Parallelizable:** **yes** — E.3 and E.4 can run concurrently
-  once E.1 and E.2 have both landed, because `src/index.ts:341` and
-  `:348` are independent call sites and the test updates touch
+  once E.1 and E.2 have both landed, because `src/index.ts:344` and
+  `:351` are independent call sites and the test updates touch
   disjoint describe blocks.
 
 ---

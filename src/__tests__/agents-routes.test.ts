@@ -39,8 +39,8 @@ import type {
   writeAgentAuthMode,
 } from '../web/agent-config.js'
 import type { sendPromptToSession } from '../web/agent-process.js'
-import type { attemptChannelMcpReconnect, ReconnectResult } from '../web/channel-mcp-reconnect.js'
-import type { createInvite, listInvites, revokeInvite, CreateInviteResult } from '../web/channel-invites.js'
+import type { attemptChannelMcpReconnect } from '../web/channel-mcp-reconnect.js'
+import type { createInvite, listInvites, revokeInvite } from '../web/channel-invites.js'
 import type { resolveProfilePlaceholders, loadProfileTemplate, ProfileTemplate } from '../web/profiles.js'
 import type { peekBundleKind, importAgentBundle, importAllAgentsBundle } from '../web/agent-bundle.js'
 import type { detectPermissionMode } from '../pane-state.js'
@@ -124,7 +124,7 @@ const H = vi.hoisted(() => {
     getAgentRunningSince: vi.fn<(name: string) => number | null>(() => null),
     getAgentProcessInfo: vi.fn<(name: string) => { running: boolean; session?: string; pid?: number; [k: string]: unknown }>(() => ({ running: false })),
     agentSessionName: vi.fn<(name: string) => string>((name: string) => `agent-${name}`),
-    sendPromptToSession: vi.fn<typeof sendPromptToSession>(async () => 'sent' as const),
+    sendPromptToSession: vi.fn<typeof sendPromptToSession>(async () => 'sent'),
     capturePane: vi.fn<(session: string, host: string | null) => string | null>(() => null),
 
     // db
@@ -218,7 +218,7 @@ const H = vi.hoisted(() => {
     getSlackAppSetupInstructions: vi.fn<() => string>(() => ''),
 
     // agent-scaffold
-    writeAgentSettingsFromProfile: mkFn<[name: string, settings: unknown]>(),
+    writeAgentSettingsFromProfile: mkFn<[name: string, settings: ProfileTemplate]>(),
     scaffoldAgentDir: mkFn<[name: string]>(),
     generateClaudeMd: vi.fn<(name: string) => Promise<string>>(async () => '# CLAUDE\n'),
     generateSoulMd: vi.fn<(name: string) => Promise<string>>(async () => '# SOUL\n'),
