@@ -21,6 +21,7 @@ real shape does not get re-buried under 'pre-existing' again.
 | 2026-08-31 (HEAD post-cycle-2) | 1055 | Cycle 2 (agents-routes.test.ts) |
 | 2026-08-31 (HEAD post-cycle-3) | 798 | Cycle 3 (schedule-runner-full.test.ts) |
 | 2026-09-01 (HEAD post-cycle-4) | ~574 | Cycle 4 (channel-monitor-coverage.test.ts) |
+| 2026-09-01 (HEAD post-cycle-5) | ~456 | Cycle 5 (channel-monitor-baseline.test.ts) |
 
 The +1294 jump between 2026-08-06 and 2026-08-31 came from these
 'baseline tests lift coverage' commits:
@@ -40,19 +41,19 @@ types that narrow to never after type assertions (TS2345), and pass
 null / 0 / loose literals to functions typed against production
 signatures.
 
-## Real breakdown (as of 2026-08-31)
+## Real breakdown (as of 2026-09-01, post-cycle-5)
 
 | File | errors | Cleanup cycle |
 |---|---|---|
-| src/__tests__/channel-monitor.test.ts | 361 | Cycle 1 (this commit) |
+| src/__tests__/channel-monitor.test.ts | 0 | Cycle 1 (landed 0e9c39b) |
 | src/__tests__/agents-routes.test.ts | 0 | Cycle 2 (landed 6c6327e) |
 | src/__tests__/schedule-runner-full.test.ts | 0 | Cycle 3 (landed 7ddcc5b) |
 | src/__tests__/channel-monitor-coverage.test.ts | 0 | Cycle 4 (landed ae17782) |
-| src/__tests__/channel-monitor-baseline.test.ts | 118 | Cycle 5 |
-| (smaller files, totals in subsequent cycles) | ~168 | Cycles 6-N |
+| src/__tests__/channel-monitor-baseline.test.ts | 0 | Cycle 5 (landed 7ba26d6) |
+| (smaller files, <10 errors each) | ~425 | Cycles 6-N |
 | src/db.ts (bun:sqlite drift) | 30 | Future (separate MD) |
 | src/channel-coordinator.ts | 1 | Future |
-| Total | ~574 | (measured 2026-09-01 post-cycle-4; was 1729) |
+| Total | ~456 | (measured 2026-09-01 post-cycle-5; was 1729) |
 
 ## Cycle 1 - what was done
 
@@ -107,6 +108,70 @@ fourth-largest offender. 224 errors fixed via strict typeof prodFn pattern.
 
 tsc: 798 -> ~574 (delta -224, matching the row above).
 vitest: 384/11225/0 (preserved).
+
+## Cycle 5 - what was done
+
+(See commit 7ba26d69cfe237429aaacf8ae86089516fdaf8b4 on refactor/classbase.)
+
+Channel-monitor-baseline.test.ts mock factory rewritten: each vi.fn() now
+uses vi.fn<ReturnType<typeof productionFn>>() with production types
+imported as 'import type'. Same pattern as Cycles 1-4, applied to the
+fifth and final top-error test file. 118 errors fixed via strict
+typeof prodFn pattern.
+
+tsc: 574 -> ~456 (delta -118, matching the row above).
+vitest: 384/11225/0 (preserved).
+
+## 5/5 Top-File Plan Complete
+
+With cycle 5 the original cleanup plan is DONE. Every test file that
+contributed more than 100 tsc errors to the 1699-error pre-cycle-1
+baseline has been realigned to production types via the
+`vi.fn<ReturnType<typeof productionFn>>()` pattern:
+
+| File | Pre-cycle-1 errors | Post-cycle | Cycle |
+|---|---|---|---|
+| channel-monitor.test.ts | 361 | 0 | 1 |
+| agents-routes.test.ts | 313 | 0 | 2 |
+| schedule-runner-full.test.ts | 257 | 0 | 3 |
+| channel-monitor-coverage.test.ts | 224 | 0 | 4 |
+| channel-monitor-baseline.test.ts | 118 | 0 | 5 |
+| **Total** | **1273** | **0** | 1-5 |
+
+Across 5 cycles: 1273 tsc errors eliminated, vitest stayed green at
+384/11225/0 every cycle, and zero production code was touched.
+
+## Remaining work (~425 errors, smaller files)
+
+The remaining ~456 tsc errors are distributed across ~70 smaller test
+files, none of which contribute more than ~47 errors individually
+(top of the heap: routes-updates.test.ts at 47, inbound-probe-full at
+40, db-100 at 38, routes-federation-full at 37, auth at 20).
+
+This work was deliberately deferred from cycles 1-5 because:
+
+1. **No single file dominates.** None would justify a dedicated cycle
+   in isolation; the natural shape is a batched fix-up cycle.
+2. **Pattern is established.** Cycles 1-5 proved that
+   `vi.fn<ReturnType<typeof productionFn>>()` plus `import type`
+   handles 100% of the recurring TS2558 / TS2345 / TS2322 errors.
+3. **Different shape may apply.** Some of the remaining errors
+   (e.g. `db-100.test.ts`, `src/__tests__/setup/test-sandbox-setup.ts`
+   `Cannot find name 'vi'`) hint at root causes that the
+   typeof-prodFn pattern alone may not fix.
+
+Suggested next steps:
+
+- **Cycle 6+:** Pick the next-largest offender
+  (`routes-updates.test.ts`, 47 errors) and apply the same pattern.
+- **Batched approach:** Group files by error category
+  (TS2558 / TS2345 / TS2322 / etc.) and run a single batch cycle.
+- **Setup file first:** Resolve the `test-sandbox-setup.ts` `Cannot find
+  name 'vi'` separately, since it is shared across multiple suites.
+
+The forensic baseline is now stable: 1729 -> 456 (-73.6%) with the
+top-error work finished. The remaining 425 errors in smaller files
+will not move on their own; they need dedicated cycles 6+.
 
 ## What cleanup means going forward
 
