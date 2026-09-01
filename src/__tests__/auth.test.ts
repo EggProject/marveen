@@ -213,8 +213,6 @@ interface MockRes {
   end(data?: string): void
 }
 
-interface FakeServerResponse extends http.ServerResponse {}
-
 function mkRes(): MockRes {
   return {
     statusCode: 0,
@@ -234,8 +232,6 @@ function mkRes(): MockRes {
   }
 }
 
-interface FakeIncomingMessage extends http.IncomingMessage {}
-
 function mkReq(opts: {
   body?: unknown
   headers?: Record<string, string | string[] | undefined>
@@ -244,7 +240,7 @@ function mkReq(opts: {
   const r = Object.assign(
     Readable.from(payload),
     { headers: (opts.headers ?? {}) as http.IncomingHttpHeaders },
-  ) as FakeIncomingMessage
+  ) as http.IncomingMessage
   return r
 }
 
@@ -263,7 +259,7 @@ async function call(
     const r = Object.assign(
       Readable.from([Buffer.from(opts.rawBody)]),
       { headers: (opts.headers ?? {}) as http.IncomingHttpHeaders },
-    ) as FakeIncomingMessage
+    ) as http.IncomingMessage
     req = r
   } else {
     req = mkReq({ headers: opts.headers, body: opts.body })

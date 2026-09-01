@@ -265,8 +265,6 @@ function mkRes(): MockRes {
   }
 }
 
-interface FakeIncomingMessage extends http.IncomingMessage {}
-
 function mkReq(opts: { body?: unknown; raw?: Buffer | string } = {}): http.IncomingMessage {
   const payload: Buffer[] = opts.raw !== undefined
     ? [typeof opts.raw === 'string' ? Buffer.from(opts.raw) : opts.raw]
@@ -275,8 +273,8 @@ function mkReq(opts: { body?: unknown; raw?: Buffer | string } = {}): http.Incom
       : []
   const r = Object.assign(
     Readable.from(payload),
-    { headers: {} as http.IncomingHttpHeaders },
-  ) as FakeIncomingMessage
+    { headers: {} satisfies http.IncomingHttpHeaders },
+  ) as http.IncomingMessage
   return r
 }
 

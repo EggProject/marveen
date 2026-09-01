@@ -176,8 +176,6 @@ interface MockRes {
   end(data?: string | Buffer): void
 }
 
-interface FakeServerResponse extends http.ServerResponse {}
-
 function mkRes(): MockRes {
   return {
     statusCode: 0,
@@ -199,16 +197,14 @@ function mkRes(): MockRes {
   }
 }
 
-interface FakeIncomingMessage extends http.IncomingMessage {}
-
 function mkReq(opts: { body?: Buffer | string }): http.IncomingMessage {
   const payload: Buffer[] = opts.body === undefined
     ? []
     : [Buffer.isBuffer(opts.body) ? opts.body : Buffer.from(opts.body)]
   const r = Object.assign(
     Readable.from(payload),
-    { headers: {} as http.IncomingHttpHeaders },
-  ) as FakeIncomingMessage
+    { headers: {} satisfies http.IncomingHttpHeaders },
+  ) as http.IncomingMessage
   return r
 }
 

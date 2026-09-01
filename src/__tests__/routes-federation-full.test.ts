@@ -241,14 +241,13 @@ interface MockRes {
   statusCode: number
   body: string
 }
-interface FakeServerResponse extends http.ServerResponse {}
 function mkRes(): MockRes {
   const state: MockRes = { statusCode: 0, body: '' }
-  const res: FakeServerResponse = {
+  const res: http.ServerResponse = {
     writeHead(code: number) { state.statusCode = code; return res },
     end(data?: unknown) { state.body = String(data ?? '') },
     setHeader() { /* not used by json() */ },
-  } as unknown as FakeServerResponse
+  } as unknown as http.ServerResponse
   return new Proxy(state, {
     get(t, p) {
       if (p === 'writeHead') return (code: number) => { t.statusCode = code; return res }
@@ -1208,7 +1207,7 @@ describe('POST /api/federation/inbox -- readBody non-size error re-throws', () =
   it('rethrows when the request stream errors out (not a size error)', async () => {
     writeConfigFile({ enabled: true, systemId: 'localsys', peers: [{ id: 'teodor', baseUrl: 'https://t.example', inboundToken: 'a'.repeat(64), outboundToken: 'b'.repeat(64) }] })
     const ee: http.IncomingMessage = Object.assign(new EventEmitter(), {
-      headers: {} as Record<string, string | string[] | undefined>,
+      headers: {} satisfies http.IncomingHttpHeaders,
       url: '/',
       method: 'POST',
       destroy: () => {},
@@ -1285,11 +1284,11 @@ describe('marveenVersion truthy-version branch', () => {
     const fresh = await import('../web/routes/federation.js')
     writeConfigFile({ enabled: true, systemId: 'localsys', peers: [] })
     const out: { statusCode: number; body: string } = { statusCode: 0, body: '' }
-    const res: FakeServerResponse = {
+    const res: http.ServerResponse = {
       writeHead(code: number) { out.statusCode = code; return res },
       end(data?: unknown) { out.body = String(data ?? '') },
       setHeader() {},
-    } as unknown as FakeServerResponse
+    } as unknown as http.ServerResponse
     const handled = await fresh.tryHandleFederation({
       req: mkReq(),
       res,
@@ -1468,7 +1467,7 @@ describe('POST /api/federation/inbox', () => {
   it('413s when the body read itself overflows (no Content-Length)', async () => {
     writeConfigFile({ enabled: true, systemId: 'localsys', peers: [{ id: 'teodor', baseUrl: 'https://t.example', inboundToken: 'a'.repeat(64), outboundToken: 'b'.repeat(64) }] })
     const ee: http.IncomingMessage & { destroy(): void } = Object.assign(new EventEmitter(), {
-      headers: {} as Record<string, string | string[] | undefined>,
+      headers: {} satisfies http.IncomingHttpHeaders,
       url: '/',
       method: 'POST',
       destroy: () => {},

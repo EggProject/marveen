@@ -622,8 +622,9 @@ describe('channel-request-watcher -- lookupChannelName API responses', () => {
     const [url, init] = fetchMock.mock.calls[0] ?? []
     expect(url).toBe('https://slack.com/api/conversations.info')
     expect(init?.method).toBe('POST')
-    expect(init?.body as string).toBe('channel=C-RESOLVE')
-    expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer xoxb-default-token')
+    expect(typeof init?.body === 'string' ? init.body : '').toBe('channel=C-RESOLVE')
+    const headers = init?.headers
+    expect(headers && !Array.isArray(headers) && !(headers instanceof Headers) ? headers['Authorization'] : undefined).toBe('Bearer xoxb-default-token')
     expect(updateNameMock).toHaveBeenCalledWith(7, 'general')
     stopChannelRequestWatcher()
   })
