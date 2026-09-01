@@ -33,7 +33,12 @@ import { mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs'
 // Production type imports: each mock declaration uses vi.fn<typeof prodFn>()
 // so the production signature is the single source of truth (cycle 2/3 lesson).
 // ----------------------------------------------------------------------------
-import type { capturePane, captureParkedInputView } from '../web/agent-process.js'
+import type {
+  capturePane,
+  captureParkedInputView,
+  isAgentRunning,
+  startAgentProcess,
+} from '../web/agent-process.js'
 import type { listAgentNames, readAgentChannelProvider } from '../web/agent-config.js'
 import type { reapDetachedChannelClaudes, collectPollerEvidence } from '../web/channel-poller-reap.js'
 import type { parseEtimeToSeconds, decideDownAgentAction } from '../web/agent-restart-policy.js'
@@ -47,7 +52,6 @@ import type {
   decideStuckInputAction,
   detectPaneState,
 } from '../pane-state.js'
-import type { isAgentRunning, startAgentProcess } from '../web/agent-process.js'
 import type { attemptChannelMcpReconnect } from '../web/channel-mcp-reconnect.js'
 
 // ----------------------------------------------------------------------------
@@ -153,9 +157,6 @@ const m = vi.hoisted(() => ({
   decideStuckInputAction: vi.fn<typeof decideStuckInputAction>(() => 'hold'),
   // process.platform
   savedPlatform: process.platform,
-  // dynamic test-only slots declared up-front so the dynamic assignments at
-  // L1282 stay type-safe (these are not SUT inputs; see test L1282).
-  handleTelegramConflict: vi.fn(),
 }))
 
 vi.mock('node:child_process', () => ({
@@ -1833,21 +1834,25 @@ describe('coverage: per-tick target + stage branches', () => {
     expect(m.loggerError).not.toHaveBeenCalled()
   })
 
-  it('L1282: skips the telegram-specific 409 probe when provider is non-telegram', async () => {
-    // probeTelegramConflict must NOT be called when the provider label is
-    // discord/slack/etc. Seed the provider as 'discord' so the if-guard
-    // evaluates to false.
+  it('L1282: skips the telegram 409 probe when no channel token is configured', async () => {
+    // The non-Telegram arm of `if (providerLabel === 'telegram')` at L1285 is
+    // marked /* istanbul ignore next */ in production (every shipped install
+    // uses Telegram as the main provider), so we cannot trigger it without
+    // restructuring the config mock per-test. What we CAN verify here is the
+    // inner guard: probeTelegramConflict must NOT be called when
+    // readChannelToken returns null. With no token, the `if (tok)` short-circuits
+    // so no Telegram probe runs.
     const mod = await freshMod()
     vi.useFakeTimers()
     m.getClaudePidForSession.mockReturnValue(null)
     m.probeChannelPluginLiveness.mockReturnValue('down')
     m.listAgentNames.mockReturnValue([])
     m.readAgentChannelProvider.mockReturnValue(null)
+    m.readChannelToken.mockReturnValue(null) // explicit; beforeEach reset default
     const handle = mod.startChannelPluginMonitor()
     await vi.advanceTimersByTimeAsync(8_000 + 100)
     clearMonitorHandle(handle)
     vi.useRealTimers()
-    // The provider-non-telegram branch fired; no Telegram probe ran.
-    expect(m.handleTelegramConflict).not.toHaveBeenCalled()
+    expect(m.probeTelegramConflict).not.toHaveBeenCalled()
   })
 })
