@@ -19,6 +19,7 @@
 // The triage per branch surface is given below at each `describe` block.
 
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest'
+import type { readAgentVoiceConfig } from '../web/agent-config.js'
 import type http from 'node:http'
 import { Readable, EventEmitter } from 'node:stream'
 import { mkdtempSync, mkdirSync, rmSync } from 'node:fs'
@@ -63,8 +64,8 @@ const H = vi.hoisted(() => ({
 
   KNOWN_VOICE_MODELS: new Set<string>(['hu_HU-imre-medium', 'hu_HU-anna-medium']),
   AGENTS_BASE_DIR: '',
-  readAgentVoiceConfig: vi.fn(() => ({
-    responseMode: 'auto' as const,
+  readAgentVoiceConfig: vi.fn<typeof readAgentVoiceConfig>(() => ({
+    responseMode: 'auto',
     voiceModel: 'hu_HU-imre-medium',
   })),
 
@@ -458,7 +459,7 @@ describe('transcribeVoiceFile', () => {
     expect(H.logWarn).toHaveBeenCalled()
     const [obj, msg] = H.logWarn.mock.calls[0]
     expect(msg).toContain('transcribeVoiceFile: whisper failed')
-    expect((obj as Record<string, unknown>).stderr.length).toBeLessThanOrEqual(200)
+    expect(((obj as Record<string, unknown>).stderr as string).length).toBeLessThanOrEqual(200)
   })
 
   it('uses an AGENTS_BASE_DIR-resolved state dir', async () => {

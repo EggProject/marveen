@@ -63,12 +63,12 @@ const GOOD_MANIFEST = {
 }
 
 function fetchReturning(status: number, body: unknown): typeof fetch {
-  return (async () => new Response(JSON.stringify(body), { status })) as typeof fetch
+  return (async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch
 }
 
 /** A fetch that returns GOOD_MANIFEST with `system` overwritten to the given id. */
 function fetchManifestFor(system: string): typeof fetch {
-  return (async () => new Response(JSON.stringify({ ...GOOD_MANIFEST, system }), { status: 200 })) as typeof fetch
+  return (async () => new Response(JSON.stringify({ ...GOOD_MANIFEST, system }), { status: 200 })) as unknown as typeof fetch
 }
 
 beforeEach(() => {
@@ -213,7 +213,7 @@ describe('pollOnePeer: error branches beyond the existing suite', () => {
 
   it('non-JSON body -> error state with "manifest is not JSON"', async () => {
     enabledConfig()
-    const fetchText = (async () => new Response('not-json{', { status: 200 })) as typeof fetch
+    const fetchText = (async () => new Response('not-json{', { status: 200 })) as unknown as typeof fetch
     await pollPeerManifests(NOW, fetchText)
     const [st] = getFederationStatus()
     expect(st.state).toBe('error')
@@ -237,7 +237,7 @@ describe('pollOnePeer: error branches beyond the existing suite', () => {
       start(controller) {
         controller.error(new Error('socket reset'))
       },
-    }), { status: 200 })) as typeof fetch
+    }), { status: 200 })) as unknown as typeof fetch
     await pollPeerManifests(NOW, fetchWithBodyError)
     const [st] = getFederationStatus()
     expect(st.state).toBe('error')
@@ -264,7 +264,7 @@ describe('pollOnePeer: error branches beyond the existing suite', () => {
     })
     try {
       let calls = 0
-      const counting = (async () => { calls++; return new Response('{}', { status: 200 }) }) as typeof fetch
+      const counting = (async () => { calls++; return new Response('{}', { status: 200 }) }) as unknown as typeof fetch
       await pollPeerManifests(NOW, counting)
       expect(calls).toBe(0)
       const [st] = getFederationStatus()

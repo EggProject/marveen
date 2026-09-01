@@ -128,7 +128,7 @@ const selectEnrollHost = bridgeMod.selectEnrollHost
 const sshDirOverride = bridgeMod.sshDirOverride
 const removeBridgeSshAccess = bridgeMod.removeBridgeSshAccess
 const RemoteEnrollError = bridgeMod.RemoteEnrollError
-type BridgeEnrollDeps = bridgeMod.BridgeEnrollDeps
+type BridgeEnrollDeps = NonNullable<Parameters<typeof bridgeEnroll>[1]>
 
 // --- helpers ----------------------------------------------------------------
 

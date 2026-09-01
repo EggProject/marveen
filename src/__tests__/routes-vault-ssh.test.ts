@@ -81,6 +81,7 @@
 // branch.
 
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest'
+import type { updateVaultSshServer } from '../db.js'
 import type http from 'node:http'
 import { Readable } from 'node:stream'
 import type { RouteContext } from '../web/routes/types.js'
@@ -94,7 +95,7 @@ const H = vi.hoisted(() => ({
   listVaultSshServers: vi.fn<() => unknown[]>(() => []),
   getVaultSshServer: vi.fn<(id: string) => unknown | undefined>(),
   createVaultSshServer: vi.fn(),
-  updateVaultSshServer: vi.fn(() => true),
+  updateVaultSshServer: vi.fn<typeof updateVaultSshServer>(() => true),
   deleteVaultSshServer: vi.fn(() => true),
   computeSshKeyStatus: vi.fn((s: { ssh_key_id?: string | null }) => (s.ssh_key_id ? 'ok' : 'missing')),
   getVaultSshKey: vi.fn<(id: string) => unknown | undefined>(),

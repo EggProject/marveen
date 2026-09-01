@@ -29,7 +29,7 @@ function writeEnabledConfig(): void {
 }
 
 function fetchReturning(status: number, body: unknown): typeof fetch {
-  return (async () => new Response(JSON.stringify(body), { status })) as typeof fetch
+  return (async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch
 }
 
 async function getDirectory(): Promise<{ statusCode: number; json: any }> {

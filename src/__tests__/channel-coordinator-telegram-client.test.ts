@@ -516,7 +516,7 @@ describe('getUpdates', () => {
     let capturedSignal: AbortSignal | undefined
     const hangingFetch = ((_url: string, init?: RequestInit) =>
       new Promise<Response>((_resolve, reject) => {
-        capturedSignal = init?.signal
+        capturedSignal = init?.signal ?? undefined
         capturedSignal?.addEventListener('abort', () => {
           reject(new DOMException('This operation was aborted', 'AbortError'))
         })
@@ -700,7 +700,7 @@ describe('probeHighWater', () => {
     let capturedSignal: AbortSignal | undefined
     const hangingFetch = ((_url: string, init?: RequestInit) =>
       new Promise<Response>((_resolve, reject) => {
-        capturedSignal = init?.signal
+        capturedSignal = init?.signal ?? undefined
         capturedSignal?.addEventListener('abort', () => {
           reject(new DOMException('This operation was aborted', 'AbortError'))
         })

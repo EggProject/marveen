@@ -19,6 +19,7 @@
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { vi } from 'vitest'
 
 const SANDBOX = mkdtempSync(join(tmpdir(), 'vitest-sandbox-'))
 const SANDBOX_STORE = join(SANDBOX, 'store')

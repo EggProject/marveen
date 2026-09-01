@@ -6,7 +6,7 @@
 //
 // Behavioural tests run the python hook as a subprocess (deterministic, no LLM).
 // Static tests lock the wiring (template + scaffold migration + startup call).
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'

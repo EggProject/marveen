@@ -38,7 +38,7 @@ const GOOD_MANIFEST = {
 }
 
 function fetchReturning(status: number, body: unknown): typeof fetch {
-  return (async () => new Response(JSON.stringify(body), { status })) as typeof fetch
+  return (async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch
 }
 
 beforeEach(() => {
@@ -180,7 +180,7 @@ describe('pollPeerManifests state machine', () => {
     const huge = (async () => new Response('x', {
       status: 200,
       headers: { 'content-length': String(MANIFEST_MAX_BODY_BYTES + 1) },
-    })) as typeof fetch
+    })) as unknown as typeof fetch
     await pollPeerManifests(NOW, huge)
     const [st] = getFederationStatus()
     expect(st.state).toBe('error')
@@ -190,7 +190,7 @@ describe('pollPeerManifests state machine', () => {
   it('unpaired peer (empty outboundToken) is reported without a network attempt', async () => {
     enabledConfig({ outboundToken: '' })
     let calls = 0
-    const counting = (async () => { calls++; return new Response('{}', { status: 200 }) }) as typeof fetch
+    const counting = (async () => { calls++; return new Response('{}', { status: 200 }) }) as unknown as typeof fetch
     await pollPeerManifests(NOW, counting)
     expect(calls).toBe(0)
     expect(getFederationStatus()[0].state).toBe('unpaired')
@@ -201,7 +201,7 @@ describe('pollPeerManifests state machine', () => {
     await pollPeerManifests(NOW, fetchReturning(200, GOOD_MANIFEST))
     writeConfigFile({ enabled: false, systemId: 'localsys', peers: [] })
     let calls = 0
-    const counting = (async () => { calls++; return new Response('{}', { status: 200 }) }) as typeof fetch
+    const counting = (async () => { calls++; return new Response('{}', { status: 200 }) }) as unknown as typeof fetch
     const out = await pollPeerManifests(NOW + 1, counting)
     expect(calls).toBe(0)
     expect(out).toEqual([])
@@ -242,7 +242,7 @@ describe('refreshFederationStatus single-flight', () => {
       calls++
       await new Promise((r) => setTimeout(r, 20))
       return new Response(JSON.stringify(GOOD_MANIFEST), { status: 200 })
-    }) as typeof fetch
+    }) as unknown as typeof fetch
     const [a, b] = await Promise.all([refreshFederationStatus(slow), refreshFederationStatus(slow)])
     expect(calls).toBe(1)
     expect(a).toEqual(b)

@@ -599,7 +599,7 @@ describe('sendMail', () => {
 
     const { sendMail } = await import('../graph-mail.js')
     await sendMail({ to: 'a@b.com', subject: 's', body: 'b', saveToSentItems: false })
-    expect(payload?.saveToSentItems).toBe(false)
+    expect((payload as { saveToSentItems: boolean } | null)?.saveToSentItems).toBe(false)
   })
 
   it('throws when Graph returns an error other than 202', async () => {
@@ -713,7 +713,7 @@ describe('mailboxPath encoding + toRecipientList shapes', () => {
 
     const { sendMail } = await import('../graph-mail.js')
     await sendMail({ to: 'sole@example.com', subject: 's', body: 'b' })
-    expect(payload?.message.toRecipients).toEqual([{ emailAddress: { address: 'sole@example.com' } }])
+    expect((payload as { message: { toRecipients: unknown[] } } | null)?.message.toRecipients).toEqual([{ emailAddress: { address: 'sole@example.com' } }])
   })
 
   it('strips whitespace and drops empty recipients from the input list', async () => {
@@ -729,7 +729,7 @@ describe('mailboxPath encoding + toRecipientList shapes', () => {
 
     const { sendMail } = await import('../graph-mail.js')
     await sendMail({ to: ['  a@x.com  ', '', '   ', 'b@x.com'], subject: 's', body: 'b' })
-    expect(payload?.message.toRecipients).toEqual([
+    expect((payload as { message: { toRecipients: unknown[] } } | null)?.message.toRecipients).toEqual([
       { emailAddress: { address: 'a@x.com' } },
       { emailAddress: { address: 'b@x.com' } },
     ])

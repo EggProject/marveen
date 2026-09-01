@@ -544,7 +544,7 @@ describe('main() entry-point bootstrap (one-shot)', () => {
 
     try {
       vi.resetModules()
-      await import('../channel-coordinator.ts')
+      await import('../channel-coordinator.js')
       // One tick: TICK_MS=5000ms -> wait 6s for the loop to call probe once.
       await new Promise((r) => setTimeout(r, 6000))
       expect(existsSync(join(tmpDir, 'coordinator.pid'))).toBe(true)
@@ -593,7 +593,7 @@ describe('main() entry-point bootstrap (one-shot)', () => {
 
     try {
       vi.resetModules()
-      await import('../channel-coordinator.ts')
+      await import('../channel-coordinator.js')
       await new Promise((r) => setTimeout(r, 100))  // let readToken throw synchronously
       expect(exitCalls).toContain(1)
     } finally {

@@ -90,7 +90,9 @@ vi.mock('../db.js', () => {
   }
 })
 
-interface MockUser {
+import type { DashboardUser } from '../db.js'
+
+interface MockUser extends Omit<DashboardUser, 'created_at' | 'updated_at'> {
   id: number
   username: string
   password_hash: string
@@ -300,7 +302,9 @@ beforeEach(() => {
     username,
     password_hash: hash,
     disabled: 0,
-  }))
+    created_at: 0,
+  updated_at: 0,
+}))
   vi.mocked(loginThrottleModule.checkThrottle).mockReturnValue({ locked: false, retryAfterS: 0, global: false })
   vi.mocked(passwordHashModule.assertPasswordPolicy).mockImplementation(() => undefined)
   vi.mocked(passwordHashModule.verifyPassword).mockResolvedValue(false)
@@ -421,7 +425,9 @@ describe('POST /api/auth/login', () => {
       username: 'alice',
       password_hash: 'hash',
       disabled: 1,
-    })
+      created_at: 0,
+  updated_at: 0,
+})
     const { res } = await call('POST', '/api/auth/login', { body: { username: 'alice', password: GOOD_PW } })
     expect(res.statusCode).toBe(401)
     expect(loginThrottleModule.recordFailure).toHaveBeenCalledWith('alice')
@@ -433,7 +439,9 @@ describe('POST /api/auth/login', () => {
       username: 'alice',
       password_hash: 'hash',
       disabled: 0,
-    })
+      created_at: 0,
+  updated_at: 0,
+})
     const { res } = await call('POST', '/api/auth/login', { body: { username: 'alice', password: 'wrong-password' } })
     expect(res.statusCode).toBe(401)
   })
@@ -444,7 +452,9 @@ describe('POST /api/auth/login', () => {
       username: 'alice',
       password_hash: 'hash',
       disabled: 0,
-    })
+      created_at: 0,
+  updated_at: 0,
+})
     vi.mocked(passwordHashModule.verifyPassword).mockResolvedValue(true)
     const { res, json } = await call('POST', '/api/auth/login', {
       body: { username: 'alice', password: GOOD_PW },
@@ -472,7 +482,9 @@ describe('POST /api/auth/login', () => {
       username: 'alice',
       password_hash: 'hash',
       disabled: 0,
-    })
+      created_at: 0,
+  updated_at: 0,
+})
     vi.mocked(passwordHashModule.verifyPassword).mockResolvedValue(true)
     const { res } = await call('POST', '/api/auth/login', {
       body: { username: 'alice', password: GOOD_PW },
@@ -487,7 +499,9 @@ describe('POST /api/auth/login', () => {
       username: 'alice',
       password_hash: 'hash',
       disabled: 0,
-    })
+      created_at: 0,
+  updated_at: 0,
+})
     vi.mocked(passwordHashModule.verifyPassword).mockResolvedValue(true)
     const { res } = await call('POST', '/api/auth/login', {
       body: { username: 'alice', password: GOOD_PW },
@@ -502,7 +516,9 @@ describe('POST /api/auth/login', () => {
       username: 'alice',
       password_hash: 'hash',
       disabled: 0,
-    })
+      created_at: 0,
+  updated_at: 0,
+})
     vi.mocked(passwordHashModule.verifyPassword).mockResolvedValue(true)
     const { res } = await call('POST', '/api/auth/login', {
       body: { username: 'alice', password: GOOD_PW },
@@ -517,7 +533,9 @@ describe('POST /api/auth/login', () => {
       username: 'alice',
       password_hash: 'hash',
       disabled: 0,
-    })
+      created_at: 0,
+  updated_at: 0,
+})
     vi.mocked(passwordHashModule.verifyPassword).mockResolvedValue(true)
     await call('POST', '/api/auth/login', {
       body: { username: 'alice', password: GOOD_PW },
@@ -532,7 +550,9 @@ describe('POST /api/auth/login', () => {
       username: 'alice',
       password_hash: 'hash',
       disabled: 0,
-    })
+      created_at: 0,
+  updated_at: 0,
+})
     vi.mocked(passwordHashModule.verifyPassword).mockResolvedValue(true)
     await call('POST', '/api/auth/login', { body: { username: 'alice', password: GOOD_PW } })
     expect(sessionsModule.revokeSession).not.toHaveBeenCalled()
@@ -573,7 +593,9 @@ describe('POST /api/auth/login', () => {
       username: 'alice',
       password_hash: 'hash',
       disabled: 0,
-    })
+      created_at: 0,
+  updated_at: 0,
+})
     const { res } = await call('POST', '/api/auth/login', { body: { username: 'alice' } })
     expect(res.statusCode).toBe(401)
     expect(loginThrottleModule.runDummyVerify).toHaveBeenCalledWith('')
@@ -640,7 +662,9 @@ describe('POST /api/auth/logout-all', () => {
       username: 'alice',
       password_hash: 'h',
       disabled: 0,
-    })
+      created_at: 0,
+  updated_at: 0,
+})
     const { res, json } = await call('POST', '/api/auth/logout-all', { auth: SESSION_AUTH('alice') })
     expect(res.statusCode).toBe(200)
     expect(json()).toEqual({ ok: true })
@@ -679,7 +703,9 @@ describe('GET /api/auth/sessions', () => {
       username: 'alice',
       password_hash: 'h',
       disabled: 0,
-    })
+      created_at: 0,
+  updated_at: 0,
+})
     vi.mocked(sessionsModule.listUserSessions).mockReturnValue([
       { idHashPrefix: 'abc123def456', createdAt: 1, lastSeenAt: 2, userAgent: 'curl' },
     ])
@@ -764,7 +790,9 @@ describe('POST /api/auth/password', () => {
       username: 'alice',
       password_hash: 'h',
       disabled: 0,
-    })
+      created_at: 0,
+  updated_at: 0,
+})
     vi.mocked(passwordHashModule.verifyPassword).mockResolvedValue(false)
     const { res, json } = await call('POST', '/api/auth/password', {
       auth: SESSION_AUTH('alice'),
@@ -781,7 +809,9 @@ describe('POST /api/auth/password', () => {
       username: 'alice',
       password_hash: 'h',
       disabled: 0,
-    })
+      created_at: 0,
+  updated_at: 0,
+})
     vi.mocked(passwordHashModule.verifyPassword).mockResolvedValue(true)
     const { res, json } = await call('POST', '/api/auth/password', {
       auth: SESSION_AUTH('alice'),
@@ -803,7 +833,9 @@ describe('POST /api/auth/password', () => {
       username: 'alice',
       password_hash: 'h',
       disabled: 0,
-    })
+      created_at: 0,
+  updated_at: 0,
+})
     const { res, json } = await call('POST', '/api/auth/password', {
       auth: TOKEN_AUTH,
       body: { username: 'alice', new_password: 'token-rotated-pw' },
@@ -835,7 +867,9 @@ describe('POST /api/auth/password', () => {
       username: 'alice',
       password_hash: 'h',
       disabled: 0,
-    })
+      created_at: 0,
+  updated_at: 0,
+})
     const { res, json } = await call('POST', '/api/auth/password', {
       auth: TOKEN_AUTH,
       body: { username: 'alice', new_password: 'whatever' },
@@ -867,7 +901,9 @@ describe('POST /api/auth/password', () => {
       username: 'alice',
       password_hash: 'h',
       disabled: 0,
-    })
+      created_at: 0,
+  updated_at: 0,
+})
     const { res, json } = await call('POST', '/api/auth/password', {
       auth: TOKEN_AUTH,
       body: { username: 'alice', new_password: 'short' },
@@ -969,7 +1005,9 @@ describe('POST /api/auth/users', () => {
       username: 'alice',
       password_hash: 'h',
       disabled: 0,
-    })
+      created_at: 0,
+  updated_at: 0,
+})
     const { res, json } = await call('POST', '/api/auth/users', {
       auth: TOKEN_AUTH,
       body: { username: 'alice', password: GOOD_PW },
@@ -999,7 +1037,9 @@ describe('POST /api/auth/users', () => {
       username: 'bob',
       password_hash: 'h',
       disabled: 0,
-    })
+      created_at: 0,
+  updated_at: 0,
+})
     const { res, json } = await call('POST', '/api/auth/users', {
       auth: TOKEN_AUTH,
       body: { username: 'bob', password: GOOD_PW },
@@ -1042,7 +1082,9 @@ describe('DELETE /api/auth/users/<username>', () => {
       username: 'has%20name',
       password_hash: 'h',
       disabled: 0,
-    })
+      created_at: 0,
+  updated_at: 0,
+})
     const { res, json } = await call('DELETE', '/api/auth/users/has%20name', { auth: TOKEN_AUTH })
     expect(res.statusCode).toBe(200)
     expect(json()).toEqual({ ok: true })

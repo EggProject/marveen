@@ -167,6 +167,8 @@ const {
   removeFederationStore,
 } = await import('../web/federation/config.js')
 const { logger } = await import('../logger.js')
+type PeerStatus = import('../web/federation/poller.js').PeerStatus
+type PeerPollState = import('../web/federation/poller.js').PeerPollState
 
 // Validate-on-demand mock: the federation/config module is wrapped at the
 // test boundary so its validateFederationConfig passes through to the real
@@ -178,15 +180,15 @@ vi.mock('../web/federation/config.js', async (orig) => {
   return new Proxy(actual, {
     get(target, prop, receiver) {
       if (prop === 'validateFederationConfig') {
-        return (...args: unknown[]) => {
+        return (...args: Parameters<typeof target.validateFederationConfig>) => {
           const refused = H.validateFederationConfigRefuse()
           if (typeof refused === 'string') return refused
           const validated = target.validateFederationConfig(...args)
           if (typeof validated === 'string') return validated
           const remove = H.validateFederationConfigStripRoutingMode()
           if (remove) {
-            const { routingMode: _, ...rest } = validated as Record<string, unknown>
-            return rest as typeof validated
+            const { routingMode: _, ...rest } = validated as unknown as Record<string, unknown>
+            return rest as unknown as typeof validated
           }
           return validated
         }
@@ -392,7 +394,7 @@ describe('GET /api/federation/directory', () => {
     writeConfigFile({ enabled: true, systemId: 'localsys', peers: [] })
     // Re-mock the poller for THIS test only: 30 agents means the slice truncates.
     const pollerMod = await import('../web/federation/poller.js')
-    const stubPeer = { id: 'teodor', state: 'ok', lastOkAt: 100, manifest: { agents: Array.from({ length: 30 }, (_, i) => ({ id: `a${i}`, displayName: `a${i}`, model: 'm' })), skills: [] } }
+    const stubPeer: PeerStatus = { id: 'teodor', state: 'ok' as PeerPollState, lastOkAt: 100, baseUrl: 'http://teodor.local', lastChecked: 100, manifest: { system: '', marveenVersion: '', federationVersion: 0, agents: Array.from({ length: 30}, (_, i) => ({ id: `a${i}`, displayName: `a${i}`, model: 'm' })), skills: [] } }
     const spy = vi.spyOn(pollerMod, 'getFederationStatus').mockReturnValueOnce([stubPeer])
     const r = await call('GET', '/api/federation/directory')
     expect(r.json.peers[0].claimedAgents).toHaveLength(25)
@@ -402,7 +404,7 @@ describe('GET /api/federation/directory', () => {
   it('caps skill lists with DIRECTORY_MAX_SKILLS_PER_AGENT', async () => {
     writeConfigFile({ enabled: true, systemId: 'localsys', peers: [] })
     const pollerMod = await import('../web/federation/poller.js')
-    const stubPeer = { id: 'teodor', state: 'ok', lastOkAt: 100, manifest: { agents: [{ id: 'k', displayName: 'K', model: 'm' }], skills: Array.from({ length: 12 }, (_, i) => ({ agent: 'k', name: `s${i}`, description: 'd' })) } }
+    const stubPeer: PeerStatus = { id: 'teodor', state: 'ok' as PeerPollState, lastOkAt: 100, baseUrl: 'http://teodor.local', lastChecked: 100, manifest: { system: '', marveenVersion: '', federationVersion: 0, agents: [{ id: 'k', displayName: 'K', model: 'm'}], skills: Array.from({ length: 12 }, (_, i) => ({ agent: 'k', name: `s${i}`, description: 'd' })) } }
     const spy = vi.spyOn(pollerMod, 'getFederationStatus').mockReturnValueOnce([stubPeer])
     const r = await call('GET', '/api/federation/directory')
     expect(r.json.peers[0].claimedAgents[0].skills).toHaveLength(6)
@@ -413,7 +415,7 @@ describe('GET /api/federation/directory', () => {
     writeConfigFile({ enabled: true, systemId: 'localsys', peers: [] })
     const pollerMod = await import('../web/federation/poller.js')
     const longDesc = 'x'.repeat(300)
-    const stubPeer = { id: 'teodor', state: 'ok', lastOkAt: 100, manifest: { agents: [{ id: 'k', displayName: 'K', model: 'm' }], skills: [{ agent: 'k', name: 's', description: longDesc }] } }
+    const stubPeer: PeerStatus = { id: 'teodor', state: 'ok' as PeerPollState, lastOkAt: 100, baseUrl: 'http://teodor.local', lastChecked: 100, manifest: { system: '', marveenVersion: '', federationVersion: 0, agents: [{ id: 'k', displayName: 'K', model: 'm'}], skills: [{ agent: 'k', name: 's', description: longDesc }] } }
     const spy = vi.spyOn(pollerMod, 'getFederationStatus').mockReturnValueOnce([stubPeer])
     const r = await call('GET', '/api/federation/directory')
     const truncated = r.json.peers[0].claimedAgents[0].skills[0].description
@@ -425,7 +427,7 @@ describe('GET /api/federation/directory', () => {
   it('emits an empty skill list when the peer agent has no matching skills (line 424 fallback branch)', async () => {
     writeConfigFile({ enabled: true, systemId: 'localsys', peers: [] })
     const pollerMod = await import('../web/federation/poller.js')
-    const stubPeer = { id: 'teodor', state: 'ok', lastOkAt: 100, manifest: { agents: [{ id: 'unsupported', displayName: 'U', model: 'm' }], skills: [] } }
+    const stubPeer: PeerStatus = { id: 'teodor', state: 'ok' as PeerPollState, lastOkAt: 100, baseUrl: 'http://teodor.local', lastChecked: 100, manifest: { system: '', marveenVersion: '', federationVersion: 0, agents: [{ id: 'unsupported', displayName: 'U', model: 'm'}], skills: [] } }
     const spy = vi.spyOn(pollerMod, 'getFederationStatus').mockReturnValueOnce([stubPeer])
     const r = await call('GET', '/api/federation/directory')
     expect(r.json.peers[0].claimedAgents[0].skills).toEqual([])
@@ -436,7 +438,7 @@ describe('GET /api/federation/directory', () => {
     // Line 410: st.manifest?.skills ?? []  -- the nullish branch.
     writeConfigFile({ enabled: true, systemId: 'localsys', peers: [] })
     const pollerMod = await import('../web/federation/poller.js')
-    const stubPeer = { id: 'teodor', state: 'stale', lastOkAt: 0, manifest: { agents: [{ id: 'k', displayName: 'K', model: 'm' }] } }
+    const stubPeer: PeerStatus = { id: 'teodor', state: 'stale' as PeerPollState, lastOkAt: 0, baseUrl: 'http://teodor.local', lastChecked: 0, manifest: { system: '', marveenVersion: '', federationVersion: 0, agents: [{ id: 'k', displayName: 'K', model: 'm' }], skills: [] } }
     const spy = vi.spyOn(pollerMod, 'getFederationStatus').mockReturnValueOnce([stubPeer])
     const r = await call('GET', '/api/federation/directory')
     expect(r.json.peers[0].claimedAgents[0].skills).toEqual([])
@@ -450,7 +452,7 @@ describe('GET /api/federation/directory', () => {
     // absent but agents present); here we omit the manifest entirely.
     writeConfigFile({ enabled: true, systemId: 'localsys', peers: [] })
     const pollerMod = await import('../web/federation/poller.js')
-    const stubPeer = { id: 'teodor', state: 'stale', lastOkAt: 0 }
+    const stubPeer = { id: 'teodor', state: 'stale' as PeerPollState, lastOkAt: 0, baseUrl: 'http://teodor.local', lastChecked: 0 }
     const spy = vi.spyOn(pollerMod, 'getFederationStatus').mockReturnValueOnce([stubPeer])
     const r = await call('GET', '/api/federation/directory')
     expect(r.json.peers[0].claimedAgents).toEqual([])
@@ -463,7 +465,7 @@ describe('GET /api/federation/directory', () => {
     // to an empty array, so claimedAgents is empty.
     writeConfigFile({ enabled: true, systemId: 'localsys', peers: [] })
     const pollerMod = await import('../web/federation/poller.js')
-    const stubPeer = { id: 'teodor', state: 'stale', lastOkAt: 0, manifest: { skills: [] } }
+    const stubPeer: PeerStatus = { id: 'teodor', state: 'stale' as PeerPollState, lastOkAt: 0, baseUrl: 'http://teodor.local', lastChecked: 0, manifest: { system: '', marveenVersion: '', federationVersion: 0, agents: [], skills: [] } }
     const spy = vi.spyOn(pollerMod, 'getFederationStatus').mockReturnValueOnce([stubPeer])
     const r = await call('GET', '/api/federation/directory')
     expect(r.json.peers[0].claimedAgents).toEqual([])
@@ -482,7 +484,7 @@ describe('GET /api/federation/directory', () => {
     // Pin CURRENT behaviour: a local agent with no cached summary contributes
     // no capabilitySummary field to the directory listing.
     const capsMod = await import('../web/federation/capabilities.js')
-    const spy = vi.spyOn(capsMod, 'getCapabilitySummary').mockReturnValueOnce({ summary: undefined, fresh: false })
+    const spy = vi.spyOn(capsMod, 'getCapabilitySummary').mockReturnValueOnce({ summary: undefined as unknown as string, fresh: false })
     writeConfigFile({ enabled: true, systemId: 'localsys', peers: [] })
     const r = await call('GET', '/api/federation/directory')
     expect(r.json.local.agents[1].capabilitySummary).toBeUndefined()
@@ -494,7 +496,7 @@ describe('GET /api/federation/directory', () => {
     // `safeOutboundText(...) ?? ''`. When safeOutboundText returns undefined
     // (falsy text), the ?? '' fallback fires.
     const cfgMod = await import('../web/federation/local-catalog.js')
-    const spy = vi.spyOn(cfgMod, 'listAgentLocalSkills').mockReturnValueOnce([{ name: 'do-thing', description: '' }])
+    const spy = vi.spyOn(cfgMod, 'listAgentLocalSkills').mockReturnValueOnce([{ agent: '', name: 'do-thing', description: '' }])
     writeConfigFile({ enabled: true, systemId: 'localsys', peers: [] })
     const r = await call('GET', '/api/federation/manifest')
     expect(r.statusCode).toBe(200)
@@ -1069,7 +1071,7 @@ describe('safeOutboundText short-circuits', () => {
     // buildManifest's summaryFor() calls safeOutboundText(undefined), which
     // must short-circuit on the first line and return undefined.
     const capsMod = await import('../web/federation/capabilities.js')
-    const spy = vi.spyOn(capsMod, 'getCapabilitySummary').mockReturnValueOnce({ summary: undefined, fresh: true })
+    const spy = vi.spyOn(capsMod, 'getCapabilitySummary').mockReturnValueOnce({ summary: undefined as unknown as string, fresh: true })
     writeConfigFile({
       enabled: true, systemId: 'localsys',
       peers: [{ id: 'sharer', baseUrl: 'https://s.example', inboundToken: 'a'.repeat(64), outboundToken: 'b'.repeat(64), shareCapabilitySummaries: true }],

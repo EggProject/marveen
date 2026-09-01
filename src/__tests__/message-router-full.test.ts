@@ -39,6 +39,7 @@
 // Any bug found by the suite is filed separately.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import type { AgentMessage } from '../db.js'
 
 // ---------------------------------------------------------------------------
 // Hoisted harness: vi.mock factories run BEFORE module imports; everything
@@ -86,7 +87,7 @@ const H = vi.hoisted(() => {
     MAIN_CHANNELS_SESSION: 'orin-channels',
 
     // voice-directive
-    resolveAgentChannelStateDir: vi.fn(() => '/tmp/channel-state'),
+    resolveAgentChannelStateDir: vi.fn((_agentId: string, _provider: string) => '/tmp/channel-state'),
 
     // routes/voice (dynamic-imported by callVoiceSTT)
     transcribeVoiceFile: vi.fn(),
@@ -148,7 +149,7 @@ vi.mock('../db.js', () => ({
 }))
 
 vi.mock('../web/voice-directive.js', () => ({
-  resolveAgentChannelStateDir: (agentId: string, provider: string) => H.resolveAgentChannelStateDir(agentId, provider),
+  resolveAgentChannelStateDir: (...args: [string, string]) => H.resolveAgentChannelStateDir(...args),
   inboundIsAudio: vi.fn(),
   buildTtsDirective: vi.fn(),
 }))
@@ -176,7 +177,7 @@ vi.mock('../web/main-agent.js', () => ({
 
 vi.mock('../web/agent-message-wrap.js', () => ({
   classifyAgentMessage: (from: string, to: string) => H.classifyAgentMessage(from, to),
-  wrapAgentMessageForDelivery: (...a: unknown[]) => H.wrapAgentMessageForDelivery(...a),
+  wrapAgentMessageForDelivery: (...a: Parameters<typeof H.wrapAgentMessageForDelivery>) => H.wrapAgentMessageForDelivery(...a),
 }))
 
 vi.mock('../web/telegram-inbox-wake.js', () => ({
@@ -254,25 +255,21 @@ function makeLocalMsg(overrides: Partial<{
   }
 }
 
-function makeFedMsg(overrides: Partial<{
-  id: number
-  from_agent: string
-  to_agent: string
-  content: string
-  created_at: number
-}> = {}): {
-  id: number
-  from_agent: string
-  to_agent: string
-  content: string
-  created_at: number
-} {
+function makeFedMsg(overrides: Partial<AgentMessage> = {}): AgentMessage {
   return {
     id: 2,
     from_agent: 'orin',
     to_agent: 'arthur/dex',
     content: 'federated hello',
+    status: 'pending',
+    result: null,
     created_at: NOW_SEC,
+    delivered_at: null,
+    completed_at: null,
+    origin_note: null,
+    trace_id: null,
+    span_id: null,
+    parent_span_id: null,
     ...overrides,
   }
 }

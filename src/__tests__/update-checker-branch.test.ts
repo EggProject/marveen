@@ -6,7 +6,7 @@
 // the update button could never deliver, and stayed silent about the commits
 // that actually were on the way. trackedBranch() is what keeps the two in sync,
 // so it is pinned here.
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { execFileSync } from 'node:child_process'
 import { trackedBranch } from '../web/update-checker.js'
 import { PROJECT_ROOT } from '../config.js'

@@ -136,7 +136,7 @@ beforeEach(async () => {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     }),
-  ) as unknown as typeof fetch
+  )
   globalThis.fetch = fetchMock as unknown as typeof fetch
 })
 
@@ -337,7 +337,7 @@ describe('channel-request-watcher -- scanAuditLog filter branches', () => {
       new Response(JSON.stringify({ ok: true, channel: { name: 'should-not-fetch' } }), {
         status: 200,
       }),
-    ) as unknown as typeof fetch
+    )
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
     startChannelRequestWatcher()
@@ -430,7 +430,7 @@ describe('channel-request-watcher -- lookupChannelName cache', () => {
       new Response(JSON.stringify({ ok: true, channel: { name: 'resolved-once' } }), {
         status: 200,
       }),
-    ) as unknown as typeof fetch
+    )
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
     startChannelRequestWatcher()
@@ -455,7 +455,7 @@ describe('channel-request-watcher -- lookupChannelName cache', () => {
       return [{ id: 1, agent: 'c2', channel_id: 'C-NEG', channel_name: null, user_id: null, requested_at: 1, status: 'pending' }]
     })
     listAgentsMock.mockReturnValue(['c2'])
-    fetchMock = vi.fn(async () => { throw new Error('network down') }) as unknown as typeof fetch
+    fetchMock = vi.fn(async () => { throw new Error('network down') })
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
     startChannelRequestWatcher()
@@ -481,7 +481,7 @@ describe('channel-request-watcher -- lookupChannelName cache', () => {
       return [{ id: 1, agent: 'c3', channel_id: 'C-RETRY', channel_name: null, user_id: null, requested_at: 1, status: 'pending' }]
     })
     listAgentsMock.mockReturnValue(['c3'])
-    fetchMock = vi.fn(async () => { throw new Error('first-call fails') }) as unknown as typeof fetch
+    fetchMock = vi.fn(async () => { throw new Error('first-call fails') })
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
     startChannelRequestWatcher()
@@ -495,7 +495,7 @@ describe('channel-request-watcher -- lookupChannelName cache', () => {
       new Response(JSON.stringify({ ok: true, channel: { name: 'now-resolves' } }), {
         status: 200,
       }),
-    ) as unknown as typeof fetch
+    )
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
     vi.advanceTimersByTime(70_000) // > NEGATIVE_CACHE_TTL (60_000)
@@ -610,7 +610,7 @@ describe('channel-request-watcher -- lookupChannelName API responses', () => {
     listAgentsMock.mockReturnValue(['r1'])
     fetchMock = vi.fn(async () =>
       new Response(JSON.stringify({ ok: true, channel: { name: 'general' } }), { status: 200 }),
-    ) as unknown as typeof fetch
+    )
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
     startChannelRequestWatcher()
@@ -636,7 +636,7 @@ describe('channel-request-watcher -- lookupChannelName API responses', () => {
     listAgentsMock.mockReturnValue(['r2'])
     fetchMock = vi.fn(async () =>
       new Response(JSON.stringify({ ok: false, error: 'channel_not_found' }), { status: 200 }),
-    ) as unknown as typeof fetch
+    )
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
     startChannelRequestWatcher()
@@ -656,7 +656,7 @@ describe('channel-request-watcher -- lookupChannelName API responses', () => {
     listAgentsMock.mockReturnValue(['r3'])
     fetchMock = vi.fn(async () =>
       new Response(JSON.stringify({ ok: true }), { status: 200 }),
-    ) as unknown as typeof fetch
+    )
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
     startChannelRequestWatcher()
@@ -685,7 +685,7 @@ describe('channel-request-watcher -- lookupChannelName API responses', () => {
     // returns the row, updateName fires.
     fetchMock = vi.fn(async () =>
       new Response(JSON.stringify({ ok: true, channel: { name: 'other-name' } }), { status: 200 }),
-    ) as unknown as typeof fetch
+    )
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
     startChannelRequestWatcher()
@@ -720,7 +720,7 @@ describe('channel-request-watcher -- lookupChannelName API responses', () => {
       return [{ id: 19, agent: 'r6', channel_id: 'C-THROW', channel_name: null, user_id: null, requested_at: 1, status: 'pending' }]
     })
     listAgentsMock.mockReturnValue(['r6'])
-    fetchMock = vi.fn(async () => { throw new Error('dns exploded') }) as unknown as typeof fetch
+    fetchMock = vi.fn(async () => { throw new Error('dns exploded') })
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
     startChannelRequestWatcher()
@@ -744,7 +744,7 @@ describe('channel-request-watcher -- lookupChannelName API responses', () => {
       return [{ id: 23, agent: 'r7', channel_id: 'C-WARN', channel_name: null, user_id: null, requested_at: 1, status: 'pending' }]
     })
     listAgentsMock.mockReturnValue(['r7'])
-    fetchMock = vi.fn(async () => { throw new Error('fail') }) as unknown as typeof fetch
+    fetchMock = vi.fn(async () => { throw new Error('fail') })
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
     startChannelRequestWatcher()

@@ -789,7 +789,6 @@ describe('restartMainChannelsSession', () => {
     const originalGetuid = process.getuid
     // The guard is `typeof process.getuid === 'function'`. Removing the
     // property for the duration of the test exercises the fallback branch.
-    // @ts-expect-error -- deliberately removing for the test
     delete process.getuid
 
     try {

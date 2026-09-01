@@ -361,7 +361,7 @@ describe('runLoop backfilling: yield-before-handoff + inner break on stopping', 
     } finally {
       teardown()
       rmSync(ctx.stateDir, { recursive: true, force: true })
-      process.argv[1] = undefined
+      process.argv[1] = undefined as unknown as string
       delete process.env.COORDINATOR_STATE_DIR
       delete process.env.TELEGRAM_BOT_TOKEN
     }

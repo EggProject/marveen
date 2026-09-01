@@ -292,7 +292,7 @@ describe('decideHasPluginAlive', () => {
       psOutput: out, claudePid: CLAUDE_PID, providerType: 'telegram',
       botPid: ORPHAN, isPidAlive: ALL_PIDS_ALIVE,
       agentName: 'alpha',
-      debugLog: (e, f) => events.push([e, f]),
+      debugLog: (e: string, f: Record<string, unknown>) => events.push([e, f]),
     })).toBe(true)
     expect(events).toEqual([['plugin alive via bot.pid (reparented)', { claudePid: CLAUDE_PID, orphanPid: ORPHAN, agentName: 'alpha', providerType: 'telegram' }]])
   })
@@ -353,7 +353,7 @@ describe('decideHasPluginAlive', () => {
       psOutput: out, claudePid: CLAUDE_PID, providerType: 'slack',
       botPid: null, isPidAlive: ALL_PIDS_ALIVE,
       agentName: 'beta',
-      debugLog: (e, f) => events.push([e, f]),
+      debugLog: (e: string, f: Record<string, unknown>) => events.push([e, f]),
     })).toBe(true)
     expect(events).toEqual([['slack plugin alive via process scan', { claudePid: CLAUDE_PID, slackPid: SLACK_NODE, agentName: 'beta' }]])
   })

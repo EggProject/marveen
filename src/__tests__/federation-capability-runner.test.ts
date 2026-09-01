@@ -324,7 +324,7 @@ describe('runOnce (steady state)', () => {
     // agent with the smaller lastAttemptAt: that's 'b' (0 < 50).
     capsMod.writeCapabilityCache({
       a: { summary: 'old', sourceHash: freshHash('a', 'hu'), generatedAt: 1, lastAttemptAt: 100 },
-      c: { lastAttemptAt: 50 },
+      c: { sourceHash: freshHash('c', 'hu'), lastAttemptAt: 50 },
     })
     mocks.catalogAgentNames.mockReturnValue(['a', 'b', 'c'])
     mocks.runAgent.mockResolvedValue({ text: 'new summary', error: undefined })

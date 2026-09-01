@@ -229,7 +229,7 @@ vi.mock('node:child_process', () => ({
       cbFn(err, '', '')
       return
     }
-    cbFn(r.error, r.stdout, r.stderr)
+    cbFn((r as { error: Error | null; stdout: string; stderr: string }).error, (r as { error: Error | null; stdout: string; stderr: string }).stdout, (r as { error: Error | null; stdout: string; stderr: string }).stderr)
   },
 }))
 
