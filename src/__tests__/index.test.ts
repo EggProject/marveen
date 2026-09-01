@@ -2663,6 +2663,7 @@ describe('scheduleDailyDigest: target <= now branch', () => {
     const realDate = Date
     const fixedNow = new Date()
     fixedNow.setHours(23, 30, 0, 0) // 23:30 today -> target (23:00) <= now
+    // @ts-expect-error -- allow Date mock
     globalThis.Date = class extends realDate {
       constructor(...args: ConstructorParameters<typeof Date>) {
         if (args.length === 0) {
