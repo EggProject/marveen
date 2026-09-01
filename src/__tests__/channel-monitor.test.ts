@@ -107,7 +107,7 @@ const m = vi.hoisted(() => ({
   // channel-poller-reap
   reapChannelOrphans: vi.fn(() => 0),
   reapDetachedChannelClaudes: vi.fn<typeof ChannelPollerReap.reapDetachedChannelClaudes>(() => []),
-  collectPollerEvidence: vi.fn(() => ({ interpretation: 'missing' as const })),
+  collectPollerEvidence: vi.fn(() => ({ interpretation: 'no-poller' as const })),
   // channel-conflict-probe
   probeTelegramConflict: vi.fn(async () => ({ status: 0, conflicted: false, description: '' })),
   // channel-plugin-unlock
@@ -381,7 +381,7 @@ beforeEach(() => {
   m.attemptChannelMcpReconnect.mockReturnValue({ ok: false, message: 'no' })
   m.reapChannelOrphans.mockReturnValue(0)
   m.reapDetachedChannelClaudes.mockReturnValue([])
-  m.collectPollerEvidence.mockReturnValue({ interpretation: 'missing' })
+  m.collectPollerEvidence.mockReturnValue({ interpretation: 'no-poller' })
   m.wasPluginConfirmedAbsent.mockReturnValue(false)
   m.probeTelegramConflict.mockResolvedValue({ status: 0, conflicted: false, description: '' })
   m.parseEtimeToSeconds.mockReturnValue(0)
