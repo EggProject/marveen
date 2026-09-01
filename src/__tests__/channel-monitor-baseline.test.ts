@@ -98,7 +98,7 @@ const m = vi.hoisted(() => ({
   readAgentChannelProvider: vi.fn<typeof readAgentChannelProvider>(() => null),
   reapChannelOrphans: vi.fn(() => 0),
   reapDetachedChannelClaudes: vi.fn<typeof reapDetachedChannelClaudes>(() => []),
-  collectPollerEvidence: vi.fn<typeof collectPollerEvidence>(() => ({ botPid: null, botPidAlive: false, envScanPids: [], rows: [], interpretation: 'no-poller' as const })),
+  collectPollerEvidence: vi.fn<typeof collectPollerEvidence>(() => ({ botPid: null, botPidAlive: false, envScanPids: [], rows: [], interpretation: 'no-poller' })),
   probeTelegramConflict: vi.fn(async () => ({ status: 0, conflicted: false, description: '' })),
   schedulePluginUnlockAfterRespawn: vi.fn(() => undefined),
   wasPluginConfirmedAbsent: vi.fn(() => false),
