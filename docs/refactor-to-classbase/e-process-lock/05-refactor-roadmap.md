@@ -168,9 +168,14 @@ uncovered once E.5 removes them.
 > **LANDED in `(this commit)`**. Single commit touching `src/index.ts`
 > (one call site migrated from `acquirePortLock(WEB_PORT, procCtx, { binaryPattern: … })`
 > to `new PortLockAcquirer(procCtx).acquire(WEB_PORT, { binaryPattern: … })`)
-> and `src/__tests__/index.test.ts` (six new assertions verifying the
-> class form is exercised). Free function `acquirePortLock` remains as
-> the thin wrapper from E.1; E.5 is gated on E.3 + E.4.
+> and `src/__tests__/index.test.ts` (the `vi.mock('../process-lock.js')`
+> factory at `:173` was extended with a `PortLockAcquirer` mock class
+> that forwards `.acquire(port, opts)` to `mockAcquirePortLock(port, this.ctx, opts)`,
+> so the existing ~40 `mockAcquirePortLock` assertions now exercise the
+> class form via the mock class — no new `it()` blocks added; the class
+> API is also covered directly by `src/__tests__/process-lock-classes.test.ts`
+> which pre-dates E.3). Free function `acquirePortLock` remains as the
+> thin wrapper from E.1; E.5 is gated on E.3 + E.4.
 
 - **Goal:** migrate the single production consumer of `acquirePortLock`
   from `acquirePortLock(WEB_PORT, procCtx, { binaryPattern: … })`

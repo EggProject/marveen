@@ -289,8 +289,9 @@ function buildPidfileLockContext(procCtx: ProcessLockContext): PidfileLockContex
 }
 
 // Fresh-startup race short-circuit. When two dashboard processes start
-// near-simultaneously, acquirePortLock would see the loser's peer as a
-// zombie (alive + binary-pattern match, but not yet listening on the port)
+// near-simultaneously, the PortLockAcquirer below would see the loser's
+// peer as a zombie (alive + binary-pattern match, but not yet listening
+// on the port)
 // and SIGKILL it before the peer ever got a chance to install its signal
 // handlers. That's exactly the "startup race kills the winner mid-init"
 // scenario. Check the pidfile FIRST: if it already records a legitimate
@@ -306,10 +307,11 @@ function checkFreshStartupRace(procCtx: ProcessLockContext): void {
     alive = out === 'sent'
   } catch {
     // Probe failed (e.g. EPERM). We cannot positively detect the race, so
-    // we fall through to acquirePortLock which will SIGTERM the matching
-    // binary-pattern process. That peer's early signal handler (installed
-    // before acquireLock in main) runs graceful shutdown, so even if the
-    // peer was mid-init the state is flushed cleanly rather than lost.
+    // we fall through to the PortLockAcquirer call below which will SIGTERM
+    // the matching binary-pattern process. That peer's early signal handler
+    // (installed before acquireLock in main) runs graceful shutdown, so
+    // even if the peer was mid-init the state is flushed cleanly rather
+    // than lost.
     return
   }
   if (!alive) return
@@ -317,7 +319,8 @@ function checkFreshStartupRace(procCtx: ProcessLockContext): void {
   if (!isLegitimateDashboardPid(recorded, procCtx)) return
 
   // If the peer already holds the listening port, it's a fully-up
-  // predecessor (not a mid-init winner). acquirePortLock will handle it.
+  // predecessor (not a mid-init winner). The PortLockAcquirer call below
+  // will handle it.
   const portHolders = procCtx.listPortHolders(WEB_PORT)
   if (portHolders.includes(recorded)) return
 
@@ -420,9 +423,10 @@ async function main(): Promise<void> {
 
   // Install signal handlers EARLIEST so we can respond cleanly to SIGTERM
   // during init. Required to close the fresh-startup race: a concurrent
-  // startup will SIGTERM this process via acquirePortLock's binary-pattern
-  // kill; without an early handler, default SIGTERM behavior terminates
-  // us mid-init with no chance to flush SQLite WAL or drop the pidfile.
+  // startup will SIGTERM this process via the PortLockAcquirer's
+  // binary-pattern kill; without an early handler, default SIGTERM behavior
+  // terminates us mid-init with no chance to flush SQLite WAL or drop the
+  // pidfile.
   process.on('SIGINT', shutdown)
   process.on('SIGTERM', shutdown)
   process.on('uncaughtException', (err) => {

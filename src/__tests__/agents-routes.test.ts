@@ -44,6 +44,7 @@ import type { createInvite, listInvites, revokeInvite, CreateInviteResult } from
 import type { resolveProfilePlaceholders, loadProfileTemplate, ProfileTemplate } from '../web/profiles.js'
 import type { peekBundleKind, importAgentBundle, importAllAgentsBundle } from '../web/agent-bundle.js'
 import type { detectPermissionMode } from '../pane-state.js'
+import type { checkAgentPutFields } from '../web/agent-put-fields.js'
 import type { getContextGuardStatus } from '../web/context-guard-runner.js'
 
 // --- hoisted harness --------------------------------------------------------
@@ -159,7 +160,7 @@ const H = vi.hoisted(() => {
     managedSettingsMissing: false,
     managedSettingsCorrupt: false,
     controlledChannelsEnabled: undefined as boolean | undefined,
-    setSecret: mkFn<[key: string, value: string]>(),
+    setSecret: mkFn<[id: string, label: string, value: string]>(),
     deleteSecret: mkFn<[key: string]>(),
     listSecrets: vi.fn<() => Array<{ key: string; value: string; [k: string]: unknown }>>(() => []),
 
@@ -193,8 +194,8 @@ const H = vi.hoisted(() => {
     readAgentGooglechatConfig: vi.fn<(name: string) => { hasGooglechat: boolean }>(() => ({ hasGooglechat: false })),
     readAgentTeamsConfig: vi.fn<(name: string) => { hasTeams: boolean }>(() => ({ hasTeams: false })),
     readMarveenTelegramConfig: vi.fn<() => { botUsername: string }>(() => ({ botUsername: '' })),
-    sendAvatarChangeMessage: vi.fn<(args: { token: string; botUsername: string }) => Promise<void>>(async () => {}),
-    sendWelcomeMessage: vi.fn<(args: { token: string; chatId: string }) => Promise<void>>(async () => {}),
+    sendAvatarChangeMessage: vi.fn<(agentName: string, avatarPath: string) => Promise<void>>(async () => {}),
+    sendWelcomeMessage: vi.fn<(agentName: string, token: string) => Promise<void>>(async () => {}),
     validateTelegramToken: vi.fn<(token: string) => Promise<{ ok: boolean; botName?: string; error?: string }>>(async () => ({ ok: true, botName: 'b' })),
     parseTelegramToken: vi.fn<(raw: string) => string | null>(() => 'tok'),
 
@@ -205,7 +206,7 @@ const H = vi.hoisted(() => {
     agentChannelDir: vi.fn<(name: string) => string>(() => '/x'),
 
     // channel-monitor / main-agent
-    hardRestartMarveenChannels: mkFn<[opts?: unknown], { ok: boolean; error?: string }>(),
+    hardRestartMarveenChannels: mkFn<[], { ok: boolean; error?: string }>(),
     isMainChannelsAgent: vi.fn<(name: string) => boolean>(() => false),
     MAIN_CHANNELS_SESSION: 'marveen-channels',
 
@@ -218,7 +219,7 @@ const H = vi.hoisted(() => {
 
     // agent-scaffold
     writeAgentSettingsFromProfile: mkFn<[name: string, settings: unknown]>(),
-    scaffoldAgentDir: mkFn<[name: string, opts?: unknown]>(),
+    scaffoldAgentDir: mkFn<[name: string]>(),
     generateClaudeMd: vi.fn<(name: string) => Promise<string>>(async () => '# CLAUDE\n'),
     generateSoulMd: vi.fn<(name: string) => Promise<string>>(async () => '# SOUL\n'),
 
@@ -244,7 +245,7 @@ const H = vi.hoisted(() => {
     detectPermissionMode: vi.fn<typeof detectPermissionMode>(() => 'normal'),
 
     // agent-put-fields
-    checkAgentPutFields: vi.fn<(body: unknown) => { ok: boolean; writableFields?: readonly string[]; error?: string; message?: string; [k: string]: unknown }>(() => ({ ok: true })),
+    checkAgentPutFields: vi.fn<typeof checkAgentPutFields>(() => ({ ok: true })),
     AGENT_PUT_WRITABLE_FIELDS: ['claudeMd', 'soulMd'],
 
     // reauth-detect
