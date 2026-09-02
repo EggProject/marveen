@@ -52,16 +52,16 @@ vi.mock('../config.js', async (importOriginal) => {
 // can be driven without a real Ollama.
 // ---------------------------------------------------------------------------
 let fetchMock: ReturnType<typeof vi.fn>
-vi.mock('node-fetch', () => ({ default: vi.fn() }), { virtual: true })
+vi.mock('node-fetch', () => ({ default: vi.fn() }))
 const originalFetch = globalThis.fetch
 function setFetchResponse(embedding: number[] | null): void {
-  fetchMock = vi.fn(async () => ({
+  fetchMock = vi.fn<(...args: unknown[]) => Promise<{ json: () => Promise<{ embedding: number[] | null }> }>>(async () => ({
     json: async () => ({ embedding }),
-  })) as unknown as typeof fetch
+  }))
   globalThis.fetch = fetchMock as unknown as typeof fetch
 }
 function setFetchThrow(err: Error): void {
-  fetchMock = vi.fn(async () => { throw err }) as unknown as typeof fetch
+  fetchMock = vi.fn<(...args: unknown[]) => Promise<unknown>>(async () => { throw err })
   globalThis.fetch = fetchMock as unknown as typeof fetch
 }
 
@@ -83,7 +83,7 @@ vi.mock('node:fs', async (importOriginal) => {
     }) as typeof chmodSync,
     mkdirSync: ((p: fs.PathLike, opts: unknown) => {
       if (fsState.mkdirSyncShouldThrow) throw fsState.mkdirSyncShouldThrow
-      return (actual.mkdirSync as unknown as typeof import('node:fs').mkdirSync)(p, opts)
+      return (actual.mkdirSync as typeof import('node:fs').mkdirSync)(p, opts as Parameters<typeof import('node:fs').mkdirSync>[1])
     }) as typeof import('node:fs').mkdirSync,
   }
 })
@@ -871,7 +871,7 @@ describe('embeddings + hybridSearch + backfill', () => {
     await expect(generateEmbedding('hi')).resolves.toBeNull()
   })
   it('generateEmbedding returns null when response lacks embedding', async () => {
-    fetchMock = vi.fn(async () => ({ json: async () => ({}) })) as unknown as typeof fetch
+    fetchMock = vi.fn<(...args: unknown[]) => Promise<{ json: () => Promise<Record<string, unknown>> }>>(async () => ({ json: async () => ({}) }))
     globalThis.fetch = fetchMock as unknown as typeof fetch
     await expect(generateEmbedding('hi')).resolves.toBeNull()
   })
@@ -947,9 +947,9 @@ describe('pending_channel_requests', () => {
 // ---------------------------------------------------------------------------
 describe('idea_box', () => {
   it('list + create + update + delete + categories', () => {
-    createIdea({ id: 'i-1', title: 'T1', description: 'd', category: 'A', status: 'new', source: 'me' })
-    createIdea({ id: 'i-2', title: 'T2', category: 'B', status: 'reviewed', source: 'me' })
-    createIdea({ id: 'i-3', title: 'T3', category: 'C', status: 'reviewed', source: 'me' })
+    createIdea({ id: 'i-1', title: 'T1', description: 'd', category: 'A', status: 'new', source: 'me', kanban_id: null, impact: null, effort: null })
+    createIdea({ id: 'i-2', title: 'T2', description: null, category: 'B', status: 'reviewed', source: 'me', kanban_id: null, impact: null, effort: null })
+    createIdea({ id: 'i-3', title: 'T3', description: null, category: 'C', status: 'reviewed', source: 'me', kanban_id: null, impact: null, effort: null })
     expect(listIdeas().length).toBe(3)
     expect(listIdeas({ status: 'new' }).length).toBe(1)
     expect(listIdeas({ category: 'A' }).length).toBe(1)
@@ -961,7 +961,7 @@ describe('idea_box', () => {
     expect(listIdeaCategories().sort()).toEqual(['B', 'C'])
   })
   it('comments + status log + revert', () => {
-    createIdea({ id: 'i-c', title: 'c', category: 'C', status: 'new', source: 'me' })
+    createIdea({ id: 'i-c', title: 'c', description: null, category: 'C', status: 'new', source: 'me', kanban_id: null, impact: null, effort: null })
     const c1 = addIdeaComment('i-c', 'me', 'first')
     expect(c1.id).toBeGreaterThan(0)
     expect(getIdeaComments('i-c').length).toBe(1)
@@ -1050,7 +1050,7 @@ describe('store_file_audit', () => {
 describe('queryAuditLog', () => {
   it('covers each source + all-sources + empty + filters', () => {
     logConfigChange('q-key', 'o', 'n', 'me')
-    createIdea({ id: 'qi', title: 'QI', category: 'X', status: 'new', source: 'me' })
+    createIdea({ id: 'qi', title: 'QI', description: null, category: 'X', status: 'new', source: 'me', kanban_id: null, impact: null, effort: null })
     logIdeaStatusChange('qi', null, 'new', 'me')
     logStoreFileEvent('q.txt', 'write', 0, 1, 'q-agent')
     appendDailyLog('q-agent', 'dairy')
@@ -1134,7 +1134,7 @@ describe('branch coverage helpers', () => {
     initDatabase(tmpDb)
     const original = Database.prototype.prepare
     let triggered = false
-    Database.prototype.prepare = function (sql: string) {
+    Database.prototype.prepare = function (this: Database, sql: string) {
       if (sql.includes("SELECT sql FROM sqlite_master WHERE name='memories'") && !triggered) {
         triggered = true
         // Throw a STRING (not Error) so the `err instanceof Error` branch is
@@ -1249,7 +1249,7 @@ describe('recallSearch FTS catch (no agentId)', () => {
     saveAgentMemory('agent-RFN', 'apple banana', 'warm')
     const original = Database.prototype.prepare
     let thrown = false
-    Database.prototype.prepare = function (sql: string) {
+    Database.prototype.prepare = function (this: Database, sql: string) {
       if (sql.includes('memories_fts') && sql.includes('MATCH') && !thrown) {
         thrown = true
         throw new Error('mock FTS throw')
@@ -1282,7 +1282,7 @@ describe('getAgentConversationThreads null-lastMessage branches', () => {
     const real = createAgentMessage('alice', 'lm-real', 'm1')
     const phantom = createAgentMessage('alice', 'lm-phantom', 'm2')
     const original = Database.prototype.prepare
-    Database.prototype.prepare = function (sql: string) {
+    Database.prototype.prepare = function (this: Database, sql: string) {
       if (sql.includes("ORDER BY created_at DESC, id DESC LIMIT 1")) {
         return {
           get: (a: string, b: string) => {
@@ -1303,8 +1303,8 @@ describe('getAgentConversationThreads null-lastMessage branches', () => {
     } as typeof Database.prototype.prepare
     try {
       const threads = getAgentConversationThreads()
-      const phantomThread = threads.find(t => t.agent === 'lm-phantom') as { lastMessage: AgentMessage | null } | undefined
-      const realThread = threads.find(t => t.agent === 'lm-real') as { lastMessage: AgentMessage | null } | undefined
+      const phantomThread = threads.find(t => t.agent === 'lm-phantom') as { lastMessage: { id: number; from_agent: string; to_agent: string; content: string; status: string; result: string | null; created_at: number; delivered_at: number | null; completed_at: number | null; origin_note: string | null; trace_id: string | null; span_id: string | null; parent_span_id: string | null } | null } | undefined
+      const realThread = threads.find(t => t.agent === 'lm-real') as { lastMessage: { id: number; from_agent: string; to_agent: string; content: string; status: string; result: string | null; created_at: number; delivered_at: number | null; completed_at: number | null; origin_note: string | null; trace_id: string | null; span_id: string | null; parent_span_id: string | null } | null } | undefined
       expect(phantomThread?.lastMessage).toBeNull()
       expect(realThread?.lastMessage).not.toBeNull()
       // Sort still works (nulls sort as 0).
@@ -1329,7 +1329,7 @@ describe('queryAuditLog tiebreaker with null id (line 3032 ?? 0 fallbacks)', () 
     getDb().prepare('UPDATE config_change_log SET created_at=? WHERE key IN (?, ?)').run(ts, 'null-id-a', 'null-id-b')
     // Patch the SQL .all() to inject null ids (covers the ?? 0 fallback).
     const originalAll = Database.prototype.prepare
-    Database.prototype.prepare = function (sql: string) {
+    Database.prototype.prepare = function (this: Database, sql: string) {
       const stmt = originalAll.call(this, sql) as { all: (...args: unknown[]) => unknown[]; get: (...args: unknown[]) => unknown }
       if (sql.includes('config_change_log') && sql.includes('ORDER BY created_at DESC')) {
         return {
@@ -1367,7 +1367,7 @@ describe('saveAgentMemory fire-and-forget reject catch', () => {
     setFetchResponse([0.1, 0.2, 0.3])
     const originalPrepare = Database.prototype.prepare
     let triggered = false
-    Database.prototype.prepare = function (sql: string) {
+    Database.prototype.prepare = function (this: Database, sql: string) {
       if (sql.includes('UPDATE memories SET embedding = ? WHERE id = ?') && !triggered) {
         triggered = true
         // Returning a statement whose .run() throws makes the .then callback
@@ -1479,7 +1479,7 @@ describe('queryAuditLog sort a.id null branch (line 3032)', () => {
     getDb().prepare('UPDATE config_change_log SET created_at=? WHERE key IN (?, ?)').run(sharedTs, 'sort-a', 'sort-b')
     // Mock .all() on the config SELECT so the first returned row has id=null.
     const originalPrepare = Database.prototype.prepare
-    Database.prototype.prepare = function (sql: string) {
+    Database.prototype.prepare = function (this: Database, sql: string) {
       const stmt = originalPrepare.call(this, sql) as { all?: (...args: unknown[]) => unknown[] }
       if (sql.includes('config_change_log') && sql.includes('ORDER BY created_at DESC') && stmt.all) {
         const realAll = stmt.all.bind(stmt)
@@ -1616,9 +1616,9 @@ describe('otel_spans', () => {
   it('upsert (insert + update on conflict) + close + getTrace + listTraces', () => {
     upsertOtelSpan({ trace_id: 'tr1', span_id: 'sp1', parent_span_id: null, agent_id: 'a1', operation: 'op', start_ms: 1, attributes: null })
     // Update on conflict
-    upsertOtelSpan({ trace_id: 'tr1', span_id: 'sp1', parent_span_id: null, agent_id: 'a1', operation: 'op2', start_ms: 1, end_ms: 10, status: 'ok' })
-    upsertOtelSpan({ trace_id: 'tr1', span_id: 'sp2', parent_span_id: 'sp1', agent_id: 'a1', operation: 'op3', start_ms: 5 })
-    upsertOtelSpan({ trace_id: 'tr1', span_id: 'sp3', parent_span_id: 'sp1', agent_id: 'a1', operation: 'err-op', start_ms: 6, status: 'error' })
+    upsertOtelSpan({ trace_id: 'tr1', span_id: 'sp1', parent_span_id: null, agent_id: 'a1', operation: 'op2', start_ms: 1, end_ms: 10, status: 'ok', attributes: null })
+    upsertOtelSpan({ trace_id: 'tr1', span_id: 'sp2', parent_span_id: 'sp1', agent_id: 'a1', operation: 'op3', start_ms: 5, attributes: null })
+    upsertOtelSpan({ trace_id: 'tr1', span_id: 'sp3', parent_span_id: 'sp1', agent_id: 'a1', operation: 'err-op', start_ms: 6, status: 'error', attributes: null })
     expect(closeOtelSpan('tr1', 'sp2', 9, 'ok')).toBe(true)
     // Setting to a different value still counts as a row update
     expect(closeOtelSpan('tr1', 'sp2', 10, 'ok')).toBe(true)
@@ -1630,15 +1630,15 @@ describe('otel_spans', () => {
     const sum = summaries.find(s => s.trace_id === 'tr1') as { status: string }
     expect(sum.status).toBe('error')
     // Insert a running root
-    upsertOtelSpan({ trace_id: 'tr2', span_id: 's1', parent_span_id: null, agent_id: 'a1', operation: 'op', start_ms: 100, status: 'running' })
+    upsertOtelSpan({ trace_id: 'tr2', span_id: 's1', parent_span_id: null, agent_id: 'a1', operation: 'op', start_ms: 100, status: 'running', attributes: null })
     const summaries2 = listOtelTraces(10)
     const sum2 = summaries2.find(s => s.trace_id === 'tr2') as { status: string }
     expect(sum2.status).toBe('running')
     // Insert a timeout root -> 'timeout' precedence over error for separate trace
-    upsertOtelSpan({ trace_id: 'tr3', span_id: 's1', parent_span_id: null, agent_id: 'a1', operation: 'op', start_ms: 200, status: 'timeout' })
+    upsertOtelSpan({ trace_id: 'tr3', span_id: 's1', parent_span_id: null, agent_id: 'a1', operation: 'op', start_ms: 200, status: 'timeout', attributes: null })
     expect((listOtelTraces(10).find(s => s.trace_id === 'tr3') as { status: string }).status).toBe('timeout')
     // root with no error/timeout/running -> 'ok'
-    upsertOtelSpan({ trace_id: 'tr4', span_id: 's1', parent_span_id: null, agent_id: 'a1', operation: 'op', start_ms: 300, end_ms: 301, status: 'ok' })
+    upsertOtelSpan({ trace_id: 'tr4', span_id: 's1', parent_span_id: null, agent_id: 'a1', operation: 'op', start_ms: 300, end_ms: 301, status: 'ok', attributes: null })
     expect((listOtelTraces(10).find(s => s.trace_id === 'tr4') as { status: string }).status).toBe('ok')
   })
 })
@@ -1806,7 +1806,7 @@ describe('agent-message ordering + threads', () => {
 // ---------------------------------------------------------------------------
 describe('updateIdea patches', () => {
   it('applies every patch field', () => {
-    createIdea({ id: 'ip', title: 'T', category: 'C', status: 'new', source: 'me' })
+    createIdea({ id: 'ip', title: 'T', description: null, category: 'C', status: 'new', source: 'me', kanban_id: null, impact: null, effort: null })
     expect(updateIdea('ip', { description: 'D' })).toBe(true)
     expect(updateIdea('ip', { category: 'C2' })).toBe(true)
     expect(updateIdea('ip', { status: 'reviewed' })).toBe(true)
@@ -1849,7 +1849,7 @@ describe('analyzeWorkflowCandidates gap split', () => {
 describe('queryAuditLog from/to coverage', () => {
   it('config + idea + store + diary from/to branches', () => {
     logConfigChange('aq', 'o', 'n', 'me')
-    createIdea({ id: 'aQ', title: 'Q', category: 'Q', status: 'new', source: 'me' })
+    createIdea({ id: 'aQ', title: 'Q', description: null, category: 'Q', status: 'new', source: 'me', kanban_id: null, impact: null, effort: null })
     logIdeaStatusChange('aQ', null, 'new', 'me')
     logStoreFileEvent('qfile', 'write', 0, 1)
     appendDailyLog('aQ', 'dlog')
@@ -2021,7 +2021,7 @@ describe('backfillEmbeddings else branch', () => {
     // Spy on prepare to throw on the FTS MATCH statement (only first call).
     const original = Database.prototype.prepare
     let thrown = false
-    Database.prototype.prepare = function (sql: string) {
+    Database.prototype.prepare = function (this: Database, sql: string) {
       if (sql.includes('memories_fts') && sql.includes('MATCH') && !thrown) {
         thrown = true
         throw new Error('mock FTS throw')
@@ -2043,7 +2043,7 @@ describe('recallSearch FTS catch (with agentId)', () => {
     saveAgentMemory('agent-RF', 'apple banana content', 'warm')
     const original = Database.prototype.prepare
     let thrown = false
-    Database.prototype.prepare = function (sql: string) {
+    Database.prototype.prepare = function (this: Database, sql: string) {
       if (sql.includes('memories_fts') && sql.includes('MATCH') && !thrown) {
         thrown = true
         throw new Error('mock FTS throw')
@@ -2167,20 +2167,17 @@ describe('initDatabase: full branch coverage', () => {
     const tmpDb = join(tmpDir, 'eexist-real.db')
     const originalExists = fs.existsSync
     const originalOpen = fs.openSync
-    fs.existsSync = ((p: fs.PathLike) => {
-      // Pretend the file does not exist (always false) so the outer if
-      // runs; but openSync will then fail with EEXIST because the real
-      // file does exist on disk.
+    Object.defineProperty(fs, 'existsSync', { value: ((p: fs.PathLike) => {
       if (typeof p === 'string' && p === tmpDb) return false
       return originalExists(p)
-    }) as typeof fs.existsSync
+    }) as typeof fs.existsSync, writable: true, configurable: true })
     openSync(tmpDb, 'wx', 0o600) // create the file once
     try {
       initDatabase(tmpDb) // hits EEXIST inside catch -> silent
       expect(getDb().prepare("SELECT name FROM sqlite_master WHERE name='sessions'").get()).toBeDefined()
     } finally {
-      fs.existsSync = originalExists
-      fs.openSync = originalOpen
+      Object.defineProperty(fs, 'existsSync', { value: originalExists, writable: true, configurable: true })
+      Object.defineProperty(fs, 'openSync', { value: originalOpen, writable: true, configurable: true })
       initDatabase(':memory:')
     }
   })
@@ -2201,7 +2198,7 @@ describe('initDatabase: full branch coverage', () => {
     // non-EEXIST error.
     const originalOpenSync = fs.openSync
     let triggered = false
-    fs.openSync = ((p: fs.PathLike, flags: string | number, mode?: number) => {
+    Object.defineProperty(fs, 'openSync', { value: ((p: fs.PathLike, flags: string | number, mode?: number) => {
       if (typeof p === 'string' && p.endsWith('openfail.db') && flags === 'wx' && !triggered) {
         triggered = true
         const err = new Error('mock open fail') as NodeJS.ErrnoException
@@ -2209,14 +2206,14 @@ describe('initDatabase: full branch coverage', () => {
         throw err
       }
       return originalOpenSync(p, flags, mode)
-    }) as typeof fs.openSync
+    }) as typeof fs.openSync, writable: true, configurable: true })
     try {
       const tmpDb = join(tmpDir, 'openfail.db')
       initDatabase(tmpDb)
       expect(triggered).toBe(true)
       expect(getDb().prepare("SELECT name FROM sqlite_master WHERE name='sessions'").get()).toBeDefined()
     } finally {
-      fs.openSync = originalOpenSync
+      Object.defineProperty(fs, 'openSync', { value: originalOpenSync, writable: true, configurable: true })
       initDatabase(':memory:')
     }
   })
@@ -2227,7 +2224,7 @@ describe('initDatabase: full branch coverage', () => {
     initDatabase(tmpDb)
     const original = Database.prototype.prepare
     let triggered = false
-    Database.prototype.prepare = function (sql: string) {
+    Database.prototype.prepare = function (this: Database, sql: string) {
       if (sql.includes("SELECT sql FROM sqlite_master WHERE type='table' AND name='kanban_cards'") && !triggered) {
         triggered = true
         throw new Error('mock rebuild fail')
@@ -2247,7 +2244,7 @@ describe('initDatabase: full branch coverage', () => {
     initDatabase(tmpDb)
     const original = Database.prototype.prepare
     let triggered = false
-    Database.prototype.prepare = function (sql: string) {
+    Database.prototype.prepare = function (this: Database, sql: string) {
       if (sql.includes("SELECT sql FROM sqlite_master WHERE name='memories'") && !triggered) {
         triggered = true
         throw new Error('mock memory migration fail')
@@ -2270,7 +2267,7 @@ describe('initDatabase: full branch coverage', () => {
     initDatabase(tmpDb)
     const original = Database.prototype.prepare
     let triggered = false
-    Database.prototype.prepare = function (sql: string) {
+    Database.prototype.prepare = function (this: Database, sql: string) {
       if (sql.includes("SELECT sql FROM sqlite_master WHERE name='memories'") && !triggered) {
         triggered = true
         throw new Error('table memories already exists')
@@ -2351,7 +2348,7 @@ describe('default-arg branches', () => {
     expect(Array.isArray(hs)).toBe(true)
 
     // logToolCall: success defaults to true. Caller does not pass it.
-    logToolCall('agent-default', 'm-1', 'mcp__server__tool', '{"k":"v"}', null)
+    logToolCall('agent-default', 'm-1', 'mcp__server__tool', true, '{"k":"v"}', null)
     expect(Array.isArray(getRecentToolCalls(3600))).toBe(true)
 
     // analyzeWorkflowCandidates + pruneToolCallLog defaults.
@@ -2441,7 +2438,7 @@ describe('id-??-undefined defensive fallback (null id)', () => {
       "SELECT sql FROM sqlite_master WHERE type='table' AND name='kanban_cards'",
       "SELECT sql FROM sqlite_master WHERE name='memories'",
     ]
-    Database.prototype.prepare = function (sql: string) {
+    Database.prototype.prepare = function (this: Database, sql: string) {
       if (targets.includes(sql)) {
         // Return a fake statement whose .get() returns undefined.
         return { get: () => undefined, all: () => [], run: () => ({ changes: 0 }), iterate: function* () {} } as unknown as ReturnType<typeof Database.prototype.prepare>

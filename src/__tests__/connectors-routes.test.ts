@@ -93,12 +93,12 @@ const H = vi.hoisted(() => {
 
     // dashboard-settings
     getExternalProjectPaths: vi.fn(() => [] as string[]),
-    addExternalProjectPath: vi.fn((p: string) => ({ paths: [p] })),
+    addExternalProjectPath: vi.fn((p: string): { paths: string[]; error?: string } => ({ paths: [p] })),
     removeExternalProjectPath: vi.fn(() => [] as string[]),
     getGitHubRepos: vi.fn(() => [] as unknown[]),
     installGitHubRepo: vi.fn(async () => ({ repo: { name: 'foo' }, requiredEnvVars: [] })),
-    removeGitHubRepo: vi.fn(() => ({ ok: true })),
-    updateGitHubRepo: vi.fn(() => ({ ok: true })),
+    removeGitHubRepo: vi.fn((): { ok: boolean; error?: string } => ({ ok: true })),
+    updateGitHubRepo: vi.fn((): { ok: boolean; error?: string } => ({ ok: true })),
     detectRequiredEnvVars: vi.fn(() => [] as string[]),
 
     // vault
@@ -466,7 +466,7 @@ describe('GET /api/connectors', () => {
         { name: 'Claude.ai Gmail', normalizedId: 'gmail', endpoint: 'u', status: 'connected', source: 'claude.ai' },
         { name: 'plugin:tg', normalizedId: 'tg', endpoint: 'cmd', status: 'unknown', source: 'plugin' },
       ],
-      lastRefreshed: 0, refreshing: false,
+      lastRefreshed: 0, refreshing: false, error: undefined,
     })
     const { json } = await call('GET', '/api/connectors')
     const body = json() as Array<Record<string, unknown>>
@@ -495,7 +495,7 @@ describe('GET /api/connectors', () => {
       if (p === join(realProj, '.mcp.json')) {
         return JSON.stringify({ mcpServers: { projServer: { command: 'proj-cmd' } } })
       }
-      if (p === join(PROJECT_ROOT, '.mcp.json')) return '{}'
+      if (p === join(H.PROJECT_ROOT, '.mcp.json')) return '{}'
       if (p.endsWith('.claude.json')) return '{}'
       return fallback
     })
@@ -562,7 +562,7 @@ describe('GET /api/connectors', () => {
     })
     H.getMcpListCache.mockReturnValue({
       entries: [{ name: 'shared', normalizedId: 'shared', endpoint: '', status: 'connected', source: 'local' }],
-      lastRefreshed: 0, refreshing: false,
+      lastRefreshed: 0, refreshing: false, error: undefined,
     })
     const { json } = await call('GET', '/api/connectors')
     const body = json() as Array<Record<string, unknown>>
@@ -592,7 +592,7 @@ describe('GET /api/connectors/status', () => {
 describe('POST /api/connectors/refresh', () => {
   it('returns 200/ok when the cache refresh succeeds', async () => {
     H.refreshMcpListCache.mockResolvedValue({
-      entries: [{}, {}], lastRefreshed: 42, refreshing: false,
+      entries: [{}, {}], lastRefreshed: 42, refreshing: false, error: undefined,
     })
     const { res, json } = await call('POST', '/api/connectors/refresh')
     expect(res.statusCode).toBe(200)
@@ -668,8 +668,8 @@ describe('/api/connectors/github-repos', () => {
     expect(json()).toEqual({ ok: true, repo: { name: 'foo' }, requiredEnvVars: [] })
     expect(H.setSecret.mock.calls[0][0]).toMatch(/^github-env-token-/)
     expect(H.installGitHubRepo).toHaveBeenCalled()
-    const installArg = H.installGitHubRepo.mock.calls[0][1] as Record<string, string>
-    expect(installArg.TOKEN).toMatch(/^github-env-token-/)
+    const installArg = (H.installGitHubRepo.mock.calls[0] as unknown as [string, Record<string, string> | undefined] | undefined)?.[1]
+    expect(installArg?.TOKEN).toMatch(/^github-env-token-/)
   })
 
   it('POST 400s when URL is empty after trim', async () => {
@@ -1309,7 +1309,7 @@ describe('GET /api/mcp-catalog', () => {
       entries: [
         { name: 'n', normalizedId: 'gmail', endpoint: '', status: 'connected', source: 'claude.ai' },
       ],
-      lastRefreshed: 0, refreshing: false,
+      lastRefreshed: 0, refreshing: false, error: undefined,
     })
     const { res, json } = await call('GET', '/api/mcp-catalog')
     expect(res.statusCode).toBe(200)
@@ -1331,7 +1331,7 @@ describe('GET /api/mcp-catalog', () => {
       entries: [
         { name: 'gmail', normalizedId: 'gmail', endpoint: '', status: 'connected', source: 'local' },
       ],
-      lastRefreshed: 0, refreshing: false,
+      lastRefreshed: 0, refreshing: false, error: undefined,
     })
     const { res, json } = await call('GET', '/api/mcp-catalog')
     expect(res.statusCode).toBe(200)
@@ -1342,7 +1342,7 @@ describe('GET /api/mcp-catalog', () => {
 
   it('triggers the configMatch branch when catalogMatchesConfigured returns true', async () => {
     H.catalogMatchesConfigured.mockReturnValue(true)
-    H.getMcpListCache.mockReturnValue({ entries: [], lastRefreshed: 0, refreshing: false })
+    H.getMcpListCache.mockReturnValue({ entries: [], lastRefreshed: 0, refreshing: false, error: undefined })
     const { json } = await call('GET', '/api/mcp-catalog')
     const arr = json() as Array<Record<string, any>>
     const gmail = arr.find(e => e.id === 'gmail')
@@ -1367,7 +1367,8 @@ describe('GET /api/mcp-catalog', () => {
       }
       return fallback
     })
-    H.catalogMatchesConfigured.mockImplementation((idSlug, nameSlug, slugs) => {
+    H.catalogMatchesConfigured.mockImplementation((...args: unknown[]) => {
+      const [idSlug, nameSlug, slugs] = args as [unknown, unknown, string[]]
       void idSlug; void nameSlug
       for (const s of slugs) if (s === 'gmail-personal') return true
       return false
@@ -1455,7 +1456,7 @@ describe('GET /api/mcp-catalog', () => {
         { name: 'a', normalizedId: 'gmail', endpoint: '', status: 'connected', source: 'claude.ai' },
         { name: 'b', normalizedId: 'gmail', endpoint: '', status: 'connected', source: 'local' },
       ],
-      lastRefreshed: 0, refreshing: false,
+      lastRefreshed: 0, refreshing: false, error: undefined,
     })
     const { json } = await call('GET', '/api/mcp-catalog')
     const arr = json() as Array<Record<string, any>>

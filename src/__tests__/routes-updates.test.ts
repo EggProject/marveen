@@ -350,8 +350,8 @@ beforeEach(() => {
   // currentBranch / porcelainStatus / aheadCount -- all of which need to
   // return clean values for the preflight to admit the apply. Tests that
   // need different behavior mock execFileSync per-test.
-  H.execFileSync.mockReset().mockImplementation((_cmd: string, args: unknown[]) => {
-    const a = args as string[]
+  H.execFileSync.mockReset().mockImplementation((...args: unknown[]) => {
+    const a = (args[1] as string[] | undefined) ?? []
     if (a[0] === 'rev-parse' && a[1] === '--abbrev-ref') return 'main\n'
     if (a[0] === 'status' && a[1] === '--porcelain') return ''
     if (a[0] === 'rev-list') return '0'
@@ -409,7 +409,7 @@ describe('tryHandleUpdates -- dispatcher surface', () => {
 describe('GET /api/updates', () => {
   it('returns the current update-checker status as JSON', async () => {
     H.getUpdateStatus.mockReturnValue({
-      current: 'aaaa', latest: 'bbbb', behind: 3, commits: [{ short: 'abc' }],
+      current: 'aaaa', latest: 'bbbb', behind: 3, commits: [{ short: 'abc', sha: 'abc', message: '', author: '', date: '' }],
       remote: 'Owner/Repo', lastChecked: 100, branch: 'main',
     })
     const { res, json, handled } = await call('GET', '/api/updates')
@@ -418,7 +418,7 @@ describe('GET /api/updates', () => {
     expect(res.headers['Content-Type']).toBe('application/json; charset=utf-8')
     expect(res.headers['Cache-Control']).toBe('private, no-store')
     expect(json()).toEqual({
-      current: 'aaaa', latest: 'bbbb', behind: 3, commits: [{ short: 'abc' }],
+      current: 'aaaa', latest: 'bbbb', behind: 3, commits: [{ short: 'abc', sha: 'abc', message: '', author: '', date: '' }],
       remote: 'Owner/Repo', lastChecked: 100, branch: 'main',
     })
   })
@@ -660,7 +660,8 @@ describe('POST /api/updates/check', () => {
 describe('POST /api/updates/apply', () => {
   it('writes the pidfile and spawns update.sh on the happy path (autoStash default false)', async () => {
     let capturedEnv: NodeJS.ProcessEnv | undefined
-    H.spawn.mockImplementation((_cmd: string, _args: string[], opts?: import('node:child_process').SpawnOptions) => {
+    H.spawn.mockImplementation((...args: unknown[]) => {
+      const opts = args[2] as import('node:child_process').SpawnOptions | undefined
       capturedEnv = opts?.env as NodeJS.ProcessEnv
       const ee = new EventEmitter()
       return Object.assign(ee, { unref: vi.fn() }) as unknown as import('node:child_process').ChildProcess
@@ -678,7 +679,8 @@ describe('POST /api/updates/apply', () => {
 
   it('parses autoStash=true and sets AUTO_STASH=1 in the spawn env', async () => {
     let capturedEnv: NodeJS.ProcessEnv | undefined
-    H.spawn.mockImplementation((_cmd: string, _args: string[], opts?: import('node:child_process').SpawnOptions) => {
+    H.spawn.mockImplementation((...args: unknown[]) => {
+      const opts = args[2] as import('node:child_process').SpawnOptions | undefined
       capturedEnv = opts?.env as NodeJS.ProcessEnv
       const ee = new EventEmitter()
       return Object.assign(ee, { unref: vi.fn() }) as unknown as import('node:child_process').ChildProcess
@@ -694,7 +696,8 @@ describe('POST /api/updates/apply', () => {
 
   it('treats invalid JSON body as autoStash=false (catch arm)', async () => {
     let capturedEnv: NodeJS.ProcessEnv | undefined
-    H.spawn.mockImplementation((_cmd: string, _args: string[], opts?: import('node:child_process').SpawnOptions) => {
+    H.spawn.mockImplementation((...args: unknown[]) => {
+      const opts = args[2] as import('node:child_process').SpawnOptions | undefined
       capturedEnv = opts?.env as NodeJS.ProcessEnv
       const ee = new EventEmitter()
       return Object.assign(ee, { unref: vi.fn() }) as unknown as import('node:child_process').ChildProcess
@@ -710,7 +713,8 @@ describe('POST /api/updates/apply', () => {
 
   it('treats a non-true autoStash value as false (AUTO_STASH=0)', async () => {
     let capturedEnv: NodeJS.ProcessEnv | undefined
-    H.spawn.mockImplementation((_cmd: string, _args: string[], opts?: import('node:child_process').SpawnOptions) => {
+    H.spawn.mockImplementation((...args: unknown[]) => {
+      const opts = args[2] as import('node:child_process').SpawnOptions | undefined
       capturedEnv = opts?.env as NodeJS.ProcessEnv
       const ee = new EventEmitter()
       return Object.assign(ee, { unref: vi.fn() }) as unknown as import('node:child_process').ChildProcess
@@ -881,8 +885,8 @@ describe('POST /api/updates/apply', () => {
   })
 
   it('returns 500 precheck-crashed when the GitRunner throws (currentBranch)', async () => {
-    H.execFileSync.mockImplementation((_cmd: string, args: unknown[]) => {
-      const a = args as string[]
+    H.execFileSync.mockImplementation((...args: unknown[]) => {
+      const a = (args[1] as string[] | undefined) ?? []
       if (a[0] === 'rev-parse' && a[1] === '--abbrev-ref') throw new Error('git exploded')
       if (a[0] === 'status' && a[1] === '--porcelain') return ''
       if (a[0] === 'rev-list') return '0'
@@ -899,8 +903,8 @@ describe('POST /api/updates/apply', () => {
   })
 
   it('returns 500 precheck-crashed when the GitRunner throws a non-Error', async () => {
-    H.execFileSync.mockImplementation((_cmd: string, args: unknown[]) => {
-      const a = args as string[]
+    H.execFileSync.mockImplementation((...args: unknown[]) => {
+      const a = (args[1] as string[] | undefined) ?? []
       if (a[0] === 'rev-parse' && a[1] === '--abbrev-ref') throw 'string-not-error'
       return ''
     })
@@ -914,8 +918,8 @@ describe('POST /api/updates/apply', () => {
   })
 
   it('returns 409 dirty-tree when porcelainStatus returns uncommitted files and autoStash=false', async () => {
-    H.execFileSync.mockImplementation((_cmd: string, args: unknown[]) => {
-      const a = args as string[]
+    H.execFileSync.mockImplementation((...args: unknown[]) => {
+      const a = (args[1] as string[] | undefined) ?? []
       if (a[0] === 'rev-parse' && a[1] === '--abbrev-ref') return 'main\n'
       if (a[0] === 'status' && a[1] === '--porcelain') return ' M src/foo.ts\n'
       if (a[0] === 'rev-list') return '0'
@@ -935,8 +939,8 @@ describe('POST /api/updates/apply', () => {
     // Per src/update-preflight.ts, HEARTBEAT.md is excluded from the dirty
     // filter. A porcelain output that lists ONLY a HEARTBEAT.md change must
     // NOT trip dirty-tree.
-    H.execFileSync.mockImplementation((_cmd: string, args: unknown[]) => {
-      const a = args as string[]
+    H.execFileSync.mockImplementation((...args: unknown[]) => {
+      const a = (args[1] as string[] | undefined) ?? []
       if (a[0] === 'rev-parse' && a[1] === '--abbrev-ref') return 'main\n'
       if (a[0] === 'status' && a[1] === '--porcelain') return ' M HEARTBEAT.md\n'
       if (a[0] === 'rev-list') return '0'
@@ -948,8 +952,8 @@ describe('POST /api/updates/apply', () => {
   })
 
   it('skips the dirty-tree block when autoStash=true (route lets update.sh handle stash+pop)', async () => {
-    H.execFileSync.mockImplementation((_cmd: string, args: unknown[]) => {
-      const a = args as string[]
+    H.execFileSync.mockImplementation((...args: unknown[]) => {
+      const a = (args[1] as string[] | undefined) ?? []
       if (a[0] === 'rev-parse' && a[1] === '--abbrev-ref') return 'main\n'
       if (a[0] === 'status' && a[1] === '--porcelain') return ' M src/foo.ts\n'
       if (a[0] === 'rev-list') return '0'
@@ -965,8 +969,8 @@ describe('POST /api/updates/apply', () => {
   })
 
   it('returns 409 detached-head when currentBranch is HEAD even with autoStash=true', async () => {
-    H.execFileSync.mockImplementation((_cmd: string, args: unknown[]) => {
-      const a = args as string[]
+    H.execFileSync.mockImplementation((...args: unknown[]) => {
+      const a = (args[1] as string[] | undefined) ?? []
       if (a[0] === 'rev-parse' && a[1] === '--abbrev-ref') return 'HEAD\n'
       if (a[0] === 'status' && a[1] === '--porcelain') return ''
       if (a[0] === 'rev-list') return '0'
@@ -982,8 +986,8 @@ describe('POST /api/updates/apply', () => {
   })
 
   it('returns 409 detached-head when currentBranch is empty', async () => {
-    H.execFileSync.mockImplementation((_cmd: string, args: unknown[]) => {
-      const a = args as string[]
+    H.execFileSync.mockImplementation((...args: unknown[]) => {
+      const a = (args[1] as string[] | undefined) ?? []
       if (a[0] === 'rev-parse' && a[1] === '--abbrev-ref') return '\n'
       return ''
     })
@@ -994,8 +998,8 @@ describe('POST /api/updates/apply', () => {
   })
 
   it('returns 409 local-commits when aheadCount > 0', async () => {
-    H.execFileSync.mockImplementation((_cmd: string, args: unknown[]) => {
-      const a = args as string[]
+    H.execFileSync.mockImplementation((...args: unknown[]) => {
+      const a = (args[1] as string[] | undefined) ?? []
       if (a[0] === 'rev-parse' && a[1] === '--abbrev-ref') return 'main\n'
       if (a[0] === 'status' && a[1] === '--porcelain') return ''
       if (a[0] === 'rev-list') return '2'
@@ -1427,8 +1431,8 @@ describe('POST /api/updates/apply -- PidfileRunner via real checkNoConcurrentUpd
   it('aheadCount catch arm: execFileSync rev-list throws -> aheadCount returns 0', async () => {
     // Override execFileSync so rev-list specifically throws. The route's
     // aheadCount wraps it in try/catch returning 0.
-    H.execFileSync.mockImplementation((_cmd: string, args: unknown[]) => {
-      const a = args as string[]
+    H.execFileSync.mockImplementation((...args: unknown[]) => {
+      const a = (args[1] as string[] | undefined) ?? []
       if (a[0] === 'rev-parse' && a[1] === '--abbrev-ref') return 'main\n'
       if (a[0] === 'status' && a[1] === '--porcelain') return ''
       if (a[0] === 'rev-list') throw new Error('no upstream')
@@ -1441,8 +1445,8 @@ describe('POST /api/updates/apply -- PidfileRunner via real checkNoConcurrentUpd
   })
 
   it('aheadCount: parseInt -> NaN -> Number.isFinite false -> returns 0 (no-throw branch)', async () => {
-    H.execFileSync.mockImplementation((_cmd: string, args: unknown[]) => {
-      const a = args as string[]
+    H.execFileSync.mockImplementation((...args: unknown[]) => {
+      const a = (args[1] as string[] | undefined) ?? []
       if (a[0] === 'rev-parse' && a[1] === '--abbrev-ref') return 'main\n'
       if (a[0] === 'status' && a[1] === '--porcelain') return ''
       if (a[0] === 'rev-list') return 'not-a-number'

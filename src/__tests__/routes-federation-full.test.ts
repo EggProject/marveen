@@ -70,7 +70,7 @@ const H = vi.hoisted(() => {
     // sets to force the next call to return a string (validator refusal).
     validateFederationConfigRefuse: () => undefined as string | undefined,
     validateFederationConfigStripRoutingMode: () => false,
-    getFederationConfigStripRoutingMode: () => false,
+    getFederationConfigStripRoutingMode: (): boolean => false,
     setFederationRoutingModePreservingFileRefuse: false,
   }
 })
@@ -169,6 +169,7 @@ const {
 const { logger } = await import('../logger.js')
 type PeerStatus = import('../web/federation/poller.js').PeerStatus
 type PeerPollState = import('../web/federation/poller.js').PeerPollState
+type FederationConfig = import('../web/federation/config.js').FederationConfig
 
 // Validate-on-demand mock: the federation/config module is wrapped at the
 // test boundary so its validateFederationConfig passes through to the real
@@ -196,7 +197,7 @@ vi.mock('../web/federation/config.js', async (orig) => {
       if (prop === 'setFederationRoutingModePreservingFile') {
         return (...args: unknown[]) => {
           if (H.setFederationRoutingModePreservingFileRefuse) return false
-          return target.setFederationRoutingModePreservingFile(...args)
+          return target.setFederationRoutingModePreservingFile(...(args as Parameters<typeof target.setFederationRoutingModePreservingFile>))
         }
       }
       if (prop === 'getFederationConfig') {
@@ -1355,7 +1356,7 @@ describe('inbox dedup internals', () => {
 // ===========================================================================
 
 describe('validateInboxPayload (pure matrix)', () => {
-  const CFG = {
+  const CFG: FederationConfig = {
     enabled: true,
     systemId: 'localsys',
     peers: [{ id: 'teodor', baseUrl: 'https://t.example', outboundToken: 'b'.repeat(64), inboundToken: 'a'.repeat(64), trust: 'untrusted' }],
