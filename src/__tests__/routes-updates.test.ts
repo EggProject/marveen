@@ -67,6 +67,10 @@ import { mkdtempSync, rmSync, writeFileSync as fsWriteFileSync, existsSync, read
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { RouteContext } from '../web/routes/types.js'
+import type { getUpdateStatus, refreshUpdateStatus } from '../web/update-checker.js'
+import type { checkNoConcurrentUpdate } from '../update-preflight.js'
+import type { claudeAgentRunnable } from '../update-agent-capability.js'
+import type { runScheduledTaskNow } from '../web/schedule-runner.js'
 
 // ---------------------------------------------------------------------------
 // Hoisted harness. References inside vi.mock() factories run at hoisted time,
@@ -98,27 +102,27 @@ const H = vi.hoisted(() => {
     loggerDebug: vi.fn(),
 
     // update-checker
-    getUpdateStatus: vi.fn(() => ({ current: '', latest: '', behind: 0, commits: [], remote: 'Owner/Repo', lastChecked: 0, branch: 'main' })),
-    refreshUpdateStatus: vi.fn(async () => ({ current: 'c', latest: 'l', behind: 0, commits: [], remote: 'Owner/Repo', lastChecked: 1, branch: 'main' })),
+    getUpdateStatus: vi.fn<typeof getUpdateStatus>(() => ({ current: '', latest: '', behind: 0, commits: [], remote: 'Owner/Repo', lastChecked: 0, branch: 'main' })),
+    refreshUpdateStatus: vi.fn<typeof refreshUpdateStatus>(async () => ({ current: 'c', latest: 'l', behind: 0, commits: [], remote: 'Owner/Repo', lastChecked: 1, branch: 'main' })),
 
     // update-preflight
-    checkNoConcurrentUpdate: vi.fn(() => ({ ok: true as const })),
+    checkNoConcurrentUpdate: vi.fn<typeof checkNoConcurrentUpdate>(() => ({ ok: true })),
     // NOTE: checkUpdatePreflight is the REAL function; tests drive failure
     // modes by configuring H.execFileSync to return dirty/detached/ahead
     // outputs from the GitRunner factory the route builds.
 
     // update-agent-capability
-    claudeAgentRunnable: vi.fn(() => true),
+    claudeAgentRunnable: vi.fn<typeof claudeAgentRunnable>(() => true),
 
     // schedule-runner
-    runScheduledTaskNow: vi.fn(async (_task: string, _opts?: unknown) => ({ ok: true as const, result: 'main: ok' })),
+    runScheduledTaskNow: vi.fn<typeof runScheduledTaskNow>(async (_task: string, _opts?: unknown) => ({ ok: true, result: 'main: ok' })),
 
     // child_process: spawn + execFileSync are both used by the apply path.
-    spawn: vi.fn(() => {
+    spawn: vi.fn<(...args: unknown[]) => unknown>(() => {
       const ee = new EventEmitter()
       return Object.assign(ee, { unref: vi.fn() }) as unknown as import('node:child_process').ChildProcess
     }),
-    execFileSync: vi.fn(() => ''),
+    execFileSync: vi.fn<(...args: unknown[]) => unknown>(() => ''),
 
     // Mutable bindings the fs Proxy uses to inject failures per-test.
     // null = behave like real fs; a function = intercept.

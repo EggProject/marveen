@@ -27,6 +27,7 @@ import { EventEmitter } from 'node:events'
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync, readFileSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { hardRestartMarveenChannels, lastMainRespawnAt } from '../web/channel-monitor.js'
 
 // ----------------------------------------------------------------------------
 // Hoisted mock state. Every mock factory references these closures so a single
@@ -42,18 +43,18 @@ const mockState = vi.hoisted(() => ({
   // env.js readEnvFile
   envFile: {} as Record<string, string>,
   // node:fs mocks
-  existsSync: vi.fn(() => true),
-  readFileSync: vi.fn(() => ''),
-  statSync: vi.fn(() => ({ size: 0 })),
-  openSync: vi.fn(() => 1),
-  closeSync: vi.fn(() => undefined),
-  readSync: vi.fn(() => 0),
-  readdirSync: vi.fn(() => []),
+  existsSync: vi.fn<(...args: unknown[]) => unknown>(() => true),
+  readFileSync: vi.fn<(...args: unknown[]) => unknown>(() => ''),
+  statSync: vi.fn<(...args: unknown[]) => unknown>(() => ({ size: 0 })),
+  openSync: vi.fn<(...args: unknown[]) => unknown>(() => 1),
+  closeSync: vi.fn<(...args: unknown[]) => unknown>(() => undefined),
+  readSync: vi.fn<(...args: unknown[]) => unknown>(() => 0),
+  readdirSync: vi.fn<(...args: unknown[]) => unknown>(() => []),
   // node:child_process spawn
-  spawn: vi.fn(),
+  spawn: vi.fn<(...args: unknown[]) => unknown>(),
   // channel-monitor (dynamic import)
-  hardRestartMarveenChannels: vi.fn(() => ({ ok: true })),
-  lastMainRespawnAt: vi.fn(() => 0),
+  hardRestartMarveenChannels: vi.fn<typeof hardRestartMarveenChannels>(() => ({ ok: true })),
+  lastMainRespawnAt: vi.fn<typeof lastMainRespawnAt>(() => 0),
 }))
 
 // ----------------------------------------------------------------------------
