@@ -1,5 +1,5 @@
 import { Database, pragma, runScript } from './db/sqlite.js'
-import type { SQLQueryBindings } from './db/sqlite.js'
+import type { SQLQueryBindings } from 'bun:sqlite'
 import { join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, renameSync, chmodSync, openSync, closeSync } from 'node:fs'
 import { STORE_DIR, DB_FILENAME, ALLOWED_CHAT_ID, OLLAMA_URL, APP_TZ } from './config.js'
@@ -190,7 +190,7 @@ export function initDatabase(dbPathOverride?: string): void {
   // SQLite can't ALTER a CHECK constraint, so we recreate the table when the
   // current schema doesn't yet include 'testing'. Idempotent on fresh DBs.
   try {
-    const kcSchema = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='kanban_cards'").get() ?? undefined as { sql: string } | undefined
+    const kcSchema = db.prepare<{ sql: string }, SQLQueryBindings[]>("SELECT sql FROM sqlite_master WHERE type='table' AND name='kanban_cards'").get() ?? undefined
     if (kcSchema?.sql && !kcSchema.sql.includes("'testing'")) {
       runScript(db, `
         CREATE TABLE kanban_cards_new (
@@ -273,7 +273,7 @@ export function initDatabase(dbPathOverride?: string): void {
   // canonical CHECK -- covers both the legacy ('user_pref'...) and the
   // post-refactor-no-check states, and is idempotent on fresh DBs.
   try {
-    const current = db.prepare("SELECT sql FROM sqlite_master WHERE name='memories'").get() ?? undefined as { sql: string } | undefined
+    const current = db.prepare<{ sql: string }, SQLQueryBindings[]>("SELECT sql FROM sqlite_master WHERE name='memories'").get() ?? undefined
     const hasCanonicalCheck = !!current?.sql?.match(/CHECK\s*\(\s*category\s+IN\s*\(\s*'hot'\s*,\s*'warm'\s*,\s*'cold'\s*,\s*'shared'\s*\)\s*\)/i)
     if (current?.sql && !hasCanonicalCheck) {
       // Preserve keywords if the column exists; older DBs rebuilt this table
@@ -997,7 +997,7 @@ export function setSession(chatId: string, sessionId: string, messageCount = 0):
 
 export function incrementSessionCount(chatId: string): number {
   db.prepare('UPDATE sessions SET message_count = message_count + 1 WHERE chat_id = ?').run(chatId)
-  const row = db.prepare('SELECT message_count FROM sessions WHERE chat_id = ?').get(chatId ?? undefined) ?? undefined as { message_count: number } | undefined
+  const row = db.prepare<{ message_count: number }, SQLQueryBindings[]>('SELECT message_count FROM sessions WHERE chat_id = ?').get(chatId ?? undefined) ?? undefined
   return row?.message_count ?? 0
 }
 
@@ -1028,8 +1028,8 @@ export function createDashboardUser(username: string, passwordHash: string): Das
 
 export function getDashboardUser(username: string): DashboardUser | undefined {
   return db
-    .prepare('SELECT * FROM dashboard_users WHERE username = ? COLLATE NOCASE')
-    .get(username) ?? undefined as DashboardUser | undefined
+    .prepare<DashboardUser, SQLQueryBindings[]>('SELECT * FROM dashboard_users WHERE username = ? COLLATE NOCASE')
+    .get(username) ?? undefined
 }
 
 export function listDashboardUsers(): DashboardUserPublic[] {
@@ -1366,7 +1366,7 @@ export function updateMemory(id: number, content: string, category?: string, age
   if (agentId) { sets.push('agent_id = ?'); params.push(agentId) }
   if (keywords !== undefined) { sets.push('keywords = ?'); params.push(keywords) }
   params.push(id)
-  const changed = db.prepare(`UPDATE memories SET ${sets.join(', ')} WHERE id = ?`).run(...params).changes > 0
+  const changed = db.prepare<unknown, SQLQueryBindings[]>(`UPDATE memories SET ${sets.join(', ')} WHERE id = ?`).run(...params).changes > 0
   if (changed) {
     if (before?.category === 'shared' || category === 'shared') {
       // A shared row is listed for every agent, so evicting one owner is not
@@ -1536,7 +1536,7 @@ export function getBackgroundTasks(agentId?: string, includeFinished = false): B
 }
 
 export function getBackgroundTask(id: string): BackgroundTask | undefined {
-  return db.prepare('SELECT * FROM background_tasks WHERE id = ?').get(id ?? undefined) ?? undefined as BackgroundTask | undefined
+  return db.prepare<BackgroundTask, SQLQueryBindings[]>('SELECT * FROM background_tasks WHERE id = ?').get(id ?? undefined) ?? undefined
 }
 
 export function countRunningBackgroundTasks(agentId: string): number {
@@ -1674,7 +1674,7 @@ export function listKanbanCardsSummary(): { status: string; title: string; assig
 }
 
 export function getKanbanCard(id: string): KanbanCard | undefined {
-  return db.prepare('SELECT rowid AS seq, * FROM kanban_cards WHERE id = ?').get(id ?? undefined) ?? undefined as KanbanCard | undefined
+  return db.prepare<KanbanCard, SQLQueryBindings[]>('SELECT rowid AS seq, * FROM kanban_cards WHERE id = ?').get(id ?? undefined) ?? undefined
 }
 
 export function createKanbanCard(card: {
@@ -1724,7 +1724,7 @@ export function moveKanbanCard(id: string, status: KanbanCard['status'], sortOrd
   const now = Math.floor(Date.now() / 1000)
   // Read the previous status first so we only record an audit event on a real
   // status transition (not a pure sort_order reorder within the same column).
-  const prev = (db.prepare('SELECT status FROM kanban_cards WHERE id=?').get(id ?? undefined) ?? undefined as { status: string } | undefined)?.status
+  const prev = (db.prepare<{ status: string }, SQLQueryBindings[]>('SELECT status FROM kanban_cards WHERE id=?').get(id ?? undefined) ?? undefined)?.status
   const changed = db.prepare(
     'UPDATE kanban_cards SET status=?, sort_order=?, updated_at=? WHERE id=?'
   ).run(status, sortOrder, now, id).changes > 0
@@ -1796,7 +1796,7 @@ export function listArchivedKanbanCards(opts: {
   }
   sql += ' ORDER BY kc.archived_at DESC LIMIT ?'
   params.push(limit)
-  return db.prepare(sql).all(...params) as ArchivedKanbanCard[]
+  return db.prepare<ArchivedKanbanCard, SQLQueryBindings[]>(sql).all(...params)
 }
 
 export function listKanbanProjects(): string[] {
@@ -1862,9 +1862,9 @@ export function getKanbanSeqByIdPrefix(prefix: string): number | null {
 // Find an active (non-archived) kanban card by exact title match, or
 // undefined when none exists.
 export function findActiveKanbanCardByTitle(title: string): KanbanCard | undefined {
-  return db.prepare(
+  return db.prepare<KanbanCard, SQLQueryBindings[]>(
     'SELECT rowid AS seq, * FROM kanban_cards WHERE title = ? AND archived_at IS NULL LIMIT 1'
-  ).get(title ?? undefined) ?? undefined as KanbanCard | undefined
+  ).get(title ?? undefined) ?? undefined
 }
 
 // Move the first active kanban card whose title equals `taskName` to the
@@ -1906,7 +1906,7 @@ export function listLabels(): Label[] {
 }
 
 export function getLabel(id: string): Label | undefined {
-  return db.prepare('SELECT * FROM labels WHERE id = ?').get(id ?? undefined) ?? undefined as Label | undefined
+  return db.prepare<Label, SQLQueryBindings[]>('SELECT * FROM labels WHERE id = ?').get(id ?? undefined) ?? undefined
 }
 
 export function createLabel(label: { id: string; name: string; color: string }): Label {
@@ -2307,7 +2307,7 @@ export function countTaskRunsBetween(fromTs: number, toTs?: number): number {
 }
 
 export function getAgentMessage(id: number): AgentMessage | undefined {
-  return db.prepare('SELECT * FROM agent_messages WHERE id = ?').get(id ?? undefined) ?? undefined as AgentMessage | undefined
+  return db.prepare<AgentMessage, SQLQueryBindings[]>('SELECT * FROM agent_messages WHERE id = ?').get(id ?? undefined) ?? undefined
 }
 
 export function getActiveScheduledTaskCount(): { count: number; nextRun: number | null } {
@@ -2400,8 +2400,8 @@ export function listPendingTaskRetries(): PendingTaskRetryRow[] {
 
 export function getPendingTaskRetry(taskName: string, agentName: string): PendingTaskRetryRow | undefined {
   return db
-    .prepare('SELECT * FROM pending_task_retries WHERE task_name = ? AND agent_name = ?')
-    .get(taskName, agentName) ?? undefined as PendingTaskRetryRow | undefined
+    .prepare<PendingTaskRetryRow, SQLQueryBindings[]>('SELECT * FROM pending_task_retries WHERE task_name = ? AND agent_name = ?')
+    .get(taskName, agentName) ?? undefined
 }
 
 export function deletePendingTaskRetry(taskName: string, agentName: string): boolean {
@@ -2604,7 +2604,7 @@ export function updateIdea(id: string, patch: Partial<Pick<IdeaBoxRow, 'title' |
   if (patch.impact !== undefined) { sets.push('impact = ?'); params.push(patch.impact) }
   if (patch.effort !== undefined) { sets.push('effort = ?'); params.push(patch.effort) }
   params.push(id)
-  return db.prepare(`UPDATE idea_box SET ${sets.join(', ')} WHERE id = ?`).run(...params).changes > 0
+  return db.prepare<unknown, SQLQueryBindings[]>(`UPDATE idea_box SET ${sets.join(', ')} WHERE id = ?`).run(...params).changes > 0
 }
 
 export function deleteIdea(id: string): boolean {
@@ -2670,7 +2670,7 @@ export function getIdeaStatusLog(ideaId: string): IdeaStatusLogRow[] {
 // Revert a promoted idea back to 'reviewed' when its kanban card is deleted or archived.
 // Returns the idea id if a matching idea was found and reverted, null otherwise.
 export function revertIdeaFromKanban(kanbanId: string): string | null {
-  const idea = db.prepare("SELECT id, status FROM idea_box WHERE kanban_id = ? AND status = 'kanban'").get(kanbanId ?? undefined) ?? undefined as { id: string; status: string } | undefined
+  const idea = db.prepare<{ id: string; status: string }, SQLQueryBindings[]>("SELECT id, status FROM idea_box WHERE kanban_id = ? AND status = 'kanban'").get(kanbanId ?? undefined) ?? undefined
   if (!idea) return null
   const now = Math.floor(Date.now() / 1000)
   db.prepare("UPDATE idea_box SET status = 'reviewed', kanban_id = NULL, updated_at = ? WHERE id = ?").run(now, idea.id)
@@ -2811,9 +2811,9 @@ export function getSkillUsageRows(opts: {
   if (agentId) { conditions.push('agent_id = ?'); params.push(agentId) }
   if (skillName) { conditions.push('skill_name = ?'); params.push(skillName) }
   params.push(limit)
-  return db.prepare(
+  return db.prepare<SkillUsageRow, SQLQueryBindings[]>(
     `SELECT * FROM skill_usage WHERE ${conditions.join(' AND ')} ORDER BY created_at DESC LIMIT ?`,
-  ).all(...params) as SkillUsageRow[]
+  ).all(...params)
 }
 
 export function getSkillUsageStats(sinceSecs?: number): SkillUsageStatRow[] {
@@ -2945,7 +2945,7 @@ export function queryAuditLog(opts: {
     if (to)   { sql += ' AND created_at <= ?'; params.push(to) }
     if (q)    { sql += ' AND (key LIKE ? OR old_value LIKE ? OR new_value LIKE ? OR actor LIKE ?)'; const p = `%${q}%`; params.push(p, p, p, p) }
     sql += ' ORDER BY created_at DESC, id DESC LIMIT ?'; params.push(limit)
-    const rows = db.prepare(sql).all(...params) as ConfigChangeLogRow[]
+    const rows = db.prepare<ConfigChangeLogRow, SQLQueryBindings[]>(sql).all(...params)
     for (const r of rows) parts.push({ ...r, source: 'config' })
   }
 
@@ -2956,7 +2956,7 @@ export function queryAuditLog(opts: {
     if (to)   { sql += ' AND created_at <= ?'; params.push(to) }
     if (q)    { sql += ' AND (idea_id LIKE ? OR to_status LIKE ? OR note LIKE ? OR actor LIKE ?)'; const p = `%${q}%`; params.push(p, p, p, p) }
     sql += ' ORDER BY created_at DESC, id DESC LIMIT ?'; params.push(limit)
-    const rows = db.prepare(sql).all(...params) as Array<{ id: number; idea_id: string; from_status: string | null; to_status: string; actor: string; note: string | null; created_at: number }>
+    const rows = db.prepare<{ id: number; idea_id: string; from_status: string | null; to_status: string; actor: string; note: string | null; created_at: number }, SQLQueryBindings[]>(sql).all(...params)
     for (const r of rows) parts.push({ ...r, source: 'idea' })
   }
 
@@ -2968,7 +2968,7 @@ export function queryAuditLog(opts: {
     if (agent) { sql += ' AND agent = ?'; params.push(agent) }
     if (q)    { sql += ' AND (rel_path LIKE ? OR agent LIKE ?)'; const p = `%${q}%`; params.push(p, p) }
     sql += ' ORDER BY created_at DESC, id DESC LIMIT ?'; params.push(limit)
-    const rows = db.prepare(sql).all(...params) as StoreFileAuditRow[]
+    const rows = db.prepare<StoreFileAuditRow, SQLQueryBindings[]>(sql).all(...params)
     for (const r of rows) parts.push({ ...r, source: 'store' })
   }
 
@@ -2981,7 +2981,7 @@ export function queryAuditLog(opts: {
     if (agent) { logSql += ' AND agent_id = ?'; logParams.push(agent) }
     if (q)     { logSql += ' AND content LIKE ?'; logParams.push(`%${q}%`) }
     logSql += ' ORDER BY created_at DESC, id DESC LIMIT ?'; logParams.push(limit)
-    const logRows = db.prepare(logSql).all(...logParams) as Array<{ id: number; agent_id: string; content: string; created_at: number }>
+    const logRows = db.prepare<{ id: number; agent_id: string; content: string; created_at: number }, SQLQueryBindings[]>(logSql).all(...logParams)
     for (const r of logRows) parts.push({ id: r.id, source: 'diary', created_at: r.created_at, agent_id: r.agent_id, content: r.content, entry_type: 'log' })
 
     // memories
@@ -2992,7 +2992,7 @@ export function queryAuditLog(opts: {
     if (agent) { memSql += ' AND agent_id = ?'; memParams.push(agent) }
     if (q)     { memSql += ' AND (content LIKE ? OR keywords LIKE ?)'; memParams.push(`%${q}%`, `%${q}%`) }
     memSql += ' ORDER BY created_at DESC, id DESC LIMIT ?'; memParams.push(limit)
-    const memRows = db.prepare(memSql).all(...memParams) as Array<{ id: number; agent_id: string; content: string; category: string; keywords: string | null; created_at: number }>
+    const memRows = db.prepare<{ id: number; agent_id: string; content: string; category: string; keywords: string | null; created_at: number }, SQLQueryBindings[]>(memSql).all(...memParams)
     for (const r of memRows) parts.push({ id: r.id, source: 'diary', created_at: r.created_at, agent_id: r.agent_id, content: r.content, category: r.category, keywords: r.keywords ?? undefined, entry_type: 'memory' })
   }
 
@@ -3044,7 +3044,7 @@ export function listVaultSshKeys(): VaultSshKey[] {
 }
 
 export function getVaultSshKey(id: string): VaultSshKey | undefined {
-  return db.prepare('SELECT * FROM vault_ssh_keys WHERE id = ?').get(id ?? undefined) ?? undefined as VaultSshKey | undefined
+  return db.prepare<VaultSshKey, SQLQueryBindings[]>('SELECT * FROM vault_ssh_keys WHERE id = ?').get(id ?? undefined) ?? undefined
 }
 
 export function createVaultSshKey(key: Pick<VaultSshKey, 'id' | 'label' | 'username' | 'vault_key_id' | 'public_key' | 'fingerprint' | 'key_type'>): VaultSshKey {
@@ -3097,7 +3097,7 @@ export function listVaultSshServers(): VaultSshServer[] {
 }
 
 export function getVaultSshServer(id: string): VaultSshServer | undefined {
-  return db.prepare('SELECT * FROM vault_ssh_servers WHERE id = ?').get(id ?? undefined) ?? undefined as VaultSshServer | undefined
+  return db.prepare<VaultSshServer, SQLQueryBindings[]>('SELECT * FROM vault_ssh_servers WHERE id = ?').get(id ?? undefined) ?? undefined
 }
 
 export function createVaultSshServer(server: Pick<VaultSshServer, 'id' | 'name' | 'host' | 'port' | 'username' | 'description'>): VaultSshServer {
@@ -3120,7 +3120,7 @@ export function updateVaultSshServer(id: string, patch: Partial<Pick<VaultSshSer
   if (patch.ssh_key_id !== undefined)  { sets.push('ssh_key_id = ?'); params.push(patch.ssh_key_id) }
   if (patch.description !== undefined) { sets.push('description = ?'); params.push(patch.description) }
   params.push(id)
-  return db.prepare(`UPDATE vault_ssh_servers SET ${sets.join(', ')} WHERE id = ?`).run(...params).changes > 0
+  return db.prepare<unknown, SQLQueryBindings[]>(`UPDATE vault_ssh_servers SET ${sets.join(', ')} WHERE id = ?`).run(...params).changes > 0
 }
 
 export function deleteVaultSshServer(id: string): boolean {
@@ -3180,7 +3180,7 @@ export function createApproval(params: {
 }
 
 export function getApproval(id: string): Approval | undefined {
-  return db.prepare('SELECT * FROM approvals WHERE id = ?').get(id ?? undefined) ?? undefined as Approval | undefined
+  return db.prepare<Approval, SQLQueryBindings[]>('SELECT * FROM approvals WHERE id = ?').get(id ?? undefined) ?? undefined
 }
 
 export function resolveApproval(id: string, status: 'approved' | 'rejected' | 'timeout', resolvedBy: string, telegramMessageId?: number | null): boolean {
@@ -3207,7 +3207,7 @@ export function listApprovals(opts: {
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
   const limit = Math.min(opts.limit ?? 100, 500)
   params.push(limit)
-  return db.prepare(`SELECT * FROM approvals ${where} ORDER BY requested_at DESC LIMIT ?`).all(...params) as Approval[]
+  return db.prepare<Approval, SQLQueryBindings[]>(`SELECT * FROM approvals ${where} ORDER BY requested_at DESC LIMIT ?`).all(...params)
 }
 
 // Stamp trace context onto an agent_messages row that was created without one.
