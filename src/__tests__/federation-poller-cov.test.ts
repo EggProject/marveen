@@ -539,10 +539,11 @@ describe('refreshFederationStatus: pollOnePeer internal catches', () => {
   it('does not deadlock when pollOnePeer catches a thrown fetchImpl internally', async () => {
     enabledConfig()
     const failing = vi.fn<typeof fetch>().mockImplementation(async () => { throw new Error('sync boom') })
-    // The sync-throwing fetchImpl is caught by pollOnePeer's own try/catch
-    // (fetch catch), so it is recorded as 'unreachable' rather than escaping
-    // to pollPeerManifests's belt. refreshFederationStatus therefore resolves
-    // with the cache view; we just verify no deadlock.
+    // The fetchImpl returns a rejected Promise (async throw); pollOnePeer's
+    // own try/catch (fetch catch) handles both sync throws and Promise
+    // rejections equivalently, so it is recorded as 'unreachable' rather than
+    // escaping to pollPeerManifests's belt. refreshFederationStatus therefore
+    // resolves with the cache view; we just verify no deadlock.
     await expect(refreshFederationStatus(failing)).resolves.toBeDefined()
   })
 

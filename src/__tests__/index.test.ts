@@ -2665,11 +2665,15 @@ describe('scheduleDailyDigest: target <= now branch', () => {
     fixedNow.setHours(23, 30, 0, 0) // 23:30 today -> target (23:00) <= now
     // @ts-expect-error -- allow Date mock
     globalThis.Date = class extends realDate {
-      constructor(...args: ConstructorParameters<typeof Date>) {
+      constructor(...args: [] | ConstructorParameters<typeof Date>) {
+        // TypeScript picks one Date overload for ConstructorParameters, so the
+        // bare `new Date()` zero-arg form is not represented in the inferred
+        // tuple. Widen to `[] | ConstructorParameters<typeof Date>` so the
+        // zero-arg case is typeable; at runtime both branches dispatch to
+        // the parent Date constructor.
         if (args.length === 0) {
           super(fixedNow.getTime())
         } else {
-          // @ts-expect-error -- forward variadic args
           super(...args)
         }
       }

@@ -217,9 +217,11 @@ async function call(method: string, path: string, opts: { body?: Buffer | string
 }> {
   const req = mkReq({ body: opts.body })
   const res = mkRes()
+  // @ts-expect-error MockRes is a structural subset of http.ServerResponse
+  const serverRes: http.ServerResponse = res
   const ctx: RouteContext = {
     req,
-    res: res as unknown as http.ServerResponse,
+    res: serverRes,
     path,
     method,
     url: new URL(`http://127.0.0.1:3420${path}`),
