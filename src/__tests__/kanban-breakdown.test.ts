@@ -13,7 +13,7 @@ vi.mock('node:child_process', () => ({
 vi.mock('../agent.js', () => ({ runAgent: vi.fn() }))
 
 describe('kanban parent_id schema and subtask queries', () => {
-  let db: ReturnType<typeof Database>
+  let db: InstanceType<typeof Database>
 
   beforeEach(() => {
     db = new Database(':memory:')

@@ -344,7 +344,7 @@ describe('GET /api/settings', () => {
   it('propagates the effective value from the store for every non-secret entry', async () => {
     pushDef({ key: 'A', type: 'int', default: 1, description: 'a', module: 'm', secret: false, requiresRestart: false })
     pushDef({ key: 'B', type: 'string', default: '', description: 'b', module: 'm', secret: false, requiresRestart: false })
-    H.getEffectiveSettingValue.mockImplementation((key: string) => (key === 'A' ? 42 : 'two'))
+    H.getEffectiveSettingValue.mockImplementation(((key: string) => (key === 'A' ? 42 : 'two')) as unknown as (key: string) => string)
 
     const { json } = await call('GET', '/api/settings')
     const out = json() as { settings: Array<Record<string, unknown>> }
@@ -370,7 +370,7 @@ describe('POST /api/settings', () => {
       min: 0,
       max: 100,
     })
-    H.getEffectiveSettingValue.mockReturnValue(0)
+    H.getEffectiveSettingValue.mockReturnValue(0 as unknown as string)
     H.validateSettingValue.mockReturnValue({ ok: true, value: 5 })
     H.setOverride.mockReturnValue({ ok: true })
 
@@ -493,7 +493,7 @@ describe('POST /api/settings', () => {
       secret: false,
       requiresRestart: false,
     })
-    H.validateSettingValue.mockReturnValue({ ok: false, error: 'bad value' })
+    H.validateSettingValue.mockReturnValue({ ok: false, error: 'bad value' } as unknown as { ok: true; value: unknown })
 
     const { res, json } = await call('POST', '/api/settings', {
       body: JSON.stringify({ key: 'A', value: 99 }),
@@ -516,7 +516,7 @@ describe('POST /api/settings', () => {
       requiresRestart: false,
     })
     H.validateSettingValue.mockReturnValue({ ok: true, value: 9 })
-    H.setOverride.mockReturnValue({ ok: false, error: 'disk full' })
+    H.setOverride.mockReturnValue({ ok: false, error: 'disk full' } as unknown as { ok: true })
 
     const { res, json } = await call('POST', '/api/settings', {
       body: JSON.stringify({ key: 'A', value: 9 }),
@@ -579,7 +579,7 @@ describe('POST /api/settings', () => {
     })
     H.validateSettingValue.mockReturnValue({ ok: true, value: 1 })
     H.setOverride.mockReturnValue({ ok: true })
-    H.getEffectiveSettingValue.mockReturnValue(0)
+    H.getEffectiveSettingValue.mockReturnValue(0 as unknown as string)
 
     const { res, json } = await call('POST', '/api/settings', {
       body: JSON.stringify({ key: 'RESTARTABLE', value: 1 }),

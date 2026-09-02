@@ -515,9 +515,11 @@ describe('startFederationPoller', () => {
       timeoutCallback = null
       intervalCallback = null
       // Fire the captured setTimeout callback -- awaits the inner .catch.
-      if (t) await t()
+      const tcb = t as unknown as () => Promise<void> | void
+      if (tcb) await tcb()
       // Fire the captured setInterval callback -- awaits the inner .catch.
-      if (i) await i()
+      const icb = i as unknown as () => Promise<void> | void
+      if (icb) await icb()
       // Give the rejected-promise microtask queue a chance to drain so the
       // .catch((err) => logger.warn(...)) handler is actually invoked.
       await Promise.resolve()

@@ -344,7 +344,8 @@ describe('createInvite', () => {
     expect(readAccessRaw(accessPath).dmPolicy).toBe('pairing')
 
     const invites = readInvitesRaw(join(mainChannelDir('telegram'), 'invites.json'))
-    expect(invites.invites?.[result.token]?.expiresAt).toBe(FROZEN_NOW + 24 * 60 * 60 * 1000)
+    const inv = invites.invites as Record<string, { expiresAt: number } | undefined>
+    expect(inv?.[result.token]?.expiresAt).toBe(FROZEN_NOW + 24 * 60 * 60 * 1000)
   })
 
   it('falls back to defaults for the optional provider / ttl parameters', () => {

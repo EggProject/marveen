@@ -61,7 +61,7 @@ const H = vi.hoisted(() => {
     }
     if (fsState.files.has(p)) {
       const v = fsState.files.get(p)!
-      return typeof _enc === 'string' ? v.toString(_enc) : v
+      return typeof _enc === 'string' ? v.toString(_enc as BufferEncoding) : v
     }
     return realReadFileSync(p, _enc as any)
   }
@@ -829,7 +829,7 @@ describe('writeAgentFiles: avatarExt falls back to png when invalid', () => {
     expect(result.ok).toBe(true)
     // A H.atomicWriteMock regisztrálta a fájlírást --
     // ellenőrizzük, hogy avatar.png néven írta (mert avatarExt undefined).
-    const written = H.atomicWriteMock.mock.calls.map((c: string[]) => c[0])
+    const written = H.atomicWriteMock.mock.calls.map((c: unknown[]) => c[0] as string)
     expect(written.some((p: string) => p.endsWith('avatar.png'))).toBe(true)
   })
 })
@@ -858,7 +858,7 @@ describe('writeAgentFiles: agent.agentSkills undefined', () => {
     })
     const result = importFleet(body, { apply: true }) as any
     expect(result.ok).toBe(true)
-    const written = H.atomicWriteMock.mock.calls.map((c: string[]) => c[0])
+    const written = H.atomicWriteMock.mock.calls.map((c: unknown[]) => c[0] as string)
     // A SKILL.md fájlok a testbot alatt nem jöhettek létre.
     expect(written.some((p: string) => p.includes('testbot/.claude/skills/'))).toBe(false)
   })
@@ -1072,7 +1072,7 @@ describe('apply phase: pre-existing tracked paths', () => {
     const result = importFleet(body, { apply: true }) as any
     expect(result.ok).toBe(true)
     // A file written.
-    const written = H.atomicWriteMock.mock.calls.map((c: string[]) => c[0])
+    const written = H.atomicWriteMock.mock.calls.map((c: unknown[]) => c[0] as string)
     expect(written.some((p: string) => p.endsWith('CLAUDE.md'))).toBe(true)
   })
 })

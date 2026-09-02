@@ -148,8 +148,8 @@ vi.mock('node:child_process', () => ({
           return proc
         }
         if (!spec.hang) {
-          if (spec.stdout) queueMicrotask(() => stdoutEE.emit('data', Buffer.from(spec.stdout)))
-          if (spec.stderr) queueMicrotask(() => stderrEE.emit('data', Buffer.from(spec.stderr)))
+          if (spec.stdout) queueMicrotask(() => stdoutEE.emit('data', Buffer.from(spec.stdout as string)))
+          if (spec.stderr) queueMicrotask(() => stderrEE.emit('data', Buffer.from(spec.stderr as string)))
           queueMicrotask(() => cb(spec.code ?? 0))
         }
         return proc
@@ -544,9 +544,9 @@ describe('isSafeStateDir coverage', () => {
     // Helper: state dir needs a .env -- markDirHasEnv handles it.
     markDirHasEnv(stateDir.replace(/\/$/, ''), true)
     H.spawnQueue.push({ code: 0, stdout: 'ok-transcript\n' })
-    return call('POST', '/api/voice/stt', {
+    return (call('POST', '/api/voice/stt', {
       body: { file_id: 'BQACAgQAAxkBAAIDSWpqdaVDcIjs', state_dir: stateDir },
-    })
+    }) as unknown as Promise<{ res: MockRes; json: () => Record<string, unknown> }>)
   }
 
   it('rejects a path containing ..', async () => {
@@ -626,7 +626,7 @@ describe('GET /api/voice/directive', () => {
   })
 
   it('text responseMode -> directive null, no transcript', async () => {
-    H.readAgentVoiceConfig.mockReturnValue({ responseMode: 'text', voiceModel: null })
+    H.readAgentVoiceConfig.mockReturnValue({ responseMode: 'text', voiceModel: null as unknown as string })
     const { res, json } = await call('GET', '/api/voice/directive', {
       query: { agent: 'marveen', chat: '123' },
     })
@@ -748,7 +748,7 @@ describe('GET /api/voice/directive', () => {
   it('falls back to DEFAULT_VOICE_CONFIG when no voice config present and audio is true', async () => {
     // The SUT does `voiceCfg.voiceModel ?? 'hu_HU-imre-medium'` directly;
     // here voiceCfg.voiceModel is undefined -> default applied.
-    H.readAgentVoiceConfig.mockReturnValue({ responseMode: 'voice', voiceModel: undefined })
+    H.readAgentVoiceConfig.mockReturnValue({ responseMode: 'voice', voiceModel: undefined as unknown as string })
     const { json } = await call('GET', '/api/voice/directive', {
       query: { agent: 'marveen', chat: '42' },
     })

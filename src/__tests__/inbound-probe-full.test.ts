@@ -343,9 +343,9 @@ describe('readLastIngestionTimestamp', () => {
     // Set file size to the line length so the buffer contains only the JSON
     // line (no trailing garbage from allocUnsafe).
     mockState.statSync.mockReturnValue({ mtimeMs: 100, size: line.length })
-    mockState.readSync.mockImplementation((_fd: number, buf: Buffer, offset: number, length: number) => {
+    mockState.readSync.mockImplementation(((_fd: number, buf: Buffer, offset: number, length: number): number => {
       return buf.write(line, offset, length, 'utf-8')
-    })
+    }) as never)
     const mod = await loadInboundProbeFresh()
     expect(mod.readLastIngestionTimestamp('/some/dir')).toBe(new Date(ts).getTime())
   })
@@ -357,9 +357,9 @@ describe('readLastIngestionTimestamp', () => {
     const nonChannel = JSON.stringify({ timestamp: '2026-06-01T09:00:00.000Z', content: 'plain' })
     const channel = JSON.stringify({ timestamp: ts, content: '<channel source=telegram> hello' })
     const data = nonChannel + '\n' + channel + '\n'
-    mockState.readSync.mockImplementation((_fd: number, buf: Buffer, offset: number, length: number) => {
+    mockState.readSync.mockImplementation(((_fd: number, buf: Buffer, offset: number, length: number): number => {
       return buf.write(data.slice(0, length), offset, length, 'utf-8')
-    })
+    }) as never)
     const mod = await loadInboundProbeFresh()
     expect(mod.readLastIngestionTimestamp('/some/dir')).toBe(new Date(ts).getTime())
   })
@@ -372,9 +372,9 @@ describe('readLastIngestionTimestamp', () => {
     const lineBadTs = JSON.stringify({ timestamp: 'not-a-date', content: '<channel source=telegram> y' })
     const lineGood = JSON.stringify({ timestamp: ts, content: '<channel source=telegram> good' })
     const data = lineNoTimestamp + '\n' + lineBadTs + '\n' + lineGood + '\n'
-    mockState.readSync.mockImplementation((_fd: number, buf: Buffer, offset: number, length: number) => {
+    mockState.readSync.mockImplementation(((_fd: number, buf: Buffer, offset: number, length: number): number => {
       return buf.write(data.slice(0, length), offset, length, 'utf-8')
-    })
+    }) as never)
     const mod = await loadInboundProbeFresh()
     expect(mod.readLastIngestionTimestamp('/some/dir')).toBe(new Date(ts).getTime())
   })
@@ -386,9 +386,9 @@ describe('readLastIngestionTimestamp', () => {
     const malformed = '{ this is not JSON <channel source=telegram>'
     const good = JSON.stringify({ timestamp: ts, content: '<channel source=telegram> x' })
     const data = malformed + '\n' + good + '\n'
-    mockState.readSync.mockImplementation((_fd: number, buf: Buffer, offset: number, length: number) => {
+    mockState.readSync.mockImplementation(((_fd: number, buf: Buffer, offset: number, length: number): number => {
       return buf.write(data.slice(0, length), offset, length, 'utf-8')
-    })
+    }) as never)
     const mod = await loadInboundProbeFresh()
     expect(mod.readLastIngestionTimestamp('/some/dir')).toBe(new Date(ts).getTime())
   })
@@ -402,9 +402,9 @@ describe('readLastIngestionTimestamp', () => {
     const ts = '2026-06-01T10:05:00.000Z'
     const good = JSON.stringify({ timestamp: ts, content: '<channel source=telegram> x' })
     const data = partialLine + '\n' + good + '\n'
-    mockState.readSync.mockImplementation((_fd: number, buf: Buffer, offset: number, length: number) => {
+    mockState.readSync.mockImplementation(((_fd: number, buf: Buffer, offset: number, length: number): number => {
       return buf.write(data.slice(0, length), offset, length, 'utf-8')
-    })
+    }) as never)
     const mod = await loadInboundProbeFresh()
     expect(mod.readLastIngestionTimestamp('/some/dir')).toBe(new Date(ts).getTime())
   })
@@ -1106,9 +1106,9 @@ describe('coverage gap fillers', () => {
     const boolTs = JSON.stringify({ timestamp: true, content: '<channel source=telegram> y' })
     const good = JSON.stringify({ timestamp: ts, content: '<channel source=telegram> good' })
     const data = numberTs + '\n' + boolTs + '\n' + good + '\n'
-    mockState.readSync.mockImplementation((_fd: number, buf: Buffer, offset: number, length: number) => {
+    mockState.readSync.mockImplementation(((_fd: number, buf: Buffer, offset: number, length: number): number => {
       return buf.write(data.slice(0, length), offset, length, 'utf-8')
-    })
+    }) as never)
     const mod = await loadInboundProbeFresh()
     expect(mod.readLastIngestionTimestamp('/some/dir')).toBe(new Date(ts).getTime())
   })

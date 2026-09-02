@@ -480,7 +480,7 @@ describe('POST /api/vault/ssh-keys/import', () => {
     H.execFileSync.mockImplementation(() => {
       const err: NodeJS.ErrnoException = new Error('load failed')
       // execFileSync attaches stderr as a Buffer when ssh-keygen fails.
-      err.stderr = Buffer.from('load failed: invalid format\n')
+      ;(err as unknown as { stderr?: Buffer }).stderr = Buffer.from('load failed: invalid format\n')
       throw err
     })
     const { res, json } = await call('POST', '/api/vault/ssh-keys/import', {

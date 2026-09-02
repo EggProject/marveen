@@ -101,7 +101,7 @@ vi.mock('node:child_process', () => ({
     if (typeof cb !== 'function') return {} as never
     const r = mocks.execResult
     if (r) {
-      cb(r.err, r.stdout, r.stderr)
+      cb(r.err as Error | null, r.stdout, r.stderr)
     } else {
       cb(null, '', '')
     }

@@ -253,13 +253,13 @@ describe('wrapUntrustedFetch', () => {
   })
 
   it('returns empty string for null/undefined/empty content', () => {
-    expect(wrapUntrustedFetch('https://x.com', null)).toBe('')
-    expect(wrapUntrustedFetch('https://x.com', undefined)).toBe('')
-    expect(wrapUntrustedFetch('https://x.com', '')).toBe('')
+    expect(wrapUntrustedFetch('https://x.com', null as unknown as string, 'n')).toBe('')
+    expect(wrapUntrustedFetch('https://x.com', undefined as unknown as string, 'n')).toBe('')
+    expect(wrapUntrustedFetch('https://x.com', '', 'n')).toBe('')
   })
 
   it('coerces non-string content to string', () => {
-    expect(wrapUntrustedFetch('https://x.com', 7 as unknown as string)).toContain('7')
+    expect(wrapUntrustedFetch('https://x.com', 7 as unknown as string, 'n')).toContain('7')
   })
 
   it('scrubs nested security tags so an injected <trusted-peer> cannot open inside', () => {

@@ -696,8 +696,8 @@ describe('tryHandleSecurity -- happy path (action=added)', () => {
       body: { key_line: KEY_LINE, name: 'phone' },
     })
     expect(mocks.notifySecurityEvent).toHaveBeenCalledWith(expect.stringContaining('phone'))
-    expect(mocks.notifySecurityEvent.mock.calls[0]?.[0]).toContain('új eszköz')
-    expect(mocks.notifySecurityEvent.mock.calls[0]?.[0]).toContain('Bridge-párosítás')
+    expect((mocks.notifySecurityEvent.mock.calls[0] as unknown[] | undefined)?.[0] as string).toContain('új eszköz')
+    expect((mocks.notifySecurityEvent.mock.calls[0] as unknown[] | undefined)?.[0] as string).toContain('Bridge-párosítás')
   })
 
   it('forwards the credential kind into the audit row verbatim (session)', async () => {
@@ -752,7 +752,7 @@ describe('tryHandleSecurity -- happy path (action=replaced)', () => {
       auth: TOKEN_AUTH,
       body: { key_line: KEY_LINE, name: 'phone' },
     })
-    expect(mocks.notifySecurityEvent.mock.calls[0]?.[0]).toContain('újrapárosítás')
+    expect((mocks.notifySecurityEvent.mock.calls[0] as unknown[] | undefined)?.[0] as string).toContain('újrapárosítás')
   })
 
   it('mirrors replacedDeviceKey=true into the response payload', async () => {

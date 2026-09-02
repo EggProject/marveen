@@ -61,7 +61,7 @@ async function call(handler: (ctx: RouteContext) => Promise<boolean>, path: stri
 }> {
   const ctx = mkCtx(path, method)
   const handled = await handler(ctx)
-  return { handled, res: ctx.res as any, body: ctx.res.body ? JSON.parse(ctx.res.body) : null }
+  return { handled, res: ctx.res as unknown as ReturnType<typeof mkRes>, body: ((ctx.res as unknown as { body?: string }).body ? JSON.parse((ctx.res as unknown as { body?: string }).body as string) : null) }
 }
 
 const { tryHandleStatus } = await import('../web/routes/status.js')

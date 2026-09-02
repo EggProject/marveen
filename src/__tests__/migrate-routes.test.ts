@@ -490,7 +490,7 @@ describe('tryHandleMigrate -- POST /api/migrate/scan finding collection', () => 
     expect(body.summary.dailyLog).toBeGreaterThan(0)
     expect(body.summary.schedule).toBeGreaterThan(0)
     expect(body.summary.memory).toBeGreaterThan(0)
-    expect(body.summary.total).toBe(body.findings.length as never)
+    expect(body.summary.total).toBe((body as unknown as { findings: unknown[] }).findings.length)
   })
 
   it('emits Cache-Control: private, no-store on the scan response', async () => {

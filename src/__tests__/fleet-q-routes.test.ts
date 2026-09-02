@@ -256,11 +256,11 @@ describe('tryHandleFleetQ -- GET /.well-known/fleetq', () => {
 
   it('builds a { name: caps } manifest from listAgentNames + readAgentCapabilities', async () => {
     H.listAgentNames.mockReturnValue(['agent-a', 'agent-b', 'main-agent'])
-    H.readAgentCapabilities.mockImplementation((name: string) => {
+    H.readAgentCapabilities.mockImplementation(((name: string) => {
       if (name === 'agent-a') return ['architecture', 'infrastructure']
       if (name === 'agent-b') return ['management']
       return []
-    })
+    }) as never)
     const { res, handled, json } = await call({ method: 'GET', path: '/.well-known/fleetq' })
     expect(handled).toBe(true)
     expect(res.statusCode).toBe(200)

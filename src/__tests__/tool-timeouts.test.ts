@@ -20,7 +20,7 @@ describe('TOOL_TIMEOUTS', () => {
   })
 
   it('returns undefined for an unlisted tool (caller must supply a default)', () => {
-    expect(TOOL_TIMEOUTS['not-a-real-tool']).toBeUndefined()
+    expect((TOOL_TIMEOUTS as Record<string, number | undefined>)['not-a-real-tool']).toBeUndefined()
   })
 
   it('is frozen with `as const` semantics: every entry is readonly', () => {

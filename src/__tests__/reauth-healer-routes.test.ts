@@ -549,7 +549,7 @@ describe('checkSession: escalate branch (main agent, dead token, not first-run g
   it('logs a debug when the dynamic channel-monitor import rejects', async () => {
     mocks.capturePane.mockReturnValue(DEAD_PANE)
     mocks.lastMainRespawn = -1
-    mocks.hardRestartResult = () => { throw new Error('hardRestart boom') }
+    mocks.hardRestartResult = (() => { throw new Error('hardRestart boom') }) as unknown as { ok: boolean }
     const mod = await loadModule()
     mod.startReauthHealer()
     await firstSweep()
@@ -572,7 +572,7 @@ describe('checkSession: escalate branch (main agent, dead token, not first-run g
   it('logs a warn when notify.sh reports an error (errored execFile callback)', async () => {
     const cp = await import('node:child_process')
     const realExecFile = cp.execFile
-    ;(cp as unknown as { execFile: typeof cp.execFile }).execFile = ((
+    ;(cp as unknown as { execFile: unknown }).execFile = ((
       cmd: string,
       args: string[],
       _opts: unknown,
@@ -581,7 +581,7 @@ describe('checkSession: escalate branch (main agent, dead token, not first-run g
       mocks.execFileCalls.push({ cmd, args, err: cmd === '/bin/bash' ? new Error('notify.sh exit 1') : null })
       if (typeof cb === 'function') cb(cmd === '/bin/bash' ? new Error('notify.sh exit 1') : null)
       return {} as never
-    }) as typeof cp.execFile
+    }) as unknown
     try {
       mocks.listAgentNames.mockReturnValue([])
       mocks.capturePane.mockReturnValue(DEAD_PANE)

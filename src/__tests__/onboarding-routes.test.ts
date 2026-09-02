@@ -956,7 +956,7 @@ describe('POST /api/onboarding/claude-auth -- validation', () => {
       verified: false,
     })
     expect(vi.mocked(logger.warn).mock.calls.some(
-      (c) => c[0]?.mode === 'oauth' && c[1] === 'onboarding: Claude auth REJECTED by live probe; nothing persisted',
+      (c: unknown[]) => (c[0] as { mode?: string } | undefined)?.mode === 'oauth' && c[1] === 'onboarding: Claude auth REJECTED by live probe; nothing persisted',
     )).toBe(true)
     expect(atomicWriteFileSync).not.toHaveBeenCalled()
   })
@@ -968,7 +968,7 @@ describe('POST /api/onboarding/claude-auth -- validation', () => {
     })
     expect(res.statusCode).toBe(400)
     expect(vi.mocked(logger.warn).mock.calls.some(
-      (c) => c[0]?.mode === 'apikey',
+      (c: unknown[]) => (c[0] as { mode?: string } | undefined)?.mode === 'apikey',
     )).toBe(true)
   })
 })
@@ -1164,7 +1164,7 @@ describe('POST /api/onboarding/launch', () => {
     expect(body.reason).toBe('channels-script-missing')
     expect(body.error).toMatch(/Az ügynökök indítása nem sikerült/)
     expect(vi.mocked(logger.error).mock.calls.some(
-      (c) => c[0]?.created === 'script-missing' && c[1] === 'onboarding: channels session absent and channels.sh could not be launched',
+      (c: unknown[]) => (c[0] as { created?: string } | undefined)?.created === 'script-missing' && c[1] === 'onboarding: channels session absent and channels.sh could not be launched',
     )).toBe(true)
   })
 

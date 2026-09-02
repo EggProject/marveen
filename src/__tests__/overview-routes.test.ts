@@ -261,7 +261,7 @@ async function call(): Promise<{ res: MockRes; json: () => any; handled: boolean
   return {
     res: ctx.res as unknown as MockRes,
     handled,
-    json: () => (ctx.res.body ? JSON.parse(ctx.res.body) : null),
+    json: () => ((ctx.res as unknown as MockRes).body ? JSON.parse((ctx.res as unknown as MockRes).body) : null),
   }
 }
 
@@ -514,13 +514,13 @@ describe('tryHandleOverview -- tasksToday / tasksYesterday', () => {
     expect(yesterdayCall[1]).toBe(todayCall[0])
 
     // yesterdayCall[0] must be exactly 24h before todayCall[0]
-    expect(todayCall[0] - yesterdayCall[0]).toBe(24 * 60 * 60 * 1000)
+    expect((todayCall[0] as number) - (yesterdayCall[0] as number)).toBe(24 * 60 * 60 * 1000)
 
     // todayCall[0] is midnight today: it must be <= the wall clock now
     // and it must align to local midnight.
     const now = Date.now()
     expect(todayCall[0]).toBeLessThanOrEqual(now)
-    const dt = new Date(todayCall[0])
+    const dt = new Date(todayCall[0] as number)
     expect(dt.getHours()).toBe(0)
     expect(dt.getMinutes()).toBe(0)
     expect(dt.getSeconds()).toBe(0)
@@ -530,10 +530,10 @@ describe('tryHandleOverview -- tasksToday / tasksYesterday', () => {
   it('adds the user-turn count to the scheduled-run count for both today and yesterday', async () => {
     // Force countUserTurns() to return specific values by writing two
     // jsonl files: one updated today, one updated yesterday.
-    H.countTaskRunsBetween.mockImplementation((from: number, to?: number) => {
+    H.countTaskRunsBetween.mockImplementation(((from: number, to?: number) => {
       if (to === undefined) return 1 // schedToday
       return 2 // schedYesterday
-    })
+    }) as never)
     const projectsDir = join(sandboxHome, '.claude', 'projects', 'p1')
     mkdirSync(projectsDir, { recursive: true })
     const now = Date.now()

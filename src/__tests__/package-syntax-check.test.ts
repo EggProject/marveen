@@ -11,7 +11,7 @@
 // bundles get checked separately. This test mirrors that and pins a negative
 // case so the gate cannot silently degenerate again.
 
-import { describe, it, expect, afterAll } from 'vitest'
+import { describe, it, expect, afterAll, vi } from 'vitest'
 import { spawnSync } from 'node:child_process'
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'

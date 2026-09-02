@@ -27,19 +27,19 @@ describe('logger', () => {
 
   it('default level is "info" when LOG_LEVEL is unset', async () => {
     vi.doMock('pino', () => ({
-      default: vi.fn((opts: unknown) => ({ _level: 'info', _opts: opts })),
+      default: vi.fn((opts: unknown) => ({ level: 'info', _opts: opts })),
     }))
     const { logger } = await import('../logger.js')
-    expect(logger._level).toBe('info')
+    expect((logger as unknown as { level: string }).level).toBe('info')
   })
 
   it('honors LOG_LEVEL from env', async () => {
     process.env.LOG_LEVEL = 'debug'
     vi.doMock('pino', () => ({
-      default: vi.fn((opts: unknown) => ({ _level: 'debug', _opts: opts })),
+      default: vi.fn((opts: unknown) => ({ level: 'debug', _opts: opts })),
     }))
     const { logger } = await import('../logger.js')
-    expect(logger._level).toBe('debug')
+    expect((logger as unknown as { level: string }).level).toBe('debug')
   })
 
   it('passes pino-pretty transport in non-production', async () => {

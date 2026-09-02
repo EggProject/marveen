@@ -491,7 +491,7 @@ describe('GET /api/marveen', () => {
       defaultGroup: 'none',
       separatorColor: '#222222',
     })
-    expect(body.kanbanLabels.colors).toEqual(H.KANBAN_LABEL_COLORS)
+    expect((body.kanbanLabels as { colors: readonly string[] }).colors).toEqual(H.KANBAN_LABEL_COLORS)
   })
 
   it('uses a non-default model when readActiveModelFromProjectDir returns one', async () => {
@@ -501,7 +501,7 @@ describe('GET /api/marveen', () => {
   })
 
   it('falls back to "unknown" when readActiveModelFromProjectDir returns null', async () => {
-    H.readActiveModelFromProjectDir.mockReturnValue(null)
+    H.readActiveModelFromProjectDir.mockReturnValue(null as unknown as string)
     const { json } = await call('GET', '/api/marveen')
     expect((json() as { model: string }).model).toBe('unknown')
   })
@@ -648,7 +648,7 @@ describe('GET /api/marveen', () => {
   })
 
   it('passes through a non-default contextTokens number', async () => {
-    H.readContextTokensFromProjectDir.mockReturnValue(null)
+    H.readContextTokensFromProjectDir.mockReturnValue(null as unknown as number)
     const { json } = await call('GET', '/api/marveen')
     expect((json() as { contextTokens: unknown }).contextTokens).toBeNull()
   })
@@ -681,7 +681,7 @@ describe('POST /api/marveen/restart', () => {
   })
 
   it('returns 500 with result.error when hardRestartMarveenChannels provides one', async () => {
-    H.hardRestartMarveenChannels.mockReturnValue({ ok: false, error: 'tmux exploded' })
+    H.hardRestartMarveenChannels.mockReturnValue({ ok: false, error: 'tmux exploded' } as unknown as { ok: boolean })
     const { res, json } = await call('POST', '/api/marveen/restart')
     expect(res.statusCode).toBe(500)
     expect(json()).toEqual({ error: 'tmux exploded' })
@@ -781,7 +781,7 @@ describe('POST /api/marveen/avatar', () => {
     expect(existsSync(join(H.storeDir, 'marveen-avatar.jpg'))).toBe(true)
     expect(existsSync(join(H.storeDir, 'marveen-avatar.png'))).toBe(false) // cleaned
     expect(H.sendMarveenAvatarChange).toHaveBeenCalledTimes(1)
-    expect(H.sendMarveenAvatarChange.mock.calls[0][0]).toBe(join(H.storeDir, 'marveen-avatar.jpg'))
+    expect((H.sendMarveenAvatarChange.mock.calls[0] as unknown[] | undefined)?.[0]).toBe(join(H.storeDir, 'marveen-avatar.jpg'))
   })
 
   it('returns 400 when the JSON body omits galleryAvatar', async () => {
@@ -844,7 +844,7 @@ describe('POST /api/marveen/avatar', () => {
     expect(res.statusCode).toBe(200)
     expect(json()).toEqual({ ok: true })
     expect(existsSync(join(H.storeDir, 'marveen-avatar.png'))).toBe(true)
-    expect(H.sendMarveenAvatarChange.mock.calls[0][0]).toBe(join(H.storeDir, 'marveen-avatar.png'))
+    expect((H.sendMarveenAvatarChange.mock.calls[0] as unknown[] | undefined)?.[0]).toBe(join(H.storeDir, 'marveen-avatar.png'))
   })
 
   it('parses the multipart body and writes the uploaded file to store/ as marveen-avatar.<ext>', async () => {
@@ -862,7 +862,7 @@ describe('POST /api/marveen/avatar', () => {
     expect(json()).toEqual({ ok: true })
     expect(existsSync(join(H.storeDir, 'marveen-avatar.png'))).toBe(true)
     expect(H.sendMarveenAvatarChange).toHaveBeenCalledTimes(1)
-    expect(H.sendMarveenAvatarChange.mock.calls[0][0]).toBe(join(H.storeDir, 'marveen-avatar.png'))
+    expect((H.sendMarveenAvatarChange.mock.calls[0] as unknown[] | undefined)?.[0]).toBe(join(H.storeDir, 'marveen-avatar.png'))
   })
 
   it('falls back to ".png" extension when the uploaded file has none', async () => {

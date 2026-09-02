@@ -313,7 +313,7 @@ describe('store-watcher', () => {
     })
 
     it('returns when filename is null (Linux gap: rename events may lack a filename)', () => {
-      watchCallback!(null, null)
+      watchCallback!(null as unknown as string, null as unknown as string)
       expect(logStoreFileEventMock).not.toHaveBeenCalled()
     })
 

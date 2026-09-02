@@ -82,7 +82,7 @@ async function call(path: string, method: string): Promise<{
   return {
     handled,
     res: ctx.res as any,
-    body: ctx.res.body ? JSON.parse(ctx.res.body) : null,
+    body: ((ctx.res as unknown as { body?: string }).body ? JSON.parse((ctx.res as unknown as { body?: string }).body as string) : null),
   }
 }
 

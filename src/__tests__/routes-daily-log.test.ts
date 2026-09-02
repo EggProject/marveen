@@ -121,7 +121,7 @@ async function call(opts: {
   return {
     handled,
     res: ctx.res as unknown as MockRes,
-    json: () => (ctx.res.body ? JSON.parse(ctx.res.body) : null),
+    json: () => ((ctx.res as unknown as MockRes).body ? JSON.parse((ctx.res as unknown as MockRes).body) : null),
   }
 }
 

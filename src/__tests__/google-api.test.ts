@@ -493,7 +493,7 @@ describe('refreshAccessToken', () => {
     mockState.statMtimeMs = 1
     mockState.tokensContents = tokensJson({ expiry_date: mockState.nowMs - 1000 })
     const mod = await importFresh()
-    mockState.responses.push({ error: new Error('ECONNRESET') })
+    mockState.responses.push({ error: new Error('ECONNRESET') } as unknown as QueuedResponse)
     await expect(mod.getCalendarEvents('cal-1', new Date(0), new Date(1))).rejects.toThrow('ECONNRESET')
   })
 })
@@ -705,7 +705,7 @@ describe('getCalendarEvents 401 retry path', () => {
     mockState.statMtimeMs = 1
     mockState.tokensContents = tokensJson({ expiry_date: mockState.nowMs + 60 * 60 * 1000 })
     const mod = await importFresh()
-    mockState.responses.push({ error: new Error('socket hang up') })
+    mockState.responses.push({ error: new Error('socket hang up') } as unknown as QueuedResponse)
     await expect(mod.getCalendarEvents('cal-1', new Date(0), new Date(1))).rejects.toThrow('socket hang up')
   })
 })
@@ -719,7 +719,7 @@ describe('httpsRequest internal branches', () => {
     mockState.statMtimeMs = 1
     mockState.tokensContents = tokensJson({ expiry_date: mockState.nowMs + 60 * 60 * 1000 })
     const mod = await importFresh()
-    mockState.responses.push({ timeout: true })
+    mockState.responses.push({ timeout: true } as unknown as QueuedResponse)
     await expect(mod.getCalendarEvents('cal-1', new Date(0), new Date(1))).rejects.toThrow(/timed out after \d+ms/)
   })
 

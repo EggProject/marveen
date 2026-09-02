@@ -642,7 +642,7 @@ describe('flushQuietSummary', () => {
       // Hook execFile BEFORE startReauthHealer to detect the notify.sh call.
       const cp = await import('node:child_process')
       const realExecFile = cp.execFile
-      ;(cp as unknown as { execFile: typeof cp.execFile }).execFile = ((
+      ;(cp as unknown as { execFile: unknown }).execFile = ((
         cmd: string,
         args: string[],
         opts: unknown,
@@ -652,7 +652,7 @@ describe('flushQuietSummary', () => {
         if (cmd === '/bin/bash') notifySeen = true
         if (typeof cb === 'function') cb(null)
         return {} as never
-      }) as typeof cp.execFile
+      }) as unknown
       try {
         mod.startReauthHealer()
         await firstSweep()
@@ -1158,7 +1158,7 @@ describe('checkSession: escalate branch (main agent, dead token, not first-run g
   it('logs a warn when notify.sh reports an error (errored execFile callback)', async () => {
     const cp = await import('node:child_process')
     const realExecFile = cp.execFile
-    ;(cp as unknown as { execFile: typeof cp.execFile }).execFile = ((
+    ;(cp as unknown as { execFile: unknown }).execFile = ((
       cmd: string,
       args: string[],
       _opts: unknown,
@@ -1167,7 +1167,7 @@ describe('checkSession: escalate branch (main agent, dead token, not first-run g
       mocks.execFileCalls.push({ cmd, args, err: cmd === '/bin/bash' ? new Error('notify.sh exit 1') : null })
       if (typeof cb === 'function') cb(cmd === '/bin/bash' ? new Error('notify.sh exit 1') : null)
       return {} as never
-    }) as typeof cp.execFile
+    }) as unknown
     try {
       mocks.listAgentNames.mockReturnValue([])
       mocks.capturePane.mockReturnValue(DEAD_PANE)

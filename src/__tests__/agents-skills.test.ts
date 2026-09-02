@@ -81,7 +81,7 @@ vi.mock('node:fs', async (importOriginal) => {
       if (mocks.statSyncThrowPath !== null && typeof pth === 'string' && pth === mocks.statSyncThrowPath) {
         throw new Error('forced statSync throw (test)')
       }
-      return (realStatSync as unknown as (...a: unknown[]) => unknown)(pth, ...rest)
+      return (realStatSync as unknown as (...a: unknown[]) => unknown)(pth, ...(rest as unknown[]))
     }) as unknown as typeof realStatSync,
   }
 })

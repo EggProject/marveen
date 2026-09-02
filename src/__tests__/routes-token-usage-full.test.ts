@@ -117,7 +117,7 @@ async function call(method: string, fullPath: string, extraHeaders: Record<strin
   return {
     res: ctx.res as unknown as MockRes,
     handled,
-    json: () => (ctx.res.body ? JSON.parse(ctx.res.body) : null),
+    json: () => ((ctx.res as unknown as MockRes).body ? JSON.parse((ctx.res as unknown as MockRes).body) : null),
   }
 }
 

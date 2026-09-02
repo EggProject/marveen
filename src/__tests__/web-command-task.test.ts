@@ -93,7 +93,7 @@ vi.mock('node:child_process', async (importOriginal) => {
     ...actual,
     spawnSync: ((cmd: string, args: string[], opts: Record<string, unknown>) => {
       if (mockState.spawnSyncThrow) throw new Error('mock spawnSync throw')
-      if (mockState.spawnSyncResult) return mockState.spawnSyncResult as ReturnType<typeof actual.spawnSync>
+      if (mockState.spawnSyncResult) return mockState.spawnSyncResult as unknown as ReturnType<typeof actual.spawnSync>
       return { status: 0, stdout: '', stderr: '' } as ReturnType<typeof actual.spawnSync>
     }) as typeof actual.spawnSync,
   }

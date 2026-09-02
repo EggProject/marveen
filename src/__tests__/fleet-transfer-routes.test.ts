@@ -59,7 +59,7 @@ const H = vi.hoisted(() => {
   function readFileSync(p: string, _enc?: string): any {
     if (fsState.files.has(p)) {
       const v = fsState.files.get(p)!
-      return typeof _enc === 'string' ? v.toString(_enc) : v
+      return typeof _enc === 'string' ? v.toString(_enc as BufferEncoding) : v
     }
     return realReadFileSync(p, _enc as any)
   }

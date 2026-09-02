@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { Database } from '../db/sqlite.js'
 
 describe('background_tasks schema and CRUD', () => {
-  let db: ReturnType<typeof Database>
+  let db: InstanceType<typeof Database>
 
   beforeEach(() => {
     db = new Database(':memory:')
