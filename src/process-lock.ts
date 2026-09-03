@@ -388,8 +388,8 @@ export class PidfileLockAcquirer {
 
   /**
    * Best-effort cleanup: read the pidfile and unlink it IFF its recorded
-   * PID equals `selfPid`. Mirrors the legacy `releaseLock()` free function
-   * at src/index.ts:359-367 -- the guard `recorded === selfPid` is what
+   * PID equals `selfPid`. Mirrors the `releaseLock()` body at
+   * src/index.ts:359-366 -- the guard `recorded === selfPid` is what
    * prevents a shutdown path from nuking a successor's already-acquired
    * pidfile. Silent on ENOENT / parse failures / mismatch (they all
    * indicate "someone else owns (or already cleared) this slot").
