@@ -306,3 +306,62 @@ describe('PidfileLockAcquirer', () => {
     expect(livePids.has(999)).toBe(true)
   })
 })
+
+describe('PidfileLockAcquirer.release', () => {
+  it('unlinks when recorded === selfPid', () => {
+    // Pin the happy path: when the pidfile still records our PID, release()
+    // must call ctx.unlinkIfMatches with the recorded PID so the file is
+    // dropped. If the impl skips unlinkIfMatches or passes a different
+    // value, the buildPidfileCtx helper's `if (cur !== expected) return`
+    // guard leaves the file intact and this assertion catches the drift.
+    const files = new Map<string, number>([['/tmp/test.pid', 42]])
+    const ctx = buildPidfileCtx({ files })
+    new PidfileLockAcquirer(ctx).release('/tmp/test.pid', 42)
+    expect(files.has('/tmp/test.pid')).toBe(false)
+  })
+
+  it('is a no-op when recorded !== selfPid', () => {
+    // PID recycling scenario: a successor already overwrote the pidfile
+    // with its own PID. release() must NOT delete the file (the guard
+    // `recorded !== selfPid` returns early before any unlink). Pin both:
+    // the file survives, AND unlinkIfMatches was never invoked.
+    const files = new Map<string, number>([['/tmp/test.pid', 99]])
+    let unlinkCalls = 0
+    const ctx: PidfileLockContext = {
+      ...buildPidfileCtx({ files }),
+      unlinkIfMatches(path, expected) {
+        unlinkCalls += 1
+        const cur = files.get(path)
+        if (expected === null) { if (cur === undefined) files.delete(path); return }
+        if (cur !== expected) return
+        files.delete(path)
+      },
+    }
+    new PidfileLockAcquirer(ctx).release('/tmp/test.pid', 42)
+    expect(files.get('/tmp/test.pid')).toBe(99)
+    expect(unlinkCalls).toBe(0)
+  })
+
+  it('is a no-op when recorded is null (corrupt pidfile)', () => {
+    // Corrupt-pidfile case: file exists but readRecordedPid returns null
+    // (truncated write, garbage content). release() must early-return
+    // before unlinkIfMatches -- the slot may belong to a concurrent peer
+    // mid-write. Pin the file is untouched AND unlinkIfMatches never ran.
+    const files = new Map<string, number>([['/tmp/test.pid', 999]])
+    let unlinkCalls = 0
+    const ctx: PidfileLockContext = {
+      ...buildPidfileCtx({ files }),
+      readRecordedPid: () => null,
+      unlinkIfMatches(path, expected) {
+        unlinkCalls += 1
+        const cur = files.get(path)
+        if (expected === null) { if (cur === undefined) files.delete(path); return }
+        if (cur !== expected) return
+        files.delete(path)
+      },
+    }
+    new PidfileLockAcquirer(ctx).release('/tmp/test.pid', 42)
+    expect(files.get('/tmp/test.pid')).toBe(999)
+    expect(unlinkCalls).toBe(0)
+  })
+})

@@ -26,7 +26,7 @@ import { startStoreWatcher, stopStoreWatcher } from './store-watcher.js'
 import { AGENTS_BASE_DIR } from './web/agent-config.js'
 import {
   PortLockAcquirer,
-  acquirePidfileLock,
+  PidfileLockAcquirer,
   writeBufferFully,
   DeferToPeerError,
   type ProcessLockContext,
@@ -279,8 +279,9 @@ function buildPidfileLockContext(procCtx: ProcessLockContext): PidfileLockContex
     },
     log: {
       // PidfileLockContext.log.error is forwarder-only: required by the interface
-      // (process-lock.ts:253) but never invoked by acquirePidfileLock (info/warn
-      // only at process-lock.ts:301/328/336/346/350/352). Pinned by index.test.ts:1382.
+      // (process-lock.ts:253) but never invoked by PidfileLockAcquirer.acquire
+      // (info/warn only at process-lock.ts:301/328/336/346/350/352). Pinned by
+      // index.test.ts:1382.
       info: (obj, msg) => logger.info(obj, msg),
       warn: (obj, msg) => logger.warn(obj, msg),
       error: (obj, msg) => logger.error(obj, msg),
@@ -348,19 +349,17 @@ async function acquireLock(): Promise<void> {
   // belt-and-braces backup -- checkFreshStartupRace above should have
   // already caught the common case, but if the winner wrote its pidfile
   // between those two checks, defer here too.
-  await acquirePidfileLock(PID_FILE, process.pid, buildPidfileLockContext(procCtx), {
-    onLiveLegitimate: 'defer',
-  })
+  pidfileLockAcquirer = new PidfileLockAcquirer(buildPidfileLockContext(procCtx))
+  await pidfileLockAcquirer.acquire(PID_FILE, process.pid, { onLiveLegitimate: 'defer' })
 }
 
 // Delete the PID file ONLY if it still points at this process. A zombie
 // shutdown path must not nuke the successor's pidfile after the successor
 // already overwrote it.
 function releaseLock(): void {
+  if (pidfileLockAcquirer == null) return // pre-acquireLock shutdown; nothing to clean up
   try {
-    const recordedPid = readRecordedPidFrom(PID_FILE)
-    if (recordedPid !== process.pid) return
-    unlinkSync(PID_FILE)
+    pidfileLockAcquirer.release(PID_FILE, process.pid)
   } catch {
     // best-effort: the pidfile may already be gone (successor unlinked it)
   }
@@ -371,6 +370,7 @@ function releaseLock(): void {
 // after partial state was already wired up (e.g. initDatabase throws after
 // acquireLock wrote the pidfile -- we still need to drop the heartbeat /
 // digest timers and release the pidfile on the way out).
+let pidfileLockAcquirer: PidfileLockAcquirer | null = null
 let decayInterval: NodeJS.Timeout | null = null
 let digestTimer: NodeJS.Timeout | null = null
 let digestInterval: NodeJS.Timeout | null = null

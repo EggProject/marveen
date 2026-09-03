@@ -385,6 +385,27 @@ export class PidfileLockAcquirer {
     this.ctx.log.error({ path, maxAttempts, selfPid }, `Failed to acquire pidfile lock after ${maxAttempts} attempts`)
     throw new Error(`Failed to acquire pidfile lock at ${path} after ${maxAttempts} attempts`)
   }
+
+  /**
+   * Best-effort cleanup: read the pidfile and unlink it IFF its recorded
+   * PID equals `selfPid`. Mirrors the legacy `releaseLock()` free function
+   * at src/index.ts:359-367 -- the guard `recorded === selfPid` is what
+   * prevents a shutdown path from nuking a successor's already-acquired
+   * pidfile. Silent on ENOENT / parse failures / mismatch (they all
+   * indicate "someone else owns (or already cleared) this slot").
+   *
+   * Sync because all underlying I/O is sync (readFileSync + unlinkSync
+   * via ctx), and shutdown callers cannot await (invoked from
+   * process.on('SIGTERM') / hardKill timer where delay blocks exit).
+   *
+   * Per-call (path, selfPid) signature matches `acquire(path, selfPid, opts)`.
+   */
+  release(path: string, selfPid: number): void {
+    const recorded = this.ctx.readRecordedPid(path)
+    if (recorded == null) return
+    if (recorded !== selfPid) return
+    this.ctx.unlinkIfMatches(path, recorded)
+  }
 }
 
 export function acquirePidfileLock(path: string, selfPid: number, ctx: PidfileLockContext, opts?: AcquirePidfileLockOptions): Promise<void> {

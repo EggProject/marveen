@@ -39,6 +39,7 @@ const {
   mockStopStoreWatcher,
   mockAcquirePidfileLock,
   mockAcquirePortLock,
+  mockPidfileLockRelease,
   mockLogger,
 } = vi.hoisted(() => ({
   mockExecSync: vi.fn(),
@@ -71,6 +72,7 @@ const {
   mockStopStoreWatcher: vi.fn(),
   mockAcquirePidfileLock: vi.fn(),
   mockAcquirePortLock: vi.fn(),
+  mockPidfileLockRelease: vi.fn(),
   mockLogger: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -192,6 +194,31 @@ vi.mock('../process-lock.js', async () => {
       constructor(public readonly ctx: unknown) {}
       acquire = (port: number, opts: unknown = {}): Promise<void> =>
         mockAcquirePortLock(port, this.ctx, opts)
+    },
+    PidfileLockAcquirer: class {
+      constructor(public readonly ctx: unknown) {}
+      acquire = (path: string, selfPid: number, opts: unknown = {}): Promise<void> =>
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+        mockAcquirePidfileLock(path, selfPid, this.ctx, opts)
+      // Replicates the real class's release() semantics so the index.test.ts
+      // releaseLock tests (which observe mockReadFileSync / mockUnlinkSync)
+      // see the same fs traffic the production code path would produce.
+      // Without this inline check the mock release is a no-op forwarder,
+      // and the shutdown tests would never observe unlinkSync being called.
+      release = (path: string, selfPid: number): void => {
+        mockPidfileLockRelease(path, selfPid)
+        try {
+          const recorded = mockReadFileSync(path, 'utf-8') as string
+          const trimmed = recorded.trim()
+          if (!/^\d+$/.test(trimmed)) return
+          const parsed = parseInt(trimmed, 10)
+          if (!Number.isFinite(parsed) || parsed <= 0) return
+          if (parsed !== selfPid) return
+          mockUnlinkSync(path)
+        } catch {
+          // best-effort: the pidfile may already be gone
+        }
+      }
     },
     acquirePidfileLock: mockAcquirePidfileLock,
     writeBufferFully: actual.writeBufferFully,
