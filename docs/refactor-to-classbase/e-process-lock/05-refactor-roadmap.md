@@ -231,6 +231,8 @@ uncovered once E.5 removes them.
 
 ## Phase E.4 — PidfileLock consumer migration (proof)
 
+> **LANDED in `30509d4`** (E.4 consumer migration).
+
 - **Goal:** migrate the single production consumer of
   `acquirePidfileLock` at `src/index.ts:348` to the class form,
   and migrate the `releaseLock()` body at `:356-364` to
