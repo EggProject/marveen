@@ -20,7 +20,10 @@
     "lint:fix": "NODE_OPTIONS=--max-old-space-size=8192 eslint . --fix",
     "typecheck": "bun tsc --noEmit",
     "syntax-check": "node --check web/app.js && node --check web/sw.js",
-    "smoke": "bun playwright test --config=playwright.config.ts"
+    "smoke": "bun playwright test --config=playwright.config.ts",
+    "claude:hooks:test": "node --test '.claude/hooks/**/*.test.ts'",
+    "claude:hooks:typecheck": "tsc -p .claude/hooks/tsconfig.json",
+    "claude:memory": "tsx scripts/agent-memory.ts"
   },
   "engines": {
     "bun": ">=1.3.14",
