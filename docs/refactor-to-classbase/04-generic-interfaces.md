@@ -241,17 +241,34 @@ duplicated as `{ info(obj, msg?), warn, error }` shape in
 ### Definition (signature only)
 
 ```ts
-import type { Logger } from 'pino'
-type LoggerLike = Logger
+export interface LogFn {
+  (msg: string): void
+  (obj: object, msg?: string): void
+}
+
+export interface LoggerLike {
+  readonly info: LogFn
+  readonly warn: LogFn
+  readonly error: LogFn
+  readonly debug: LogFn
+}
 ```
 
 ### Type parameters
 
-None — this is a re-alias of the pino `Logger` interface.
+None — structural 4-method surface (info/warn/error/debug), all
+typed as `LogFn`. Pino's `Logger` is assignable to this surface
+(see `h-cross-cutting/04-generic-interfaces.md:132-137`); existing
+partial mocks `LogFn`/`LoggerLike` works because the bare pino
+alias would have forced every mock to implement pino's full
+`Logger` interface (including `child`, `trace`, `fatal`, `flush`,
+`bindings`).
 
 ### Variance notes
 
-N/A — alias only.
+N/A — structural interface. The two `LogFn` overloads are required
+so both `log.info('msg')` and `log.info({ ctx: 'v' }, 'msg')`
+compile at call sites.
 
 ### Usage example (signature only)
 

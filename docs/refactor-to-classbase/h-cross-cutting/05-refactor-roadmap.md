@@ -300,12 +300,12 @@ and can run concurrently with the entire H.1→H.5 chain.
 
 ## Risk-level summary
 
-| Phase | Files | Risk | Parallelizable | Reversible |
-|---|---:|---|---|---|
-| H.0 | 0 | none | n/a | n/a |
-| H.1 | 3 + 1 test | Low | No (gates others) | Yes |
-| H.2a | 3 | Medium | No (defines convention) | Yes |
-| H.2b | per-class | Medium (cumulative) | Yes | Yes, per class |
-| H.3 | 2 | Low | Yes | Yes |
-| H.4 | 3 | Low-Medium | Yes | Yes, per class |
-| H.5 | 1 + remainder | **High** | No | Only via a shim |
+| Phase | Files | Risk | Parallelizable | Reversible | Status |
+|---|---:|---|---|---|---|
+| H.0 | 0 | none | n/a | n/a | n/a |
+| H.1 | 3 + 1 test | Low | No (gates others) | Yes | LANDED (this commit) |
+| H.2a | 3 | Medium | No (defines convention) | Yes | LANDED (this commit) |
+| H.2b | per-class | Medium (cumulative) | Yes | Yes, per class | OPEN (roll-out) |
+| H.3 | 2 | Low | Yes | Yes | LANDED (`f3e9ad6`) |
+| H.4 | 3 | Low-Medium | Yes | Yes, per class | OPEN (advisory) |
+| H.5 | 1 + remainder | **High** | No | Only via a shim | OPEN (singleton removal) |

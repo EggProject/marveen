@@ -362,44 +362,55 @@ uncovered once E.5 removes them.
 
 ---
 
-## Phase E.6 — `LogFn` removal (H.1 + H.2 dependency)
+## Phase E.6 — `LogFn` removal (LANDED — Phase 1, this commit)
 
-- **Goal:** delete the local `type LogFn` alias at
-  `src/process-lock.ts:19`; replace the two `log: { info: LogFn;
-  warn: LogFn; error: LogFn }` fields at `:49` and `:253` with
-  `log: LoggerLike` (imported from `src/logger.ts`); collapse the
+- **Goal:** deleted the local `type LogFn` alias at
+  `src/process-lock.ts:19`; replaced the two `log: { info: LogFn;
+  warn: LogFn; error: LogFn }` fields at `:49` and `:254` with
+  `log: LoggerLike` (imported from `src/logger.ts`); collapsed the
   two adapter literals at `src/index.ts:171-175` and `:280-287` to
-  `log: logger`; fix the off-by-one comment at `index.ts:283`
-  (`1382` → `1383`).
+  `log: logger`. The structural `LogFn`/`LoggerLike` definition
+  used here (two-overload `LogFn`, four-method `LoggerLike`)
+  supersedes the original bare pino alias proposed at
+  `04-generic-interfaces.md:233-276` — see
+  `h-cross-cutting/04-generic-interfaces.md:18-69` for rationale.
 - **Files touched:**
-  - `src/process-lock.ts` — delete `type LogFn` at `:19`; add
-    `import type { LoggerLike } from './logger.js'`; replace the
+  - `src/process-lock.ts` — deleted `type LogFn` at `:19`; added
+    `import type { LoggerLike } from './logger.js'`; replaced the
     two `log: { info: LogFn; warn: LogFn; error: LogFn }` fields
     with `log: LoggerLike`.
-  - `src/index.ts` — collapse `log: { info: (obj, msg) =>
-    logger.info(obj, msg), warn: …, error: … }` to
-    `log: logger` at both sites; fix the `1382` → `1383` comment.
-  - `src/__tests__/process-lock.test.ts:81` and `:515` — add
-    `debug: log('debug')` stub to satisfy `LoggerLike` conformance.
-- **Risk:** **Low.** Pure type-side change. All 13 in-file call
-  sites (`:107, :112, :136, :138, :155, :158, :181, :196, :301,
-  :328, :336, :346, :350, :352, :362`) use the obj-first form
-  and satisfy `LoggerLike.LogFn` without modification. The
-  widening from `Record<string, unknown>` to `object` is a
-  superset direction.
-- **Test coverage requirement:**
+  - `src/index.ts` — collapsed `log: { info: (obj, msg) =>
+    logger.info(obj, msg), warn: …, error: … }` to `log: logger`
+    at both sites; removed the stale `1382/1383/1414` prose
+    comment that pre-dated the H.1 structural redefinition.
+  - `src/__tests__/process-lock.test.ts:81` and `:517` — added
+    `debug: log('debug')` stub and widened the log helper signature
+    to accept `object | string` (the `LogFn` overloads require both
+    string-first and object-first call forms); payload `obj` type
+    widened from `Record<string, unknown>` to `object` at L31/L37/L468.
+  - `src/__tests__/process-lock-classes.test.ts:20` — `noopLog`
+    gained a `debug: noop` member.
+  - `src/__tests__/logger.test.ts` — added one runtime test that
+    pins both call forms (`'plain'` and `{requestId:7}, 'structured'`)
+    plus a `@ts-expect-error` negative pin confirming a 3-method
+    mock cannot satisfy `LoggerLike`.
+- **Risk:** **Low** (was Low). Pure type-side change. All in-file
+  call sites (`:107, :112, :136, :138, :155, :158, :181, :196, :301,
+  :328, :336, :346, :350, :352, :362`) use the obj-first form and
+  satisfy `LoggerLike.LogFn` without modification. The widening from
+  `Record<string, unknown>` to `object` is a superset direction.
+- **Test coverage requirement:** MET.
   - All `process-lock.test.ts` cases pass.
-  - The pin test at `index.test.ts:1383` ('forwards pidfile
+  - The pin test at `index.test.ts:1415-1426` ('forwards pidfile
     context errors to logger.error') continues to pass.
-  - `bun tsc --noEmit` delta from the baseline is **zero** (this
-    phase should produce no type errors).
-- **Rollback strategy:** single commit. Revert restores the
-  `LogFn` alias.
-- **Parallelizable:** **yes** — `src/process-lock.ts` is shared
-  with prior E phases but the changes are local (delete one line,
-  modify two fields, add one import). E.6 can run in parallel
-  with E.5 if the file has been refactored to be just-class
-  (no free-function wrappers); otherwise E.6 follows E.5.
+  - `bun tsc --noEmit` delta from the baseline is zero.
+  - Targeted coverage on `src/logger.ts` and `src/process-lock.ts`
+    reaches 100% on lines/statements/functions/branches.
+- **Rollback strategy:** revert this commit (single commit).
+  Restores the `LogFn` alias.
+- **Parallelizable:** yes (historical). E.6 ran in parallel with
+  E.5 because the file had been refactored to be just-class (no
+  free-function wrappers) by E.5a (`d4f2d71`) and E.5b (`8f33a22`).
 
 ---
 
