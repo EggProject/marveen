@@ -173,7 +173,7 @@ vi.mock('../web/agent-config.js', () => ({
 }))
 
 vi.mock('../process-lock.js', async () => {
-  // The real acquirePortLock captures execSync at module load time via
+  // The real PortLockAcquirer.acquire captures execSync at module load time via
   // `import { execFileSync, execSync } from 'node:child_process'`. When we
   // resolve it through vi.importActual in this factory, that module's
   // capture points at the REAL execSync (vi.importActual bypasses our
@@ -185,7 +185,7 @@ vi.mock('../process-lock.js', async () => {
   //
   // To exercise the helpers in index.ts (buildProcessLockContext /
   // listOwnProcessesMatching / argvBelongsToThisInstall / processCwd) we
-  // replace acquirePortLock with a faithful re-implementation that drives
+  // replace PortLockAcquirer.acquire with a faithful re-implementation that drives
   // the same ctx methods. The pidfile path stays fully mocked so it stays
   // deterministic and isolated from any real fs state.
   const actual = await vi.importActual<typeof import('../process-lock.js')>('../process-lock.js')
@@ -268,7 +268,7 @@ function restoreProcessSpy(): void {
 
 async function drainMicrotasks(): Promise<void> {
   // Allow several microtask rounds so the awaited chains inside main()
-  // (acquireLock -> acquirePortLock -> PidfileLockAcquirer.acquire) and the
+  // (acquireLock -> PortLockAcquirer.acquire -> PidfileLockAcquirer.acquire) and the
   // fire-and-forget backfillEmbeddings().then() all settle. Microtask-only
   // so this stays safe under both real and fake timers (a real setTimeout
   // would hang under vi.useFakeTimers()).
@@ -345,12 +345,12 @@ beforeEach(() => {
   mockReadlinkSync.mockImplementation(() => { throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }) })
   mockExecSync.mockReturnValue('')
   mockExecFileSync.mockReturnValue('')
-  // Default mocks: async boot work resolves immediately. acquirePortLock
+  // Default mocks: async boot work resolves immediately. PortLockAcquirer.acquire
   // is NOT mocked -- the real implementation runs against our mocked
   // child_process.
   mockAcquirePidfileLock.mockResolvedValue(undefined)
   // Re-install the default mockAcquirePortLock implementation -- vi.resetAllMocks()
-  // wipes it. Tests that want the real acquirePortLock override this.
+  // wipes it. Tests that want the real PortLockAcquirer.acquire override this.
   mockAcquirePortLock.mockImplementation(async (port: number, ctx: any, opts: any = {}) => {
     const byPort = ctx.listPortHolders(port)
     const byBinary = opts?.binaryPattern ? ctx.listOwnProcessesMatching(opts.binaryPattern) : []
@@ -1365,7 +1365,7 @@ async function withRealAcquirePidfileLock(
 // Default behavior for mockAcquirePortLock: a faithful re-implementation that
 // drives ctx.signal but NOT ctx.sleep / ctx.log.* (those are covered by the
 // dedicated buildProcessLockContext.log methods describe block that swaps in
-// the real acquirePortLock). Tests that want the real acquirePortLock call
+// the real PortLockAcquirer.acquire). Tests that want the real PortLockAcquirer.acquire call
 // `mockAcquirePortLock.mockImplementation(...)` directly with the delegate.
 mockAcquirePortLock.mockImplementation(async (port: number, ctx: any, opts: any = {}) => {
   const byPort = ctx.listPortHolders(port)
@@ -1387,12 +1387,12 @@ mockAcquirePortLock.mockImplementation(async (port: number, ctx: any, opts: any 
 })
 
 // ---------------------------------------------------------------------------
-// Helper: delegate mockAcquirePortLock to the real acquirePortLock. This is
+// Helper: delegate mockAcquirePortLock to the real PortLockAcquirer.acquire. This is
 // what unlocks coverage of buildProcessLockContext's internal helpers
 // (sleep, log.info, log.warn, log.error -- lines 169-174), since the
 // default mockAcquirePortLock never calls ctx.log.* or ctx.sleep. The real
 // implementation drives ctx.signal / ctx.sleep / ctx.log.* through process-
-// lock.ts's terminateProcesses + acquirePortLock paths.
+// lock.ts's PortLockAcquirer.terminateProcesses + PortLockAcquirer.acquire paths.
 // ---------------------------------------------------------------------------
 async function withRealAcquirePortLock(
   setup: () => Promise<void> | void,
@@ -2759,7 +2759,7 @@ describe('buildProcessLockContext.log methods exercise', () => {
   })
 
   // The buildProcessLockContext.log.* / sleep functions are reachable from
-// the real acquirePortLock, but reliably exercising the SIGTERM-escalate
+// the real PortLockAcquirer.acquire, but reliably exercising the SIGTERM-escalate
 // path in the test harness is racy across test orderings (the captured-
 // timeouts stub that the rest of the suite depends on holds ctx.sleep's
 // setTimeout indefinitely). Documented as unreachable from the current
@@ -2770,16 +2770,16 @@ describe('buildProcessLockContext.log methods exercise', () => {
 // Coverage gap-fill for buildProcessLockContext (index.ts lines 169-174).
 // The default mockAcquirePortLock never calls ctx.sleep / ctx.log.* so the
 // internal helpers of buildProcessLockContext stay uncovered. The block
-// below delegates mockAcquirePortLock to the real acquirePortLock and
+// below delegates mockAcquirePortLock to the real PortLockAcquirer.acquire and
 // manually drains the captured-timeouts stub (set up in the suite's
 // beforeEach) so ctx.sleep resolves deterministically.
 // ---------------------------------------------------------------------------
 
-describe('buildProcessLockContext.log and sleep via real acquirePortLock', () => {
+describe('buildProcessLockContext.log and sleep via real PortLockAcquirer.acquire', () => {
   it('SIGTERM succeeds + SIGKILL fails EPERM -> exercises sleep, log.info, log.warn, log.error (covers lines 169-174)', async () => {
     const origKill = process.kill
     ;(process as unknown as { kill: (pid: number, sig?: number | string) => boolean }).kill = ((pid: number, sig?: number | string) => {
-      // SIGKILL throws EPERM -> terminateProcesses' catch fires ctx.log.error
+      // SIGKILL throws EPERM -> PortLockAcquirer.terminateProcesses' catch fires ctx.log.error
       if (sig === 'SIGKILL') throw Object.assign(new Error('EPERM'), { code: 'EPERM' })
       // signal(0) returns true -> alive stays true -> escalate branch fires
       if (sig === 0) return true
@@ -2790,7 +2790,7 @@ describe('buildProcessLockContext.log and sleep via real acquirePortLock', () =>
     try {
       await withRealAcquirePortLock(async () => {
         // lsof returns port holder 999 (terminates the early "no victims"
-        // short-circuit in acquirePortLock).
+        // short-circuit in PortLockAcquirer.acquire).
         mockExecSync.mockImplementation((cmd: string) => {
           if (cmd.startsWith('lsof -ti :')) return '999\n'
           return ''
@@ -2811,7 +2811,7 @@ describe('buildProcessLockContext.log and sleep via real acquirePortLock', () =>
         // captured-timeouts stub set up by the suite's beforeEach -- it
         // captured resolve() but never fires. Drain captured timeouts so
         // resolve() runs, then drain microtasks so main() proceeds past
-        // acquirePortLock into the rest of init.
+        // PortLockAcquirer.acquire into the rest of init.
         let captured = (globalThis as unknown as { __capturedTimeouts?: Array<() => void> }).__capturedTimeouts ?? []
         for (const fn of captured) fn()
         captured = []

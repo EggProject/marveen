@@ -70,9 +70,8 @@ const DEFAULT_POST_KILL_POLL_MS = 100
 
 /**
  * Enumerate port holders and terminate everything that looks like a previous
- * dashboard instance. The class is the canonical implementation; the free
- * functions below are thin one-line delegation wrappers for callers that
- * already hold a `ctx` and don't want to allocate.
+ * dashboard instance. Class is the canonical (and only) entry point; the
+ * former free-function wrappers were deleted in E.5a (`d4f2d71`).
  */
 export class PortLockAcquirer {
   constructor(private readonly ctx: ProcessLockContext) {}
@@ -288,8 +287,8 @@ export class DeferToPeerError extends Error {
  * unlink; gone -> unlink. Bounded retry so a permanent problem fails loud
  * instead of spinning.
  *
- * Class-backed; the free function below is a thin wrapper for callers that
- * already hold a `ctx`.
+ * Class is the canonical (and only) entry point; the former
+ * `acquirePidfileLock` free function was deleted in E.5b (`8f33a22`).
  */
 export class PidfileLockAcquirer {
   constructor(private readonly ctx: PidfileLockContext) {}
