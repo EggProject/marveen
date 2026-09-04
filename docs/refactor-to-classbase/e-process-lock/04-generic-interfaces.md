@@ -88,12 +88,16 @@ opportunities REJECTED
 ### What exists today
 
 `process-lock.ts` defines **no** `LockResult` or `ReleaseFn` type.
-Both acquire functions return `Promise<void>`:
+Both acquire methods return `Promise<void>`:
 
-- `acquirePortLock(port, ctx, opts): Promise<void>`
-  (`process-lock.ts:169-173`)
-- `acquirePidfileLock(path, selfPid, ctx, opts): Promise<void>`
-  (`process-lock.ts:289-294`)
+- `PortLockAcquirer.acquire(port, opts): Promise<void>` (formerly the
+  free function `acquirePortLock(port, ctx, opts)` at
+  `process-lock.ts:169-173`, deleted in E.5a `d4f2d71`)
+- `PidfileLockAcquirer.acquire(path, selfPid, opts): Promise<void>`
+  (formerly `acquirePidfileLock(path, selfPid, ctx, opts)` at
+  `process-lock.ts:289-294`, deleted in E.5b `8f33a22`)
+- `PidfileLockAcquirer.release(path, selfPid): void` (sync,
+  `process-lock.ts:383-388`)
 
 `writeBufferFully(writer, buf): void` (`process-lock.ts:207-210`) is
 synchronous and also void. There is **no release path** in the

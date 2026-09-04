@@ -477,11 +477,12 @@ in the existing order.
 
 ```
 :337  procCtx = buildProcessLockContext()        (E)
-:339-341  acquirePortLock(port)                  (E)
-:348  releaseLock() / pidfile handling          (E)
+:350  new PortLockAcquirer(procCtx).acquire(WEB_PORT, ...)  (E; post-E.5a)
+:357-358  new PidfileLockAcquirer(...).acquire(PID_FILE, ...)  (E; post-E.5b)
+:367  releaseLock() / pidfile handling          (E; releaseLock wraps pidfileLockAcquirer.release)
 :353  HTTP server etc.
 :541-552  initHeartbeat()                        (F.heartbeat)
-:378+  stopHeartbeat / stopStoreWatcher       (shutdown order: F first, E last)
+:386+  stopHeartbeat / stopStoreWatcher       (shutdown order: F first, E last)
 ```
 
 F starts after E acquires the lock, shuts down before E releases it.

@@ -154,7 +154,8 @@ plus a private `clearAllIntervals()` method eliminates the hand-typed
    §1.1) — reads or generates the bearer token from disk.
 3. **CORS / origin allowlist**: set on the request listener (`:99-120`).
 4. **Port probe + reclaim**: tries to bind `port`; if EADDRINUSE,
-   runs `acquirePortLock`-style reclaim via `/proc`-based pid scan
+   runs a port-reclaim path (formerly `acquirePortLock`-style reclaim
+   via `/proc`-based pid scan; now invoked via `new PortLockAcquirer(procCtx).acquire(WEB_PORT, ...)` at `index.ts:350`)
    (`:230-279`).
 5. **`http.Server` listen**: opens the listener at `:280-285`.
 6. **Route registration**: 43 `tryHandle*` calls in the dispatch

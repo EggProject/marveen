@@ -54,15 +54,23 @@ beyond trivial import-line additions.
 - **Goal:** convert `acquirePortLock` + `acquirePidfileLock` into
   `PortLockAcquirer` + `PidfileLockAcquirer` (E1, E2 in
   `03-class-boundaries.md`).
-- **Files touched:**
-  - `src/process-lock.ts` — add classes; keep free functions as thin
-    wrappers that delegate to a singleton instance for backward
-    compatibility during migration
-  - `src/index.ts` — construct the acquirers; pass them to
-    `acquireLock()` / `releaseLock()` (Phase 7 will refactor this
-    further)
-  - `src/__tests__/process-lock.test.ts` — add new tests that
-    exercise the class API
+- **Files touched (as planned + landed):**
+  - `src/process-lock.ts` — add classes; free functions were
+    originally kept as thin wrappers that delegate to a singleton
+    instance for backward compatibility during migration. E.5a
+    (`d4f2d71`) + E.5b (`8f33a22`) then deleted the five free-function
+    wrappers (`findOwnNodeHolders`, `findOwnBinaryMatches`,
+    `terminateProcesses`, `acquirePortLock`, `acquirePidfileLock`).
+    Only `writeBufferFully` survives as a free function.
+  - `src/index.ts` — construct the acquirers locally inside
+    `acquireLock()` (`new PortLockAcquirer(procCtx).acquire(WEB_PORT, ...)`
+    at `:350`; `pidfileLockAcquirer = new PidfileLockAcquirer(buildPidfileLockContext(procCtx))`
+    at `:357`); `releaseLock()` at `:364-371` is now a thin wrapper
+    around `pidfileLockAcquirer.release(PID_FILE, process.pid)`.
+  - `src/__tests__/process-lock.test.ts` — E.5 migrated 44 call sites
+    to the class form; new tests that exercise the class API live in
+    `src/__tests__/process-lock-classes.test.ts` (separate file from
+    E.1 onwards).
 - **Risk:** **Low–Medium.** The class is a literal translation of
   the existing free functions; the `ctx` argument becomes `this`.
   Tests that mock `process-lock.js` keep working because the

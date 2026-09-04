@@ -290,7 +290,7 @@ name and the call site directly:
 
 ```
 Error: connection refused
-    at acquirePortLock (src/process-lock.ts:169:11)
+    at PortLockAcquirer.acquire (src/process-lock.ts:182:11)  -- formerly acquirePortLock at process-lock.ts:169 (deleted in E.5a)
     at startWebServer (src/web.ts:88:5)
     at main (src/index.ts:142:3)
 ```

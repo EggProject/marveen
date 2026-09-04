@@ -95,13 +95,17 @@ those numbers; every later phase's gate is expressed as a delta against them.
   `src/__tests__/index.test.ts` (plus `process-lock`'s own test file if one
   exists separately).
 - **Why process-lock:** it is the only module that already has the DI seam.
-  `acquirePortLock` (`process-lock.ts:169`) and `acquirePidfileLock`
-  (`process-lock.ts:289`) already take a context bag containing `log`
+  `PortLockAcquirer.acquire(port, opts)` (formerly the free function
+  `acquirePortLock` at `process-lock.ts:169`, deleted in E.5a
+  `d4f2d71`) and `PidfileLockAcquirer.acquire(path, selfPid, opts)`
+  (formerly `acquirePidfileLock` at `process-lock.ts:289`, deleted in
+  E.5b `8f33a22`) already take a context bag containing `log`
   (`:49`, `:253`), and `index.ts` already constructs that bag
   (`:171-175`, `:280-287`). Converting it to `class PortLockAcquirer` /
   `class PidfileLockAcquirer` (framework `03 §E1`/`§E2`) moves the bag onto
   `this` — that is the smallest possible instance of the pattern, with one
-  production call site each.
+  production call site each. (Both classes have now landed; H.2a's
+  proof-consumer work was absorbed into E.1 + E.2.)
 - **Deliverable beyond the code:** the **test factory**. This is the item
   `review-completeness.md` CE-5 and CE-15 both flag as missing, and it is
   what makes or breaks the other ~90 conversions. Minimum:

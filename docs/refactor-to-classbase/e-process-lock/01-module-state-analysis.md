@@ -9,27 +9,29 @@ the current working tree on 2026-08-30.
 
 ## Brief summary
 
-`process-lock.ts` is a **pure-function module with zero module-level
-mutable state**. It exposes two top-level async functions (`acquirePortLock`
-at L169 and `acquirePidfileLock` at L289), one small helper (`writeBufferFully`
-at L207), one error class (`DeferToPeerError` at L272), three I/O
+`process-lock.ts` is a **pure-logic module with zero module-level
+mutable state**. It exposes two classes (`PortLockAcquirer` at L77 and
+`PidfileLockAcquirer` at L294), one small free helper (`writeBufferFully`
+at L209), one error class (`DeferToPeerError` at L274), and two I/O
 "context" interfaces (`ProcessLockContext` at L26, `PidfileLockContext`
-at L226, `SignalOutcome` / `ExclusiveCreateOutcome` type aliases), and
-two pure-logic helpers (`findOwnNodeHolders` at L77, `findOwnBinaryMatches`
-at L88, `terminateProcesses` at L127). All state — process table,
-port-holders list, file-system pidfile, sleep timers — is carried in
-the `ctx` argument the caller passes in; the module is therefore
-trivially re-importable and HMR-safe (no `let` bindings, no module-scope
-singletons, no signal-handler registration). The two acquire functions
-overlap only in their `ctx.log` field and the `graceMs` default (L67);
-the port-holders context has eight methods, the pidfile context has
-seven, and only the `signal`/`probeAlive` and `sleep`/`log` pairs are
+at L228, `SignalOutcome` / `ExclusiveCreateOutcome` type aliases).
+The three former free helpers (`findOwnNodeHolders`, `findOwnBinaryMatches`,
+`terminateProcesses`) are now public methods on `PortLockAcquirer`.
+All state — process table, port-holders list, file-system pidfile,
+sleep timers — is carried in the `ctx` argument the caller passes in;
+the module is therefore trivially re-importable and HMR-safe (no
+`let` bindings, no module-scope singletons, no signal-handler
+registration). The two acquire methods overlap only in their
+`ctx.log` field and the `graceMs` default (L67); the port-holders
+context has eight methods, the pidfile context has seven, and only
+the `signal`/`probeAlive` and `sleep`/`log` pairs are
 shape-compatible. `DeferToPeerError` is thrown in **two** places
-(`process-lock.ts:347` inside `acquirePidfileLock`, and `index.ts:324`
-inside `checkFreshStartupRace`), and both are caught by the single
-`instanceof` site at `index.ts:555` in `main().catch`. There are exactly
-two importers of the module (`src/index.ts:34`, `src/__tests__/process-lock.test.ts:12`)
-and exactly one `vi.mock('../process-lock.js')` site
+(`process-lock.ts:350` inside `PidfileLockAcquirer.acquire()`, and
+`index.ts:333` inside `checkFreshStartupRace`), and both are caught
+by the single `instanceof` site at `index.ts:564` in `main().catch`.
+There are exactly two importers of the module (`src/index.ts:31-32`,
+`src/__tests__/process-lock.test.ts:2-9`) and exactly one
+`vi.mock('../process-lock.js')` site
 (`src/__tests__/index.test.ts:173`). All seven reference inputs cited
 by the H subsystem plan are reflected in this file's shape: it has
 zero module state, it exposes a `LogFn` triple that the `LoggerLike`
@@ -72,25 +74,24 @@ returning only the three function-class exports (`acquirePortLock`,
 | `AcquirePidfileLockOptions` interface | `process-lock.ts:256` |
 | `ExclusiveCreateOutcome` | `process-lock.ts:224` |
 
-### Exported functions / class
+### Exported symbols (post-E.5)
 
 | Symbol | Location | Kind |
 |---|---|---|
-| `findOwnNodeHolders` | `process-lock.ts:77` | pure helper |
-| `findOwnBinaryMatches` | `process-lock.ts:88` | pure helper |
-| `filterOwnNodeCandidates` | `process-lock.ts:93` | **not exported** — module-private |
-| `terminateProcesses` | `process-lock.ts:127` | pure helper (async) |
-| `acquirePortLock` | `process-lock.ts:169` | main entry (async) |
-| `writeBufferFully` | `process-lock.ts:207` | pure helper |
-| `DeferToPeerError` (class) | `process-lock.ts:272` | error type |
-| `acquirePidfileLock` | `process-lock.ts:289` | main entry (async) |
+| `PortLockAcquirer` (class) | `process-lock.ts:77` | main entry; public methods `acquire(port, opts)`, `findOwnNodeHolders(port)`, `findOwnBinaryMatches(pattern)`, `terminateProcesses(pids, opts)` |
+| `filterOwnNodeCandidates` | `process-lock.ts:93` | **module-private** — internal method on `PortLockAcquirer` |
+| `writeBufferFully` | `process-lock.ts:209` | pure free helper (unchanged) |
+| `DeferToPeerError` (class) | `process-lock.ts:274` | error type |
+| `PidfileLockAcquirer` (class) | `process-lock.ts:294` | main entry; public methods `acquire(path, selfPid, opts)` and `release(path, selfPid)` |
 
 ### Factory closures / captured state
 
-None. The two acquire functions are top-level `async function`
-declarations; they capture nothing from the module scope (only the
-three numeric constants above). Every dependency is passed in via
-`(port, ctx, opts)` or `(path, selfPid, ctx, opts)`.
+None. The two classes are top-level `class` declarations; their
+methods capture nothing from the module scope (only the three numeric
+constants above at `process-lock.ts:67-69`). Every dependency is
+passed in via the constructor (`ctx`) and the per-call method
+arguments (`port, opts` for `PortLockAcquirer.acquire`;
+`path, selfPid, opts` for `PidfileLockAcquirer.acquire`).
 
 ### Side effects
 
@@ -122,14 +123,16 @@ reading the file: no top-level `let` or `var`, no `new`, no
 
 ## 2. PortLock flow
 
-`acquirePortLock(port, ctx, opts)` at `process-lock.ts:169-197`.
+`PortLockAcquirer.acquire(port, opts)` at `process-lock.ts:77-204`
+(method body lines L182-204). The free `acquirePortLock` function was
+removed in E.5a (`d4f2d71`); the body survives as a public method on
+the class.
 
 ### Entry shape
 
 ```ts
-acquirePortLock(
+new PortLockAcquirer(ctx).acquire(
   port: number,
-  ctx: ProcessLockContext,
   opts: AcquirePortLockOptions = {},
 ): Promise<void>
 ```
@@ -139,32 +142,33 @@ regex), `postKillDrainMs` (default 2000), `postKillPollMs` (default 100).
 
 ### Step-by-step
 
-1. **`L174-176`** Resolve the four option defaults.
-2. **`L177-178`** Discover victims via two parallel `ctx` calls:
-   - `findOwnNodeHolders(port, ctx)` at `L77` → `ctx.listPortHolders(port)`
+1. **Resolve the four option defaults** at the top of `acquire()`.
+2. **Discover victims** via two parallel `this` calls:
+   - `this.findOwnNodeHolders(port)` at `L178` → `this.ctx.listPortHolders(port)`
      → `filterOwnNodeCandidates(pids, ctx)` (L93). Each PID is
-     validated for finiteness (L97), not the current PID (L98),
-     not duplicated (L99-100), `getProcessCommand(pid)` non-null (L101-102),
-     UID equality if `ctx.uid != null` (L103-110), `/node|tsx/i` match
-     (L111-114). Failures log via `ctx.log.warn` at L107 and L112.
-   - `findOwnBinaryMatches(opts.binaryPattern, ctx)` at L88, same
-     filter pipeline but starting from `ctx.listOwnProcessesMatching`.
-3. **`L179`** Deduplicate via `Set`. Empty → return.
-4. **`L181`** Log a warning `Previous dashboard instance(s) detected,
+     validated for finiteness, not the current PID, not duplicated,
+     `getProcessCommand(pid)` non-null, UID equality if
+     `this.ctx.uid != null`, `/node|tsx/i` match. Failures log via
+     `ctx.log.warn`.
+   - `this.findOwnBinaryMatches(opts.binaryPattern)` at L179, same
+     filter pipeline but starting from `this.ctx.listOwnProcessesMatching`.
+3. **Deduplicate** via `Set`. Empty → return.
+4. **Log a warning** `Previous dashboard instance(s) detected,
    taking over` with `{ port, victims, matchedBy: { byPort, byBinary } }`.
-5. **`L182`** Call `terminateProcesses(victims, ctx, { graceMs })` (L127).
+5. **Call** `await this.terminateProcesses(victims, { graceMs })` at L183.
    Inside:
-   - For each PID: `ctx.signal(pid, 'SIGTERM')`; success → log info;
+   - For each PID: `this.ctx.signal(pid, 'SIGTERM')`; success → log info;
      throw → log warn.
-   - `await ctx.sleep(graceMs)`.
-   - For each PID: `ctx.signal(pid, 0)`; `'gone'` → skip; throw → assume
-     alive (L150-152). Alive → `ctx.signal(pid, 'SIGKILL')`; throw →
-     log error (`SIGKILL failed` at L158) and continue.
-6. **`L183-196`** Post-kill drain poll. If `drainMs <= 0 || pollMs <= 0`,
-   skip. Otherwise loop `findOwnNodeHolders(port, ctx)` until empty or
-   `waited >= drainMs`. After the loop, if port still held, log
+   - `await this.ctx.sleep(graceMs)`.
+   - For each PID: `this.ctx.signal(pid, 0)`; `'gone'` → skip; throw →
+     assume alive. Alive → `this.ctx.signal(pid, 'SIGKILL')`; throw →
+     log error (`SIGKILL failed`) and continue.
+6. **Post-kill drain poll** in the remainder of `acquire()`. If
+   `drainMs <= 0 || pollMs <= 0`, skip. Otherwise loop
+   `this.findOwnNodeHolders(port)` until empty or `waited >= drainMs`.
+   After the loop, if port still held, log
    `'Port still held after drain window, server.listen may hit EADDRINUSE
-   and recover via reclaim'` at L196.
+   and recover via reclaim'`.
 
 ### State captured in `ProcessLockContext`
 
@@ -193,15 +197,17 @@ one `filterOwnNodeCandidates` call.
 
 ## 3. PidfileLock flow
 
-`acquirePidfileLock(path, selfPid, ctx, opts)` at `process-lock.ts:289-364`.
+`PidfileLockAcquirer.acquire(path, selfPid, opts)` at
+`process-lock.ts:294-388` (method body lines L297-367). The free
+`acquirePidfileLock` function was removed in E.5b (`8f33a22`); the
+body survives as a public method on the class.
 
 ### Entry shape
 
 ```ts
-acquirePidfileLock(
+new PidfileLockAcquirer(ctx).acquire(
   path: string,
   selfPid: number,
-  ctx: PidfileLockContext,
   opts: AcquirePidfileLockOptions = {},
 ): Promise<void>
 ```
@@ -212,36 +218,38 @@ acquirePidfileLock(
 ### Step-by-step
 
 The body is a `for (let attempt = 1; attempt <= maxAttempts; attempt++)`
-loop (`L298-361`). Each iteration:
+loop (`L301-364`). Each iteration:
 
-1. **`L299`** `ctx.tryCreateExclusive(path, selfPid)`. Returns `'created'`
-   → log `'Pidfile lock acquired'` and `return`.
-2. **`L305-312`** `ctx.readRecordedPid(path)`. Returns `null` (file
-   exists but unparseable) → `ctx.unlinkIfMatches(path, null)` and
-   `continue`.
-3. **`L313-318`** `recorded === selfPid` (PID recycled to ourselves)
-   → `ctx.unlinkIfMatches(path, selfPid)` and `continue`.
-4. **`L320-331`** Probe liveness: `ctx.probeAlive(recorded)`; throw →
-   assume alive (`alive = true` at L325). `!alive` → log warn `'Pidfile
-   references dead PID, unlinking stale file'` and `ctx.unlinkIfMatches(path, recorded)`.
-5. **`L333-339`** `!ctx.isLegitimatePredecessor(recorded)` → log warn
-   `'Pidfile PID alive but not a dashboard process, treating as stale'`
-   and `ctx.unlinkIfMatches(path, recorded)`.
-6. **`L341-348`** `onLiveLegitimate === 'defer'` → log info `'Pidfile
-   held by legitimate peer, deferring'` and **`throw new DeferToPeerError(recorded)`**
-   (`process-lock.ts:347`).
-7. **`L350-353`** Otherwise: log warn `'Pidfile held by live predecessor,
-   sending SIGTERM and retrying'`. `ctx.sendTerm(recorded)`; throw →
-   log warn `'SIGTERM to predecessor failed'`.
-8. **`L354`** `await ctx.sleep(graceMs)`.
-9. **`L360`** `ctx.unlinkIfMatches(path, recorded)` — guarded against
-   a third peer taking the slot mid-sleep (per the source comment at
-   L355-359; the regression test at
+1. **`L302`** `this.ctx.tryCreateExclusive(path, selfPid)`. Returns
+   `'created'` → log `'Pidfile lock acquired'` and `return`.
+2. **`L308-315`** `this.ctx.readRecordedPid(path)`. Returns `null`
+   (file exists but unparseable) → `this.ctx.unlinkIfMatches(path, null)`
+   and `continue`.
+3. **`L316-321`** `recorded === selfPid` (PID recycled to ourselves)
+   → `this.ctx.unlinkIfMatches(path, selfPid)` and `continue`.
+4. **`L323-334`** Probe liveness: `this.ctx.probeAlive(recorded)`;
+   throw → assume alive (`alive = true`). `!alive` → log warn
+   `'Pidfile references dead PID, unlinking stale file'` and
+   `this.ctx.unlinkIfMatches(path, recorded)`.
+5. **`L336-342`** `!this.ctx.isLegitimatePredecessor(recorded)` → log
+   warn `'Pidfile PID alive but not a dashboard process, treating as
+   stale'` and `this.ctx.unlinkIfMatches(path, recorded)`.
+6. **`L344-351`** `onLiveLegitimate === 'defer'` → log info `'Pidfile
+   held by legitimate peer, deferring'` and **`throw new
+   DeferToPeerError(recorded)`** (`process-lock.ts:350`).
+7. **`L353-356`** Otherwise: log warn `'Pidfile held by live
+   predecessor, sending SIGTERM and retrying'`.
+   `this.ctx.sendTerm(recorded)`; throw → log warn `'SIGTERM to
+   predecessor failed'`.
+8. **`L357`** `await this.ctx.sleep(graceMs)`.
+9. **`L363`** `this.ctx.unlinkIfMatches(path, recorded)` — guarded
+   against a third peer taking the slot mid-sleep (per the source
+   comment at L358-362; the regression test at
    `process-lock.test.ts:652-683` pins this).
 10. **After loop:** log error `'Failed to acquire pidfile lock after
-    ${maxAttempts} attempts'` (L362) and throw `new Error(\`Failed to
+    ${maxAttempts} attempts'` (L365) and throw `new Error(\`Failed to
     acquire pidfile lock at ${path} after ${maxAttempts} attempts\`)`
-    (L363).
+    (L366).
 
 ### State captured in `PidfileLockContext`
 
@@ -369,14 +377,14 @@ The second hit is a comment inside `withRealAcquirePidfileLock`
 describing the factory. So **1 active mock site**, 1 explanatory
 comment.
 
-### Mock shape at `index.test.ts:173`
+### Mock shape at `index.test.ts:173` (post-E.5)
 
 ```ts
 vi.mock('../process-lock.js', async () => {
   const actual = await vi.importActual<typeof import('../process-lock.js')>('../process-lock.js')
   return {
-    acquirePortLock: mockAcquirePortLock,
-    acquirePidfileLock: mockAcquirePidfileLock,
+    PortLockAcquirer: actual.PortLockAcquirer,
+    PidfileLockAcquirer: actual.PidfileLockAcquirer,
     writeBufferFully: actual.writeBufferFully,
     DeferToPeerError: actual.DeferToPeerError,
   }
@@ -385,24 +393,28 @@ vi.mock('../process-lock.js', async () => {
 
 Key observations:
 
-- The factory uses `vi.importActual` to pull `writeBufferFully` and
-  `DeferToPeerError` from the real module while substituting
-  `mockAcquirePortLock` / `mockAcquirePidfileLock` (defined at the
-  top of `index.test.ts` via `vi.fn()`). The rationale comment at
-  L173-188 explains: the real `acquirePortLock` would otherwise
-  capture `execSync` at module-load time and route lsof/ps through
-  the real `/usr/bin/lsof` instead of the test's `mockExecSync`.
-- `mockAcquirePortLock`'s default implementation
-  (`index.test.ts:324-341`) is a **faithful re-implementation** that
-  drives the same `ctx` methods — not a no-op. Tests that want the
-  *real* `acquirePortLock` override this via
-  `withRealAcquirePortLock` (`index.test.ts:1363-1374`), which
-  delegates to `actual.acquirePortLock`.
-- `mockAcquirePidfileLock`'s default is
-  `mockResolvedValue(undefined)` (L321); tests that want the real
-  implementation use `withRealAcquirePidfileLock`
-  (`index.test.ts:1314-1330`), which delegates to
-  `actual.acquirePidfileLock` via `vi.importActual` bypass.
+- The factory uses `vi.importActual` to provide the real classes,
+  `writeBufferFully`, and `DeferToPeerError`. The free functions
+  `acquirePortLock` / `acquirePidfileLock` are no longer exported by
+  `process-lock.js`, so they cannot be substituted here — the mock
+  factory works because `index.ts` no longer imports them either.
+- The previous `mockAcquirePortLock` / `mockAcquirePidfileLock`
+  `vi.fn()`s are retained as module-scope `vi.fn()`s; they are used
+  inside the `withReal*` helpers' inner-class wrappers if present,
+  and they continue to back the `mockImplementation` overrides at
+  `:324-341`. The factory does NOT need to re-export them because
+  `index.ts` no longer references them.
+- `withRealAcquirePortLock` at `index.test.ts:1365` and
+  `withRealAcquirePidfileLock` at `index.test.ts:1317` were rewritten
+  to construct real `PortLockAcquirer` / `PidfileLockAcquirer`
+  instances via `vi.importActual` and call `.acquire(...)` /
+  `.release(...)` on them, rather than delegating through the
+  deleted free-function wrappers.
+- The `mockAcquirePortLock` default implementation at
+  `index.test.ts:324-341` remains as a **faithful re-implementation**
+  that drives the same `ctx` methods — used by tests that want to
+  override only the per-call behaviour without constructing a real
+  acquirer.
 
 ### Test files using each pattern
 
@@ -443,22 +455,22 @@ importers (verified, no others):
 
 | Importer | File:line | Symbols imported | Usage |
 |---|---|---|---|
-| `src/index.ts` | `:27-34` | `acquirePortLock`, `acquirePidfileLock`, `writeBufferFully`, `DeferToPeerError`, `type ProcessLockContext`, `type PidfileLockContext` | the sole production caller; see breakdown below |
-| `src/__tests__/process-lock.test.ts` | `:2-12` | `findOwnNodeHolders`, `findOwnBinaryMatches`, `terminateProcesses`, `acquirePortLock`, `acquirePidfileLock`, `writeBufferFully`, `DeferToPeerError`, `type ProcessLockContext`, `type PidfileLockContext` | unit tests |
+| `src/index.ts` | `:28-33` | `PortLockAcquirer`, `PidfileLockAcquirer`, `DeferToPeerError`, `type ProcessLockContext`, `type PidfileLockContext` | the sole production caller; constructs `new PortLockAcquirer(procCtx)` and `new PidfileLockAcquirer(buildPidfileLockContext(procCtx))` locally |
+| `src/__tests__/process-lock.test.ts` | `:2-9` | `PortLockAcquirer`, `PidfileLockAcquirer`, `writeBufferFully`, `DeferToPeerError`, `type ProcessLockContext`, `type PidfileLockContext` | unit tests against the class API |
 
 ### Call sites in `src/index.ts`
 
 | Caller | File:line | Args |
 |---|---|---|
-| `acquirePortLock` | `index.ts:341` | `acquirePortLock(WEB_PORT, procCtx, { binaryPattern: DASHBOARD_BINARY_PATTERN })` |
-| `acquirePidfileLock` | `index.ts:348` | `acquirePidfileLock(PID_FILE, process.pid, buildPidfileLockContext(procCtx), { onLiveLegitimate: 'defer' })` |
-| `DeferToPeerError` (throw) | `index.ts:324` | `throw new DeferToPeerError(recorded)` inside `checkFreshStartupRace` |
-| `DeferToPeerError` (import) | `index.ts:31, :555` | imported for the `instanceof` discriminant and for the throw |
-| `writeBufferFully` | not used in `index.ts` | imported at L30 but called only via the production `PidfileLockContext.tryCreateExclusive` implementation at `index.ts:220-223` (which the module's tests import directly) |
+| `PortLockAcquirer.acquire` | `index.ts:350` | `await new PortLockAcquirer(procCtx).acquire(WEB_PORT, { binaryPattern: DASHBOARD_BINARY_PATTERN })` |
+| `PidfileLockAcquirer.acquire` | `index.ts:357-358` | `pidfileLockAcquirer = new PidfileLockAcquirer(buildPidfileLockContext(procCtx)); await pidfileLockAcquirer.acquire(PID_FILE, process.pid, { onLiveLegitimate: 'defer' })` |
+| `PidfileLockAcquirer.release` | `index.ts:367` | `pidfileLockAcquirer.release(PID_FILE, process.pid)` inside `releaseLock()` |
+| `DeferToPeerError` (throw) | `index.ts:333` | `throw new DeferToPeerError(recorded)` inside `checkFreshStartupRace` |
+| `DeferToPeerError` (import) | `index.ts:31, :564` | imported for the `instanceof` discriminant and for the throw |
+| `writeBufferFully` | not imported by `index.ts` post-E.5 | was used at `index.ts:220-223` by the production `PidfileLockContext.tryCreateExclusive`; still called inside the module, but `index.ts` no longer imports it directly (the helper is used inside the closure) |
 | `ProcessLockContext` | `index.ts:97` (`buildProcessLockContext` return type), `index.ts:198` (passed into `isLegitimateDashboardPid`) | factory + helper |
-| `PidfileLockContext` | `index.ts:210` (`buildPidfileLockContext` return type), `index.ts:348` (passed to `acquirePidfileLock`) | factory |
-| `terminateProcesses` | not called directly by `index.ts` | only `acquirePortLock` invokes it (transitively) |
-| `findOwnNodeHolders` / `findOwnBinaryMatches` | not called directly by `index.ts` | only `acquirePortLock` invokes them (transitively) |
+| `PidfileLockContext` | `index.ts:210` (`buildPidfileLockContext` return type), `index.ts:357` (passed into `new PidfileLockAcquirer(...)`) | factory |
+| `findOwnNodeHolders` / `findOwnBinaryMatches` / `terminateProcesses` | not called directly by `index.ts` | only `PortLockAcquirer.acquire` invokes them (as `this.X`) — they are no longer free exports |
 
 ### Call sites in `src/web/` / `src/scripts/`
 
@@ -472,25 +484,26 @@ caller either; the only production caller is `src/index.ts`'s `main()`.
 
 ```
 main()
-  └─ process.on(SIGINT/SIGTERM/uncaughtException)  (L426-435)
-  └─ await acquireLock()                            (L437)
+  └─ process.on(SIGINT/SIGTERM/uncaughtException)
+  └─ await acquireLock()
        ├─ mkdirSync(STORE_DIR)
        ├─ procCtx = buildProcessLockContext()       (L97-177)
-       ├─ checkFreshStartupRace(procCtx)            (L299-325)
-       │     └─ throws DeferToPeerError (L324)
-       ├─ await acquirePortLock(...)                (L341)
+       ├─ checkFreshStartupRace(procCtx)            (L299-334)
+       │     └─ throws DeferToPeerError (L333)
+       ├─ await new PortLockAcquirer(procCtx).acquire(WEB_PORT, { binaryPattern: ... })
+       │                                          (L350)
        ├─ buildPidfileLockContext(procCtx)          (L210-289)
-       └─ await acquirePidfileLock(...)             (L348)
-             └─ throws DeferToPeerError (process-lock.ts:347)
+       └─ await pidfileLockAcquirer.acquire(PID_FILE, process.pid, { onLiveLegitimate: 'defer' })
+             └─ throws DeferToPeerError (process-lock.ts:350)
   └─ main().catch(...)
-        └─ err instanceof DeferToPeerError (L555) → process.exit(0)
+        └─ err instanceof DeferToPeerError (L564) → process.exit(0)
                                                        else shutdown()
 ```
 
-`releaseLock()` at `index.ts:356-364` is the inverse — it
-`unlinkSync` the pidfile ONLY if `recordedPid === process.pid`, and
-is called from three places inside `shutdown()` (L393, L402, L408,
-L413) plus the catch-all L411-415 path.
+`releaseLock()` at `index.ts:364-371` is the inverse — it calls
+`pidfileLockAcquirer.release(PID_FILE, process.pid)`, which in turn
+unlinks the pidfile ONLY if `recorded === process.pid`, and is called
+from four places inside `shutdown()` (L401, L410, L416, L421).
 
 ---
 
@@ -619,13 +632,18 @@ injection point, not move it into the class.
 
 ### `src/__tests__/index.test.ts` (test-by-test dependencies on process-lock)
 
-The `vi.mock('../process-lock.js')` factory at `:173` substitutes
-`mockAcquirePortLock` / `mockAcquirePidfileLock`. The default
-`mockAcquirePortLock` implementation at `:324-341` is a **faithful
-re-implementation**, not a stub. Tests that exercise the real
-implementation delegate through `withRealAcquirePortLock` (`:1358-1374`)
-and `withRealAcquirePidfileLock` (`:1304-1330`), both of which call
-the `vi.importActual`'d real function.
+The `vi.mock('../process-lock.js')` factory at `:173` now provides
+the real `PortLockAcquirer`, `PidfileLockAcquirer`,
+`writeBufferFully`, and `DeferToPeerError` (via `vi.importActual`).
+The default `mockAcquirePortLock` implementation at `:324-341`
+remains as a **faithful re-implementation**, not a stub — used by
+tests that want to override only the per-call behaviour without
+constructing a real acquirer. Tests that exercise the real
+implementation delegate through `withRealAcquirePortLock`
+(`:1365-1374`) and `withRealAcquirePidfileLock` (`:1317-1331`), both
+of which construct real `PortLockAcquirer` / `PidfileLockAcquirer`
+instances via `vi.importActual` and call `.acquire(...)` /
+`.release(...)` on them.
 
 Test groups that depend on the real acquire functions (via the
 helpers):
@@ -638,12 +656,13 @@ helpers):
 | `main().catch() routes non-DeferToPeerError errors through shutdown` | `:2148+` | error path |
 | `defers to a legitimate alive peer that is not yet on the port` | `:876+` | DeferToPeerError from `checkFreshStartupRace` |
 
-If the E migration renames `acquirePortLock`/`acquirePidfileLock`
-into class methods, the `vi.mock` factory at `:173` and the
-`withReal*` helpers at `:1324`/`:1372` are the only two sites that
-must change in `index.test.ts`. The 40+ test sites that call
-`mockAcquirePortLock` / `mockAcquirePidfileLock` continue working
-unchanged as long as the mock factory still exports the same names.
+The `vi.mock` factory at `:173` and the `withReal*` helpers at
+`:1365`/`:1317` are the only two sites in `index.test.ts` that
+changed shape during E.5 (the factory was rewritten to expose the
+classes; the helpers were rewritten to construct real instances).
+The test sites that call `mockAcquirePortLock` /
+`mockAcquirePidfileLock` continue working as long as the
+`vi.fn()`-backed mock implementations remain in scope.
 
 ---
 

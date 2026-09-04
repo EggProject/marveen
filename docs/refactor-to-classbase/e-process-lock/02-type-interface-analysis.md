@@ -202,31 +202,32 @@ break silently if a future field were added without a test update — a
 **strictness feature**, not a bug. The class conversion preserves this:
 constructor parameters stay required.
 
-### How it changes after class conversion
+### How it changes after class conversion (now landed)
 
 `ProcessLockContext` is the *dependency-injection* type. The class
-conversion does NOT replace it — the class takes one as a constructor
-parameter, exactly mirroring the current functional shape. The
-interface stays; only the call sites change from
-`acquirePortLock(port, ctx, opts)` to `new PortLockAcquirer(ctx,
-opts).acquire(port)` or similar.
+conversion does NOT replace it — `PortLockAcquirer` takes one as a
+constructor parameter, exactly mirroring the prior functional shape.
+The interface stays; only the call sites changed from
+`acquirePortLock(port, ctx, opts)` to
+`new PortLockAcquirer(ctx).acquire(port, opts)`. Post-E.5 the
+interface is unchanged; the class is the only consumer.
 
 ---
 
-## §3. `PidfileLockContext` (line 226)
+## §3. `PidfileLockContext` (line 228)
 
 ### Field-by-field breakdown
 
 | Field | Type | Optional? | Captured state | Purpose |
 |---|---|---|---|---|
-| `tryCreateExclusive(path, pid)` | `(path: string, pid: number) => ExclusiveCreateOutcome` | required | none — closure over `openSync(path, 'wx')` + `writeSync` + `closeSync` | atomic O_EXCL create (live at L212-232) |
-| `readRecordedPid(path)` | `(path: string) => number \| null` | required | none — closure over `readFileSync` | strict digit-only parse (live at L233-235) |
-| `unlinkIfMatches(path, expected)` | `(path: string, expected: number \| null) => void` | required | none — closure over `readFileSync` + `unlinkSync` | conditional unlink with re-read (live at L236-253) |
-| `probeAlive(pid)` | `(pid: number) => boolean` | required | none — closure over `process.kill(pid, 0)` | signal 0 liveness (live at L254-264) |
-| `sendTerm(pid)` | `(pid: number) => void` | required | none — closure over `process.kill(pid, 'SIGTERM')` | SIGTERM (silent on ESRCH) (live at L265-273) |
-| `isLegitimatePredecessor(pid)` | `(pid: number) => boolean` | required | closure over `isLegitimateDashboardPid(pid, procCtx)` | UID + node/tsx + argv match (live at L274-276) |
+| `tryCreateExclusive(path, pid)` | `(path: string, pid: number) => ExclusiveCreateOutcome` | required | none — closure over `openSync(path, 'wx')` + `writeSync` + `closeSync` | atomic O_EXCL create (live at `index.ts:212-232`) |
+| `readRecordedPid(path)` | `(path: string) => number \| null` | required | none — closure over `readFileSync` | strict digit-only parse (live at `index.ts:233-235`) |
+| `unlinkIfMatches(path, expected)` | `(path: string, expected: number \| null) => void` | required | none — closure over `readFileSync` + `unlinkSync` | conditional unlink with re-read (live at `index.ts:236-253`) |
+| `probeAlive(pid)` | `(pid: number) => boolean` | required | none — closure over `process.kill(pid, 0)` | signal 0 liveness (live at `index.ts:254-264`) |
+| `sendTerm(pid)` | `(pid: number) => void` | required | none — closure over `process.kill(pid, 'SIGTERM')` | SIGTERM (silent on ESRCH) (live at `index.ts:265-273`) |
+| `isLegitimatePredecessor(pid)` | `(pid: number) => boolean` | required | closure over `isLegitimateDashboardPid(pid, procCtx)` | UID + node/tsx + argv match (live at `index.ts:274-276`) |
 | `sleep(ms)` | `(ms: number) => Promise<void>` | required | none — closure over `setTimeout` | grace waits |
-| `log` | `{ info: LogFn; warn: LogFn; error: LogFn }` | required | closures over pino `logger.{info,warn,error}` (live at L280-287) | structured log forwarding |
+| `log` | `{ info: LogFn; warn: LogFn; error: LogFn }` | required | closures over pino `logger.{info,warn,error}` (live at `index.ts:280-287`) | structured log forwarding |
 
 ### Variance
 
@@ -275,11 +276,11 @@ interface LockContext<TEnv> {
 
 This is **not viable** because neither ctx captures port or pidfile
 path in its interface — they are passed as separate arguments to the
-acquire functions (`acquirePortLock(port, ctx, opts)`,
-`acquirePidfileLock(path, selfPid, ctx, opts)`). The ctx is purely a
-*capability bag* (a "what the system can do for you"), not a
-*configuration record* (a "what we're trying to do"). There is no
-shared snapshot field for `T` to bind to.
+acquire methods (`new PortLockAcquirer(ctx).acquire(port, opts)`,
+`new PidfileLockAcquirer(ctx).acquire(path, selfPid, opts)`). The ctx
+is purely a *capability bag* (a "what the system can do for you"),
+not a *configuration record* (a "what we're trying to do"). There is
+no shared snapshot field for `T` to bind to.
 
 ### The shape that survives generic-isation
 
@@ -336,18 +337,23 @@ is created.
 ### What exists
 
 There is **no `LockResult` or `ReleaseFn` type** in `process-lock.ts`.
-The acquire functions return `Promise<void>`:
+The acquire methods return `Promise<void>`:
 
-- `acquirePortLock(port, ctx, opts): Promise<void>` (L169-173)
-- `acquirePidfileLock(path, selfPid, ctx, opts): Promise<void>` (L289-294)
+- `PortLockAcquirer.acquire(port, opts): Promise<void>` (method body
+  inside the class at `process-lock.ts:77`)
+- `PidfileLockAcquirer.acquire(path, selfPid, opts): Promise<void>`
+  (method body inside the class at `process-lock.ts:294`)
+- `PidfileLockAcquirer.release(path, selfPid): void` (sync, at
+  `process-lock.ts:383-388`)
 
-`writeBufferFully(writer, buf): void` (L207-210) is synchronous and
+`writeBufferFully(writer, buf): void` (L209-210) is synchronous and
 also void.
 
-There is **no release path**. The lock helpers acquire; cleanup is
-implicit (the kernel releases the port on process death; the pidfile
-is removed by the *next* acquirer's `unlinkIfMatches` chain). The
-doc-comments at L163-168 and L281-288 make this explicit.
+There is **no release path on `PortLockAcquirer`** (the kernel
+releases the port on process death). The pidfile `release()` is a
+sync `void` that reads + unlinks the pidfile IFF
+`recorded === selfPid` — it lives on `PidfileLockAcquirer` as a
+public method.
 
 ### `AcquirePortLockOptions` (L52-65)
 
@@ -427,11 +433,11 @@ export class DeferToPeerError extends Error {
 
 ### Throw sites
 
-- **Production:** `src/index.ts:324` (`throw new DeferToPeerError(recorded)`,
+- **Production:** `src/index.ts:333` (`throw new DeferToPeerError(recorded)`,
   inside `checkFreshStartupRace`, gated by
-  `acquirePidfileLock`'s throw at `process-lock.ts:347`)
-- **Source-only:** `src/process-lock.ts:347` (the canonical throw inside
-  `acquirePidfileLock` when `onLiveLegitimate === 'defer'` and the peer
+  `PidfileLockAcquirer.acquire`'s throw at `process-lock.ts:350`)
+- **Source-only:** `src/process-lock.ts:350` (the canonical throw inside
+  `PidfileLockAcquirer.acquire` when `onLiveLegitimate === 'defer'` and the peer
   is alive-and-legitimate)
 
 ### Consumers

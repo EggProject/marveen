@@ -211,22 +211,23 @@ list in `05-refactor-roadmap.md` and to ER5's detection signals.
 `index.test.ts:82` and the `vi.doMock('node:child_process', ...)` /
 `vi.doMock('node:fs', ...)` at `:252`/`:256` are the *upstream* of
 `withRealAcquirePortLock`'s behaviour. `withRealAcquirePortLock`
-delegates to the real `acquirePortLock`, which calls `ctx.listPortHolders`
-→ `execSync('lsof', ...)`, which is intercepted by the
-`node:child_process` mock factory at `:82`. The plan correctly notes
-the `vi.mock('../process-lock.js')` factory and the `withReal*`
-helpers, but does not enumerate the `node:child_process` mock.
+delegates to a real `PortLockAcquirer` (constructed post-E.5 via
+`new actual.PortLockAcquirer(actualCtx)`), whose `.acquire(port, opts)`
+method calls `this.ctx.listPortHolders(port)` → `execSync('lsof', ...)`,
+which is intercepted by the `node:child_process` mock factory at
+`:82`. The plan correctly notes the `vi.mock('../process-lock.js')`
+factory and the `withReal*` helpers, but does not enumerate the
+`node:child_process` mock.
 
-**Why it matters.** If E.5 changes `process-lock.ts` to import
+**Why it matters.** If E.5 changed `process-lock.ts` to import
 `execSync`/`execFileSync` directly (instead of receiving them via
 the injected `ctx`), the `node:child_process` mock at `:82` would
 break — `vi.mock('node:child_process')` only catches direct imports.
 The plan's `01-module-state-analysis.md` §1 "Side effects" correctly
-notes that `process-lock.ts` has **zero** `import` statements, but
-does not address whether the *class version* should preserve this
-property. The class should *not* introduce `node:child_process`
-imports (they belong to `index.ts`'s `buildProcessLockContext`
-factory), but the plan does not explicitly state this constraint.
+notes that `process-lock.ts` has **zero** `import` statements, and
+E.5 verified that the class version preserves this property: no
+`node:child_process` / `node:fs` / `node:os` imports were introduced
+by E.5a / E.5b (the I/O continues to be injected via `ctx`).
 
 **Severity: major.** Add a one-line guard at the end of E.1 / E.2
 method-by-method tables in `03-class-boundaries.md`: "The class does
@@ -320,15 +321,15 @@ regression covers the first; the second is currently unverified."
 ---
 
 ### ECE-5 (minor) — Bun-specific race-window in `acquire` retry loop
-(`process-lock.ts:298-361`) not addressed
+(`process-lock.ts:301-364`) not addressed
 
-**Missing area.** `acquirePidfileLock`'s `for (let attempt = 1;
+**Missing area.** `PidfileLockAcquirer.acquire`'s `for (let attempt = 1;
 attempt <= maxAttempts; attempt++)` loop uses sequential awaits
-(`await ctx.sleep(graceMs)` at L354, `ctx.unlinkIfMatches` at L360).
+(`await this.ctx.sleep(graceMs)` at L357, `this.ctx.unlinkIfMatches` at L363).
 The plan's ER3 correctly notes the O_EXCL atomicity guarantee for
 `tryCreateExclusive`. But the plan does not address bun-specific
 timing of `setTimeout` / `setImmediate` interleaving — bun's event
-loop may schedule the `ctx.sleep(graceMs)` timer differently from
+loop may schedule the `this.ctx.sleep(graceMs)` timer differently from
 Node, which could affect the third-peer-survives regression at
 `process-lock.test.ts:652-683` (which assumes deterministic timer
 ordering during the grace window).

@@ -274,16 +274,16 @@ is `channel-coordinator-full.test.ts` (verified), and that test
 currently uses `acquireSingleInstanceLock()` and `installSignalHandlers()`
 free functions directly, not the class form.
 
-Compare to E's `PortLockAcquirer` (per EOE-2): "all 8 existing
-`acquirePortLock` cases use the constructor-supplied `opts`
-... Production callers all omit it. The test case can construct a
-fresh `PortLockAcquirer` with `{ postKillDrainMs: 0 }` for that
-one test." For G, there is **one** test that will construct the
-class — the `createTestChannelCoordinator` factory (per the G.8
-test factory plan). The factory takes overrides; the constructor's
-record-shape is justified only if the factory's `Partial<>` argument
-is structurally typed (so a typo in `WEB_POORT` is a compile error,
-not a runtime default).
+Compare to E's `PortLockAcquirer` (per EOE-2): "all 10 existing
+`acquirePortLock` cases (per `01-module-state-analysis.md` §8) use
+the constructor-supplied `opts` ... Production callers all omit it.
+The test case can construct a fresh `PortLockAcquirer` with
+`{ postKillDrainMs: 0 }` for that one test." For G, there is **one**
+test that will construct the class — the `createTestChannelCoordinator`
+factory (per the G.8 test factory plan). The factory takes overrides;
+the constructor's record-shape is justified only if the factory's
+`Partial<>` argument is structurally typed (so a typo in `WEB_POORT`
+is a compile error, not a runtime default).
 
 The plan does not specify the test factory's shape (GCE-3 below).
 Without that, the record-shape is ceremony for one construction

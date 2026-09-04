@@ -739,39 +739,57 @@ functions was not done.]
 
 ### E1. `PortLockAcquirer`
 
-- **Source files:** `process-lock.ts` (`acquirePortLock` at
-  `process-lock.ts:169`; `ProcessLockContext` interface at
-  `process-lock.ts:26`; `findOwnNodeHolders` and
-  `terminateProcesses` helpers)
+- **Source files:** `process-lock.ts` (`PortLockAcquirer` class at
+  `process-lock.ts:77`; `ProcessLockContext` interface at
+  `process-lock.ts:26`; `findOwnNodeHolders`,
+  `findOwnBinaryMatches`, `terminateProcesses` are now public methods
+  on the class)
 - **Public method surface:**
-  - `acquire(port: number, opts?: AcquirePortLockOptions): Promise<PortLockResult>`
-  - `release(): Promise<void>`
-  - `protected listPortHolders(port: number): Promise<PidHolder[]>`
-  - `protected sendSignal(pid: number, signal: NodeJS.Signals): Promise<SignalOutcome>`
-- **Constructor:** `constructor(ctx: ProcessLockContext)`
+  - `acquire(port: number, opts?: AcquirePortLockOptions): Promise<void>`
+  - `findOwnNodeHolders(port: number): number[]`
+  - `findOwnBinaryMatches(pattern: RegExp): number[]`
+  - `terminateProcesses(pids: number[], opts: { graceMs: number }): Promise<void>`
+  - (`release()` was REJECTED per EOE-1 — no-op "for shape parity"
+    — and is NOT on the public surface)
+- **Constructor:** `constructor(ctx: ProcessLockContext)` — no opts
+  argument; opts are per-call method arguments
 - **Generics:** none
 - **Dependencies:** the injected `ProcessLockContext` (in tests,
-  a mock; in prod, `DefaultProcessLockContext`)
-- **Lifecycle:** instantiated in `App`; `acquire()` awaited at
-  boot before `start()`; `release()` awaited in `shutdown()`
-- **Migration source:** replaces `acquirePortLock(port, ctx, opts)`
-  at `process-lock.ts:169`
+  a mock; in prod, the literal built by `buildProcessLockContext()`
+  at `index.ts:97-177`)
+- **Lifecycle:** instantiated locally in `acquireLock()` at
+  `index.ts:350`; `acquire()` awaited at boot before `start()`; no
+  `release()` call site (the kernel releases the port on process
+  death)
+- **Migration source:** replaces the free function
+  `acquirePortLock(port, ctx, opts)` (formerly at
+  `process-lock.ts:169`, deleted in E.5a `d4f2d71`); bodies of
+  `findOwnNodeHolders`, `findOwnBinaryMatches`, `terminateProcesses`
+  (formerly free exports at `:77`, `:88`, `:127`, deleted in E.5a)
+  survive as public methods
 
 ### E2. `PidfileLockAcquirer`
 
-- **Source files:** `process-lock.ts` (`acquirePidfileLock` at
-  `process-lock.ts:289`; `PidfileLockContext` at
-  `process-lock.ts:226`)
+- **Source files:** `process-lock.ts` (`PidfileLockAcquirer` class at
+  `process-lock.ts:294`; `PidfileLockContext` at
+  `process-lock.ts:228`)
 - **Public method surface:**
-  - `acquire(path: string, selfPid: number, opts?: AcquirePidfileLockOptions): Promise<PidfileResult>`
-  - `release(): Promise<void>`
-- **Constructor:** `constructor(ctx: PidfileLockContext)`
+  - `acquire(path: string, selfPid: number, opts?: AcquirePidfileLockOptions): Promise<void>`
+  - `release(path: string, selfPid: number): void` (sync, void return)
+- **Constructor:** `constructor(ctx: PidfileLockContext)` — no
+  selfPid / opts; both are per-call method arguments
 - **Generics:** none
 - **Dependencies:** the injected `PidfileLockContext`
-- **Lifecycle:** instantiated in `App`; `acquire()` awaited at
-  boot; `release()` awaited in `shutdown()`
-- **Migration source:** replaces `acquirePidfileLock(path, selfPid,
-  ctx, opts)` at `process-lock.ts:289`
+- **Lifecycle:** instantiated at `index.ts:357` and held in module
+  scope (`pidfileLockAcquirer`); `acquire()` awaited at boot;
+  `release()` called inside the `releaseLock()` local wrapper at
+  `index.ts:367` from the four shutdown call sites at
+  `index.ts:401/:410/:416/:421`
+- **Migration source:** replaces the free function
+  `acquirePidfileLock(path, selfPid, ctx, opts)` (formerly at
+  `process-lock.ts:289`, deleted in E.5b `8f33a22`); absorbs the
+  body of `releaseLock()` (formerly at `index.ts:356-364`, now
+  `index.ts:364-371` as a thin caller)
 
 ---
 

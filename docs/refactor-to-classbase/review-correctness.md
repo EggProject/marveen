@@ -619,7 +619,13 @@ The following key claims were verified as TRUE:
   providers at 53/134/243/324/364, `providers:477`, `withTestRunMarking:490`,
   `markedProviders:500`).
 - `process-lock.ts` (`LogFn:19`, `ProcessLockContext:26`,
-  `acquirePortLock:169`, `PidfileLockContext:226`, `acquirePidfileLock:289`).
+  `PortLockAcquirer:77`, `writeBufferFully:209`, `PidfileLockContext:228`,
+  `DeferToPeerError:274`, `PidfileLockAcquirer:294`).
+  **Pre-E.5 (the audit-trail claim being verified above) was:**
+  `acquirePortLock:169`, `PidfileLockContext:226`, `acquirePidfileLock:289`.
+  The free-function wrappers were deleted in E.5a (`d4f2d71`) +
+  E.5b (`8f33a22`); `PidfileLockContext` shifted from `:226` to
+  `:228` due to E.1/E.2 class insertions.
 - `pane-state.ts` (`SubmitFollowupAction:900`, `decideSubmitFollowup:940`,
   `decidePaneErrorAlert:1010`, `decideStuckInputRecovery:1319`,
   `StuckInputAction:1373`, `decideStuckInputAction:1417`,

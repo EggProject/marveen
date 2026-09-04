@@ -17,11 +17,14 @@ ownership path causes a leak
 ### Where it bites
 
 The two locks are intentionally long-lived. The port lock is held
-by the kernel from `acquirePortLock` returning until process exit
-(`01-module-state-analysis.md` §2 — "the kernel releases the port on
-process death"). The pidfile is held from `acquirePidfileLock`
-returning until either (a) `releaseLock()` runs in shutdown (current
-free-function at `src/index.ts:356-364`) or (b) the next startup's
+by the kernel from `PortLockAcquirer.acquire()` returning until
+process exit (`01-module-state-analysis.md` §2 — "the kernel releases
+the port on process death"). The pidfile is held from
+`PidfileLockAcquirer.acquire()` returning until either (a)
+`releaseLock()` runs in shutdown (current thin wrapper at
+`src/index.ts:364-371` that calls
+`pidfileLockAcquirer.release(PID_FILE, process.pid)`) or (b) the next
+startup's
 `unlinkIfMatches` chain at `process-lock.ts:236-253`. Neither path
 involves an explicit "release the class instance" — the class has no
 state to clean up beyond what the kernel and the pidfile entry
@@ -85,7 +88,7 @@ peer's PID.
 
 ---
 
-## ER2. `acquirePortLock` reads `NETSTAT_OUTPUT` for port-checking —
+## ER2. `PortLockAcquirer.acquire()` reads `NETSTAT_OUTPUT` for port-checking —
 class version must preserve this side-effect path
 
 ### Where it bites
@@ -94,16 +97,16 @@ The E subsystem's port-lock flow relies on a side-effect chain the
 class must preserve verbatim:
 
 ```
-acquirePortLock(port, ctx, opts)        [process-lock.ts:169-197]
-  -> ctx.listPortHolders(port)          [via findOwnNodeHolders:77-80]
+new PortLockAcquirer(ctx).acquire(port, opts)  [process-lock.ts:77-204, post-E.5a]
+  -> this.ctx.listPortHolders(port)            [via this.findOwnNodeHolders:177-178]
        -> execFileSync('lsof', ['-ti', `TCP:${port}`])   [index.ts:101-110]
-  -> ctx.listOwnProcessesMatching(pat)  [via findOwnBinaryMatches:88-91]
+  -> this.ctx.listOwnProcessesMatching(pat)    [via this.findOwnBinaryMatches:179]
        -> execSync('ps -A -o pid,uid,args')               [index.ts:111-150]
-  -> ctx.getProcessCommand(pid)         [index.ts:151-153]
+  -> this.ctx.getProcessCommand(pid)           [index.ts:151-153]
        -> execFileSync('ps', ['-p', String(pid), '-o', 'comm='])
-  -> ctx.getProcessUid(pid)             [index.ts:154-156]
+  -> this.ctx.getProcessUid(pid)               [index.ts:154-156]
        -> execFileSync('ps', ['-p', String(pid), '-o', 'uid='])
-  -> ctx.signal(pid, sig)               [index.ts:157-167]
+  -> this.ctx.signal(pid, sig)                 [index.ts:157-167]
        -> process.kill(pid, sig)
 ```
 
@@ -113,22 +116,24 @@ these, batch them, or move them out of the function body. The mock
 test fixture at `src/__tests__/process-lock.test.ts:46-58`
 (short-circuits `defaultSignal` to a no-op literal) and
 `src/__tests__/index.test.ts:173-188`'s `vi.mock('../process-lock.js')`
-factory (which substitutes a faithful re-implementation precisely
-because the real `execSync` capture at module-load time would
-otherwise route through the un-mocked `vi.importActual`) both pin
-this behaviour.
+factory (which provides the real class via `vi.importActual`
+precisely because the real `execSync` capture at module-load time
+would otherwise route through the un-mocked `vi.importActual`) both
+pin this behaviour.
 
 ### Mitigation
 
 1. **The class is a literal translation.** Every `ctx.listPortHolders(...)`
    call in `process-lock.ts:177` becomes `this.ctx.listPortHolders(...)`
    in `PortLockAcquirer.acquire()`. No method body changes.
-2. **`acquirePortLock` (the free function) is a wrapper that calls
-   `new PortLockAcquirer(ctx, opts).acquire(port)`.** The wrapper
-   inherits the body. No reorganisation of the call sequence.
+2. **The free-function `acquirePortLock` is gone (deleted in E.5a).**
+   The class IS the implementation. No wrapper, no reorganisation
+   of the call sequence.
 3. **The `vi.mock('../process-lock.js')` factory at
-   `index.test.ts:173` keeps working** as long as `index.ts` still
-   imports `acquirePortLock` (E.1/E.2/E.3 phase). The factory's
+   `index.test.ts:173` returns the real `PortLockAcquirer` via
+   `vi.importActual`** (post-E.5a) so the production call site at
+   `index.ts:350` constructs a real instance whose `acquire()`
+   method drives the real `ctx.listPortHolders` chain. The factory's
    faithful re-implementation (`:324-341`) and the
    `withRealAcquirePortLock` helper (`:1363-1374`) both depend on
    the call sequence being preserved.
@@ -179,21 +184,21 @@ tryCreateExclusive(path, pid) {
 exists, the call throws `EEXIST` (`:229`). The subsequent
 `writeSync` inside `writeBufferFully` (`:220-223`) writes the PID
 into the now-locked fd. The class version of `acquirePidfileLock`
-(this becomes `PidfileLockAcquirer.acquire()`) calls
-`ctx.tryCreateExclusive(path, selfPid)` at `process-lock.ts:299` —
-the production `tryCreateExclusive` is at `index.ts:212-232`.
+(this is `PidfileLockAcquirer.acquire()` after E.5b) calls
+`this.ctx.tryCreateExclusive(path, selfPid)` at `process-lock.ts:302`
+— the production `tryCreateExclusive` is at `index.ts:212-232`.
 
 The risk: a well-intentioned refactor that "modernizes" the
 synchronous path to `fs.writeFile(path, String(pid), { flag: 'wx' })`
 introduces a race window. `fs.writeFile` opens, writes, and closes
 across multiple internal steps; the file is visible to other
 processes *between* the open and the write. A competing acquirer's
-`readRecordedPid(path)` call at `process-lock.ts:305` could read a
-truncated pidfile (an empty string or a partial write) and parse it
-as `null` (per the strict-digit parse at `index.ts:233-235` and the
-fallback at `process-lock.ts:306`), then trigger the
-`ctx.unlinkIfMatches(path, null)` branch at `:310` — unlinking the
-pidfile we just created, dropping our lock.
+`this.ctx.readRecordedPid(path)` call at `process-lock.ts:308` could
+read a truncated pidfile (an empty string or a partial write) and
+parse it as `null` (per the strict-digit parse at `index.ts:233-235`
+and the fallback at `process-lock.ts:309-315`), then trigger the
+`this.ctx.unlinkIfMatches(path, null)` branch at `:313` — unlinking
+the pidfile we just created, dropping our lock.
 
 The current sync path closes that window: the file is visible to
 other processes only after `closeSync(fd)` at `:225` has run.
@@ -243,27 +248,29 @@ throw sites, not one. The H plan only cites one.
 
 | File:line | Thrower | Trigger |
 |---|---|---|
-| `process-lock.ts:347` | `acquirePidfileLock` (free function) | `onLiveLegitimate === 'defer'` and recorded PID is alive-and-legitimate |
-| `src/index.ts:324` | `checkFreshStartupRace` (pre-acquire early-exit) | peer is alive, legitimate, and not yet on the port (mid-init loser detection) |
+| `process-lock.ts:350` | `PidfileLockAcquirer.acquire()` (method body) | `onLiveLegitimate === 'defer'` and recorded PID is alive-and-legitimate |
+| `src/index.ts:333` | `checkFreshStartupRace` (pre-acquire early-exit) | peer is alive, legitimate, and not yet on the port (mid-init loser detection) |
 
-After E.2, the first throw site moves from a free function body
+After E.2, the first throw site moved from a free function body
 (`acquirePidfileLock`) to a method body
-(`PidfileLockAcquirer.acquire()`). The throw itself is
-byte-identical: `throw new DeferToPeerError(recorded)` with the
-same `recorded` value. The `instanceof DeferToPeerError` consumer
-at `index.ts:555` continues to discriminate correctly because the
-class is the same class (now imported from the same file).
+(`PidfileLockAcquirer.acquire()`); after E.5b the throw line shifted
+from `:347` to `:350` (the method body adds the `this.ctx.*` prefix
+and the method signature). The throw itself is byte-identical:
+`throw new DeferToPeerError(recorded)` with the same `recorded`
+value. The `instanceof DeferToPeerError` consumer at `index.ts:564`
+continues to discriminate correctly because the class is the same
+class (now imported from the same file).
 
-The second throw site at `src/index.ts:324` is INSIDE
+The second throw site at `src/index.ts:333` is INSIDE
 `checkFreshStartupRace`, which is a free function inside `index.ts`.
-It does **not** move with E.2 — it stays at `:324` unchanged.
+It does **not** move with E.2 — it stays at `:333` unchanged.
 Both throw sites continue to produce a `DeferToPeerError` instance
-that `instanceof DeferToPeerError` recognises at `:555`.
+that `instanceof DeferToPeerError` recognises at `:564`.
 
 The risk: if `DeferToPeerError` is moved to `src/errors.ts` (the
 H.4 candidate file per `h-cross-cutting/00-summary.md` Scope), the
 class conversion of E.2 must keep the import path consistent.
-`src/index.ts:31` re-exports it; both `:324` (throw) and `:555`
+`src/index.ts:31` re-exports it; both `:333` (throw) and `:564`
 (`instanceof`) reference the same symbol.
 
 ### Mitigation
@@ -273,16 +280,15 @@ class conversion of E.2 must keep the import path consistent.
    conversion does not move the error class.
 2. **The throw at the class method body** is line-equivalent to
    the throw at the free function body — both end up at line
-   `:347` (the body's `throw new DeferToPeerError(recorded)`
-   statement is moved verbatim into the method). Verified by
-   reading `process-lock.ts:341-348`.
-3. **The throw at `src/index.ts:324` is unchanged** — it's in
+   `:350` (the body's `throw new DeferToPeerError(recorded)`
+   statement is moved verbatim into the method).
+3. **The throw at `src/index.ts:333` is unchanged** — it's in
    `checkFreshStartupRace`, which is not part of E's refactor.
 4. **If H.4 later moves `DeferToPeerError` to `src/errors.ts`,** the
    move is a single-commit operation: `index.ts:31` updates its
-   re-export, the `index.ts:324` throw imports from the new
-   location, the `process-lock.ts:347` throw imports from the new
-   location, and `index.ts:555`'s `instanceof` import updates.
+   re-export, the `index.ts:333` throw imports from the new
+   location, the `process-lock.ts:350` throw imports from the new
+   location, and `index.ts:564`'s `instanceof` import updates.
    The class version of E.2 carries the same import statement
    because the class file imports the error class the same way
    the free function file did.
@@ -317,40 +323,41 @@ grep -rEn "vi\.mock.*process-lock" --include='*.ts'
 ```
 
 **One active mock site.** The factory at
-`src/__tests__/index.test.ts:173-194` returns:
+`src/__tests__/index.test.ts:173-194` (post-E.5) returns:
 
 ```ts
 {
-  acquirePortLock: mockAcquirePortLock,
-  acquirePidfileLock: mockAcquirePidfileLock,
+  PortLockAcquirer: actual.PortLockAcquirer,
+  PidfileLockAcquirer: actual.PidfileLockAcquirer,
   writeBufferFully: actual.writeBufferFully,
   DeferToPeerError: actual.DeferToPeerError,
 }
 ```
 
-The factory uses `vi.importActual` to pull `writeBufferFully` and
-`DeferToPeerError` from the real module (these don't need mocking).
-The two acquire functions are replaced with mocks (defined at
-`:321`, `:324-341`) because the real `acquirePortLock` would
-otherwise capture `execSync` at module-load time and route lsof/ps
-through the real `/usr/bin/lsof` instead of the test's
-`mockExecSync`.
+The factory uses `vi.importActual` to pull the two classes,
+`writeBufferFully`, and `DeferToPeerError` from the real module
+(none of them need mocking — the class instances drive the same
+`ctx.listPortHolders` etc. chain as the old free functions did).
+The legacy `mockAcquirePortLock` / `mockAcquirePidfileLock` `vi.fn()`s
+remain as module-scope helpers used by the `withReal*` helpers' inner
+class wrappers and by direct `mockImplementation` overrides at
+`:324-341`; they are NOT re-exported from the `vi.mock` factory
+because `index.ts` no longer references them.
 
-After E.1 and E.2, the two acquire functions are still exported
-(the wrapper survives until E.5). The factory continues to return
-`acquirePortLock: mockAcquirePortLock` etc. **until E.5**. After
-E.5, the factory must change shape because the legacy exports no
-longer exist. The exact replacement is:
+After E.5a (`d4f2d71`) and E.5b (`8f33a22`), the factory shape is
+exactly the four-symbol return shown above — `index.ts` imports only
+`PortLockAcquirer`, `PidfileLockAcquirer`, and `DeferToPeerError`
+from `process-lock.js` (verified by `grep -n "from.*process-lock" src/index.ts`).
 
 | E phase | Factory shape |
 |---|---|
 | E.1–E.4 | `return { acquirePortLock: mock…, acquirePidfileLock: mock…, writeBufferFully: actual.writeBufferFully, DeferToPeerError: actual.DeferToPeerError }` (unchanged) |
-| E.5 | `index.ts` no longer imports the free functions; the factory either disappears entirely OR mocks the class constructors: `return { PortLockAcquirer: vi.fn().mockImplementation((ctx, opts) => ({ acquire: vi.fn().mockResolvedValue(undefined), release: vi.fn().mockResolvedValue(undefined) })), PidfileLockAcquirer: …, writeBufferFully: actual.writeBufferFully, DeferToPeerError: actual.DeferToPeerError }` [ASSUMPTION: the exact factory shape depends on whether `index.ts` constructs the acquirers inline or via `class App` factory.] |
+| E.5 (landed) | `return { PortLockAcquirer: actual.PortLockAcquirer, PidfileLockAcquirer: actual.PidfileLockAcquirer, writeBufferFully: actual.writeBufferFully, DeferToPeerError: actual.DeferToPeerError }` |
 
 ### Mitigation
 
 1. **The factory stays byte-identical through E.1–E.4.** E.5 is the
-   only phase that touches it.
+   only phase that touches it. **Verified post-E.5.**
 2. **The `withRealAcquirePortLock` / `withRealAcquirePidfileLock`
    helpers at `index.test.ts:1363` and `:1314` route through
    `vi.importActual`** and call `actual.acquirePortLock(...)` /

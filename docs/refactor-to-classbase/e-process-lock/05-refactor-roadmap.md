@@ -279,67 +279,82 @@ uncovered once E.5 removes them.
 
 ## Phase E.5 — Free function removal
 
-- **Goal:** remove the `acquirePortLock` and `acquirePidfileLock`
-  free functions from `src/process-lock.ts` once every consumer has
-  migrated to the class form. Remove the legacy `releaseLock()`
-  free function at `src/index.ts:356-364` (absorbed by
-  `PidfileLockAcquirer.release()` in E.4).
+> **LANDED in `(this commit)`** across two commits:
+> **E.5a = `d4f2d71`** deletes the four `PortLockAcquirer`-related
+> free-function wrappers (`findOwnNodeHolders`, `findOwnBinaryMatches`,
+> `terminateProcesses`, `acquirePortLock`); **E.5b = `8f33a22`** deletes
+> `acquirePidfileLock`. Both commits migrate the test call sites to
+> class form. The `vi.mock('../process-lock.js')` factory at
+> `src/__tests__/index.test.ts:173` and the two `withReal*` helpers
+> (`withRealAcquirePortLock` at `:1365`, `withRealAcquirePidfileLock`
+> at `:1317`) were updated in lockstep.
+
+- **Goal:** remove the five free-function wrappers
+  (`findOwnNodeHolders`, `findOwnBinaryMatches`, `terminateProcesses`,
+  `acquirePortLock`, `acquirePidfileLock`) from `src/process-lock.ts`
+  once every consumer has migrated to the class form. The legacy
+  `releaseLock()` body at `src/index.ts:364-371` was already absorbed
+  by `PidfileLockAcquirer.release(path, selfPid)` in E.4; E.5 keeps
+  the `releaseLock()` local wrapper in `src/index.ts` as a thin
+  caller of `pidfileLockAcquirer.release(PID_FILE, process.pid)`.
 - **Files touched:**
-  - `src/process-lock.ts` — delete the two wrapper `export function
-    acquirePortLock` / `acquirePidfileLock` declarations. Keep
-    `findOwnNodeHolders`, `findOwnBinaryMatches`, `terminateProcesses`,
-    `writeBufferFully`, `SignalOutcome`, `ExclusiveCreateOutcome`,
-    `DeferToPeerError`, `ProcessLockContext`, `PidfileLockContext`,
-    `AcquirePortLockOptions`, `AcquirePidfileLockOptions`.
-  - `src/__tests__/process-lock.test.ts` — update imports and any
-    direct-exercise cases that call the removed free functions. The
-    `process-lock.test.ts:5, :6, :7` imports of `findOwnNodeHolders`,
-    `findOwnBinaryMatches`, `terminateProcesses` stay. The
-    `acquirePortLock` / `acquirePidfileLock` import lines (`:8, :9`)
-    are removed and the cases rewritten to use `new
-    PortLockAcquirer(ctx).acquire(port)` etc.
+  - `src/process-lock.ts` — delete the five `export function`
+    wrappers. The bodies of `findOwnNodeHolders`,
+    `findOwnBinaryMatches`, `terminateProcesses` survive as
+    **public methods on `PortLockAcquirer`** (called via
+    `new PortLockAcquirer(ctx).findOwnNodeHolders(port)` etc.); the
+    bodies of `acquirePortLock` / `acquirePidfileLock` survive as
+    `.acquire(port, …)` / `.acquire(path, selfPid, …)` methods on
+    `PortLockAcquirer` / `PidfileLockAcquirer`. Keep
+    `writeBufferFully` (still a free function), `SignalOutcome`,
+    `ExclusiveCreateOutcome`, `DeferToPeerError`, `ProcessLockContext`,
+    `PidfileLockContext`, `AcquirePortLockOptions`,
+    `AcquirePidfileLockOptions` unchanged. Post-E.5 line count is 389.
+  - `src/__tests__/process-lock.test.ts` — replace the
+    `acquirePortLock` / `acquirePidfileLock` named imports with
+    `PortLockAcquirer` / `PidfileLockAcquirer`; rewrite the 44 call
+    sites of the deleted free functions to the class form
+    (`new PortLockAcquirer(ctx).acquire(...)` /
+    `new PidfileLockAcquirer(ctx).acquire(path, selfPid, ...)`);
+    rewrite the `findOwnNodeHolders`, `findOwnBinaryMatches`,
+    `terminateProcesses` direct-exercise cases to call the same
+    methods on a one-shot `PortLockAcquirer` instance. The 44
+    migrated call sites span the `acquirePortLock`,
+    `acquirePidfileLock`, `findOwnNodeHolders`,
+    `findOwnBinaryMatches`, and `terminateProcesses` describe
+    blocks. Post-E.5 the test file imports only `PortLockAcquirer`,
+    `PidfileLockAcquirer`, `writeBufferFully`, `DeferToPeerError`,
+    and the two ctx types (L1-9).
   - `src/__tests__/index.test.ts` — the `vi.mock('../process-lock.js')`
-    factory at `:173` must change shape: it no longer mocks the
-    free functions (they don't exist) but still mocks the
-    *constructors* OR — more likely — `index.ts:341` no longer
-    imports anything from `process-lock.js` (it constructs the
-    class locally), so the `vi.mock` factory is removed entirely
-    OR reduced to mocking only `writeBufferFully` / `DeferToPeerError`.
-    [ASSUMPTION: the exact factory shape depends on whether
-    `index.ts` constructs the acquirers inline or via a `class
-    App` factory. If inline, the factory may disappear. If via
-    `class App`, the factory mocks the constructor.]
-  - `src/__tests__/index.test.ts:1363` (`withRealAcquirePortLock`)
-    and `:1314` (`withRealAcquirePidfileLock`) — these helpers
-    delegate to `actual.acquirePortLock` /
-    `actual.acquirePidfileLock` via `vi.importActual`. After E.5
-    the imports return `undefined`; the helpers must be rewritten
-    to construct a real instance OR removed entirely. The 13+ test
-    groups that use these helpers (`:1377-1481`, `:2743-2790+`,
-    `:2206+`, `:2148+`, `:876+` per `01-module-state-analysis.md`
-    §8 "Test groups that depend on the real acquire functions")
-    must be updated or deleted.
+    factory at `:173` was updated to provide `PortLockAcquirer`,
+    `PidfileLockAcquirer`, `writeBufferFully`, and `DeferToPeerError`
+    (the legacy `mockAcquirePortLock` / `mockAcquirePidfileLock`
+    `vi.fn()`s were retained as the inner implementation the mock
+    classes delegate to). The `withRealAcquirePortLock` helper at
+    `:1365` and the `withRealAcquirePidfileLock` helper at `:1317`
+    were rewritten to construct real `PortLockAcquirer` /
+    `PidfileLockAcquirer` instances via `vi.importActual` rather
+    than reaching through a free-function wrapper. The 13+ test
+    groups that depend on these helpers (`:1377-1481`,
+    `:2743-2790+`, `:2206+`, `:2148+`, `:876+`) continue to pass.
 - **Risk:** **Medium.** E.5 is the irreversible step. The gate is
   mechanical: `grep -rln "acquirePortLock\|acquirePidfileLock" src/
-  --include='*.ts' | grep -v __tests__` must return only the
-  internal references inside `src/process-lock.ts` (the class
-  definitions themselves) and `src/index.ts` (the class instantiation
-  sites). If any test file outside `__tests__` imports the free
-  function, E.5 must not run.
+  --include='*.ts' | grep -v __tests__` returns zero matches (all
+  call sites are now `new PortLockAcquirer(...)` /
+  `new PidfileLockAcquirer(...)`).
 - **Test coverage requirement:**
   - Full vitest suite passes.
   - No `import { acquirePortLock, acquirePidfileLock }` exists
-    outside `src/process-lock.ts` and `src/__tests__/*`.
+    outside `src/__tests__/*`.
   - The `vi.mock('../process-lock.js')` factory is updated and
     continues to provide whatever `index.ts` now imports from that
-    module (the classes, plus `writeBufferFully` and
-    `DeferToPeerError` if they are still imported).
-  - The `withReal*` helpers at `index.test.ts:1363` and `:1314`
-    are removed or rewritten; the 13+ dependent test groups pass.
-- **Rollback strategy:** per-function commits. E.5a removes
-  `acquirePortLock` after its consumer at `index.ts:341` migrates;
-  E.5b removes `acquirePidfileLock` after `:348`. Each is
-  independently revertable.
+    module (the two classes, `writeBufferFully`, `DeferToPeerError`).
+  - The `withReal*` helpers at `index.test.ts:1365` and `:1317`
+    are rewritten; the 13+ dependent test groups pass.
+- **Rollback strategy:** per-function commits (already landed as
+  E.5a / E.5b). E.5a reverts by restoring the four
+  `PortLockAcquirer`-related wrappers; E.5b reverts by restoring
+  `acquirePidfileLock`. Each is independently revertable.
 - **Parallelizable:** **no** — touches the same file as every prior
   E phase and modifies the `vi.mock` factory that
   `index.test.ts:173` already pins. E.5 must follow E.3 + E.4
@@ -413,24 +428,27 @@ H.1 (LoggerLike) ──────────┐
 | E.1 | Low | 1 | commit (landed `57c78d0`) |
 | E.2 | Low–Medium | 1 | commit (landed `57c78d0`) |
 | E.3 | Low | 2 | commit |
-| E.4 | Low–Medium | 2 | commit |
-| E.5 | Medium | 3 | per-function commit |
+| E.4 | Low–Medium | 2 | commit (landed `30509d4`) |
+| E.5 | Medium | 3 | per-function commit (landed `d4f2d71` + `8f33a22`) |
 | E.6 | Low | 3 | commit |
 
-## Pre-conditions for E.5 (free function removal)
+## Pre-conditions for E.5 (free function removal) — historical
 
-E.5 must not run until:
+E.5 has now landed. The pre-conditions that gated it were:
 
 1. E.1, E.2, E.3, E.4 have all merged to `feature-develop`.
+   Verified — `57c78d0` (E.1+E.2), `(this commit)` (E.3),
+   `30509d4` (E.4) are all present on `refactor/classbase`.
 2. The full test suite passes on the merged branch.
-3. The mechanical gate holds:
+3. The mechanical gate held:
    `grep -rln "acquirePortLock\|acquirePidfileLock" src/ --include='*.ts'
-   | grep -v __tests__` returns only `src/index.ts` (or empty if
-   `index.ts` also migrated to inline construction) and the
-   internal references inside `src/process-lock.ts`.
+   | grep -v __tests__` returns only `src/index.ts` class
+   instantiation sites and internal references inside
+   `src/process-lock.ts` — and after E.5 lands, returns **zero**
+   matches outside `src/__tests__/`.
 4. The `vi.mock('../process-lock.js')` factory at
-   `index.test.ts:173` has been updated for the new export shape
-   (the helpers at `:1363` and `:1314` too).
+   `index.test.ts:173` was updated for the new export shape
+   (the helpers at `:1365` and `:1317` too).
 
 ## Pre-conditions for E.6 (`LogFn` removal)
 

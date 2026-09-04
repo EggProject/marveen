@@ -532,6 +532,65 @@ No claim in the plan was found to be unverifiable.
 
 ---
 
+## Resolved findings (post-E.5 reconciliation, 2026-09-04)
+
+The following findings were REFUTED at plan-write time and have since
+been resolved by the corresponding landing commits. Listed here as a
+historical audit trail, with the resolution commit recorded. Each entry
+cites the original finding verbatim before noting its resolution.
+
+### M5 — RESOLVED in `d4f2d71` (E.5a) + `8f33a22` (E.5b)
+
+> **Original finding.** M5. E.5 says `process-lock.test.ts:5, :6, :7`
+> import `findOwnNodeHolders`, `findOwnBinaryMatches`,
+> `terminateProcesses` — the imports are at `:3, :4, :5`.
+>
+> **Original verdict.** REFUTED. **Severity:** major — the import
+> lines the plan must NOT touch in E.5 are `:3, :4, :5`, not
+> `:5, :6, :7`. E.5 removes the `acquirePortLock` / `acquirePidfileLock`
+> imports at `:6, :7` — but the plan's text says "stay", and the
+> imports at `:5, :6, :7` (which the plan claims stay) actually
+> include the line that E.5 must remove. The line-number error inverts
+> the migration plan by one row.
+
+**Resolution.** E.5a (`d4f2d71`) and E.5b (`8f33a22`) deleted the
+free-function wrappers `findOwnNodeHolders`, `findOwnBinaryMatches`,
+`terminateProcesses`, `acquirePortLock`, and `acquirePidfileLock`
+from `src/process-lock.ts`. The current top of
+`src/__tests__/process-lock.test.ts` is now:
+
+```ts
+import { describe, it, expect } from 'vitest'
+import {
+  PortLockAcquirer,
+  PidfileLockAcquirer,
+  writeBufferFully,
+  DeferToPeerError,
+  type ProcessLockContext,
+  type PidfileLockContext,
+} from '../process-lock.js'
+```
+
+so the `findOwnNodeHolders`, `findOwnBinaryMatches`, and
+`terminateProcesses` imports are gone entirely (their bodies survive
+as public methods on `PortLockAcquirer`). The `acquirePortLock` and
+`acquirePidfileLock` imports the M5 finding worried about are gone
+too. All 44 migrated call sites in `process-lock.test.ts` use the
+class form (`new PortLockAcquirer(ctx).findOwnNodeHolders(port)`,
+`new PortLockAcquirer(ctx).acquire(...)`, `new
+PidfileLockAcquirer(ctx).acquire(path, selfPid, ...)`).
+
+**Net effect on the audit trail.** The M5 finding is now moot — its
+underlying assumption (E.5 would preserve `findOwnNodeHolders`,
+`findOwnBinaryMatches`, `terminateProcesses` as free exports while
+deleting `acquirePortLock` / `acquirePidfileLock`) was refuted by
+E.5a, which deleted all five. The historical M5 entry above is kept
+for the audit trail; the implementation work it was meant to gate
+was performed correctly without reference to the M5 line-number
+correction.
+
+---
+
 ## One unflagged issue worth flagging
 
 The plan's `process-lock.ts` line count is given as **365 lines** in

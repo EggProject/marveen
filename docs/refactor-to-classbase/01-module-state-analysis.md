@@ -51,7 +51,7 @@ The three large files — `db.ts`, `web.ts`, `index.ts` — are covered structur
 | `notify.ts` | Hybrid: `notifyChannel` factory + module-level import of `CHANNEL_PROVIDER`/`CHANNEL_TOKEN`/`CHANNEL_CHAT_ID` from `config.ts` (those are themselves module singletons) | No new state, but reads 3 config singletons | 2 |
 | `pending-retries.ts` | Pure: `shouldSendAlert`, `classifyTelegramSendError`, `toPendingRetryView` | No | 1 |
 | `platform.ts` | Hybrid: pure `tryResolveFromPath`, `resolveFromPath`, `makeLazyBinResolver` + module-level `PLATFORM` const computed at import via `detect()` | Yes — `PLATFORM` singleton + closure factory | 2 |
-| `process-lock.ts` | Hybrid: pure `acquirePortLock`, `acquirePidfileLock`, `findOwnNodeHolders`, `terminateProcesses`, `writeBufferFully`, plus `class DeferToPeerError` (the only true class at top level) | No (data only — `ctx` is injected) | 2 |
+| `process-lock.ts` | Class-based: `class PortLockAcquirer` (with public methods `acquire`, `findOwnNodeHolders`, `findOwnBinaryMatches`, `terminateProcesses`) + `class PidfileLockAcquirer` (with `acquire`, `release`) + free `writeBufferFully` + `class DeferToPeerError`. The five former free-function wrappers (`findOwnNodeHolders`, `findOwnBinaryMatches`, `terminateProcesses`, `acquirePortLock`, `acquirePidfileLock`) were deleted in E.5a (`d4f2d71`) + E.5b (`8f33a22`); their bodies survive as public methods on the classes. | No (data only — `ctx` is injected) | 2 |
 | `prompt-safety.ts` | Pure: `wrapUntrusted`, `wrapTrustedPeer`, `wrapScheduledTask`, `wrapChannelInbound`, `scrubSecurityTags`, `sanitizeCapabilityTag`, `sanitizeOriginNote`, `sanitizeAgentIdent`, `sanitizeAgentSource`, `generateFetchNonce`, plus `UNTRUSTED_PREAMBLE`, `TRUSTED_PEER_PREAMBLE`, `SCHEDULED_TASK_PREAMBLE`, `CHANNEL_INBOUND_PREAMBLE`, `STRIPPED_SENTINEL` (computed at import via `randomBytes`) | Yes — `STRIPPED_SENTINEL` is per-process random, generated once | 1 |
 | `remote-enroll-core.ts` | Pure: `validatePublicKeyLine`, `restrictOptions`, `buildRestrictedLine`, `mergeAuthorizedKeys`, `removeAuthorizedKey`, `parseHostKeyPub`, `parseKeyscanEd25519`, `resolveHostKey`, `buildBundle`, `encodeBundle`, `decodeBundle`, plus `class RemoteEnrollError` and constants `REMOTE_PORT`, `ACCEPTED_KEY_TYPE`, `COMMENT_PREFIX`, `BUNDLE_FORMAT` | No (data only) | 1 |
 | `remote-enroll-fs.ts` | Hybrid: `acquireLock`, `releaseLock`, `writeAtomic`, `ensureSshDir` (fs side effects) + `enrollAuthorizedKey`, `removeEnrolledKey` (orchestrating) + constants | No | 1 |
@@ -84,8 +84,8 @@ Three flavours recur:
    These are the easiest class conversions: each function is a method that becomes `class GuardDecider { decide(state, inputs, cfg) {...} }`. No state migration required; the class can be a namespace of statics or a per-instance stateless object.
 
 2. **Context-injected factory** (DI via injected interface to avoid `import './web.js'`):
-   - `acquirePortLock(port, ctx: ProcessLockContext, opts)` (`process-lock.ts:169`)
-   - `acquirePidfileLock(path, selfPid, ctx: PidfileLockContext, opts)` (`process-lock.ts:289`)
+   - `new PortLockAcquirer(ctx).acquire(port, opts)` (formerly the free function `acquirePortLock(port, ctx: ProcessLockContext, opts)` at `process-lock.ts:169`, deleted in E.5a `d4f2d71`)
+   - `new PidfileLockAcquirer(ctx).acquire(path, selfPid, opts)` (formerly `acquirePidfileLock(path, selfPid, ctx: PidfileLockContext, opts)` at `process-lock.ts:289`, deleted in E.5b `8f33a22`)
    - `resolveHostKey(sources: HostKeySources, candidates)` (`remote-enroll-core.ts:302`)
    - `checkUpdatePreflight(git: GitRunner)` (`update-preflight.ts:130`)
    - `claudeAgentRunnable(plat, readCpuinfo)` (`update-agent-capability.ts:30`)

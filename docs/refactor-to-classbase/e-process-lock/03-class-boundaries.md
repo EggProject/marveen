@@ -19,17 +19,15 @@ intact; the class is a *consumer* of the interfaces, not a replacement.
 
 ### Source and migration
 
-- **Source file:** `src/process-lock.ts` (same file, alongside the
-  free functions).
-- **Migration source:** the body of `acquirePortLock` at
-  `src/process-lock.ts:169-197`, plus the helpers it calls
-  (`findOwnNodeHolders` `:77`, `findOwnBinaryMatches` `:88`,
-  `filterOwnNodeCandidates` `:93`, `terminateProcesses` `:127`). The
-  class is a literal translation: the `ctx` argument becomes `this`,
-  the `opts` argument becomes a constructor-injected option, and the
-  `port` argument becomes the method argument. Verified to have
-  zero captured state (see `01-module-state-analysis.md` §1 "State
-  captured in closures" — only `waited` is local to one call).
+- **Source file:** `src/process-lock.ts` (same file).
+- **Migration source:** the body of `acquirePortLock` (formerly at
+  `src/process-lock.ts:169-197`, deleted in E.5a), plus the helpers it
+  calls (`findOwnNodeHolders` formerly `:77`, `findOwnBinaryMatches`
+  formerly `:88`, `filterOwnNodeCandidates` `:93`, `terminateProcesses`
+  formerly `:127`). The class is a literal translation: the `ctx`
+  argument becomes `this`, the `opts` argument becomes a
+  constructor-injected option, and the `port` argument becomes the
+  method argument. Post-E.5 these are all public methods on the class.
 
 ### Public surface (signatures only)
 
@@ -37,11 +35,12 @@ intact; the class is a *consumer* of the interfaces, not a replacement.
 class PortLockAcquirer {
   constructor(
     private readonly ctx: ProcessLockContext,
-    private readonly opts: AcquirePortLockOptions = {},
   )
 
-  acquire(port: number, overrides?: AcquirePortLockOptions): Promise<void>
-  release(): Promise<void>   // no-op for port; present for shape parity with PidfileLockAcquirer
+  acquire(port: number, opts: AcquirePortLockOptions = {}): Promise<void>
+  findOwnNodeHolders(port: number): number[]
+  findOwnBinaryMatches(pattern: RegExp): number[]
+  terminateProcesses(pids: number[], opts: { graceMs: number }): Promise<void>
 }
 ```
 
@@ -49,8 +48,11 @@ class PortLockAcquirer {
 
 | Method | Replaces | File:line | Notes |
 |---|---|---|---|
-| `acquire(port, overrides?)` | `acquirePortLock(port, ctx, opts)` | `process-lock.ts:169-173` | The `overrides?` parameter lets a test override the constructor `opts` for one call (e.g. set `drainMs: 0` to skip the post-kill poll). Production callers always omit it. [ASSUMPTION: whether `overrides?` is needed is a sequencing decision; if the test fixture at `process-lock.test.ts:333-528` can live with constructor-only options, drop `overrides?` and rely on per-test instance construction.] |
-| `release()` | n/a | n/a | The kernel releases the port on process death; today `releaseLock()` at `src/index.ts:356-364` only unlinks the pidfile, never touches the port. `release()` is a no-op kept for shape parity so `App.shutdown()` can call `lock.release()` uniformly on both acquirers. Per framework R9 the shutdown sequence ends with "process lock (`PortLockAcquirer` + `PidfileLockAcquirer`)" at step 8 of 9. |
+| `acquire(port, opts?)` | free `acquirePortLock(port, ctx, opts)` (deleted in E.5a) | method body inside `process-lock.ts:77` | Per-call options preserve the original per-call default evaluation. Production callers always pass the constructor-supplied opts once and omit them per call. |
+| `findOwnNodeHolders(port)` | free `findOwnNodeHolders(port, ctx)` (deleted in E.5a) | method body inside `process-lock.ts:77` | Exposed as a public method so `process-lock.test.ts:83-160` can exercise it directly via `new PortLockAcquirer(ctx).findOwnNodeHolders(port)`. |
+| `findOwnBinaryMatches(pattern)` | free `findOwnBinaryMatches(pattern, ctx)` (deleted in E.5a) | method body inside `process-lock.ts:77` | Same — exposed as a public method for direct test exercise. |
+| `terminateProcesses(pids, opts)` | free `terminateProcesses(pids, ctx, opts)` (deleted in E.5a) | method body inside `process-lock.ts:77` | Same — exposed as a public method for the `terminateProcesses` describe block in `process-lock.test.ts:191-326`. |
+| `release()` | n/a | n/a | Was REJECTED per EOE-1 (no-op "for shape parity") and dropped from the public surface. `App.shutdown()` calls `await pidfileLockAcquirer.release()` and skips the port lock. |
 
 ### Constructor
 
@@ -99,22 +101,22 @@ consumer; the brief accepts the same conclusion.
   exists only so `App.shutdown()` can call it uniformly on both
   acquirers without a type guard.
 
-### Free functions that REMAIN after E.1
+### Free functions that REMAIN after E.1 (and after E.5)
 
 | Symbol | Location | Why it stays |
 |---|---|---|
-| `acquirePortLock(port, ctx, opts)` | `process-lock.ts:169-197` | Kept as a thin wrapper that constructs a one-shot `PortLockAcquirer(ctx, opts)` and calls `.acquire(port)`. Required by E.5's gate (zero direct importers outside the class file). Removed in E.5 after every consumer migrates. |
-| `findOwnNodeHolders(port, ctx)` | `process-lock.ts:77-80` | Imported directly by `process-lock.test.ts:6` (per `01-module-state-analysis.md` §5). Stays as a free export so the test file's direct-exercise pattern survives. |
-| `findOwnBinaryMatches(pattern, ctx)` | `process-lock.ts:88-91` | Same — imported by `process-lock.test.ts:7`. |
-| `terminateProcesses(pids, ctx, opts)` | `process-lock.ts:127-161` | Imported by `process-lock.test.ts:5` for the 8 dedicated `terminateProcesses` cases (`:194-330`). Becomes a private method on `PortLockAcquirer` *and* a free export so the direct-exercise tests keep compiling. The two surfaces share the body. |
-| `writeBufferFully(writer, buf)` | `process-lock.ts:207-219` | Used by `index.ts:220-223` (the production `tryCreateExclusive` implementation), not by `acquirePortLock`. Stays as a free export untouched by E.1. |
+| `acquirePortLock(port, ctx, opts)` | was `process-lock.ts:169-197` | DELETED in E.5a (`d4f2d71`); body survives as `PortLockAcquirer.acquire()` method |
+| `findOwnNodeHolders(port, ctx)` | was `process-lock.ts:77-80` | DELETED in E.5a (`d4f2d71`) as a free export; body survives as `PortLockAcquirer.findOwnNodeHolders(port)` public method (called by `process-lock.test.ts:86-160` via `new PortLockAcquirer(ctx).findOwnNodeHolders(port)`) |
+| `findOwnBinaryMatches(pattern, ctx)` | was `process-lock.ts:88-91` | DELETED in E.5a; body survives as `PortLockAcquirer.findOwnBinaryMatches(pattern)` public method |
+| `terminateProcesses(pids, ctx, opts)` | was `process-lock.ts:127-161` | DELETED in E.5a; body survives as `PortLockAcquirer.terminateProcesses(pids, opts)` public method |
+| `writeBufferFully(writer, buf)` | `process-lock.ts:209-222` | Used by `index.ts:220-223` (the production `tryCreateExclusive` implementation), not by `PortLockAcquirer.acquire`. Stays as a free export untouched by E.1 / E.5. |
 | `SignalOutcome` type alias | `process-lock.ts:24` | Type-only export; survives all phases. |
 
 ### Free functions that DO NOT exist on the class
 
-- **Throw helpers.** `acquirePortLock` does not throw project-specific
-  errors. It only logs warnings (`process-lock.ts:181`, `:196`) and
-  lets `ctx.signal`'s thrown errors bubble. The class does not
+- **Throw helpers.** `PortLockAcquirer.acquire()` does not throw
+  project-specific errors. It only logs warnings and lets
+  `ctx.signal`'s thrown errors bubble. The class does not
   introduce any throw site that needs a separate helper.
 
 ---
@@ -124,33 +126,37 @@ consumer; the brief accepts the same conclusion.
 ### Source and migration
 
 - **Source file:** `src/process-lock.ts` (same file).
-- **Migration source:** the body of `acquirePidfileLock` at
-  `src/process-lock.ts:289-364`, plus the `DeferToPeerError` throw
-  site at `:347` and the final-attempts-exhausted throw at `:363`.
-  As with E1, the `ctx` becomes `this` and `selfPid` + `path` are
-  bound at construction or passed per-call.
+- **Migration source:** the body of `acquirePidfileLock` (formerly at
+  `src/process-lock.ts:289-364`, deleted in E.5b), plus the
+  `DeferToPeerError` throw site (now at `:350` inside the class method
+  body) and the final-attempts-exhausted throw (now at `:366`). As
+  with E1, the `ctx` becomes `this` and `selfPid` + `path` are passed
+  per call.
 
-### Public surface (signatures only)
+### Public surface (signatures only — landed)
 
 ```ts
 class PidfileLockAcquirer {
-  constructor(
-    private readonly ctx: PidfileLockContext,
-    private readonly selfPid: number,
-    private readonly opts: AcquirePidfileLockOptions = {},
-  )
+  constructor(private readonly ctx: PidfileLockContext)
 
-  acquire(path: string, overrides?: AcquirePidfileLockOptions): Promise<void>
-  release(): Promise<void>
+  acquire(path: string, selfPid: number, opts: AcquirePidfileLockOptions = {}): Promise<void>
+  release(path: string, selfPid: number): void
 }
 ```
+
+Note: the constructor takes **only** `ctx`; both `selfPid` and `path`
+are per-call method arguments (matching the free function's argument
+order, and matching what `index.ts:358` /
+`index.ts:367` pass). The `release()` method takes
+`(path, selfPid)` for the same reason — it must operate on the same
+path / PID pair that `acquire()` was called with.
 
 ### Method-by-method
 
 | Method | Replaces | File:line | Notes |
 |---|---|---|---|
-| `acquire(path, overrides?)` | `acquirePidfileLock(path, selfPid, ctx, opts)` | `process-lock.ts:289-294` | `selfPid` moves into the constructor (it is process-lifetime; passed once at boot from `process.pid`). `path` stays a method argument because it varies per acquire (in production it is always `PID_FILE` at `index.ts:348`, but a test may want to acquire two separate pidfiles in sequence). [ASSUMPTION: if tests always use the same `path`, the constructor could take it instead. Decision deferred to E.4 when the test-file migration is examined.] |
-| `release()` | `releaseLock()` in `src/index.ts:356-364` | `index.ts:356-364` | The current `releaseLock()` reads the pidfile and unlinks it only if `recorded === process.pid`. The class version either absorbs the same logic (so `index.ts:356-364` becomes `await lockAcquirer.release()`) or leaves `releaseLock()` as a free helper. Recommendation: **absorb** — the class owns its lifecycle. |
+| `acquire(path, selfPid, opts?)` | free `acquirePidfileLock(path, selfPid, ctx, opts)` (deleted in E.5b) | method body inside `process-lock.ts:294` | `selfPid` and `path` are per-call because the caller (production or test) may want to acquire against multiple paths or PIDs in sequence. Per-call options preserve the original per-call default evaluation. |
+| `release(path, selfPid)` | `releaseLock()` body in `src/index.ts:364-371` (which now wraps `pidfileLockAcquirer.release(PID_FILE, process.pid)`) | `process-lock.ts:383-388` | The current `releaseLock()` reads the pidfile and unlinks it only if `recorded === selfPid`. The class version absorbed the same logic. Sync (`void`) because the underlying `readFileSync` + `unlinkSync` I/O is sync; shutdown callers in `process.on('SIGTERM')` and the hardKill timer cannot `await`. |
 
 ### Constructor
 
@@ -207,23 +213,23 @@ None. Same reasoning as E1.
   party has O_EXCL'd a new pidfile in the meantime, `release()`
   does not touch it.
 
-### Free functions that REMAIN after E.2
+### Free functions that REMAIN after E.2 (and after E.5)
 
 | Symbol | Location | Why it stays |
 |---|---|---|
-| `acquirePidfileLock(path, selfPid, ctx, opts)` | `process-lock.ts:289-364` | Same wrapper shape as E1's free function. Required until E.5. |
-| `DeferToPeerError` class | `process-lock.ts:272-279` | Exported for two reasons: (a) `src/index.ts:31` re-exports it; (b) `src/index.ts:324` instantiates it inside `checkFreshStartupRace` (the pre-acquire early-exit). The class version of `acquire()` throws it from inside the class method, but `index.ts:324` still throws it directly. **Either way the class must remain a top-level export** so both call sites resolve. |
-| `ExclusiveCreateOutcome` type alias | `process-lock.ts:224` | Type-only export; survives. |
+| `acquirePidfileLock(path, selfPid, ctx, opts)` | was `process-lock.ts:289-364` | DELETED in E.5b (`8f33a22`); body survives as `PidfileLockAcquirer.acquire(path, selfPid, opts)` method. |
+| `DeferToPeerError` class | `process-lock.ts:274-281` | Exported for two reasons: (a) `src/index.ts:31` re-exports it; (b) `src/index.ts:333` instantiates it inside `checkFreshStartupRace` (the pre-acquire early-exit). The class version of `acquire()` throws it from inside the class method, but `index.ts:333` still throws it directly. **Either way the class must remain a top-level export** so both call sites resolve. |
+| `ExclusiveCreateOutcome` type alias | `process-lock.ts:226` | Type-only export; survives. |
 
 ### Free functions that DO NOT exist on the class
 
-- **Throw helpers.** `acquirePidfileLock` throws `DeferToPeerError`
-  (`:347`) and a generic `Error(...)` on max-attempts exhaustion
-  (`:363`). Both throws stay where they are: the class body's throw
-  sites move from a free function body to a method body, but the
-  *line* does not change (`:347` and `:363` are inside the
-  `acquirePidfileLock` body, which becomes `acquire()`'s body). The
-  throw site does not move out of `process-lock.ts`.
+- **Throw helpers.** `PidfileLockAcquirer.acquire()` throws
+  `DeferToPeerError` (now at `:350` inside the class method body)
+  and a generic `Error(...)` on max-attempts exhaustion (now at
+  `:366`). Both throws stay inside `process-lock.ts`; the throw
+  site moved by 3 lines because the class body adds the
+  `this.ctx.*` prefix and the method signature, but the throw site
+  itself did not move out of `process-lock.ts`.
 
 ---
 
@@ -252,18 +258,18 @@ pidfile path). The conclusion holds:
    `ProcessLockContext`; `PidfileLockAcquirer`'s constructor takes
    `PidfileLockContext`. There is no shared `LockContext<T>` parent.
 
-## Summary of free functions vs class surface after E.1 + E.2
+## Summary of free functions vs class surface after E.5
 
-| Symbol | After E.1/E.2 | Notes |
+| Symbol | After E.5 | Notes |
 |---|---|---|
-| `PortLockAcquirer` class | **new** | E.1 deliverable |
-| `PidfileLockAcquirer` class | **new** | E.2 deliverable |
-| `acquirePortLock(port, ctx, opts)` | wrapper | `new PortLockAcquirer(ctx, opts).acquire(port)` |
-| `acquirePidfileLock(path, selfPid, ctx, opts)` | wrapper | `new PidfileLockAcquirer(ctx, selfPid, opts).acquire(path)` |
-| `releaseLock()` at `index.ts:356-364` | moved to `PidfileLockAcquirer.release()` | E.4 |
-| `findOwnNodeHolders` | free export | test direct-import |
-| `findOwnBinaryMatches` | free export | test direct-import |
-| `terminateProcesses` | free export + private method | shared body |
+| `PortLockAcquirer` class | **landed** | E.1 deliverable; `acquire(port, opts)`, `findOwnNodeHolders(port)`, `findOwnBinaryMatches(pattern)`, `terminateProcesses(pids, opts)` methods |
+| `PidfileLockAcquirer` class | **landed** | E.2 deliverable; `acquire(path, selfPid, opts)` and `release(path, selfPid)` methods |
+| `acquirePortLock(port, ctx, opts)` | DELETED (E.5a) | body survives as `PortLockAcquirer.acquire()` method |
+| `acquirePidfileLock(path, selfPid, ctx, opts)` | DELETED (E.5b) | body survives as `PidfileLockAcquirer.acquire()` method |
+| `releaseLock()` at `index.ts:364-371` | thin caller of `pidfileLockAcquirer.release(PID_FILE, process.pid)` | E.4 absorbed the body; E.5 left the local wrapper in `index.ts` |
+| `findOwnNodeHolders` | DELETED as free export (E.5a) | body survives as `PortLockAcquirer.findOwnNodeHolders(port)` method |
+| `findOwnBinaryMatches` | DELETED as free export (E.5a) | body survives as `PortLockAcquirer.findOwnBinaryMatches(pattern)` method |
+| `terminateProcesses` | DELETED as free export (E.5a) | body survives as `PortLockAcquirer.terminateProcesses(pids, opts)` method |
 | `writeBufferFully` | free export | used by production `tryCreateExclusive` only |
 | `DeferToPeerError` | free export | unchanged |
 | `ProcessLockContext`, `PidfileLockContext` | free exports | unchanged |
