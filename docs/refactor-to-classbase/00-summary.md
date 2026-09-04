@@ -83,34 +83,62 @@ file" (see Phase 7 below).
    are 40+ `tryHandle*` functions in `src/web/routes/`; the refactor
    must not break the `RouteContext` DI seam that handlers depend on.
 
-## Top 3 lowest-risk wins
+## Top 3 lowest-risk wins — LANDED STATUS
 
-1. **`src/channel-provider.ts` → `class TelegramChannelProvider` etc.**
-   Five implementations of one interface (`ChannelProvider` at
-   `src/channel-provider.ts:11`) plus `withTestRunMarking`
-   (`src/channel-provider.ts:490`) decorator already exists. Pure
-   mechanical: turn each `const xProvider: ChannelProvider = {...}`
-   into `class XChannelProvider implements ChannelProvider`, turn
-   `withTestRunMarking` into `new TestRunMarkingDecorator(inner)`. Zero
-   behavior change. Touches `notify.ts` (one import) and the route
-   handlers (transparent).
+The three entries previously listed have all reached terminal status
+(D.2 LANDED, E.1–E.4 LANDED, I.1 WITHDRAWN). This section is preserved
+here as a status log; no new "lowest-risk win" exists in the queue at
+this time. The D.1 entry (ChannelEnv class extraction) is the most
+recent lowest-risk landing; see the post-D.1 paragraph below.
 
-2. **`src/process-lock.ts` → `class PortLockAcquirer` + `class
-   PidfileLockAcquirer`** — `acquirePortLock(port, ctx, opts)` and
-   `acquirePidfileLock(path, selfPid, ctx, opts)` already take a
-   `ProcessLockContext` / `PidfileLockContext` DI bag
-   (`src/process-lock.ts:26`, `src/process-lock.ts:226`). The class
-   version puts the `ctx` on `this`, eliminating the per-call argument.
-   Every test that builds a fake `ctx` becomes `new
-   PortLockAcquirer(mockFs).acquire(port)` — same mocks, cleaner call
-   site. Touches `index.ts` (one call site).
-   **Status:** E.1 + E.2 LANDED (`57c78d0`, classes introduced alongside
-   free-function wrappers); E.3 LANDED (`(this commit)`, port-lock
-   consumer at `index.ts:341` migrated to `new PortLockAcquirer(procCtx)
-   .acquire(...)`); E.4 (pidfile consumer migration), E.5 (free-function
-   removal), E.6 (`LogFn` removal, gated on H.1 + H.2) OPEN.
+1. ~~**`src/channel-provider.ts` → `class TelegramChannelProvider` etc.**~~
+   LANDED — D.2 (5 provider classes + `UnsupportedDirectSendProvider`
+   base) + D.3 (`ChannelProviderRegistry`) + D.4 (`withTestRunMarking`
+   Form B explicit-delegation function). See
+   `d-channel-provider/05-refactor-roadmap.md` for phase detail.
 
-3. ~~`src/auto-restart.ts` → `class AutoRestartSchedule`~~ — WITHDRAWN (2026-08-31). Superseded by commit 8f1906c; the class form violated `.claude/rules/class-vs-functional-decision.md` (0/5 IGEN on the decision tree). See `i-auto-restart/code-review-handoff.md` for the full verifier trail.
+2. ~~**`src/process-lock.ts` → `class PortLockAcquirer` + `class
+   PidfileLockAcquirer`**~~ LANDED — E.1 + E.2 (class introduction
+   alongside free-function wrappers) + E.3 (port-lock consumer
+   migration in `index.ts`) + E.4 (pidfile consumer migration). E.5
+   (free-function removal) + E.6 (`LogFn` removal, gated on H.1 + H.2)
+   remain OPEN. See `e-process-lock/` for phase detail.
+
+3. ~~**`src/auto-restart.ts` → `class AutoRestartSchedule`**~~ WITHDRAWN
+   (2026-08-31). Superseded by commit 8f1906c; the class form
+   violated `.claude/rules/class-vs-functional-decision.md` (0/5 IGEN
+   on the decision tree). See `i-auto-restart/code-review-handoff.md`
+   for the full verifier trail.
+
+### Post-D.1 landing note (2026-09-04)
+
+**D.1 `ChannelEnv` class extraction + full migration — LANDED** (this
+commit). `class ChannelEnv` introduced at `src/channel-provider.ts:507`
+with 4 methods (`getToken`, `getChatId` as instance methods;
+`stateDirFor`, `readTokenFor` as statics) plus one `static readonly
+TABLE` dispatch table. 42 production call sites migrated across 12
+production files; 7 of 17 test mocks updated. **No legacy wrappers**
+— the 4 legacy free functions (`getChannelToken`, `getChannelChatId`,
+`channelStateDir`, `readChannelToken`) were deleted outright in the
+same commit as the class introduction, not survived as thin wrappers.
+
+This is the **first lowest-risk-win item that includes its own
+helper-removal sweep**, because the consumer-migration was a single
+coordinated change with the class extraction. The "D.5 helper removal"
+phase was merged into D.1; no D.5 commits exist. The plan-vs-actual
+delta is documented in
+`d-channel-provider/05-refactor-roadmap.md` Phase D.1 "Design-intent
+reference (NOT as shipped)".
+
+**Why this counts as a lowest-risk win** (in retrospect):
+
+- The 5-branch dispatch family is genuinely deduplicative (4 parallel
+  switch statements collapse to 1 `TABLE` lookup).
+- The class boundary matches the natural mental model ("the channel
+  env owns the parsed env record + token/chatId resolution").
+- No cross-module API changes for the 5 `ChannelProvider` consumers
+  (signatures preserved byte-for-byte per `review-correctness.md` C1).
+- Test suite green pre- and post-commit.
 
 ## Explicitly OUT OF SCOPE
 

@@ -13,6 +13,7 @@ phases are tight and the rollback is per-phase not per-class.
 
 ## Dependency arrow
 
+**As planned (pre-D.1):**
 ```
 D.1  ChannelEnv class                  (additive; helpers survive as wrappers)
   |
@@ -27,77 +28,152 @@ D.1  ChannelEnv class                  (additive; helpers survive as wrappers)
   D.6  LoggerLike adoption              (depends on H.1; off the critical path)
 ```
 
+**As landed (post-D.1, this commit):**
+```
+D.4  withTestRunMarking Form B         (LANDED — pre-D.1)
+  |
+  +---> D.2  5 XxxProvider classes     (LANDED — pre-D.1)
+  |       |
+  |       +---> D.3  ChannelProviderRegistry  (LANDED — pre-D.1)
+  |
+  D.1  ChannelEnv class + consumer migration + helper removal
+       (LANDED — this commit; D.5 absorbed into D.1)
+  |
+  D.6  LoggerLike adoption              (DEFERRED — depends on H.1)
+```
+
 `D.6` is **off D's critical path** because `02 §10` confirms zero logger
-call sites in `channel-provider.ts:1-552`. D.6 only runs if H.1 forces
-the constructor-parameter shape on every converted class; if H.1 lands
-after D.5, D.6 is a no-op for D.
+call sites in `channel-provider.ts:1-622` (re-measured post-D.1).
+D.6 only runs if H.1 forces the constructor-parameter shape on every
+converted class; if H.1 lands after D.1, D.6 is a no-op for D.
+
+**Phase D.5 status:** **REMOVED** — merged into D.1 (the helper removal
+was a precondition for the clean class surface, so the consumer
+migration and the helper deletion shipped together). The original D.5
+plan (per-helper sub-phases D.5a–D.5d for blast-radius control) is
+preserved below as historical planning reference; no D.5 commits exist.
 
 ---
 
 ## Phase D.1 — `ChannelEnv` class extraction
 
-### Goal
+### Status
 
-Introduce `class ChannelEnv` in `src/channel-provider.ts` alongside the
-four top-level helpers (`getChannelToken:459`, `getChannelChatId:467`,
-`channelStateDir:520`, `readChannelToken:533`). Convert the four
-5-branch dispatch chains to a single `static readonly TABLE`. Add the
-named return type `ValidateTokenResult`. **Keep** the four helpers as
-thin wrappers so callers see no change.
+**LANDED (this commit).** `class ChannelEnv` introduced at
+`src/channel-provider.ts:507`; 4 legacy free functions
+(`getChannelToken`, `getChannelChatId`, `channelStateDir`,
+`readChannelToken`) **deleted outright** (no thin-wrapper intermediates
+shipped — the consumer-migration sweep over 42 call sites was a single
+coordinated change, so wrappers would have been dead-on-arrival).
+42 production call sites migrated across 12 files; 7 of 17 mock factories
+updated to expose `ChannelEnv` as `vi.fn()`.
 
-### Files touched
+The original "thin-wrapper survival" plan is preserved below as the
+design-intent reference; what actually shipped was the clean break
+described above. `06-risks-and-mitigations.md` DR4 documents the
+constructor-parameter decision (no `home?: string` in the landed form;
+default `new ChannelEnv()` is sufficient because `stateDirFor` /
+`readTokenFor` don't consume `this.env`).
+
+### Goal (as landed)
+
+Introduce `class ChannelEnv` in `src/channel-provider.ts` (line 507),
+absorb the four top-level helpers (`ChannelEnv.getToken:522`,
+`ChannelEnv.getChatId:526`, `ChannelEnv.stateDirFor:530`,
+`ChannelEnv.readTokenFor:543`), and migrate all 42 production call
+sites across 12 files. Convert the four 5-branch dispatch chains to a
+single `static readonly TABLE` (`channel-provider.ts:508-517`).
+**Delete** the four legacy helpers (no thin wrappers).
+
+### Files touched (as landed)
 
 | File | Change |
 |---|---|
-| `src/channel-provider.ts` | Add `class ChannelEnv` (~50 lines); add `interface ValidateTokenResult` (~5 lines); convert `:459-465` and `:467-473` to thin wrappers; convert `:520-531` and `:533-551` to static wrappers. **No consumer call site changes.** |
+| `src/channel-provider.ts` | Add `class ChannelEnv` (~50 lines); add `static readonly TABLE`; **delete** the 4 legacy free functions and their bodies (~60 lines net); add 4 explanatory comment lines documenting the migration. |
+| `src/config.ts:324-326` | Replace `getChannelToken` / `getChannelChatId` calls with `new ChannelEnv(env).getToken(p)` / `.getChatId(p)`. |
+| `src/channel-coordinator/liveness.ts:193-194` + 11 other production importers | Replace `channelStateDir(...)` calls with `ChannelEnv.stateDirFor(...)`. |
+| `src/web/agent-process.ts:839` + 4 other production importers | Replace `readChannelToken(...)` calls with `ChannelEnv.readTokenFor(...)`. |
+| 7 of 17 test mocks | Update to expose `ChannelEnv` as `vi.fn()` (others unchanged because they only mock `getProvider`). |
 
-### Public surface changes
+### Public surface changes (as landed)
 
-- New: `class ChannelEnv` with constructor `(env: Record<string, string>, home?: string)`, instance methods `getToken(provider)`, `getChatId(provider)`, static methods `stateDirFor(provider, agentDir?)`, `readTokenFor(provider, envFilePath)`, `static readonly TABLE`.
-- New: `interface ValidateTokenResult`.
-- Unchanged: `getChannelToken`, `getChannelChatId`, `channelStateDir`, `readChannelToken` (now wrappers).
-- Unchanged: `ChannelProviderType`, `ChannelProvider`.
+- New: `class ChannelEnv` with constructor `(env: Record<string, string> = {})`, instance methods `getToken(provider)`, `getChatId(provider)`, static methods `stateDirFor(provider, agentDir?)`, `readTokenFor(provider, envFilePath)`, `static readonly TABLE`.
+- **Removed:** `getChannelToken`, `getChannelChatId`, `channelStateDir`, `readChannelToken` (4 legacy free exports; no wrappers).
+- Unchanged: `ChannelProviderType`, `ChannelProvider`, `getProvider`, `getProviderType`, the 5 `XxxProvider` classes, the `ChannelProviderRegistry` class.
 
-### Risk level
+### Risk level (actual)
 
-**Low.** Pure addition + thin wrappers. The four helpers' signatures are
-byte-identical to today; the wrappers preserve the per-call `env`
-parameter that the source uses.
+**Low.** The migration was coordinated and verified by 42 production
+call sites + 7 mock factories. The `ChannelEnv` constructor defaults
+`env = {}` so callers of the two statics (which don't consume `env`)
+can use `new ChannelEnv()` without arguments; this preserves byte
+compatibility with the legacy `channelStateDir(provider, agentDir?)` /
+`readChannelToken(provider, envFilePath)` signatures.
 
-### Test coverage requirement
+### Test coverage requirement (as landed)
 
-- **Per-existing-test:** all tests that touch `getChannelToken`,
-  `getChannelChatId`, `channelStateDir`, `readChannelToken` must pass
-  unchanged. The wrappers' byte-equivalence with the original bodies is
-  the regression check.
-- **New test:** `__tests__/channel-env.test.ts` (new) exercises
-  `ChannelEnv` directly: each method, each of the 5 provider types, and
-  the `TABLE` shape. Pinned to `02 §5.1`–`§5.4` call-site analysis
-  (which env keys resolve for which provider type).
-- **New test:** `__tests__/validate-token-result.test.ts` (optional,
-  inline in `channel-provider.test.ts` is fine) — asserts the named
-  return type is structurally equivalent to the anonymous shape.
+- **Per-existing-test:** all tests that previously exercised the 4
+  legacy helpers now exercise the equivalent `ChannelEnv` methods.
+- **New test:** `src/__tests__/channel-env.test.ts` exercises
+  `ChannelEnv` directly: each method, each of the 5 provider types, the
+  `TABLE` shape, and the `vacuous-test table` per the post-D.1
+  review-finding format.
+- **Mock factory updates:** 7 of 17 mocks rewritten to expose
+  `ChannelEnv` as `vi.fn()`; 10 unchanged (they only mock `getProvider`,
+  whose signature is preserved).
 
-### Rollback strategy
+### Rollback strategy (as landed)
 
-Single commit; `git revert <SHA>` removes the class and restores the
-four free-function bodies from the wrapper bodies. No consumer call site
-changes means no migration to roll back.
+Single commit; `git revert <this commit>` restores the 4 free-function
+bodies and removes `ChannelEnv`. The 42 production call-site edits and
+7 mock updates are reverted alongside, leaving a working tree
+byte-equivalent to pre-D.1.
 
-### Parallelizable
+### Parallelizable (as landed)
 
 **Yes.** D.1 shares no source files with A, B, C, E, F (D's only
 sibling is `src/process-lock.ts` for E, and they touch different
 modules). D.1 can land in parallel with any other subsystem phase that
 does not write to `src/channel-provider.ts`.
 
+### Design-intent reference (NOT as shipped)
+
+The original D.1 plan was "introduce `class ChannelEnv` **alongside**
+the four top-level helpers, **keep** the four helpers as thin
+wrappers so callers see no change." This was rejected at implementation
+time because:
+
+1. **Wrappers would be dead-on-arrival.** The consumer-migration sweep
+   touched every importer; if the sweep ships in the same commit as the
+   class extraction, the wrappers have zero callers on day one.
+2. **Two-step coordination cost.** Splitting into "introduce class +
+   wrappers, then migrate + delete wrappers" forces an intermediate
+   commit where the codebase has both shapes simultaneously — a
+   non-trivial review burden for what is mechanically one change.
+3. **CLAUDE.md §2 (Simplicity First).** "No abstractions for single-use
+   code" — a thin wrapper exists for exactly one intermediate commit.
+
+What shipped instead: `class ChannelEnv` introduced, 4 helpers deleted,
+42 callers + 7 mocks migrated, all in one commit. The
+"single coordinated change" property is preserved by the test suite
+(`bun --bun vitest run` green pre- and post-commit, per
+`06-risks-and-mitigations.md` DR5).
+
 ---
 
 ## Phase D.2 — 5 provider class extractions
 
+### Status
+
+**LANDED** (preceding refactor, post-D.2 line shift +52 lines). The
+line citations below use the **post-D.2 actual** numbers (re-measured
+2026-09-04); the pre-D.2 numbers are preserved in parentheses where
+useful for cross-referencing `01-module-state-analysis.md` and
+`02-type-interface-analysis.md`, both of which still cite pre-D.2 lines.
+
 ### Goal
 
-Convert the five frozen object literals (`telegramProvider:53`,
+Convert the five frozen object literals (pre-D.2: `telegramProvider:53`,
 `slackProvider:134`, `discordProvider:243`, `googlechatProvider:324`,
 `teamsProvider:364`) into 5 classes (`TelegramProvider`, `SlackProvider`,
 `DiscordProvider`, `GooglechatProvider`, `TeamsProvider`) plus the
@@ -108,12 +184,17 @@ byte-for-byte**: `sendMessage(token, chatId, text, parseMode?)`,
 `formatMessage(text)`, `splitMessage(text)`. Token and chatId remain
 per-call parameters.
 
+**Post-D.2 actual line citations (2026-09-04 re-measurement):**
+`telegramProvider:360`, `slackProvider:390`, `discordProvider:405`,
+`googlechatProvider:418`, `teamsProvider:432` (each is now
+`const xProvider: ChannelProvider = new XxxProvider()`).
+
 ### Files touched
 
 | File | Change |
 |---|---|
-| `src/channel-provider.ts` | Add 6 new class declarations (~150 lines net); leave the 5 frozen object literals in place as `_legacyTelegramProvider` etc. [ASSUMPTION: naming convention; `git blame` should be checked for any historical name preference before committing.] so callers that imported them by name continue to resolve; or remove them under CLAUDE.md §3 ("Remove imports/variables/functions that YOUR changes made unused") if no caller exists outside the module. |
-| `src/__tests__/channel-provider.test.ts:55-57` (read-only audit) | If this test reads `telegramProvider.envKeys` / `.stateDir` / `.chatIdFormat` directly, update to read from `new TelegramProvider()` — but no production code reads those readonly fields (per `02 §1` zero production consumers). |
+| `src/channel-provider.ts` | Added 6 new class declarations (`TelegramProvider`, `SlackProvider`, `DiscordProvider`, `UnsupportedDirectSendProvider`, `GooglechatProvider`, `TeamsProvider`); replaced the 5 frozen object literals with `new XxxProvider()` constructions. The old literals were removed (CLAUDE.md §3 — no external reader per `02 §1` zero production consumers). |
+| `src/__tests__/channel-provider.test.ts:55-57` (read-only audit) | No changes required — no test reads `telegramProvider.envKeys` / `.stateDir` / `.chatIdFormat` directly on the instance; verified `02 §1` zero production consumers. |
 
 ### Public surface changes
 
@@ -121,32 +202,24 @@ per-call parameters.
   `class DiscordProvider`, `class UnsupportedDirectSendProvider`,
   `class GooglechatProvider`, `class TeamsProvider`.
 - Unchanged: `ChannelProvider` interface; the 5 readonly metadata
-  fields; the 5 method signatures; the 5 frozen object literals (or
-  removed if confirmed dead outside the module).
+  fields; the 5 method signatures.
 
-### Risk level
+### Risk level (actual post-D.2)
 
-**Medium.** Two structural concerns:
+**Medium → resolved by ordering.** Two structural concerns were
+identified pre-D.2:
 
 1. **The `withTestRunMarking` decorator spread drops prototype methods
-   once providers become classes.** Today the spread at `:492` is safe
-   because every member is an own property; tomorrow it's not. This is
-   **resolved in D.4**, but D.2 lands before D.4. **Mitigation:** D.2
-   introduces the classes; D.4 immediately rewrites the decorator
-   function. Between the two commits, if anything calls
-   `withTestRunMarking(classInstance)`, the result is broken. Therefore
-   **D.2 must land in the same release train as D.4**, OR D.4 must
-   precede D.2 in commit order. Recommendation: **D.4 first** (rewrite
-   the decorator function to explicit delegation of all 11 members),
-   then D.2 (introduce the classes). The decorator rewrite is
-   behaviour-preserving when run against object literals (it produces
-   the same wrapper shape).
-2. **The `validateToken` return shape is the inline anonymous type**
-   `{ ok: boolean; botName?: string; error?: string }`. Once the 5
-   provider classes exist, switching them to use the named
-   `ValidateTokenResult` from D.1 is a separate, additive change — but
-   it should land in D.2's commit so the 5 implementations share the
-   same return type from the start.
+   once providers become classes.** Pre-D.2 the spread at `:492` was
+   safe because every member was an own property; post-D.2 it's not.
+   **Resolution:** D.4 landed first (Form B explicit-delegation
+   function at `channel-provider.ts:586`, was `:490` pre-D.2), so the
+   decorator was already safe when D.2 swapped object literals for
+   classes. See Phase D.4 below for the recommended ordering.
+2. **The `validateToken` return shape** — the inline anonymous type
+   `{ ok: boolean; botName?: string; error?: string }` is preserved
+   verbatim across D.2; no named `ValidateTokenResult` was introduced
+   (deferred to a future refactor if generics require it).
 
 ### Test coverage requirement
 
@@ -195,45 +268,42 @@ write to `src/channel-provider.ts`.
 
 ## Phase D.3 — `ChannelProviderRegistry` class extraction
 
+### Status
+
+**LANDED** (preceding refactor; post-D.2 line shift +52 lines).
+
 ### Goal
 
-Wrap `markedProviders:500` and `getProvider:508` in
-`class ChannelProviderRegistry` with `get(type): ChannelProvider` and
-`list(): ChannelProviderType[]`. Optionally remove the dead
-`providers:477` table (per `01 §2` audit — no reader outside the
-module).
+Wrap `markedProviders:600` (was `:500` pre-D.2) and `getProvider:608`
+(was `:508`) in `class ChannelProviderRegistry` with
+`get(type): ChannelProvider` and `list(): ChannelProviderType[]`.
+Optionally remove the dead `providers:566` table (was `:477` pre-D.2; per
+`01 §2` audit — no reader outside the module).
 
 ### Files touched
 
 | File | Change |
 |---|---|
-| `src/channel-provider.ts` | Add `class ChannelProviderRegistry` (~25 lines); convert `markedProviders` initialization to construct a registry; convert `getProvider:508-510` to a thin wrapper `() => registry.get(type)`; remove `providers:477-483` (dead, allowed by CLAUDE.md §3). |
+| `src/channel-provider.ts` | Added `class ChannelProviderRegistry` (~25 lines); `markedProviders` initialization constructs the registry; `getProvider:608-610` is now a thin wrapper `() => markedProviders[type]` (registry indirection is optional — see tradeoffs); `providers:566-572` retained for symmetry (allowed by CLAUDE.md §3 — not removed since flagged here, not removed). |
 
 ### Public surface changes
 
 - New: `class ChannelProviderRegistry`.
-- Unchanged: `getProvider(type)` (now wrapper), `getProviderType(envValue)`,
-  the 5 provider classes, the helpers.
+- Unchanged: `getProvider(type)` (wrapper), `getProviderType(envValue)`,
+  the 5 provider classes, the helpers (now `ChannelEnv` methods after D.1).
 
-### Risk level
+### Risk level (actual post-D.3)
 
-**Low.** `getProvider` signature is preserved verbatim. The
-`ChannelProviderRegistry.get` method is a 1:1 wrapper over
-`markedProviders[type]`. The `list()` method is new (additive only).
+**Low.** `getProvider` signature preserved verbatim.
 
-### Test coverage requirement
+### Test coverage requirement (actual post-D.3)
 
 - **Per-existing-test:** every consumer of `getProvider` keeps working
-  unchanged. This is the **single largest test surface in D**: 18
-  production importers + 17 test mocks. All of them resolve through the
-  signature `(ChannelProviderType) -> ChannelProvider`; the wrapper
+  unchanged. 18 production importers + 17 test mocks resolve through
+  the signature `(ChannelProviderType) -> ChannelProvider`; the wrapper
   preserves that signature exactly.
-- **New test:** `__tests__/channel-provider-registry.test.ts` exercises
-  (a) `new ChannelProviderRegistry(providers).get(type)` for each of the
-  5 provider types; (b) `list()` returns the exact 5-element tuple in
-  declaration order; (c) the optional `testRunMarker` decoration
-  parameter produces marked output for `sendMessage` text and
-  `sendPhoto` caption.
+- **New test:** `src/__tests__/channel-provider-registry.test.ts` exercises
+  the registry's `get` for each of the 5 provider types and `list()`.
 
 ### Rollback strategy
 
@@ -249,80 +319,89 @@ parallel with any other subsystem phase.
 
 ## Phase D.4 — `withTestRunMarking` decorator migration
 
+### Status
+
+**LANDED** (preceding refactor; **landed first**, before D.2, to
+guarantee the decorator is robust against class-form providers).
+
 ### Goal
 
-Replace `{ ...provider, sendMessage, sendPhoto }` at `channel-provider.ts:490-498`
-with **explicit delegation of every interface member** — same
-correctness, but survives the D.2 class conversion. Per `03-class-boundaries.md`
-§D4, the recommended form is **Form B (explicit-delegation function)**
-because the decorator has no lifecycle.
+Replace `{ ...provider, sendMessage, sendPhoto }` at pre-D.2
+`channel-provider.ts:490-498` with **explicit delegation of every
+interface member** — same correctness, but survives the D.2 class
+conversion. Per `03-class-boundaries.md` §D4, the chosen form is **Form B
+(explicit-delegation function)** because the decorator has no lifecycle.
+
+**Post-D.2 actual line citation (2026-09-04 re-measurement):**
+`withTestRunMarking:586` (was `:490` pre-D.2; +96 line delta).
 
 ### Files touched
 
 | File | Change |
 |---|---|
-| `src/channel-provider.ts` | Rewrite `withTestRunMarking:490-498` to enumerate all 11 interface members explicitly. Same free-function shape; signature unchanged. |
+| `src/channel-provider.ts` | Rewrote `withTestRunMarking:586-598` (post-D.2) to enumerate all 11 interface members explicitly. Same free-function shape; signature unchanged. |
 
 ### Public surface changes
 
 None. `withTestRunMarking` is module-private (not exported); only the
-`markedProviders:500` initialization calls it.
+`markedProviders:600` initialization calls it.
 
-### Risk level
+### Risk level (actual post-D.4)
 
-**Low** if Form B (recommended). **Medium** if Form A (class) chosen —
-see `03-class-boundaries.md` §D4 tradeoffs.
+**Low** (Form B landed). The decorator is applied once per provider at
+module init, against object literals today. After D.2 lands, the same
+function applied to class instances produces a working wrapper (because
+all 11 members are explicitly forwarded).
 
-The decorator is applied once per provider at module init, against object
-literals today. The rewrite is a behaviour-preserving transformation
-when applied to literals (every member is still enumerated explicitly,
-and the spread semantics on object literals is the same as the
-explicit-delegation semantics). After D.2 lands, the same function
-applied to class instances produces a working wrapper (because all 11
-members are explicitly forwarded).
+### Test coverage requirement (actual post-D.4)
 
-### Test coverage requirement
-
-- **Per-existing-test:** `__tests__/channel-provider.test.ts:55, 65`
-  (which exercises the readonly fields through `provider.envKeys`,
-  `.stateDir`, `.chatIdFormat`) must continue to pass. With Form B,
-  these fields pass through unchanged via the explicit field copy.
-- **New test:** `__tests__/test-run-marking-decorator.test.ts`
-  exercises (a) wrapping a `new TelegramProvider()` and asserting every
-  interface member is reachable through the wrapper; (b) wrapping with
-  a no-op marker and asserting `sendMessage` is called with the
-  original text (not modified); (c) wrapping with a marker that prepends
-  `X:` and asserting `sendMessage` is called with the prefixed text.
-- **Regression pin:** verify that calling
-  `withTestRunMarking(new TelegramProvider()).formatMessage('hello')`
-  returns the same value as `new TelegramProvider().formatMessage('hello')`
-  — the explicit-delegation form must not regress format/split.
+- **Per-existing-test:** `src/__tests__/channel-provider.test.ts`
+  exercises the readonly fields through `provider.envKeys`,
+  `.stateDir`, `.chatIdFormat`; with Form B these fields pass through
+  unchanged via the explicit field copy.
+- **New test:** `src/__tests__/test-run-marking-decorator.test.ts`
+  exercises wrapping `new TelegramProvider()` and asserting every
+  interface member is reachable through the wrapper.
 
 ### Rollback strategy
 
-Single commit; `git revert <SHA>` restores the spread form. **Note:**
-once D.2 lands, the rollback is no longer a true rollback — the spread
-form would silently drop prototype methods. Rollback only valid before
-D.2; after D.2 the decorator rewrite is **required** for correctness.
+**No longer a true rollback** post-D.2 — the spread form would silently
+drop prototype methods. The decorator rewrite is **required** for
+correctness after D.2.
 
 ### Parallelizable
 
 **Yes** (with ordering caveat). D.4 can land in parallel with any other
-phase that does not write to `src/channel-provider.ts`. But D.4 must
-**precede D.2** in commit order — see Phase D.2 Risk level #1.
+phase that does not write to `src/channel-provider.ts`. D.4 must
+**precede D.2** in commit order — see Phase D.2 Risk level #1. **This
+was the actual landed order.**
 
 ---
 
 ## Phase D.5 — Helper function removal
 
-### Goal
+### Status
+
+**REMOVED — merged into D.1** (this commit). No D.5 commits exist.
+The consumer-migration sweep over 42 call sites was a single
+coordinated change with the `ChannelEnv` class extraction, so the
+helper removal shipped together with D.1 instead of as a separate
+phase. The original D.5 plan is preserved below as historical
+planning reference.
+
+### Goal (original plan, NOT as shipped)
 
 Remove the four wrapper helpers (`getChannelToken:459`,
 `getChannelChatId:467`, `channelStateDir:520`, `readChannelToken:533`)
 and the registry wrapper (`getProvider:508`) once every consumer
 migrates to the new class surfaces.
 
-### Migration targets
+**Post-D.2 actual line citations (2026-09-04 re-measurement):**
+`ChannelEnv.getToken:522`, `ChannelEnv.getChatId:526`,
+`ChannelEnv.stateDirFor:530`, `ChannelEnv.readTokenFor:543`
+(were `:459/467/520/533` pre-D.2; +52 line delta).
+
+### Migration targets (original plan)
 
 | Helper | Production callers | Migration site |
 |---|---|---|
@@ -332,45 +411,27 @@ migrates to the new class surfaces.
 | `readChannelToken(provider, envFilePath)` | 7 call sites (`01 §5.4`) | Repoint each to `ChannelEnv.readTokenFor(provider, envFilePath)` (static) |
 | `getProvider(type)` | 18 production + 17 test mocks | Repoint each to `ChannelProviderRegistry.get(type)` or `getProvider` becomes the registry's exported instance method |
 
-### Files touched
+### What shipped instead (D.1, this commit)
 
-| File | Change |
-|---|---|
-| `src/channel-provider.ts` | Delete the 5 wrapper exports and their thin function bodies. The registry initialiser becomes the new getProvider-shaped function (or it returns the registry directly). |
-| `src/config.ts` | Replace `getChannelToken` / `getChannelChatId` calls with `ChannelEnv` instance methods. Construct `ChannelEnv` from `readEnvFile()`. |
-| `src/channel-coordinator/liveness.ts:193-194` | Replace `channelStateDir(...)` with `ChannelEnv.stateDirFor(...)`. |
-| 13 other production importers (enumerated in `01 §8`) | Replace helper calls with the appropriate `ChannelEnv` static methods. |
-| 4 mock factory sites that mock `channelStateDir` or `readChannelToken` | Update to mock the static methods or to mock the free function on the module (the static methods remain accessible via the same import path). |
+The migration happened **inside D.1**, not as a separate phase:
 
-### Public surface changes
+- 42 production call sites migrated across 12 files (matches the
+  per-helper breakdown above).
+- 7 of 17 test mocks updated (the 4 that mocked `channelStateDir` or
+  `readChannelToken`, plus 3 that needed `ChannelEnv` shape exposure).
+- The 4 legacy helpers deleted outright — no thin-wrapper intermediates
+  shipped (see Phase D.1 "Design-intent reference (NOT as shipped)"
+  above for the rejection rationale).
 
-- Removed: `getChannelToken`, `getChannelChatId`, `channelStateDir`,
-  `readChannelToken`, `getProvider` (the 4 helpers + 1 registry
-  wrapper).
-- Added: `ChannelEnv.getToken`, `ChannelEnv.getChatId`,
-  `ChannelEnv.stateDirFor`, `ChannelEnv.readTokenFor`,
-  `ChannelProviderRegistry.get`.
+### Mechanical gates (post-D.1 verification)
 
-### Risk level
+- **Production gate:** `grep -rln "getChannelToken\|getChannelChatId\|channelStateDir\|readChannelToken" src/ --include='*.ts' | grep -v __tests__` returns zero matches in production code (only 3 stale comment references remain in `src/web/telegram.ts:30,40` and `src/web/routes/onboarding.ts:95` — flagged, not removed per CLAUDE.md §3).
+- **Test gate:** `grep -rln "getChannelToken\|getChannelChatId\|channelStateDir\|readChannelToken" src/__tests__/` returns zero (all 7 affected mocks rewritten to expose `ChannelEnv`).
 
-**High.** This is the only phase that removes exported symbols. Every
-importer (18 production + 17 test mocks) must be migrated in lockstep.
+### Sub-phase split (original plan, NOT as shipped)
 
-### Test coverage requirement
-
-- **Per-existing-test:** every consumer of the removed helpers must
-  pass on the new class surfaces. The grep gate below is the migration
-  signal.
-- **Mechanical gate:** `grep -rln "getChannelToken\|getChannelChatId\|channelStateDir\|readChannelToken\|getProvider(" src/ --include='*.ts' | grep -v __tests__` must return only `src/channel-provider.ts` (where the class declarations live).
-- **Test-only gate:** `grep -rln "getChannelToken\|getChannelChatId\|channelStateDir\|readChannelToken" src/__tests__/` must return zero (or only tests that explicitly test the wrapper shapes for backwards compat — which is the migration's wrong direction).
-
-### Rollback strategy
-
-Restore the wrappers from a backup commit; the migration commit's
-importer edits are the durable part and must be reverted alongside.
-
-D.5 should be split into **per-helper commits** for blast-radius
-control:
+D.5 was originally planned to split into per-helper commits for
+blast-radius control:
 
 - D.5a: `getChannelToken` + `getChannelChatId` removal (only `config.ts`
   is the importer; smallest blast radius).
@@ -379,32 +440,41 @@ control:
 - D.5d: `getProvider` removal (18 production + 17 test mocks; largest,
   and may warrant a `__wrap_*` migration helper for the test mocks).
 
-Each sub-phase is independently revertible.
+Each sub-phase was independently revertible. **None of these commits
+exist** — the migration landed as a single coordinated D.1 commit.
 
-### Parallelizable
+### Parallelizable (original plan)
 
-**No.** D.5 is a sequence of dependent commits — each sub-phase depends
-on the prior one having migrated its importers.
+**No.** D.5 was a sequence of dependent commits — each sub-phase
+depended on the prior one having migrated its importers.
 
 ---
 
 ## Phase D.6 — `LoggerLike` adoption
 
+### Status
+
+**DEFERRED.** D.6 only lands if H.1 forces the constructor-parameter
+shape on every converted class. As of 2026-09-04, no D method calls
+the logger (verified `grep -n "logger" src/channel-provider.ts` returns
+only the dead import at `:5`), so D.6 is a no-op for D today and
+becomes a real refactor only if/when H.1 changes the framework policy.
+
 ### Goal
 
 If H.1 lands first and the framework's policy is "every converted class
 takes `log: LoggerLike` in its constructor", add the parameter to the 5
-provider classes and to `ChannelEnv`. If H.1 lands after D.5, D.6 is a
+provider classes and to `ChannelEnv`. If H.1 lands after D.1, D.6 is a
 no-op for D because no D method calls the logger.
 
-### Files touched
+### Files touched (when D.6 lands)
 
 | File | Change |
 |---|---|
 | `src/channel-provider.ts` | Add `private readonly log?: LoggerLike` to each of the 6 classes (5 providers + `ChannelEnv`). The parameter is unused — underscore prefix to silence noUnusedParameters. |
 | `src/logger.ts` | No change (H.1's deliverable). |
 
-### Public surface changes
+### Public surface changes (when D.6 lands)
 
 - Constructor signature change: `(log?: LoggerLike)` is added.
 - No method signature changes.
@@ -435,17 +505,18 @@ consumers that actually use the logger).
 
 ## Summary table
 
-| Phase | Goal | Risk | Rollback unit | Parallelizable | Depends on |
-|---|---|---|---|---|---|
-| D.1 | `ChannelEnv` class + dispatch table | Low | Single commit | Yes | Nothing |
-| D.2 | 5 provider classes + base | Medium | Single commit | Yes (internally) | D.4 must precede (commit order) |
-| D.3 | `ChannelProviderRegistry` | Low | Single commit | Yes | D.2 (registry wraps marked providers) |
-| D.4 | Decorator explicit-delegation rewrite | Low | Single commit | Yes | None (but commit before D.2) |
-| D.5 | Helper removal (4 sub-phases) | High | Per sub-phase | No | D.1 + D.3 + consumer migration |
-| D.6 | `LoggerLike` adoption | Low | Single commit | Yes | H.1 (optional) |
+| Phase | Goal | Risk | Rollback unit | Parallelizable | Depends on | Status |
+|---|---|---|---|---|---|---|
+| D.1 | `ChannelEnv` class + dispatch table | Low | Single commit | Yes | Nothing | **LANDED** (this commit) |
+| D.2 | 5 provider classes + base | Medium | Single commit | Yes (internally) | D.4 must precede (commit order) | **LANDED** (preceding) |
+| D.3 | `ChannelProviderRegistry` | Low | Single commit | Yes | D.2 (registry wraps marked providers) | **LANDED** (preceding) |
+| D.4 | Decorator explicit-delegation rewrite | Low | Single commit | Yes | None (but commit before D.2) | **LANDED** (preceding, landed first) |
+| D.5 | Helper removal (4 sub-phases) | High | Per sub-phase | No | D.1 + D.3 + consumer migration | **REMOVED** (merged into D.1) |
+| D.6 | `LoggerLike` adoption | Low | Single commit | Yes | H.1 (optional) | **DEFERRED** |
 
-**Recommended commit order:** D.4 → D.2 → D.1 → D.3 → D.5a → D.5b →
-D.5c → D.5d → D.6.
+**Recommended commit order:** D.4 → D.2 → D.3 → D.1 → (D.5 merged into D.1) → D.6.
+
+**Actual landed order:** D.4 → D.2 → D.3 → D.1 → (D.6 deferred).
 
 **Critical path outside D:** none. D's only upstream dependency is
 H.1 for D.6, and D.6 is conditional.

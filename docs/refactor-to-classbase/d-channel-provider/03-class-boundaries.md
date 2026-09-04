@@ -2,7 +2,27 @@
 
 Concrete class candidates for the D subsystem. Signatures only; no
 implementation. Every claim below cites a file:line verified against
-`src/channel-provider.ts` read in full on 2026-08-30 (552 lines).
+`src/channel-provider.ts` read in full on 2026-08-30 (552 lines pre-D.2,
+622 lines post-D.2 + post-D.1, re-measured 2026-09-04).
+
+**Status (2026-09-04):**
+
+- **D.1 (`ChannelEnv`) — LANDED (this commit).** Class introduced at
+  `src/channel-provider.ts:507`. Migrated **42 call sites across 12
+  production files**; updated **7 of 17 mock factories**. **No legacy
+  wrappers** — the 4 legacy free functions (`getChannelToken`,
+  `getChannelChatId`, `channelStateDir`, `readChannelToken`) were
+  deleted outright in the same commit as the class introduction.
+- **D.2 (5 provider classes + `UnsupportedDirectSendProvider` base) —
+  LANDED** (preceding refactor). Line numbers below use post-D.2 actuals
+  (re-measured 2026-09-04); pre-D.2 numbers shown in parentheses where
+  useful.
+- **D.3 (`ChannelProviderRegistry`) — LANDED** (preceding refactor).
+- **D.4 (`withTestRunMarking` Form B explicit-delegation function) —
+  LANDED** (preceding refactor, landed first to guarantee decorator
+  robustness against class-form providers).
+- **D.5 — REMOVED** (merged into D.1).
+- **D.6 — DEFERRED** (depends on H.1; no logger call sites today).
 
 **Reading note.** Two of the seven candidates below deviate from the brief
 on points where the source disagrees with the brief's sketch. The
@@ -36,6 +56,26 @@ conversions of the existing object literals and helpers.
 
 ## D1. `ChannelEnv`
 
+### Status
+
+**LANDED (this commit).** Class declared at `src/channel-provider.ts:507`.
+The 4 legacy free functions (`getChannelToken`, `getChannelChatId`,
+`channelStateDir`, `readChannelToken`) are **deleted outright** — there
+are no thin-wrapper survivors (per the "Design-intent reference (NOT as
+shipped)" in `05-refactor-roadmap.md` Phase D.1).
+
+**Migration scope:**
+
+- **42 production call sites** migrated across **12 production files**.
+- **7 of 17 test mocks** updated to expose `ChannelEnv` as `vi.fn()`.
+- **0 legacy wrappers** remain (the deletion committed in the same
+  change as the class introduction; no intermediate state shipped).
+
+The signatures below are the **landed** signatures (re-measured
+post-D.2 + post-D.1 on 2026-09-04); pre-D.2 numbers shown in parentheses
+for cross-reference. Pre-D.1 line numbers shown in parentheses where the
+line shifts are non-trivial.
+
 ### Deviation from brief
 
 The brief sketches `getToken(provider)`, `getChatId(provider)`,
@@ -44,10 +84,10 @@ returning `Promise<...>`. The source disagrees on three points:
 
 | Brief sketch | Source reality | Correction |
 |---|---|---|
-| Constructor takes `process.env` (or `EnvSource`) | `getChannelToken:459` and `getChannelChatId:467` take `env: Record<string, string>` as a per-call parameter; the only production caller is `config.ts:325-326` which passes `env` from `readEnvFile()` (`src/env.ts:13`), NOT `process.env` | Constructor takes `env: Record<string, string>` as the **first** parameter; whether the caller sources it from `process.env` or `readEnvFile()` is the caller's decision and today the answer is `readEnvFile()` |
+| Constructor takes `process.env` (or `EnvSource`) | `getChannelToken:459` (now `ChannelEnv.getToken:522`) and `getChannelChatId:467` (now `ChannelEnv.getChatId:526`) take `env: Record<string, string>` as a per-call parameter; the only production caller is `config.ts:324-326` which passes `env` from `readEnvFile()` (`src/env.ts:13`), NOT `process.env` | Constructor takes `env: Record<string, string>` as the **first** parameter; whether the caller sources it from `process.env` or `readEnvFile()` is the caller's decision and today the answer is `readEnvFile()` |
 | `getToken(provider): Promise<string>` | `getChannelToken:459` is **synchronous** and returns `string` (never `null`/`undefined`; missing keys collapse to `''`) | `getToken(provider): string` |
-| `readToken(provider): Promise<string \| null>` | `readChannelToken:533`'s second argument is a `envFilePath: string` (a filesystem path, not an env record); it is **synchronous** and returns `string \| null` | `readToken(provider, envFilePath: string): string \| null` (static) |
-| `getStateDir(provider): string` | `channelStateDir:520` is **synchronous**, returns `string`, takes optional `agentDir?: string`; 14 of 19 production call sites pass the second argument | `getStateDir(provider, agentDir?: string): string` (static) |
+| `readToken(provider): Promise<string \| null>` | `readChannelToken:533` (now `ChannelEnv.readTokenFor:543`) takes a `envFilePath: string` (a filesystem path, not an env record); it is **synchronous** and returns `string \| null` | `readTokenFor(provider, envFilePath: string): string \| null` (static) |
+| `getStateDir(provider): string` | `channelStateDir:520` (now `ChannelEnv.stateDirFor:530`) is **synchronous**, returns `string`, takes optional `agentDir?: string`; 14 of 19 production call sites pass the second argument | `stateDirFor(provider, agentDir?: string): string` (static) |
 
 The source wins. Constructing `ChannelEnv` from `process.env` would
 silently change which values the helpers resolve to in production (since
@@ -56,19 +96,29 @@ Conflating `envFilePath` with an env record would break all 5
 `readChannelToken` call sites. Dropping `agentDir` would break 14
 production call sites.
 
-### Source and migration
+### Source and migration (as shipped)
 
-- **Source file:** `src/channel-provider.ts` (same file, alongside the
-  free functions).
-- **Migration source:** the four top-level helpers at `channel-provider.ts:459-473`
-  and `:520-551`. The dispatch table from `02-type-interface-analysis.md` §8(b)
-  collapses to a single `Record<ChannelProviderType, …>` on the class.
+- **Source file:** `src/channel-provider.ts` (same file; class lives at
+  `:507`).
+- **Migration source (deleted):** the four top-level helpers were at
+  pre-D.2 `:459-473` (token/chatId) and `:520-551` (stateDir/readToken).
+  All four bodies **deleted** in D.1 (this commit); their bodies are
+  preserved in git history at pre-D.1 commits.
+- **Dispatch table:** consolidated to `ChannelEnv.TABLE`
+  (`channel-provider.ts:508-517`), collapsing 4 duplicated 5-branch
+  chains.
 
-### Public surface (signatures only)
+### Public surface (as shipped)
 
 ```ts
 class ChannelEnv {
-  constructor(env: Record<string, string>, home: string = homedir())
+  static readonly TABLE: Record<ChannelProviderType, {
+    readonly tokenKey: string
+    readonly chatIdKey: string
+    readonly subdir: string
+  }>
+
+  constructor(private readonly env: Record<string, string> = {})
 
   // -- instance methods: env-derived (was getChannelToken / getChannelChatId) --
   getToken(provider: ChannelProviderType): string
@@ -77,64 +127,66 @@ class ChannelEnv {
   // -- static methods: env-independent, file/homedir only --
   static stateDirFor(provider: ChannelProviderType, agentDir?: string): string
   static readTokenFor(provider: ChannelProviderType, envFilePath: string): string | null
-
-  // -- the unified dispatch table (single source of truth) --
-  static readonly TABLE: Record<ChannelProviderType, {
-    readonly tokenKey: string
-    readonly chatIdKey: string
-    readonly subdir: string
-  }>
 }
 ```
 
+The constructor **defaults `env = {}`** so callers of the two statics
+(which don't consume `env`) can use `new ChannelEnv()` without
+arguments. The original spec listed `home?: string` as a second
+parameter but the implementation deferred it; `homedir()` is read
+directly inside `stateDirFor` (per-call, since the helper is stateless).
+Detail: `06-risks-and-mitigations.md` DR4.
+
 ### Method-by-method
 
-| Method | Replaces | File:line | Notes |
+| Method | Replaces | File:line (post-D.2 / post-D.1) | Notes |
 |---|---|---|---|
-| `getToken(provider)` | `getChannelToken(provider, env)` | `channel-provider.ts:459-465` | Returns `env[TABLE[provider].tokenKey] ?? ''`. Missing keys collapse to `''` (preserved verbatim). |
-| `getChatId(provider)` | `getChannelChatId(provider, env)` | `channel-provider.ts:467-473` | Returns `env[TABLE[provider].chatIdKey] ?? ''`. Note: telegram key is `ALLOWED_CHAT_ID`, NOT `TELEGRAM_CHAT_ID` — preserved verbatim; not a bug to fix in this refactor. |
-| `stateDirFor(provider, agentDir?)` | `channelStateDir(provider, agentDir?)` | `channel-provider.ts:520-531` | `agentDir?` is optional; 14 of 19 production call sites pass it (verified `02 §5.3`). Static because it does not consume `this.env`. |
-| `readTokenFor(provider, envFilePath)` | `readChannelToken(provider, envFilePath)` | `channel-provider.ts:533-551` | Second arg is a **filesystem path**, never an env record. Three `null` paths (`:534` file missing, `:539` read throws, `:550` regex miss) preserved verbatim. Static because it reads the per-channel `.env` file, NOT `this.env`. |
+| `getToken(provider)` | `getChannelToken(provider, env)` | `channel-provider.ts:522` | Returns `this.env[TABLE[provider].tokenKey] ?? ''`. Missing keys collapse to `''` (preserved verbatim). |
+| `getChatId(provider)` | `getChannelChatId(provider, env)` | `channel-provider.ts:526` | Returns `this.env[TABLE[provider].chatIdKey] ?? ''`. Note: telegram key is `ALLOWED_CHAT_ID`, NOT `TELEGRAM_CHAT_ID` — preserved verbatim; not a bug to fix in this refactor. |
+| `stateDirFor(provider, agentDir?)` | `channelStateDir(provider, agentDir?)` | `channel-provider.ts:530` | `agentDir?` is optional; 14 of 19 production call sites pass it (verified `02 §5.3`). **Static** because it does not consume `this.env`. |
+| `readTokenFor(provider, envFilePath)` | `readChannelToken(provider, envFilePath)` | `channel-provider.ts:543` | Second arg is a **filesystem path**, never an env record. Three `null` paths (file missing, read throws, regex miss) preserved verbatim. **Static** because it reads the per-channel `.env` file, NOT `this.env`. |
 
-### Constructor
+### Constructor (as shipped)
 
-- `(env, home?)`. The `env` is the parsed record from
-  `src/env.ts:13`'s `readEnvFile()` (or from `process.env` at the caller's
-  option — today `config.ts:17` uses `readEnvFile()`).
-- The `home?` parameter injects `homedir()` so tests don't have to stub
-  `node:os`. Defaulted so production callers pass `(env)` only.
+- `(env: Record<string, string> = {})`. The `env` is the parsed record
+  from `src/env.ts:13`'s `readEnvFile()` (or from `process.env` at the
+  caller's option — today `config.ts:324` uses `readEnvFile()`).
+- Default `env = {}` enables `new ChannelEnv()` for statics-only
+  callers (preserves byte-compatibility with the legacy
+  `channelStateDir(provider, agentDir?)` / `readChannelToken(provider,
+  envFilePath)` signatures).
 - **No I/O in the constructor.** The class does not read `process.env`
-  (the `env` parameter is the parsed result, already loaded); the `home?`
-  default reads `homedir()` once at construction, but that is a one-liner
-  that does not touch the filesystem.
+  (the `env` parameter is the parsed result, already loaded). No
+  `home` parameter — `homedir()` is read directly in `stateDirFor`.
 - **No logger.** Per `02 §10` the file has zero logger call sites.
 
-### Static dispatch table
+### Static dispatch table (as shipped)
 
 ```ts
 // Source of truth for the 5-branch dispatch family; replaces 4 duplicated
-// 5-branch chains at channel-provider.ts:460-464, :468-472, :525-529, :543-548.
+// 5-branch chains (pre-D.2: :460-464, :468-472, :525-529, :543-548).
 static readonly TABLE: Record<ChannelProviderType, {
   readonly tokenKey: string
   readonly chatIdKey: string
   readonly subdir: string
 }> = {
-  telegram:   { tokenKey: 'TELEGRAM_BOT_TOKEN',           chatIdKey: 'ALLOWED_CHAT_ID',                 subdir: 'telegram'   },
-  slack:      { tokenKey: 'SLACK_BOT_TOKEN',              chatIdKey: 'SLACK_CHANNEL_ID',                subdir: 'slack'      },
-  discord:    { tokenKey: 'DISCORD_BOT_TOKEN',            chatIdKey: 'DISCORD_CHANNEL_ID',              subdir: 'discord'    },
-  googlechat: { tokenKey: 'GOOGLECHAT_PROJECT_ID',        chatIdKey: 'GOOGLECHAT_SPACE_ID',             subdir: 'googlechat' },
-  teams:      { tokenKey: 'TEAMS_BOT_APP_ID',             chatIdKey: 'TEAMS_ALLOWED_CONVERSATION_ID',  subdir: 'teams'      },
+  telegram:   { tokenKey: 'TELEGRAM_BOT_TOKEN',          chatIdKey: 'ALLOWED_CHAT_ID',                subdir: 'telegram'   },
+  slack:      { tokenKey: 'SLACK_BOT_TOKEN',             chatIdKey: 'SLACK_CHANNEL_ID',               subdir: 'slack'      },
+  discord:    { tokenKey: 'DISCORD_BOT_TOKEN',           chatIdKey: 'DISCORD_CHANNEL_ID',             subdir: 'discord'    },
+  googlechat: { tokenKey: 'GOOGLECHAT_PROJECT_ID',       chatIdKey: 'GOOGLECHAT_SPACE_ID',            subdir: 'googlechat' },
+  teams:      { tokenKey: 'TEAMS_BOT_APP_ID',            chatIdKey: 'TEAMS_ALLOWED_CONVERSATION_ID',  subdir: 'teams'      },
 }
 ```
 
-`getChannelToken`'s key map (`:460-464`) and `readChannelToken`'s key map
-(`:543-548`) are **byte-identical** today (the same 5 keys in the same
-order). `channelStateDir`'s subdir chain (`:525-529`) duplicates the
-providers' `readonly stateDir` fields (`:58/139/248/329/369`).
-Consolidating to a single `static readonly` table removes the duplication
-and gives the compiler a genuine exhaustiveness check when a sixth
-provider is added (today the fallthrough `return env['TELEGRAM_BOT_TOKEN']`
-at `:464` does not enforce exhaustiveness).
+`getChannelToken`'s key map and `readChannelToken`'s key map were
+**byte-identical** pre-D.1 (the same 5 keys in the same order).
+`channelStateDir`'s subdir chain duplicated the providers'
+`readonly stateDir` fields (pre-D.2: `:58/139/248/329/369`; post-D.2:
+`:365/395/410/423/437`). Consolidating to a single `static readonly`
+table removes the duplication and gives the compiler a genuine
+exhaustiveness check when a sixth provider is added (today the
+`switch (provider)` in `stateDirFor:530-540` enforces 5 cases
+exhaustively).
 
 ### Generic params
 
@@ -144,32 +196,33 @@ None. The `env: Record<string, string>` is concrete. See
 ### Dependencies
 
 - `ChannelProviderType` (type-only import, already in file).
-- `node:os` `homedir` (only if `home` is not injected).
+- `node:os` `homedir` (read inside `stateDirFor` per call).
 - `node:fs` `readFileSync`, `existsSync` (used by `readTokenFor` static).
 - `node:path` `join` (used by `stateDirFor` static).
 - **No new imports introduced.**
 
-### Lifecycle
+### Lifecycle (as shipped)
 
-- **Constructed once at app boot** by `src/config.ts` (or wherever the
-  parsed env first touches `channel-provider`). Today this is `config.ts:17`
-  + `:325-326`; the D.5 migration moves construction to `config.ts` boot
-  sequence.
+- **Constructed at app boot** by `src/config.ts` (or wherever the parsed
+  env first touches `channel-provider`). Today this is `config.ts:324`
+  via `readEnvFile()`. Pre-D.1 plan said the D.5 migration would move
+  construction to `config.ts` boot sequence; D.5 was merged into D.1,
+  so construction is already at boot (no separate migration needed).
 - One instance per process (unless a test wants isolation).
 - `static stateDirFor` and `readTokenFor` are pure functions and can be
-  called without an instance.
+  called without an instance (via `new ChannelEnv()` for default env).
 
 ### Free functions that REMAIN after D.1
 
-| Symbol | Location | Why it stays |
-|---|---|---|
-| `getChannelToken(provider, env)` | `channel-provider.ts:459-465` | Thin wrapper: `(p, env) => new ChannelEnv(env).getToken(p)`. Removed in D.5 after `config.ts` migrates. |
-| `getChannelChatId(provider, env)` | `channel-provider.ts:467-473` | Same wrapper shape. Removed in D.5. |
-| `channelStateDir(provider, agentDir?)` | `channel-provider.ts:520-531` | Thin wrapper: `ChannelEnv.stateDirFor(provider, agentDir)`. Removed in D.5. |
-| `readChannelToken(provider, envFilePath)` | `channel-provider.ts:533-551` | Same wrapper shape. Removed in D.5. |
-| `generateSlackAppManifest(appName)` | `channel-provider.ts:418-443` | Pure function; out of `ChannelEnv` scope. |
-| `getSlackAppSetupInstructions()` | `channel-provider.ts:445-455` | Same. |
-| `formatForSlackMrkdwn(text)` | `channel-provider.ts:114-132` | Exported helper; imported by `src/__tests__/format.test.ts:3`. Stays. |
+| Symbol | Status |
+|---|---|
+| `getChannelToken(provider, env)` | **DELETED** (D.1, this commit) |
+| `getChannelChatId(provider, env)` | **DELETED** (D.1, this commit) |
+| `channelStateDir(provider, agentDir?)` | **DELETED** (D.1, this commit) |
+| `readChannelToken(provider, envFilePath)` | **DELETED** (D.1, this commit) |
+| `generateSlackAppManifest(appName)` | Free export — unchanged |
+| `getSlackAppSetupInstructions()` | Free export — unchanged |
+| `formatForSlackMrkdwn(text)` | Free export — unchanged (imported by `src/__tests__/format.test.ts`) |
 
 ---
 

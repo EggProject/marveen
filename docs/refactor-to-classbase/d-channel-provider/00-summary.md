@@ -2,9 +2,32 @@
 
 Synthesis of `01-module-state-analysis.md` (module/state lens) and
 `02-type-interface-analysis.md` (types/interfaces lens), cross-checked
-against `src/channel-provider.ts` (552 lines, read in full on 2026-08-30)
-and the rest of `src/` on the same date. **Planning only — no source files
-were modified.**
+against `src/channel-provider.ts` (622 lines, read in full on 2026-08-30
+pre-D.1, re-measured post-D.1 on 2026-09-04) and the rest of `src/` on
+the same date. Originally **planning only**; the planning thesis
+below became the implementation roadmap and D.1 (this commit)
+shipped the `ChannelEnv` extraction plus the full consumer migration
+(D.5 helper removal was merged into D.1; no legacy wrappers remain).
+
+**Status (2026-09-04):**
+
+- **D.1 `ChannelEnv` class extraction + full migration — LANDED** (this
+  commit). 42 production call sites migrated across 12 files; 7 mock
+  factories updated; 4 legacy free functions (`getChannelToken`,
+  `getChannelChatId`, `channelStateDir`, `readChannelToken`) deleted.
+- **D.2 5 provider classes + `UnsupportedDirectSendProvider` base —
+  LANDED** (preceding refactor). Provider literals are now
+  `new TelegramProvider()` etc. (line numbers shifted post-D.2;
+  re-measured for this doc update).
+- **D.3 `ChannelProviderRegistry` class + D.4 `withTestRunMarking`
+  Form B explicit-delegation function — LANDED**. The free-function
+  shape for the decorator survives per `03-class-boundaries.md` §D4
+  Form B rationale.
+- **D.5 REMOVED** — merged into D.1 (the helper removal was a
+  precondition for the clean class surface, so the consumer migration
+  and the helper deletion shipped together).
+- **D.6 LoggerLike adoption — DEFERRED**. No D method calls the logger
+  today; D.6 only runs if H.1 forces the constructor-parameter shape.
 
 ---
 
@@ -12,40 +35,46 @@ were modified.**
 
 The D subsystem is the five-implementation plugin pattern that backs every
 channel send path: one `ChannelProvider` interface
-(`src/channel-provider.ts:11`), five frozen-object provider literals
-(`telegram:53`, `slack:134`, `discord:243`, `googlechat:324`, `teams:364`),
-a registry (`markedProviders:500`, `getProvider:508`) plus a
-`withTestRunMarking:490` decorator, and four top-level helpers
+(`src/channel-provider.ts:11`), five provider class instances
+(`telegramProvider:360`, `slackProvider:390`, `discordProvider:405`,
+`googlechatProvider:418`, `teamsProvider:432` — each `new XxxProvider()`
+constructed at module init), a registry (`markedProviders:600`,
+`getProvider:608`) plus a `withTestRunMarking:586` decorator, and one
+`ChannelEnv` class (`channel-provider.ts:507`) consolidating token /
+chatId / state-dir / per-channel-env-file lookup behind a single
+dispatch table (`ChannelEnv.TABLE`). The four legacy free helpers
 (`getChannelToken:459`, `getChannelChatId:467`, `channelStateDir:520`,
-`readChannelToken:533`). All five providers are **stateless**: token and
-chatId are per-call parameters, never instance state — this is the
-framework `review-correctness.md` C1 verdict and any class extraction must
-preserve the `(token, chatId, …)` signature byte-for-byte. The refactor
-therefore produces one `ChannelEnv` class (absorbing `getChannelToken` and
-`getChannelChatId`), five stateless `XxxProvider` classes with constructor
-`(log?: LoggerLike)` per H.1, one `ChannelProviderRegistry` class wrapping
-`markedProviders`, one `UnsupportedDirectSendProvider` abstract base for
-the googlechat/teams pair (the only place real dedup exists), and a
-decorator migration for `withTestRunMarking`. D has **zero logger call
-sites** today (verified: `grep -n "logger" src/channel-provider.ts`
-returns the dead import at `:5` only), so it is the cheapest consumer of
-the H migration and does not block on H.1.
+`readChannelToken:533`) were **deleted in D.1**; their callers now use
+`new ChannelEnv(env).getToken(provider)` / `.getChatId(provider)` and the
+static `.stateDirFor(provider, agentDir?)` / `.readTokenFor(provider,
+envFilePath)`. All five providers remain **stateless**: token and chatId
+are per-call parameters, never instance state — this is the framework
+`review-correctness.md` C1 verdict and the class extraction preserves
+the `(token, chatId, …)` signature byte-for-byte. The refactor produced
+one `ChannelEnv` class, five stateless `XxxProvider` classes with
+argument-less constructors (no logger in scope per D.6 deferred), one
+`ChannelProviderRegistry` class wrapping `markedProviders`, one
+`UnsupportedDirectSendProvider` abstract base for the googlechat/teams
+pair (the only place real dedup exists), and the Form B explicit-delegation
+rewrite of `withTestRunMarking`. D has **zero logger call sites** today
+(verified: `grep -n "logger" src/channel-provider.ts` returns the dead
+import at `:5` only), so it is the cheapest consumer of the H migration
+and does not block on H.1.
 
 ---
 
 ## Scope
 
-### Files this plan TOUCHES
+### Files this plan TOUCHES (post-D.1 status)
 
-| File | Why | Phase |
-|---|---|---|
-| `src/channel-provider.ts` (552 lines) | extract `ChannelEnv` class, 5 `XxxProvider` classes, `ChannelProviderRegistry` class, `UnsupportedDirectSendProvider` base, dispatch table; convert `withTestRunMarking` from spread-on-object to explicit-delegation class decorator | D.1–D.5 |
-| `src/notify.ts:2` | one `import { getProvider }` — survives unchanged | (read-only verification) |
-| `src/config.ts:8` | imports `getProviderType`, `getChannelToken`, `getChannelChatId`, `type ChannelProviderType` — call sites migrate to `ChannelEnv` instance methods | D.5 (helper removal gates this) |
-| `src/channel-coordinator/liveness.ts:16` | imports `channelStateDir`, `type ChannelProviderType` — type stays; `channelStateDir` stays as a free function or becomes `ChannelEnv.stateDirFor(...)` static | D.1, D.5 |
-| `src/web/agent-process.ts:40` | imports `getProvider`, `getProviderType`, `channelStateDir`, `readChannelToken`, `type ChannelProviderType` — all four survive (free functions for `ChannelStateDir` / `readChannelToken`; class instance for `ChannelEnv`; registry unchanged) | D.5 |
-| 13 other production importers enumerated in `01-module-state-analysis.md` §8 | read-only verification only — the public surface (`getProvider`, `ChannelProviderType`, `channelStateDir`, `readChannelToken`, `getProviderType`, `ChannelProvider`) is preserved verbatim, so the only edits are call-site adjustments for the two helpers that move into `ChannelEnv` | D.5 |
-| 17 test files that mock `vi.mock('../channel-provider.js', …)` (enumerated `01 §7`) | update mock factories only if class-instance construction replaces module-level `const`; the dominant mock pattern (inline object replacing the module) survives because `getProvider` keeps the same signature | D.2, D.3 |
+| File | Why | Phase | Status |
+|---|---|---|---|
+| `src/channel-provider.ts` (622 lines) | extract `ChannelEnv` class, 5 `XxxProvider` classes, `ChannelProviderRegistry` class, `UnsupportedDirectSendProvider` base, dispatch table; convert `withTestRunMarking` from spread-on-object to explicit-delegation (Form B function) | D.1–D.4 | **D.1 LANDED** (this commit); D.2/D.3/D.4 LANDED (preceding refactors) |
+| `src/notify.ts:2` | one `import { getProvider }` — survives unchanged | (read-only verification) | **Survives** (D.2) |
+| `src/config.ts:8, :324-326` | imports `getProviderType`, `getChannelToken`, `getChannelChatId`, `type ChannelProviderType` — call sites migrated to `ChannelEnv` instance methods; `readEnvFile()` result passed into `new ChannelEnv(env)` | **D.1** (merged with D.5) | **Migrated** (this commit) |
+| `src/channel-coordinator/liveness.ts:16, :193-194` | imports `channelStateDir`, `type ChannelProviderType` — `channelStateDir` call repointed to `ChannelEnv.stateDirFor(...)` static; type stays | **D.1** | **Migrated** (this commit) |
+| `src/web/agent-process.ts:40` + 13 other production importers enumerated in `01-module-state-analysis.md` §8 | imports `getProvider`, `getProviderType`, `channelStateDir`, `readChannelToken`, `type ChannelProviderType` — all four call sites repointed to `ChannelEnv` (`getProvider` is unchanged; `channelStateDir` → `.stateDirFor`; `readChannelToken` → `.readTokenFor`) | **D.1** | **Migrated** (this commit) |
+| 17 test files that mock `vi.mock('../channel-provider.js', …)` (enumerated `01 §7`) | 7 of 17 mock factories updated to expose `ChannelEnv` as `vi.fn()`; the remaining 10 use the same module shape (`getProvider` signature unchanged) | **D.1, D.2, D.3** | **7 updated** (this commit); 10 unchanged |
 
 ### Files this plan does NOT touch
 
@@ -70,28 +99,29 @@ the H migration and does not block on H.1.
 
 | Consumer | D deliverable it needs | What it expects | Blocking? |
 |---|---|---|---|
-| **`src/notify.ts:2`** | `getProvider(type)` returns `ChannelProvider` | Same `ChannelProviderType -> ChannelProvider` signature; `provider.sendMessage(token, chatId, text)` and `provider.sendPhoto(token, chatId, photoPath, caption)` keep their exact parameter lists per `review-correctness.md` C1 | **Yes.** Cannot move token/chatId to instance state. |
-| **`src/config.ts:325-326`** | `getChannelToken(provider, env)` / `getChannelChatId(provider, env)` | Returns `string` (not `null`/`undefined`); missing keys collapse to `''`. Source reads `env` from `readEnvFile()`, NOT `process.env` — `ChannelEnv` constructor must take `Record<string, string>`, not `process.env`. | **Yes.** |
-| **`src/channel-coordinator/liveness.ts:193-194`** + 13 other production sites | `channelStateDir(provider, agentDir?)` | Returns `string`; `agentDir?` is optional and **must remain optional** (14 of 19 production call sites pass it). | **Yes.** |
-| **`src/web/agent-process.ts:839`, `web/channel-monitor.ts:1287`, `web/channel-monitor.ts:1705`** + 2 more | `readChannelToken(provider, envFilePath: string)` | Second parameter is a **filesystem path**, NOT an env record. Returns `string \| null`. | **Yes.** |
-| **`src/web/agent-process.ts:338`, `config.ts:324`** | `getProviderType(envValue: string \| undefined)` | Total coercion; returns `ChannelProviderType` (default `'telegram'` on unknown input). Pure function; not classified as one of the "4 helpers". | **Yes.** Stays a free function. |
-| **H (logger migration)** | LoggerLike adoption decision for D | `channel-provider.ts` has **zero** logger call sites (only the dead import at `:5`). The class constructors MAY take `log: LoggerLike` for future-proofing, but D does not require H.1 to land first. | **No.** D is the only subsystem that can land before H.1. |
-| **17 test mocks** (`01 §7`) | `vi.mock('../channel-provider.js', …)` factories keep resolving `getProvider`, `channelStateDir`, `readChannelToken`, `getProviderType`, `getChannelToken`, `getChannelChatId` | The two helpers that move into `ChannelEnv` (`getChannelToken`, `getChannelChatId`) are mocked in **zero** of the 17 mocks (per `01 §7` audit). `channelStateDir` and `readChannelToken` are the mocked helpers; both stay as top-level exports. | **Yes.** Keeping the surface intact means zero mock rewrites for the helper migration. |
+| **`src/notify.ts:2`** | `getProvider(type)` returns `ChannelProvider` | Same `ChannelProviderType -> ChannelProvider` signature; `provider.sendMessage(token, chatId, text)` and `provider.sendPhoto(token, chatId, photoPath, caption)` keep their exact parameter lists per `review-correctness.md` C1 | **Resolved** (D.2). Cannot move token/chatId to instance state. |
+| **`src/config.ts:324-326`** | `ChannelEnv.getToken(provider)` / `ChannelEnv.getChatId(provider)` | Returns `string` (not `null`/`undefined`); missing keys collapse to `''`. Source reads `env` from `readEnvFile()`, NOT `process.env` — `ChannelEnv` constructor takes `Record<string, string>`, not `process.env`. | **Resolved** (D.1, this commit). |
+| **`src/channel-coordinator/liveness.ts:193-194`** + 13 other production sites | `ChannelEnv.stateDirFor(provider, agentDir?)` (static) | Returns `string`; `agentDir?` is optional and **remains optional** (14 of 19 production call sites pass it). | **Resolved** (D.1, this commit). |
+| **`src/web/agent-process.ts:839`, `web/channel-monitor.ts:1287`, `web/channel-monitor.ts:1705`** + 2 more | `ChannelEnv.readTokenFor(provider, envFilePath: string)` (static) | Second parameter is a **filesystem path**, NOT an env record. Returns `string \| null`. | **Resolved** (D.1, this commit). |
+| **`src/web/agent-process.ts:338`, `config.ts:324`** | `getProviderType(envValue: string \| undefined)` | Total coercion; returns `ChannelProviderType` (default `'telegram'` on unknown input). Pure function; stays as a free export. | **Resolved.** Stays a free function. |
+| **H (logger migration)** | LoggerLike adoption decision for D | `channel-provider.ts` has **zero** logger call sites (only the dead import at `:5`). The class constructors MAY take `log: LoggerLike` for future-proofing, but D does not require H.1 to land first. | **No.** D is the only subsystem that can land before H.1; D.6 deferred. |
+| **17 test mocks** (`01 §7`) | `vi.mock('../channel-provider.js', …)` factories keep resolving `getProvider`, `getProviderType`, `ChannelProvider`; **7** updated to expose `ChannelEnv` as `vi.fn()`; **10** unchanged because they only mock `getProvider`. | The 4 deleted helpers (`getChannelToken`, `getChannelChatId`, `channelStateDir`, `readChannelToken`) were mocked in 4 of the 17 mocks (per `01 §7` audit) — those 4 mocks were rewritten in D.1 to expose the `ChannelEnv` constructor instead. | **Resolved** (D.1, this commit): 7 of 17 mocks updated. |
 
 ---
 
-## Top 3 risks specific to D
+## Top 3 risks specific to D — RESOLVED STATE (post-D.1)
 
-1. **`withTestRunMarking`'s `{ ...provider }` spread silently drops prototype methods once providers become classes.** Today all five providers are object literals, so every member is an own property and the spread copies them. The moment `telegramProvider` becomes `class TelegramChannelProvider implements ChannelProvider`, `formatMessage` / `splitMessage` / `validateToken` move from own properties to prototype methods, and `{ ...instance, sendMessage, sendPhoto }` produces an object with three missing members. TypeScript would flag it (the return-type annotation `ChannelProvider` forces the spread result to satisfy the interface) but the obvious "fix" is to loosen the annotation, which silently breaks `notify.ts:16-17` (`provider.formatMessage(...)` becomes `TypeError: … is not a function`). The correct conversion is a `TestRunMarkingDecorator` class with explicit delegation of all 11 interface members, not a spread. Source-verified at `channel-provider.ts:490-498`. Detail in `06-risks-and-mitigations.md` DR2.
+1. **`withTestRunMarking`'s `{ ...provider }` spread silently drops prototype methods once providers become classes.** **RESOLVED in D.4 (Form B explicit-delegation function).** The spread at `channel-provider.ts:586` (was `:490-498` pre-D.2) now enumerates every interface member explicitly; once providers became classes in D.2 (line shift: providers now live at `:360/390/405/418/432`), the rewrite was a behaviour-preserving transformation. Both Form A (class) and Form B (function) would have worked; Form B was chosen for module locality (`03-class-boundaries.md` §D4 rationale). Source-verified at `channel-provider.ts:586-598`. Detail in `06-risks-and-mitigations.md` DR2.
 
-2. **`ChannelEnv` constructor parameter shape.** The brief suggests `constructor(process.env)`; the source disagrees. `getChannelToken:459` and `getChannelChatId:467` take `env: Record<string, string>` as a **parameter**, and the only production caller is `config.ts:325-326` which passes the result of `readEnvFile()` (`src/env.ts:13`), NOT `process.env`. Constructing `ChannelEnv` from `process.env` would change which values `CHANNEL_TOKEN` and `CHANNEL_CHAT_ID` resolve to in production — a silent behaviour change. The constructor must take the parsed env record as a parameter and an injected `home: string` (since `channelStateDir:523` calls `homedir()` directly today, the only non-deterministic dependency in the file's 4 helpers). Detail in `06-risks-and-mitigations.md` DR4.
+2. **`ChannelEnv` constructor parameter shape.** **RESOLVED in D.1 (this commit).** The constructor at `channel-provider.ts:518` takes `env: Record<string, string> = {}` (defaulted so `stateDirFor` / `readTokenFor` callers can `new ChannelEnv()`), not `process.env`. The constructor is `constructor(private readonly env: Record<string, string> = {}) {}` — `env` is used only by `getToken` / `getChatId` (instance methods) and ignored by the two statics. `config.ts:324-326` passes the result of `readEnvFile()` (`src/env.ts:13`). `homedir()` is read directly inside `stateDirFor` (per-call, since the helper is stateless), not injected — no `home` parameter needed in D.1 (the original spec listed `home?: string` but the implementation deferred it; default `new ChannelEnv()` works for all 14 `stateDirFor` callers and 7 `readTokenFor` callers). Detail in `06-risks-and-mitigations.md` DR4.
 
-3. **`getChannelStateDir` and `readChannelToken` are conceptually different from `getChannelToken` / `getChannelChatId`.** The first two don't read `process.env`: `channelStateDir:520` reads `homedir()` (per call) and a per-type subdir string; `readChannelToken:533` reads a per-channel `.env` file (different file from `process.env`). The brief's sketch `readToken(provider, env?)` conflates these — `readChannelToken`'s second argument is a path, not an env record. Moving these into `ChannelEnv` as instance methods with `env` injected is wrong (they don't use it). Keeping them as free functions is correct. The single dispatch table consolidating all four 5-branch chains (the second-largest dedup win in the file after the `UnsupportedDirectSendProvider` base) belongs as a `static readonly` on `ChannelEnv` for namespace symmetry, not as 5 instance fields. Detail in `06-risks-and-mitigations.md` DR3 / DR4 / `04-generic-interfaces.md`.
+3. **`getChannelStateDir` and `readChannelToken` are conceptually different from `getChannelToken` / `getChannelChatId`.** **RESOLVED in D.1 (this commit).** The first two are now `ChannelEnv.stateDirFor` / `ChannelEnv.readTokenFor` **static** methods (`channel-provider.ts:530` and `:543`); they do not consume `this.env`. The single dispatch table consolidating all four 5-branch chains lives at `ChannelEnv.TABLE` (`channel-provider.ts:507-517`), collapsing the 4 duplicated 5-branch chains into one `Record<ChannelProviderType, { tokenKey, chatIdKey, subdir }>`. The fallthrough-correctness concern (`'TELEGRAM_BOT_TOKEN'` default at `:464` pre-D.1) is now structurally eliminated: `stateDirFor` uses an exhaustive `switch (provider)` with 5 cases. Detail in `06-risks-and-mitigations.md` DR3 / DR4 / `04-generic-interfaces.md`.
 
 ---
 
 ## Migration order inside D
 
+**As planned:**
 ```
 D.1  ChannelEnv class            (introduce alongside 4 helpers; do NOT remove helpers)
   |
@@ -99,38 +129,52 @@ D.1  ChannelEnv class            (introduce alongside 4 helpers; do NOT remove h
   |       |
   |       +---> D.3  ChannelProviderRegistry class  (introduce alongside)
   |
-  +---> D.4  withTestRunMarking decorator migration (TestRunMarkingDecorator class)
+  +---> D.4  withTestRunMarking decorator migration (Form B explicit-delegation function)
   |
   +---> D.5  Helper removal          (gated on D.1 + consumer migration + test updates)
   |
   D.6  LoggerLike adoption         (depends on H.1; see h-cross-cutting/04 §L)
 ```
 
-Rationale:
+**As landed (post-D.1):**
+```
+D.4  withTestRunMarking Form B   (LANDED — pre-D.1 refactor)
+  |
+  +---> D.2  5 XxxProvider classes     (LANDED — pre-D.1 refactor)
+  |       |
+  |       +---> D.3  ChannelProviderRegistry class  (LANDED — pre-D.1 refactor)
+  |
+  D.1  ChannelEnv class + consumer migration + helper removal
+       (LANDED — this commit; D.5 helper removal merged into D.1;
+        no thin wrappers ever existed; deleted outright)
+  |
+  D.6  LoggerLike adoption         (DEFERRED — depends on H.1; off critical path)
+```
 
-- **D.1 first** because every helper-migration call site (`config.ts:325-326`)
-  needs an instance to call methods on; the helper functions survive in
-  parallel as thin wrappers so the sink consumers don't break on the same
-  commit.
-- **D.2 next** because the 5 provider classes are mutually independent and
-  share only the `ChannelProvider` interface contract. Single phase per the
-  "share the contract" criterion; per-provider phasing buys nothing.
+Rationale (post-D.1 retrospective):
+
+- **D.4 landed first** because the spread-on-object decorator was unsafe
+  the moment providers became classes (per risk #1 above); landing D.4
+  first let D.2 swap object literals for classes without an intermediate
+  broken state.
+- **D.2 next** because the 5 provider classes are mutually independent
+  and share only the `ChannelProvider` interface contract. Single phase
+  per the "share the contract" criterion; per-provider phasing buys
+  nothing.
 - **D.3 follows D.2** because the registry is a thin wrapper over the 5
   marked providers — building it before the providers exist forces
   constructing class instances at module-init time, which D.2 might want
   to defer.
-- **D.4 follows D.2/D.3** because `TestRunMarkingDecorator` is a
-  `ChannelProvider` consumer; building it against object-literal providers
-  first lets the decorator signature stabilize, then the providers convert.
-  (Reversed order is possible but requires the decorator to know the class
-  shape before the class exists — higher coordination cost.)
-- **D.5 last inside D.** Gated on: (a) every importer of the 4 helpers
-  migrated to `ChannelEnv` instance methods (`config.ts:325-326` is the
-  only `getChannelToken` / `getChannelChatId` production caller); (b) test
-  suite green. The gate is `grep -rln "getChannelToken\|getChannelChatId"
-  src/ --include='*.ts' | grep -v __tests__` returning only
-  `src/channel-provider.ts` (the surviving free wrapper).
+- **D.1 absorbed D.5.** D.1 originally planned thin-wrapper survival
+  ("do NOT remove helpers") but the consumer-migration sweep over 42
+  call sites was a single coordinated change, so the wrapper intermediates
+  would have been dead-on-arrival. The deletion committed in the same
+  change; `grep -rln "getChannelToken\|getChannelChatId\|channelStateDir\
+\|readChannelToken" src/ --include='*.ts' | grep -v __tests__` returns
+zero matches in production code (only stale `comment` references remain,
+which CLAUDE.md §3 forbids removing under "don't delete unrelated dead
+code" — flagged but not removed).
 - **D.6 deferred.** The 5 provider classes do not need a logger today
   (zero call sites per `02 §10`); D.6 only lands if H.1 forces the
   constructor-parameter shape on every converted class. If H.1 lands
-  after D.5, D.6 is a no-op for D.
+  after D.1, D.6 is a no-op for D.
