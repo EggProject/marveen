@@ -31,7 +31,7 @@ test-results/
 .DS_Store
 
 # Generated from template (personal config)
-CLAUDE.md
+#CLAUDE.md
 
 # Agent persona / soul (per-operator personality; never ship upstream)
 SOUL.md
