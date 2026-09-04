@@ -220,7 +220,6 @@ vi.mock('../process-lock.js', async () => {
         }
       }
     },
-    acquirePidfileLock: mockAcquirePidfileLock,
     writeBufferFully: actual.writeBufferFully,
     DeferToPeerError: actual.DeferToPeerError,
   }
@@ -269,7 +268,7 @@ function restoreProcessSpy(): void {
 
 async function drainMicrotasks(): Promise<void> {
   // Allow several microtask rounds so the awaited chains inside main()
-  // (acquireLock -> acquirePortLock -> acquirePidfileLock) and the
+  // (acquireLock -> acquirePortLock -> PidfileLockAcquirer.acquire) and the
   // fire-and-forget backfillEmbeddings().then() all settle. Microtask-only
   // so this stays safe under both real and fake timers (a real setTimeout
   // would hang under vi.useFakeTimers()).
@@ -1332,27 +1331,29 @@ describe('backfillEmbeddings fire-and-forget', () => {
 })
 
 // ----------------------------------------------------------------------------
-// The existing tests mock acquirePidfileLock so buildPidfileLockContext's
+// The existing tests mock the PidfileLockAcquirer so buildPidfileLockContext's
 // helpers (tryCreateExclusive, unlinkIfMatches, probeAlive, sendTerm,
 // isLegitimatePredecessor) are never invoked. The describe blocks below
-// delegate mockAcquirePidfileLock to the real implementation -- this exercises
-// every helper in src/index.ts lines 213-285, plus isLegitimateDashboardPid
-// (lines 198-208) and buildProcessLockContext.sleep / log (lines 168-175).
+// delegate mockAcquirePidfileLock to the real PidfileLockAcquirer.acquire --
+// this exercises every helper in src/index.ts lines 213-285, plus
+// isLegitimateDashboardPid (lines 198-208) and buildProcessLockContext.sleep
+// / log (lines 168-175).
 // ----------------------------------------------------------------------------
 
 // Module-level helper that delegates mockAcquirePidfileLock to the real
-// implementation. Defined at module scope so every describe block can use it.
-// vi.importActual bypasses the vi.mock('../process-lock.js') factory; without
-// it, actual.acquirePidfileLock would be the same mockAcquirePidfileLock we're
-// delegating to and the delegate would recurse into itself.
+// PidfileLockAcquirer.acquire implementation. Defined at module scope so every
+// describe block can use it. vi.importActual bypasses the
+// vi.mock('../process-lock.js') factory; without it, the destructured
+// PidfileLockAcquirer would be the same mock class the factory exported and
+// the delegate would recurse into itself.
 async function withRealAcquirePidfileLock(
   setup: () => Promise<void> | void,
   optsOverride?: { onLiveLegitimate?: 'defer' | 'sigterm'; maxAttempts?: number; graceMs?: number },
 ): Promise<void> {
-  const actual = await vi.importActual<typeof import('../process-lock.js')>('../process-lock.js')
+  const { PidfileLockAcquirer } = await vi.importActual<typeof import('../process-lock.js')>('../process-lock.js')
   mockAcquirePidfileLock.mockImplementation((path: string, selfPid: number, ctx: unknown, opts: unknown) => {
     const mergedOpts = { ...(opts as Record<string, unknown> ?? {}), ...(optsOverride ?? {}) }
-    return actual.acquirePidfileLock(path, selfPid, ctx as never, mergedOpts as never)
+    return new PidfileLockAcquirer(ctx as never).acquire(path, selfPid, mergedOpts as never)
   })
   // Default fs mock state: openSync returns a valid fd, writeSync returns
   // the byte count, so tryCreateExclusive succeeds in the happy path.
@@ -1405,8 +1406,8 @@ async function withRealAcquirePortLock(
   await setup()
 }
 
-describe('buildPidfileLockContext helpers via real acquirePidfileLock', () => {
-  // The real acquirePidfileLock is invoked via withRealAcquirePidfileLock
+describe('buildPidfileLockContext helpers via real PidfileLockAcquirer.acquire', () => {
+  // The real PidfileLockAcquirer.acquire is invoked via withRealAcquirePidfileLock
   // above. Tests in this block exercise every helper in buildPidfileLockContext
   // (tryCreateExclusive, unlinkIfMatches, probeAlive, sendTerm,
   // isLegitimatePredecessor) and most of buildProcessLockContext.
@@ -1430,7 +1431,7 @@ describe('buildPidfileLockContext helpers via real acquirePidfileLock', () => {
       await loadIndexFresh()
       expect(mockOpenSync).toHaveBeenCalledWith('/opt/marveen/store/marveen.pid', 'wx')
       expect(mockCloseSync).toHaveBeenCalledWith(7)
-      // The real acquirePidfileLock logs "Pidfile lock acquired" via ctx.log.info
+      // The real PidfileLockAcquirer.acquire logs "Pidfile lock acquired" via ctx.log.info
       expect(mockLogger.info).toHaveBeenCalledWith(
         expect.objectContaining({ path: '/opt/marveen/store/marveen.pid' }),
         expect.stringContaining('Pidfile lock acquired'),
@@ -1450,7 +1451,7 @@ describe('buildPidfileLockContext helpers via real acquirePidfileLock', () => {
       })
       mockReadFileSync.mockImplementation(() => 'garbage')
       await loadIndexFresh()
-      // The real acquirePidfileLock loops until 'created'. The first attempt
+      // The real PidfileLockAcquirer.acquire loops until 'created'. The first attempt
       // tries openSync (EEXIST), reads recorded (null), unlinks, retries. The
       // second attempt succeeds.
       expect(opens).toBeGreaterThanOrEqual(2)
@@ -1509,7 +1510,7 @@ describe('buildPidfileLockContext helpers via real acquirePidfileLock', () => {
     })
   })
 
-  it('probeAlive non-ESRCH error: rethrows so acquirePidfileLock treats it as alive', async () => {
+  it('probeAlive non-ESRCH error: rethrows so PidfileLockAcquirer.acquire treats it as alive', async () => {
     await withRealAcquirePidfileLock(async () => {
       const origKill = process.kill
       ;(process as unknown as { kill: (pid: number, sig?: number | string) => boolean }).kill = ((pid: number, sig?: number | string) => {
@@ -1593,7 +1594,7 @@ describe('buildPidfileLockContext helpers via real acquirePidfileLock', () => {
         })
         await loadIndexFresh()
         await drainMicrotasks()
-        // The real acquirePidfileLock throws DeferToPeerError(1234); main().catch logs it
+        // The real PidfileLockAcquirer.acquire throws DeferToPeerError(1234); main().catch logs it
         expect(mockLogger.info).toHaveBeenCalledWith(
           expect.objectContaining({ peerPid: 1234 }),
           expect.stringContaining('Peer dashboard already claimed the pidfile'),
@@ -1605,14 +1606,14 @@ describe('buildPidfileLockContext helpers via real acquirePidfileLock', () => {
   })
 
   it('sendTerm path: SIGTERM to predecessor + sleep + unlinkIfMatches', async () => {
-    // For this path we need a live, legitimate predecessor AND acquirePidfileLock
+    // For this path we need a live, legitimate predecessor AND PidfileLockAcquirer.acquire
     // to NOT throw DeferToPeerError. We achieve that by making the pidfile
     // appear to exist with a different peer PID that matches the binary
     // pattern, and overriding onLiveLegitimate to 'sigterm' (the default
     // in production is 'defer', which short-circuits to DeferToPeerError).
     //
     // The first readFileSync call comes from checkFreshStartupRace, which
-    // runs BEFORE acquirePidfileLock. We return process.pid for that read
+    // runs BEFORE PidfileLockAcquirer.acquire. We return process.pid for that read
     // so checkFreshStartupRace exits early (recorded === selfPid). All
     // subsequent reads return '1234' (the predecessor PID).
     await withRealAcquirePidfileLock(async () => {
@@ -1650,7 +1651,7 @@ describe('buildPidfileLockContext helpers via real acquirePidfileLock', () => {
         }) as typeof setTimeout
         try {
           await loadIndexFresh()
-          // The real acquirePidfileLock now uses 'sigterm' option, so it
+          // The real PidfileLockAcquirer.acquire now uses 'sigterm' option, so it
           // sends SIGTERM to 1234 and the loop retries up to maxAttempts=5.
           expect(sigterms).toBeGreaterThan(0)
           expect(mockLogger.warn).toHaveBeenCalledWith(
@@ -1691,7 +1692,7 @@ describe('buildPidfileLockContext helpers via real acquirePidfileLock', () => {
           return ''
         })
         await loadIndexFresh()
-        // The real acquirePidfileLock's sendTerm helper catches ESRCH and
+        // The real PidfileLockAcquirer.acquire's sendTerm helper catches ESRCH and
         // returns; the loop continues. We assert the warn was logged
         // indicating SIGTERM was attempted.
         expect(mockLogger.warn).toHaveBeenCalledWith(
@@ -1727,7 +1728,7 @@ describe('buildPidfileLockContext helpers via real acquirePidfileLock', () => {
           return '1234'
         })
         await loadIndexFresh()
-        // The real acquirePidfileLock tries unlinkIfMatches(path, recorded).
+        // The real PidfileLockAcquirer.acquire tries unlinkIfMatches(path, recorded).
         // First call: content=9999, expected=1234 -> current !== expected -> no unlink.
         // Loop continues and retries.
         expect(opens).toBeGreaterThanOrEqual(2)
@@ -1781,7 +1782,7 @@ describe('buildPidfileLockContext helpers via real acquirePidfileLock', () => {
           return 7
         })
         // First read (checkFreshStartupRace) returns process.pid so that
-        // check exits early. The second read is acquirePidfileLock's
+        // check exits early. The second read is PidfileLockAcquirer.acquire's
         // readRecordedPid. The third read is unlinkIfMatches's re-read --
         // we make it throw EACCES to exercise the rethrow branch.
         let readCalls = 0
@@ -1792,7 +1793,7 @@ describe('buildPidfileLockContext helpers via real acquirePidfileLock', () => {
           return '1234'
         })
         await loadIndexFresh()
-        // The unlinkIfMatches EACCES throws out of acquirePidfileLock, into
+        // The unlinkIfMatches EACCES throws out of PidfileLockAcquirer.acquire, into
         // acquireLock, into main().catch. We don't assert on a specific
         // behaviour -- just that the test ran without hanging.
         expect(opens).toBe(1)
@@ -1808,7 +1809,7 @@ describe('buildPidfileLockContext helpers via real acquirePidfileLock', () => {
         throw Object.assign(new Error('EACCES'), { code: 'EACCES' })
       })
       await loadIndexFresh()
-      // The EACCES propagates out of acquirePidfileLock -> acquireLock ->
+      // The EACCES propagates out of PidfileLockAcquirer.acquire -> acquireLock ->
       // main().catch. Test just verifies no hang.
       expect(mockOpenSync).toHaveBeenCalled()
     })
@@ -1988,7 +1989,7 @@ describe('buildPidfileLockContext helpers via real acquirePidfileLock', () => {
     })
   })
 
-  it('buildProcessLockContext.sleep is exercised when acquirePidfileLock loops', async () => {
+  it('buildProcessLockContext.sleep is exercised when PidfileLockAcquirer.acquire loops', async () => {
     await withRealAcquirePidfileLock(async () => {
       const origKill = process.kill
       ;(process as unknown as { kill: (pid: number, sig?: number | string) => boolean }).kill = ((pid: number, sig?: number | string) => {
@@ -2026,7 +2027,7 @@ describe('buildPidfileLockContext helpers via real acquirePidfileLock', () => {
     }, { onLiveLegitimate: 'sigterm', graceMs: 1 })
   })
 
-  it('buildProcessLockContext.log methods are exercised via acquirePidfileLock logging', async () => {
+  it('buildProcessLockContext.log methods are exercised via PidfileLockAcquirer.acquire logging', async () => {
     await withRealAcquirePidfileLock(async () => {
       const origKill = process.kill
       ;(process as unknown as { kill: (pid: number, sig?: number | string) => boolean }).kill = ((pid: number, sig?: number | string) => {
@@ -2443,7 +2444,7 @@ describe('getProcessCommand and getProcessUid edge branches', () => {
 })
 
 describe('signal rethrows non-ESRCH errors', () => {
-  it('propagates EPERM up to acquirePidfileLock caller', async () => {
+  it('propagates EPERM up to PidfileLockAcquirer.acquire caller', async () => {
     const origKill = process.kill
     ;(process as unknown as { kill: (pid: number, sig?: number | string) => boolean }).kill = ((pid: number, sig?: number | string) => {
       if (sig === 0) throw Object.assign(new Error('EPERM'), { code: 'EPERM' })
@@ -2451,7 +2452,7 @@ describe('signal rethrows non-ESRCH errors', () => {
     }) as unknown as typeof process.kill
     try {
       await loadIndexFresh()
-      // acquirePidfileLock catches and treats as alive (covers the throw
+      // PidfileLockAcquirer.acquire catches and treats as alive (covers the throw
       // branch on line 165)
       expect(mockAcquirePidfileLock).toHaveBeenCalled()
     } finally {
@@ -2462,7 +2463,7 @@ describe('signal rethrows non-ESRCH errors', () => {
 
 describe('isLegitimateDashboardPid: command does not match node|tsx', () => {
   it('returns false when getProcessCommand returns a non-node binary name (index.ts:205 branch[0])', async () => {
-    // Use the real acquirePidfileLock so isLegitimateDashboardPid actually
+    // Use the real PidfileLockAcquirer.acquire so isLegitimateDashboardPid actually
     // runs via ctx.isLegitimatePredecessor. checkFreshStartupRace will
     // short-circuit first (returns process.pid on the first read).
     // A process.getuid=1000 + getProcessUid=1000 mockra kellett, hogy a
@@ -2509,7 +2510,7 @@ describe('isLegitimateDashboardPid: command does not match node|tsx', () => {
 
 describe('tryCreateExclusive rethrows non-EEXIST errors', () => {
   it('propagates EACCES up out of acquireLock', async () => {
-    // Use the real acquirePidfileLock (via the module-level helper) so
+    // Use the real PidfileLockAcquirer.acquire (via the module-level helper) so
     // tryCreateExclusive actually runs. The default mockAcquirePidfileLock
     // just resolves to undefined, which would swallow this branch.
     await withRealAcquirePidfileLock(async () => {
@@ -2518,7 +2519,7 @@ describe('tryCreateExclusive rethrows non-EEXIST errors', () => {
       })
       await loadIndexFresh()
       await drainMicrotasks()
-      // The error propagates out of acquirePidfileLock -> acquireLock -> main().catch
+      // The error propagates out of PidfileLockAcquirer.acquire -> acquireLock -> main().catch
       expect(mockLogger.error).toHaveBeenCalledWith(
         expect.objectContaining({ err: expect.any(Error) }),
         expect.stringContaining('Vegzetes hiba'),
@@ -2528,7 +2529,7 @@ describe('tryCreateExclusive rethrows non-EEXIST errors', () => {
 })
 
 describe('unlinkIfMatches: ENOENT swallow and non-ENOENT rethrow', () => {
-  // Use the real acquirePidfileLock via withRealAcquirePidfileLock so that
+  // Use the real PidfileLockAcquirer.acquire via withRealAcquirePidfileLock so that
   // the unlinkIfMatches helper runs with the real ctx from index.ts.
   it('ENOENT from unlinkIfMatches re-read is swallowed', async () => {
     await withRealAcquirePidfileLock(async () => {
@@ -2579,7 +2580,7 @@ describe('probeAlive rethrows non-ESRCH errors (covers line 262)', () => {
       })
       await loadIndexFresh()
       // The probeAlive throws -> alive=true -> isLegitimatePredecessor -> not legitimate -> unlink
-      // Just verify acquirePidfileLock was called (covers the throw rethrow path)
+      // Just verify PidfileLockAcquirer.acquire was called (covers the throw rethrow path)
       expect(mockAcquirePidfileLock).toHaveBeenCalled()
     } finally {
       ;(process as unknown as { kill: typeof process.kill }).kill = origKill
@@ -2613,7 +2614,7 @@ describe('sendTerm rethrows non-ESRCH errors (covers line 271)', () => {
           return ''
         })
         await loadIndexFresh()
-        // sendTerm throws -> caught by acquirePidfileLock's inner try/catch ->
+        // sendTerm throws -> caught by PidfileLockAcquirer.acquire's inner try/catch ->
         // ctx.log.warn with "SIGTERM to predecessor failed". Either way,
         // the throw branch on line 271 was executed.
         expect(mockLogger.warn).toHaveBeenCalledWith(
@@ -2723,7 +2724,7 @@ describe('scheduleDailyDigest: target <= now branch', () => {
 })
 
 describe('buildProcessLockContext.log methods exercise', () => {
-  it('all three log methods are reachable through acquirePidfileLock', async () => {
+  it('all three log methods are reachable through PidfileLockAcquirer.acquire', async () => {
     await withRealAcquirePidfileLock(async () => {
       const origKill = process.kill
       ;(process as unknown as { kill: (pid: number, sig?: number | string) => boolean }).kill = ((pid: number, sig?: number | string) => {
@@ -2749,7 +2750,7 @@ describe('buildProcessLockContext.log methods exercise', () => {
         await loadIndexFresh()
         // buildProcessLockContext.log.warn was exercised via SIGTERM path.
         // buildProcessLockContext.log.info / .error are exercised when
-        // acquirePidfileLock hits its warn / DeferToPeerError / error logs.
+        // PidfileLockAcquirer.acquire hits its warn / DeferToPeerError / error logs.
         expect(mockLogger.warn).toHaveBeenCalled()
       } finally {
         ;(process as unknown as { kill: typeof process.kill }).kill = origKill

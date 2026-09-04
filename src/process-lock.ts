@@ -269,8 +269,8 @@ export interface AcquirePidfileLockOptions {
   onLiveLegitimate?: 'sigterm' | 'defer'
 }
 
-/** Thrown by acquirePidfileLock when a legitimate peer already holds the
- * pidfile and the caller asked for `onLiveLegitimate: 'defer'`. */
+/** Thrown by PidfileLockAcquirer.acquire when a legitimate peer already holds
+ * the pidfile and the caller asked for `onLiveLegitimate: 'defer'`. */
 export class DeferToPeerError extends Error {
   readonly peerPid: number
   constructor(peerPid: number) {
@@ -386,8 +386,4 @@ export class PidfileLockAcquirer {
     if (recorded !== selfPid) return
     this.ctx.unlinkIfMatches(path, recorded)
   }
-}
-
-export function acquirePidfileLock(path: string, selfPid: number, ctx: PidfileLockContext, opts?: AcquirePidfileLockOptions): Promise<void> {
-  return new PidfileLockAcquirer(ctx).acquire(path, selfPid, opts)
 }

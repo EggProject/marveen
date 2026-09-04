@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   PortLockAcquirer,
-  acquirePidfileLock,
+  PidfileLockAcquirer,
   writeBufferFully,
   DeferToPeerError,
   type ProcessLockContext,
@@ -452,7 +452,7 @@ describe('acquirePortLock', () => {
 })
 
 // ---------------------------------------------------------------------------
-// acquirePidfileLock
+// PidfileLockAcquirer
 
 interface PidfileState {
   path: string
@@ -526,11 +526,11 @@ function baseState(): PidfileState {
   }
 }
 
-describe('acquirePidfileLock', () => {
+describe('PidfileLockAcquirer.acquire', () => {
   it('creates the pidfile atomically when the path is free', async () => {
     const state = baseState()
     const ctx = makePidfileCtx(state)
-    await acquirePidfileLock(state.path, 100, ctx)
+    await new PidfileLockAcquirer(ctx).acquire(state.path, 100)
     expect(state.files.get(state.path)).toBe(100)
     expect(state.termed).toEqual([])
     expect(state.unlinks).toEqual([])
@@ -540,7 +540,7 @@ describe('acquirePidfileLock', () => {
     const state = baseState()
     state.files.set(state.path, 999) // stale, 999 is not in livePids
     const ctx = makePidfileCtx(state)
-    await acquirePidfileLock(state.path, 100, ctx, { graceMs: 10 })
+    await new PidfileLockAcquirer(ctx).acquire(state.path, 100, { graceMs: 10 })
     expect(state.unlinks).toEqual([state.path])
     expect(state.files.get(state.path)).toBe(100)
     expect(state.termed).toEqual([])
@@ -552,7 +552,7 @@ describe('acquirePidfileLock', () => {
     state.livePids.add(999)
     state.legitimatePids.add(999)
     const ctx = makePidfileCtx(state)
-    await acquirePidfileLock(state.path, 100, ctx, { graceMs: 20 })
+    await new PidfileLockAcquirer(ctx).acquire(state.path, 100, { graceMs: 20 })
     expect(state.termed).toEqual([999])
     expect(state.sleptFor).toEqual([20])
     expect(state.unlinks).toEqual([state.path])
@@ -567,7 +567,7 @@ describe('acquirePidfileLock', () => {
     state.livePids.add(999)
     // legitimatePids EMPTY -- not a dashboard process
     const ctx = makePidfileCtx(state)
-    await acquirePidfileLock(state.path, 100, ctx, { graceMs: 10 })
+    await new PidfileLockAcquirer(ctx).acquire(state.path, 100, { graceMs: 10 })
     expect(state.termed).toEqual([])
     expect(state.files.get(state.path)).toBe(100)
     expect(state.logs.some(l => /not a dashboard process/.test(l.msg))).toBe(true)
@@ -577,7 +577,7 @@ describe('acquirePidfileLock', () => {
     const state = baseState()
     state.files.set(state.path, 100) // our own PID somehow already in there
     const ctx = makePidfileCtx(state)
-    await acquirePidfileLock(state.path, 100, ctx, { graceMs: 10 })
+    await new PidfileLockAcquirer(ctx).acquire(state.path, 100, { graceMs: 10 })
     expect(state.unlinks).toEqual([state.path])
     expect(state.files.get(state.path)).toBe(100)
   })
@@ -603,7 +603,7 @@ describe('acquirePidfileLock', () => {
       }
     }
     await expect(
-      acquirePidfileLock(state.path, 100, ctx, { graceMs: 5, maxAttempts: 3 }),
+      new PidfileLockAcquirer(ctx).acquire(state.path, 100, { graceMs: 5, maxAttempts: 3 }),
     ).rejects.toThrow(/Failed to acquire pidfile lock/)
     expect(state.logs).toContainEqual(expect.objectContaining({
       level: 'error',
@@ -618,7 +618,7 @@ describe('acquirePidfileLock', () => {
     state.legitimatePids.add(999)
     state.probeAliveOverride = () => { throw new Error('EPERM') }
     const ctx = makePidfileCtx(state)
-    await acquirePidfileLock(state.path, 100, ctx, { graceMs: 10 })
+    await new PidfileLockAcquirer(ctx).acquire(state.path, 100, { graceMs: 10 })
     // Because probeAlive threw, we assumed alive, SIGTERMed, waited, then
     // unlinked.
     expect(state.termed).toEqual([999])
@@ -632,7 +632,7 @@ describe('acquirePidfileLock', () => {
     state.legitimatePids.add(999)
     const ctx = makePidfileCtx(state)
     await expect(
-      acquirePidfileLock(state.path, 100, ctx, { graceMs: 10, onLiveLegitimate: 'defer' }),
+      new PidfileLockAcquirer(ctx).acquire(state.path, 100, { graceMs: 10, onLiveLegitimate: 'defer' }),
     ).rejects.toBeInstanceOf(DeferToPeerError)
     // Defer MUST NOT SIGTERM the winner
     expect(state.termed).toEqual([])
@@ -642,7 +642,7 @@ describe('acquirePidfileLock', () => {
     const state = baseState()
     state.files.set(state.path, 999) // recorded pid, but not alive
     const ctx = makePidfileCtx(state)
-    await acquirePidfileLock(state.path, 100, ctx, { graceMs: 10, onLiveLegitimate: 'defer' })
+    await new PidfileLockAcquirer(ctx).acquire(state.path, 100, { graceMs: 10, onLiveLegitimate: 'defer' })
     expect(state.files.get(state.path)).toBe(100)
   })
 
@@ -670,10 +670,10 @@ describe('acquirePidfileLock', () => {
       state.legitimatePids.add(777)
     }
     // Cap at 1 attempt so the test isolates the first-iteration
-    // unlinkIfMatches behavior. With maxAttempts=1, acquirePidfileLock
+    // unlinkIfMatches behavior. With maxAttempts=1, PidfileLockAcquirer.acquire
     // throws "Failed to acquire" after a single SIGTERM + sleep pass.
     await expect(
-      acquirePidfileLock(state.path, 100, ctx, { graceMs: 5, maxAttempts: 1 }),
+      new PidfileLockAcquirer(ctx).acquire(state.path, 100, { graceMs: 5, maxAttempts: 1 }),
     ).rejects.toThrow(/Failed to acquire pidfile lock/)
     // The third peer's file MUST still be intact.
     expect(state.files.get(state.path)).toBe(777)
@@ -684,7 +684,7 @@ describe('acquirePidfileLock', () => {
     state.files.set(state.path, 999)
     state.livePids.add(999) // alive but NOT legitimate
     const ctx = makePidfileCtx(state)
-    await acquirePidfileLock(state.path, 100, ctx, { graceMs: 10, onLiveLegitimate: 'defer' })
+    await new PidfileLockAcquirer(ctx).acquire(state.path, 100, { graceMs: 10, onLiveLegitimate: 'defer' })
     expect(state.files.get(state.path)).toBe(100)
     expect(state.termed).toEqual([])
   })
@@ -709,7 +709,7 @@ describe('acquirePidfileLock', () => {
       if (calls === 1) return null // first read: corrupt
       return baseReadRecordedPid(path) // subsequent reads: real mock
     }
-    await acquirePidfileLock(state.path, 100, ctx, { graceMs: 10 })
+    await new PidfileLockAcquirer(ctx).acquire(state.path, 100, { graceMs: 10 })
     // The lock is eventually acquired on the retry.
     expect(state.files.get(state.path)).toBe(100)
   })
@@ -725,7 +725,7 @@ describe('acquirePidfileLock', () => {
     state.legitimatePids.add(999)
     const ctx = makePidfileCtx(state)
     ctx.sendTerm = (pid) => { state.termed.push(pid); throw Object.assign(new Error('EPERM'), { code: 'EPERM' }) }
-    await acquirePidfileLock(state.path, 100, ctx, { graceMs: 10 })
+    await new PidfileLockAcquirer(ctx).acquire(state.path, 100, { graceMs: 10 })
     expect(state.logs.some(l => l.level === 'warn' && /SIGTERM to predecessor failed/.test(l.msg))).toBe(true)
     // Eventually the predecessor is gone (the mock delete livePids before
     // throwing), so the lock is acquired on the next iteration.
