@@ -332,6 +332,23 @@ export function buildReport(
     if (parsed["isMeta"] === true) {
       continue;
     }
+    // A prompt typed mid-turn lands in the JSONL as a `user` entry whose
+    // `operation` is `enqueue` and whose body is `parsed.content` (a plain
+    // string), not the usual `parsed.message.content` array. The old code
+    // skipped these because `message` was absent, so the reader printed
+    // `USER PROMPTS (3)` and silently omitted the session's sharpest
+    // correction. Route the enqueued content through `collectUserText` so
+    // the existing `isMachineText` filter drops the six task notifications
+    // and keeps the one real message. Precedens: ca9d811f retrospective
+    // proposal 4.
+    const operation = parsed["operation"];
+    if (isString(operation) && operation === "enqueue") {
+      const enqueued = parsed["content"];
+      if (isString(enqueued)) {
+        collectUserText(enqueued, collector);
+      }
+      continue;
+    }
     const message = parsed["message"];
     if (!isRecord(message)) {
       continue;
