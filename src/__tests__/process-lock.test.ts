@@ -1,9 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  findOwnNodeHolders,
-  findOwnBinaryMatches,
-  terminateProcesses,
-  acquirePortLock,
+  PortLockAcquirer,
   acquirePidfileLock,
   writeBufferFully,
   DeferToPeerError,
@@ -86,7 +83,7 @@ function makeCtx(options: MockOptions): {
 describe('findOwnNodeHolders', () => {
   it('returns an empty list when no one holds the port', () => {
     const { ctx } = makeCtx({ portHolders: { 3420: [] } })
-    expect(findOwnNodeHolders(3420, ctx)).toEqual([])
+    expect(new PortLockAcquirer(ctx).findOwnNodeHolders(3420)).toEqual([])
   })
 
   it('excludes the current PID even if it appears in the holder list', () => {
@@ -95,7 +92,7 @@ describe('findOwnNodeHolders', () => {
       { pid: 200, uid: 501, cmd: 'node', alive: true },
     ]
     const { ctx } = makeCtx({ currentPid: 100, procs, portHolders: { 3420: [100, 200] } })
-    expect(findOwnNodeHolders(3420, ctx)).toEqual([200])
+    expect(new PortLockAcquirer(ctx).findOwnNodeHolders(3420)).toEqual([200])
   })
 
   it('excludes processes owned by a different UID', () => {
@@ -104,7 +101,7 @@ describe('findOwnNodeHolders', () => {
       { pid: 300, uid: 501, cmd: 'node', alive: true },
     ]
     const { ctx, logs } = makeCtx({ uid: 501, procs, portHolders: { 3420: [200, 300] } })
-    expect(findOwnNodeHolders(3420, ctx)).toEqual([300])
+    expect(new PortLockAcquirer(ctx).findOwnNodeHolders(3420)).toEqual([300])
     expect(logs.some(l => l.level === 'warn' && /different UID/.test(l.msg))).toBe(true)
   })
 
@@ -115,7 +112,7 @@ describe('findOwnNodeHolders', () => {
       { pid: 400, uid: 501, cmd: 'tsx', alive: true },
     ]
     const { ctx, logs } = makeCtx({ procs, portHolders: { 3420: [200, 300, 400] } })
-    expect(findOwnNodeHolders(3420, ctx)).toEqual([300, 400])
+    expect(new PortLockAcquirer(ctx).findOwnNodeHolders(3420)).toEqual([300, 400])
     expect(logs.some(l => l.level === 'warn' && /not a node\/tsx/.test(l.msg))).toBe(true)
   })
 
@@ -124,12 +121,12 @@ describe('findOwnNodeHolders', () => {
       { pid: 300, uid: 501, cmd: 'node', alive: true },
     ]
     const { ctx } = makeCtx({ procs, portHolders: { 3420: [200, 300] } })
-    expect(findOwnNodeHolders(3420, ctx)).toEqual([300])
+    expect(new PortLockAcquirer(ctx).findOwnNodeHolders(3420)).toEqual([300])
   })
 
   it('skips non-positive or non-finite PIDs defensively', () => {
     const { ctx } = makeCtx({ portHolders: { 3420: [0, -1, NaN as unknown as number] } })
-    expect(findOwnNodeHolders(3420, ctx)).toEqual([])
+    expect(new PortLockAcquirer(ctx).findOwnNodeHolders(3420)).toEqual([])
   })
 
   it('skips UID check when the platform has no getuid (uid=null)', () => {
@@ -137,7 +134,7 @@ describe('findOwnNodeHolders', () => {
       { pid: 300, uid: 0, cmd: 'node', alive: true },
     ]
     const { ctx } = makeCtx({ uid: null, procs, portHolders: { 3420: [300] } })
-    expect(findOwnNodeHolders(3420, ctx)).toEqual([300])
+    expect(new PortLockAcquirer(ctx).findOwnNodeHolders(3420)).toEqual([300])
   })
 
   it('deduplicates PIDs that appear twice in the holder list', () => {
@@ -145,7 +142,7 @@ describe('findOwnNodeHolders', () => {
       { pid: 300, uid: 501, cmd: 'node', alive: true },
     ]
     const { ctx } = makeCtx({ procs, portHolders: { 3420: [300, 300] } })
-    expect(findOwnNodeHolders(3420, ctx)).toEqual([300])
+    expect(new PortLockAcquirer(ctx).findOwnNodeHolders(3420)).toEqual([300])
   })
 
   it('skips a PID whose owning UID lookup returns null (process gone between ps and stat)', () => {
@@ -159,7 +156,7 @@ describe('findOwnNodeHolders', () => {
       portHolders: { 3420: [300] },
     })
     ctx.getProcessUid = () => null // process vanished between ps and stat
-    expect(findOwnNodeHolders(3420, ctx)).toEqual([])
+    expect(new PortLockAcquirer(ctx).findOwnNodeHolders(3420)).toEqual([])
   })
 })
 
@@ -170,7 +167,7 @@ describe('findOwnBinaryMatches', () => {
       { pid: 300, uid: 501, cmd: 'node', args: 'node other.js', alive: true },
     ]
     const { ctx } = makeCtx({ procs })
-    expect(findOwnBinaryMatches(/dist\/index\.js/, ctx)).toEqual([200])
+    expect(new PortLockAcquirer(ctx).findOwnBinaryMatches(/dist\/index\.js/)).toEqual([200])
   })
 
   it('excludes the current PID even if its argv matches', () => {
@@ -179,7 +176,7 @@ describe('findOwnBinaryMatches', () => {
       { pid: 200, uid: 501, cmd: 'node', args: 'node dist/index.js', alive: true },
     ]
     const { ctx } = makeCtx({ currentPid: 100, procs })
-    expect(findOwnBinaryMatches(/dist\/index\.js/, ctx)).toEqual([200])
+    expect(new PortLockAcquirer(ctx).findOwnBinaryMatches(/dist\/index\.js/)).toEqual([200])
   })
 
   it('excludes foreign-UID processes even with matching argv', () => {
@@ -187,14 +184,14 @@ describe('findOwnBinaryMatches', () => {
       { pid: 200, uid: 999, cmd: 'node', args: 'node dist/index.js', alive: true },
     ]
     const { ctx } = makeCtx({ uid: 501, procs })
-    expect(findOwnBinaryMatches(/dist\/index\.js/, ctx)).toEqual([])
+    expect(new PortLockAcquirer(ctx).findOwnBinaryMatches(/dist\/index\.js/)).toEqual([])
   })
 })
 
 describe('terminateProcesses', () => {
   it('is a no-op on empty input', async () => {
     const { ctx, sleptFor } = makeCtx({})
-    await terminateProcesses([], ctx, { graceMs: 1500 })
+    await new PortLockAcquirer(ctx).terminateProcesses([], { graceMs: 1500 })
     expect(sleptFor).toEqual([])
   })
 
@@ -203,7 +200,7 @@ describe('terminateProcesses', () => {
       { pid: 200, uid: 501, cmd: 'node', alive: true },
     ]
     const { ctx, table, sleptFor, signalCalls } = makeCtx({ procs })
-    await terminateProcesses([200], ctx, { graceMs: 1500 })
+    await new PortLockAcquirer(ctx).terminateProcesses([200], { graceMs: 1500 })
     expect(sleptFor).toEqual([1500])
     expect(table.get(200)!.alive).toBe(false)
     expect(signalCalls.filter(c => c.sig === 'SIGKILL')).toEqual([])
@@ -221,7 +218,7 @@ describe('terminateProcesses', () => {
       return 'gone'
     }
     const { ctx, signalCalls } = makeCtx({ procs, signalOverride })
-    await terminateProcesses([200], ctx, { graceMs: 10 })
+    await new PortLockAcquirer(ctx).terminateProcesses([200], { graceMs: 10 })
     expect(signalCalls.map(c => c.sig)).toEqual(['SIGTERM', '0', 'SIGKILL'])
   })
 
@@ -241,7 +238,7 @@ describe('terminateProcesses', () => {
       return 'gone'
     }
     const { ctx, signalCalls } = makeCtx({ procs, signalOverride })
-    await terminateProcesses([200], ctx, { graceMs: 10 })
+    await new PortLockAcquirer(ctx).terminateProcesses([200], { graceMs: 10 })
     expect(signalCalls.map(c => c.sig)).toEqual(['SIGTERM', '0', 'SIGKILL'])
   })
 
@@ -252,7 +249,7 @@ describe('terminateProcesses', () => {
       return 'sent'
     }
     const { ctx, signalCalls } = makeCtx({ signalOverride })
-    await terminateProcesses([200], ctx, { graceMs: 10 })
+    await new PortLockAcquirer(ctx).terminateProcesses([200], { graceMs: 10 })
     expect(signalCalls.filter(c => c.sig === 'SIGKILL')).toEqual([])
   })
 
@@ -263,7 +260,7 @@ describe('terminateProcesses', () => {
       { pid: 400, uid: 501, cmd: 'node', alive: true },
     ]
     const { ctx, table, signalCalls } = makeCtx({ procs })
-    await terminateProcesses([200, 300, 400], ctx, { graceMs: 10 })
+    await new PortLockAcquirer(ctx).terminateProcesses([200, 300, 400], { graceMs: 10 })
     expect(signalCalls.slice(0, 3)).toEqual([
       { pid: 200, sig: 'SIGTERM' },
       { pid: 300, sig: 'SIGTERM' },
@@ -286,7 +283,7 @@ describe('terminateProcesses', () => {
       return 'gone'
     }
     const { ctx, signalCalls } = makeCtx({ procs, signalOverride })
-    await terminateProcesses([200], ctx, { graceMs: 10 })
+    await new PortLockAcquirer(ctx).terminateProcesses([200], { graceMs: 10 })
     expect(signalCalls.find(c => c.sig === 'SIGKILL')).toBeTruthy()
   })
 
@@ -307,7 +304,7 @@ describe('terminateProcesses', () => {
       return 'gone'
     }
     const { ctx, logs } = makeCtx({ procs, signalOverride })
-    await expect(terminateProcesses([200], ctx, { graceMs: 10 })).resolves.toBeUndefined()
+    await expect(new PortLockAcquirer(ctx).terminateProcesses([200], { graceMs: 10 })).resolves.toBeUndefined()
     expect(logs.some(l => l.level === 'error' && /SIGKILL failed/.test(l.msg))).toBe(true)
   })
 
@@ -322,7 +319,7 @@ describe('terminateProcesses', () => {
       return 'sent'
     }
     const { ctx, logs } = makeCtx({ signalOverride })
-    await terminateProcesses([200], ctx, { graceMs: 10 })
+    await new PortLockAcquirer(ctx).terminateProcesses([200], { graceMs: 10 })
     expect(logs.some(l => l.level === 'info' && /SIGTERM sent to previous instance/.test(l.msg))).toBe(false)
     // A grace utan a signal(0) is 'gone' volt, tehat nem eskalalunk -- de a
     // SIGTERM-et sem logoltuk, mert a signal() mondta hogy 'gone'.
@@ -333,7 +330,7 @@ describe('terminateProcesses', () => {
 describe('acquirePortLock', () => {
   it('returns immediately if no one holds the port and no binary pattern is given', async () => {
     const { ctx, sleptFor } = makeCtx({ portHolders: { 3420: [] } })
-    await acquirePortLock(3420, ctx)
+    await new PortLockAcquirer(ctx).acquire(3420)
     expect(sleptFor).toEqual([])
   })
 
@@ -342,7 +339,7 @@ describe('acquirePortLock', () => {
       { pid: 100, uid: 501, cmd: 'node', alive: true },
     ]
     const { ctx, sleptFor } = makeCtx({ currentPid: 100, procs, portHolders: { 3420: [100] } })
-    await acquirePortLock(3420, ctx)
+    await new PortLockAcquirer(ctx).acquire(3420)
     expect(sleptFor).toEqual([])
   })
 
@@ -351,7 +348,7 @@ describe('acquirePortLock', () => {
       { pid: 200, uid: 501, cmd: 'node', alive: true },
     ]
     const { ctx, table } = makeCtx({ procs, portHolders: { 3420: [200] } })
-    await acquirePortLock(3420, ctx, { graceMs: 10 })
+    await new PortLockAcquirer(ctx).acquire(3420, { graceMs: 10 })
     expect(table.get(200)!.alive).toBe(false)
   })
 
@@ -360,7 +357,7 @@ describe('acquirePortLock', () => {
       { pid: 200, uid: 501, cmd: 'node', args: 'node dist/index.js', alive: true },
     ]
     const { ctx, table } = makeCtx({ procs, portHolders: { 3420: [] } })
-    await acquirePortLock(3420, ctx, { graceMs: 10, binaryPattern: /dist\/index\.js/ })
+    await new PortLockAcquirer(ctx).acquire(3420, { graceMs: 10, binaryPattern: /dist\/index\.js/ })
     expect(table.get(200)!.alive).toBe(false)
   })
 
@@ -369,7 +366,7 @@ describe('acquirePortLock', () => {
       { pid: 200, uid: 501, cmd: 'node', args: 'node dist/index.js', alive: true },
     ]
     const { ctx, signalCalls } = makeCtx({ procs, portHolders: { 3420: [200] } })
-    await acquirePortLock(3420, ctx, { graceMs: 10, binaryPattern: /dist\/index\.js/ })
+    await new PortLockAcquirer(ctx).acquire(3420, { graceMs: 10, binaryPattern: /dist\/index\.js/ })
     // SIGTERM should only be sent once per victim, not twice
     expect(signalCalls.filter(c => c.sig === 'SIGTERM' && c.pid === 200)).toHaveLength(1)
   })
@@ -380,7 +377,7 @@ describe('acquirePortLock', () => {
       { pid: 300, uid: 501, cmd: 'node', alive: true },
     ]
     const { ctx, table } = makeCtx({ procs, portHolders: { 3420: [200, 300] } })
-    await acquirePortLock(3420, ctx, { graceMs: 10 })
+    await new PortLockAcquirer(ctx).acquire(3420, { graceMs: 10 })
     expect(table.get(200)!.alive).toBe(false)
     expect(table.get(300)!.alive).toBe(false)
   })
@@ -390,7 +387,7 @@ describe('acquirePortLock', () => {
       { pid: 200, uid: 999, cmd: 'node', alive: true },
     ]
     const { ctx, table, sleptFor } = makeCtx({ uid: 501, procs, portHolders: { 3420: [200] } })
-    await acquirePortLock(3420, ctx, { graceMs: 10, postKillDrainMs: 0 })
+    await new PortLockAcquirer(ctx).acquire(3420, { graceMs: 10, postKillDrainMs: 0 })
     expect(table.get(200)!.alive).toBe(true)
     expect(sleptFor).toEqual([])
   })
@@ -412,7 +409,7 @@ describe('acquirePortLock', () => {
         return holders.filter(pid => table.get(pid)?.alive)
       },
     }
-    await acquirePortLock(3420, liveOnly, { graceMs: 10, postKillDrainMs: 200, postKillPollMs: 10 })
+    await new PortLockAcquirer(liveOnly).acquire(3420, { graceMs: 10, postKillDrainMs: 200, postKillPollMs: 10 })
     expect(table.get(200)!.alive).toBe(false)
   })
 
@@ -428,7 +425,7 @@ describe('acquirePortLock', () => {
       ...ctx,
       listPortHolders() { return [200] },
     }
-    await acquirePortLock(3420, stickyPort, { graceMs: 10, postKillDrainMs: 30, postKillPollMs: 10 })
+    await new PortLockAcquirer(stickyPort).acquire(3420, { graceMs: 10, postKillDrainMs: 30, postKillPollMs: 10 })
     expect(logs.some(l => l.level === 'warn' && /still held after drain/.test(l.msg))).toBe(true)
   })
 
@@ -449,7 +446,7 @@ describe('acquirePortLock', () => {
       ...ctx,
       listPortHolders() { return [200] }, // would otherwise trip the drain warn
     }
-    await acquirePortLock(3420, stickyPort, { graceMs: 10, postKillDrainMs: 30, postKillPollMs: 0 })
+    await new PortLockAcquirer(stickyPort).acquire(3420, { graceMs: 10, postKillDrainMs: 30, postKillPollMs: 0 })
     expect(logs.some(l => l.level === 'warn' && /still held after drain/.test(l.msg))).toBe(false)
   })
 })

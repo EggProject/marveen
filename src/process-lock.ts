@@ -198,26 +198,6 @@ export class PortLockAcquirer {
   }
 }
 
-// Free-function wrappers: same observable behavior as before, now backed by
-// a freshly-allocated PortLockAcquirer. Existing callers (index.ts, the rest
-// of the codebase) keep using these and the public surface stays identical.
-
-export function findOwnNodeHolders(port: number, ctx: ProcessLockContext): number[] {
-  return new PortLockAcquirer(ctx).findOwnNodeHolders(port)
-}
-
-export function findOwnBinaryMatches(pattern: RegExp, ctx: ProcessLockContext): number[] {
-  return new PortLockAcquirer(ctx).findOwnBinaryMatches(pattern)
-}
-
-export function terminateProcesses(pids: number[], ctx: ProcessLockContext, opts: { graceMs: number }): Promise<void> {
-  return new PortLockAcquirer(ctx).terminateProcesses(pids, opts)
-}
-
-export function acquirePortLock(port: number, ctx: ProcessLockContext, opts?: AcquirePortLockOptions): Promise<void> {
-  return new PortLockAcquirer(ctx).acquire(port, opts)
-}
-
 /**
  * Drive a synchronous writer until the entire buffer is written. `writer`
  * is expected to behave like Node's writeSync (returns bytes written; may

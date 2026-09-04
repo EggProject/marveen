@@ -1397,10 +1397,10 @@ async function withRealAcquirePortLock(
   setup: () => Promise<void> | void,
   optsOverride?: { graceMs?: number; postKillDrainMs?: number; postKillPollMs?: number; binaryPattern?: RegExp },
 ): Promise<void> {
-  const actual = await vi.importActual<typeof import('../process-lock.js')>('../process-lock.js')
+  const { PortLockAcquirer } = await vi.importActual<typeof import('../process-lock.js')>('../process-lock.js')
   mockAcquirePortLock.mockImplementation((port: number, ctx: unknown, opts: unknown) => {
     const mergedOpts = { ...(opts as Record<string, unknown> ?? {}), ...(optsOverride ?? {}) }
-    return actual.acquirePortLock(port, ctx as never, mergedOpts as never)
+    return new PortLockAcquirer(ctx as never).acquire(port, mergedOpts as never)
   })
   await setup()
 }
