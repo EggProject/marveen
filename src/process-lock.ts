@@ -16,7 +16,7 @@
 // SIGKILL escalation ordering is impossible to unit-test against the real
 // process table.
 
-type LogFn = (obj: Record<string, unknown>, msg?: string) => void
+import type { LoggerLike } from './logger.js'
 
 /** Outcome of signal(). 'sent' = delivered to a live process. 'gone' = the
  * process is already dead (ESRCH). Any other error must throw so callers
@@ -46,7 +46,7 @@ export interface ProcessLockContext {
    */
   signal(pid: number, sig: 'SIGTERM' | 'SIGKILL' | 0): SignalOutcome
   sleep(ms: number): Promise<void>
-  log: { info: LogFn; warn: LogFn; error: LogFn }
+  log: LoggerLike
 }
 
 export interface AcquirePortLockOptions {
@@ -251,7 +251,7 @@ export interface PidfileLockContext {
    * process. */
   isLegitimatePredecessor(pid: number): boolean
   sleep(ms: number): Promise<void>
-  log: { info: LogFn; warn: LogFn; error: LogFn }
+  log: LoggerLike
 }
 
 export interface AcquirePidfileLockOptions {

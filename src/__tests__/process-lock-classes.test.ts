@@ -17,7 +17,7 @@ import {
 
 const noop = (): undefined => undefined
 const noopAsync = async (): Promise<void> => { await Promise.resolve() }
-const noopLog = { info: noop, warn: noop, error: noop }
+const noopLog = { info: noop, warn: noop, error: noop, debug: noop }
 
 function buildPortCtx(opts: {
   currentPid?: number

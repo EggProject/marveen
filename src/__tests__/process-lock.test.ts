@@ -7,6 +7,7 @@ import {
   type ProcessLockContext,
   type PidfileLockContext,
 } from '../process-lock.js'
+import type { LogFn } from '../logger.js'
 
 // Build a mock context backed by a mutable process table. Tests drive the
 // table directly so we can simulate PIDs dying at specific points, foreign
@@ -27,15 +28,17 @@ function makeCtx(options: MockOptions): {
   ctx: ProcessLockContext
   table: Map<number, MockProc>
   sleptFor: number[]
-  logs: Array<{ level: string; msg: string; obj: Record<string, unknown> }>
+  logs: Array<{ level: string; msg: string; obj: object }>
   signalCalls: Array<{ pid: number; sig: string }>
 } {
   const table = new Map<number, MockProc>()
   for (const p of options.procs ?? []) table.set(p.pid, { ...p })
   const sleptFor: number[] = []
-  const logs: Array<{ level: string; msg: string; obj: Record<string, unknown> }> = []
+  const logs: Array<{ level: string; msg: string; obj: object }> = []
   const signalCalls: Array<{ pid: number; sig: string }> = []
-  const log = (level: string) => (obj: Record<string, unknown>, msg?: string) => {
+  const log = (level: string): LogFn => (obj: string | object, msg?: string) => {
+    msg = typeof obj === 'string' ? obj : msg ?? ''
+    obj = typeof obj === 'string' ? {} : obj
     logs.push({ level, msg: msg ?? '', obj })
   }
   const currentPid = options.currentPid ?? 100
@@ -75,7 +78,7 @@ function makeCtx(options: MockOptions): {
     sleep: async (ms: number) => {
       sleptFor.push(ms)
     },
-    log: { info: log('info'), warn: log('warn'), error: log('error') },
+    log: { info: log('info'), warn: log('warn'), error: log('error'), debug: log('debug') },
   }
   return { ctx, table, sleptFor, logs, signalCalls }
 }
@@ -462,12 +465,14 @@ interface PidfileState {
   termed: number[]
   unlinks: string[]
   sleptFor: number[]
-  logs: Array<{ level: string; msg: string; obj: Record<string, unknown> }>
+  logs: Array<{ level: string; msg: string; obj: object }>
   probeAliveOverride?: (pid: number) => boolean
 }
 
 function makePidfileCtx(state: PidfileState): PidfileLockContext {
-  const log = (level: string) => (obj: Record<string, unknown>, msg?: string) => {
+  const log = (level: string): LogFn => (obj: string | object, msg?: string) => {
+    msg = typeof obj === 'string' ? obj : msg ?? ''
+    obj = typeof obj === 'string' ? {} : obj
     state.logs.push({ level, msg: msg ?? '', obj })
   }
   return {
@@ -509,7 +514,7 @@ function makePidfileCtx(state: PidfileState): PidfileLockContext {
       return state.legitimatePids.has(pid)
     },
     sleep: async (ms) => { state.sleptFor.push(ms) },
-    log: { info: log('info'), warn: log('warn'), error: log('error') },
+    log: { info: log('info'), warn: log('warn'), error: log('error'), debug: log('debug') },
   }
 }
 

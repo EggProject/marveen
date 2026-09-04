@@ -168,11 +168,7 @@ function buildProcessLockContext(): ProcessLockContext {
     sleep(ms: number): Promise<void> {
       return new Promise((resolve) => setTimeout(resolve, ms))
     },
-    log: {
-      info: (obj, msg) => logger.info(obj, msg),
-      warn: (obj, msg) => logger.warn(obj, msg),
-      error: (obj, msg) => logger.error(obj, msg),
-    },
+    log: logger,
   }
 }
 
@@ -277,20 +273,7 @@ function buildPidfileLockContext(procCtx: ProcessLockContext): PidfileLockContex
     sleep(ms) {
       return new Promise((resolve) => setTimeout(resolve, ms))
     },
-    log: {
-      // PidfileLockContext.log: forwarders for info/warn/error. The
-      // PidfileLockAcquirer class invokes all three during acquire (info on
-      // success + peer-defer, warn on stale/sigterm/conflict, error on
-      // giving up after maxAttempts) -- and warns via the new release()
-      // method when unlinkIfMatches fails. The forwarders must reach the
-      // shared logger so a stuck pidfile shows up in the same log stream
-      // as the rest of the dashboard. The wiring itself is pinned by
-      // index.test.ts:1414-1426 ("forwards pidfile context errors to
-      // logger.error").
-      info: (obj, msg) => logger.info(obj, msg),
-      warn: (obj, msg) => logger.warn(obj, msg),
-      error: (obj, msg) => logger.error(obj, msg),
-    },
+    log: logger,
   }
 }
 
