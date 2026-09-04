@@ -34,7 +34,7 @@ import {
   type ScheduledTask,
 } from './scheduled-tasks-io.js'
 import { listAgentNames, readFileOr, readAgentRemoteHost, agentDir } from './agent-config.js'
-import { channelStateDir } from '../channel-provider.js'
+import { ChannelEnv } from '../channel-provider.js'
 import {
   agentSessionName,
   isAgentRunning,
@@ -406,8 +406,8 @@ export function chatIdFromAccessConfig(raw: unknown): string | null {
  *  bug the old sentinel existed to avoid. */
 export function resolveBoundChatId(agentName: string): string | null {
   const dir = agentName === MAIN_AGENT_ID
-    ? channelStateDir('telegram')
-    : channelStateDir('telegram', agentDir(agentName))
+    ? new ChannelEnv().stateDirFor('telegram')
+    : new ChannelEnv().stateDirFor('telegram', agentDir(agentName))
   try {
     const raw = JSON.parse(readFileSync(join(dir, 'access.json'), 'utf-8')) as Record<string, unknown>
     const chosen = chatIdFromAccessConfig(raw)

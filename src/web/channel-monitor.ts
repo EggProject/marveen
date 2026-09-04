@@ -41,7 +41,7 @@ import {
 } from '../pane-state.js'
 import { MAIN_CHANNELS_SESSION, MAIN_CHANNELS_PLIST } from './main-agent.js'
 import { notifyChannel } from '../notify.js'
-import { getProvider, channelStateDir, readChannelToken, type ChannelProviderType } from '../channel-provider.js'
+import { getProvider, ChannelEnv, type ChannelProviderType } from '../channel-provider.js'
 import { attemptChannelMcpReconnect } from './channel-mcp-reconnect.js'
 import { readLastIngestionTimestamp, TRANSCRIPT_DIR } from './inbound-probe.js'
 import { decideDownAgentAction, AGENT_MAX_RESTART_ATTEMPTS, parseEtimeToSeconds } from './agent-restart-policy.js'
@@ -1283,8 +1283,8 @@ async function handleMarveenDown(): Promise<void> {
     // cause instead of leaving the operator to infer it from a pane scan.
     /* istanbul ignore next: every shipped install uses Telegram as the main provider, so the non-Telegram arm is not reachable in the production gate */
     if (providerLabel === 'telegram') {
-      const tokenPath = join(channelStateDir(providerLabel, PROJECT_ROOT), '.env')
-      const tok = readChannelToken(providerLabel, tokenPath)
+      const tokenPath = join(new ChannelEnv().stateDirFor(providerLabel, PROJECT_ROOT), '.env')
+      const tok = new ChannelEnv().readTokenFor(providerLabel, tokenPath)
       if (tok) {
         probeTelegramConflict(tok)
           .then(r => {
@@ -1701,8 +1701,8 @@ export function startChannelPluginMonitor(): NodeJS.Timeout | null {
           continue
         }
         const agentProvider = resolveAgentProvider(t.agentName!)
-        const stateDir = channelStateDir(agentProvider, agentDir(t.agentName!))
-        const agentToken = readChannelToken(agentProvider, join(stateDir, '.env'))
+        const stateDir = new ChannelEnv().stateDirFor(agentProvider, agentDir(t.agentName!))
+        const agentToken = new ChannelEnv().readTokenFor(agentProvider, join(stateDir, '.env'))
         if (!agentToken) {
           // A token-less agent (never paired a channel) trips the down-probe on
           // every sweep; the condition is permanent until an operator binds a

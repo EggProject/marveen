@@ -56,7 +56,7 @@ describe('schedule-runner source contract (sentinel removed)', () => {
   })
 
   it('resolution reads the same access.json the plugin enforces', () => {
-    expect(src).toContain("channelStateDir('telegram'")
+    expect(src).toContain("stateDirFor('telegram'")
     expect(src).toContain('chatIdFromAccessConfig')
   })
 })

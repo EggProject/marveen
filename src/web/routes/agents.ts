@@ -77,8 +77,7 @@ import { hardRestartMarveenChannels } from '../channel-monitor.js'
 import { isMainChannelsAgent, MAIN_CHANNELS_SESSION } from '../main-agent.js'
 import {
   getProvider,
-  channelStateDir,
-  readChannelToken,
+  ChannelEnv,
   generateSlackAppManifest,
   getSlackAppSetupInstructions,
   type ChannelProviderType,
@@ -333,8 +332,8 @@ export function resetAgentEnabledPlugins(name: string): void {
 
 function resolveAccessPath(name: string, provider: ChannelProviderType): string {
   const dir = name === MAIN_AGENT_ID
-    ? channelStateDir(provider)
-    : channelStateDir(provider, agentDir(name))
+    ? new ChannelEnv().stateDirFor(provider)
+    : new ChannelEnv().stateDirFor(provider, agentDir(name))
   return join(dir, 'access.json')
 }
 
@@ -357,19 +356,19 @@ function findBotTokenDuplicate(
 
   // Main agent's channel .env
   if (excludeAgent !== MAIN_AGENT_ID) {
-    const mainEnv = join(channelStateDir(provider), '.env')
+    const mainEnv = join(new ChannelEnv().stateDirFor(provider), '.env')
     candidates.push({ name: MAIN_AGENT_ID, envPath: mainEnv })
   }
 
   // All sub-agents
   for (const agentName of listAgentNames()) {
     if (agentName === excludeAgent) continue
-    const envPath = join(channelStateDir(provider, agentDir(agentName)), '.env')
+    const envPath = join(new ChannelEnv().stateDirFor(provider, agentDir(agentName)), '.env')
     candidates.push({ name: agentName, envPath })
   }
 
   for (const { name, envPath } of candidates) {
-    const existing = readChannelToken(provider, envPath)
+    const existing = new ChannelEnv().readTokenFor(provider, envPath)
     if (!existing) continue
     const existingBotId = extractBotId(existing)
     if (existingBotId === botId) return name
@@ -908,7 +907,7 @@ export async function tryHandleAgents(ctx: RouteContext, webDir: string): Promis
     if (provider !== 'slack') { json(res, { error: 'Nem Slack provider' }, 400); return true }
     const scriptPath = join(agentDir(name), '..', '..', 'scripts', 'smoke-test-slack-channel.sh')
     if (!existsSync(scriptPath)) { json(res, { error: 'Smoke-test script nem található' }, 404); return true }
-    const agentEnvPath = join(channelStateDir('slack', agentDir(name)), '.env')
+    const agentEnvPath = join(new ChannelEnv().stateDirFor('slack', agentDir(name)), '.env')
     let envContent = ''
     try { envContent = readFileSync(agentEnvPath, 'utf-8') } catch { /* no .env */ }
     if (!/SLACK_SMOKE_TEST_ALLOWED=true/.test(envContent)) {
@@ -960,9 +959,9 @@ export async function tryHandleAgents(ctx: RouteContext, webDir: string): Promis
   if (testMatch && method === 'POST') {
     const [name, provider] = testMatch
     if (!existsSync(agentDir(name))) { json(res, { error: 'Agent not found' }, 404); return true }
-    const stateDir = channelStateDir(provider, agentDir(name))
+    const stateDir = new ChannelEnv().stateDirFor(provider, agentDir(name))
     const envPath = join(stateDir, '.env')
-    const token = readChannelToken(provider, envPath) || (provider === 'telegram' ? parseTelegramToken(name) : null)
+    const token = new ChannelEnv().readTokenFor(provider, envPath) || (provider === 'telegram' ? parseTelegramToken(name) : null)
     if (!token) { json(res, { error: `${provider} not configured for this agent` }, 404); return true }
     const channelProvider = getProvider(provider)
     const result = await channelProvider.validateToken(token)
@@ -991,7 +990,7 @@ export async function tryHandleAgents(ctx: RouteContext, webDir: string): Promis
       if (!saKeyPath?.trim() || !projectId?.trim() || !subscription?.trim() || !owner?.trim()) {
         json(res, { error: 'Google Chat: saKeyPath, projectId, subscription és owner kötelező' }, 400); return true
       }
-      const gcDir = isMain ? channelStateDir(provider) : channelStateDir(provider, agentDir(name))
+      const gcDir = isMain ? new ChannelEnv().stateDirFor(provider) : new ChannelEnv().stateDirFor(provider, agentDir(name))
       mkdirSync(gcDir, { recursive: true })
       const gcEnv =
         `GOOGLE_APPLICATION_CREDENTIALS=${saKeyPath.trim()}\n` +
@@ -1065,7 +1064,7 @@ export async function tryHandleAgents(ctx: RouteContext, webDir: string): Promis
 
     // Main agent's channel state lives under ~/.claude/channels/<provider>,
     // sub-agents under agents/<name>/.claude/channels/<provider>.
-    const stateDir = isMain ? channelStateDir(provider) : channelStateDir(provider, agentDir(name))
+    const stateDir = isMain ? new ChannelEnv().stateDirFor(provider) : new ChannelEnv().stateDirFor(provider, agentDir(name))
     mkdirSync(stateDir, { recursive: true })
     const tokenKey = provider === 'slack' ? 'SLACK_BOT_TOKEN'
       : provider === 'discord' ? 'DISCORD_BOT_TOKEN'
@@ -1118,7 +1117,7 @@ export async function tryHandleAgents(ctx: RouteContext, webDir: string): Promis
   if (setupMatch && method === 'DELETE') {
     const [name, provider] = setupMatch
     if (!existsSync(agentDir(name))) { json(res, { error: 'Agent not found' }, 404); return true }
-    const stateDir = channelStateDir(provider, agentDir(name))
+    const stateDir = new ChannelEnv().stateDirFor(provider, agentDir(name))
     const envFile = join(stateDir, '.env')
     const accessFile = join(stateDir, 'access.json')
     if (existsSync(envFile)) unlinkSync(envFile)
@@ -1354,8 +1353,8 @@ export async function tryHandleAgents(ctx: RouteContext, webDir: string): Promis
     if (!code?.trim()) { json(res, { error: 'Code is required' }, 400); return true }
 
     const chDir = name === MAIN_AGENT_ID
-      ? channelStateDir(provider)
-      : channelStateDir(provider, agentDir(name))
+      ? new ChannelEnv().stateDirFor(provider)
+      : new ChannelEnv().stateDirFor(provider, agentDir(name))
     const accessPath = join(chDir, 'access.json')
     const accessContent = readFileOr(accessPath, '{}')
 
@@ -1429,8 +1428,8 @@ export async function tryHandleAgents(ctx: RouteContext, webDir: string): Promis
         ? readMarveenTelegramConfig().botUsername
         : readAgentTelegramConfig(name).botUsername
       if (!botName) {
-        const stateDir = name === MAIN_AGENT_ID ? channelStateDir(provider) : channelStateDir(provider, agentDir(name))
-        const token = readChannelToken(provider, join(stateDir, '.env'))
+        const stateDir = name === MAIN_AGENT_ID ? new ChannelEnv().stateDirFor(provider) : new ChannelEnv().stateDirFor(provider, agentDir(name))
+        const token = new ChannelEnv().readTokenFor(provider, join(stateDir, '.env'))
         if (token) {
           const r = await getProvider(provider).validateToken(token)
           if (r.ok) botName = r.botName
@@ -1509,8 +1508,8 @@ export async function tryHandleAgents(ctx: RouteContext, webDir: string): Promis
       return true
     }
     const chDir = name === MAIN_AGENT_ID
-      ? channelStateDir(provider)
-      : channelStateDir(provider, agentDir(name))
+      ? new ChannelEnv().stateDirFor(provider)
+      : new ChannelEnv().stateDirFor(provider, agentDir(name))
     const accessPath = join(chDir, 'access.json')
     try {
       const access = JSON.parse(readFileOr(accessPath, '{}'))

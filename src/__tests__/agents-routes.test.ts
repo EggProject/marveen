@@ -446,13 +446,18 @@ vi.mock('../web/main-agent.js', () => ({
   MAIN_CHANNELS_SESSION: H.MAIN_CHANNELS_SESSION,
 }))
 
+const mChannelEnvInstance = vi.hoisted(() => ({
+  stateDirFor: H.channelStateDir,
+  readTokenFor: H.readChannelToken,
+  getToken: vi.fn(() => ''),
+  getChatId: vi.fn(() => ''),
+}))
 vi.mock('../channel-provider.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../channel-provider.js')>()
   return {
     ...actual,
     getProvider: H.getProvider,
-    channelStateDir: H.channelStateDir,
-    readChannelToken: H.readChannelToken,
+    ChannelEnv: vi.fn(function ChannelEnvMock() { return mChannelEnvInstance }),
     generateSlackAppManifest: H.generateSlackAppManifest,
     getSlackAppSetupInstructions: H.getSlackAppSetupInstructions,
   }

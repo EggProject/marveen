@@ -27,7 +27,7 @@ import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from 
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { logger } from '../logger.js'
-import { channelStateDir, type ChannelProviderType } from '../channel-provider.js'
+import { ChannelEnv, type ChannelProviderType } from '../channel-provider.js'
 import { agentDir } from './agent-config.js'
 import { atomicWriteFileSync } from './atomic-write.js'
 
@@ -57,8 +57,8 @@ const INVITE_DEFAULT_TTL_MS = 24 * 60 * 60 * 1000
 
 export function agentChannelDir(name: string, mainAgentId: string, provider: ChannelProviderType): string {
   return name === mainAgentId
-    ? channelStateDir(provider)
-    : channelStateDir(provider, agentDir(name))
+    ? new ChannelEnv().stateDirFor(provider)
+    : new ChannelEnv().stateDirFor(provider, agentDir(name))
 }
 
 // invites.json sits next to access.json in the same channel state dir.
@@ -198,13 +198,13 @@ export function runInviteMonitorTick(mainAgentId: string, agentsRoot: string): v
 
   for (const provider of providerTypes) {
     const targets: Array<{ name: string; accessPath: string }> = []
-    const mainAccess = join(channelStateDir(provider), 'access.json')
+    const mainAccess = join(new ChannelEnv().stateDirFor(provider), 'access.json')
     if (existsSync(mainAccess)) targets.push({ name: mainAgentId, accessPath: mainAccess })
     if (existsSync(agentsRoot)) {
       let entries: string[]
       try { entries = readdirSync(agentsRoot) } catch { entries = [] }
       for (const e of entries) {
-        const p = join(channelStateDir(provider, join(agentsRoot, e)), 'access.json')
+        const p = join(new ChannelEnv().stateDirFor(provider, join(agentsRoot, e)), 'access.json')
         if (existsSync(p)) targets.push({ name: e, accessPath: p })
       }
     }

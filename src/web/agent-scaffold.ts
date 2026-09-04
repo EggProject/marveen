@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync, readd
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { PROJECT_ROOT, OWNER_NAME, MAIN_AGENT_ID, BOT_NAME, CHANNEL_PROVIDER, WEB_PORT, OWNER_DRIVE_FOLDER, APP_TZ, DASHBOARD_PUBLIC_URL, STORE_DIR } from '../config.js'
-import { channelStateDir } from '../channel-provider.js'
+import { ChannelEnv } from '../channel-provider.js'
 import { runAgent } from '../agent.js'
 import { atomicWriteFileSync } from './atomic-write.js'
 import { agentDir, agentConfigRoot, listAgentNames, readAgentCapabilities } from './agent-config.js'
@@ -718,7 +718,7 @@ export function scaffoldAgentDir(name: string) {
   mkdirSync(join(dir, '.claude', 'skills'), { recursive: true })
   mkdirSync(join(dir, '.claude', 'hooks'), { recursive: true })
   mkdirSync(join(dir, '.claude', 'agents'), { recursive: true })
-  mkdirSync(channelStateDir(CHANNEL_PROVIDER, dir), { recursive: true })
+  mkdirSync(new ChannelEnv().stateDirFor(CHANNEL_PROVIDER, dir), { recursive: true })
   mkdirSync(join(dir, 'memory'), { recursive: true })
 
   // Deploy the quarantine-reader sub-agent definition from the template so every

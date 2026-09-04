@@ -197,11 +197,16 @@ vi.mock('../web/channel-poller-reap.js', () => ({
   reapDetachedChannelClaudes: H.reapDetachedChannelClaudes,
 }))
 
+const mChannelEnvInstance = {
+  stateDirFor: H.channelStateDir,
+  readTokenFor: H.readChannelToken,
+  getToken: vi.fn(() => ''),
+  getChatId: vi.fn(() => ''),
+}
 vi.mock('../channel-provider.js', () => ({
   getProvider: H.getProvider,
   getProviderType: H.getProviderType,
-  channelStateDir: H.channelStateDir,
-  readChannelToken: H.readChannelToken,
+  ChannelEnv: vi.fn(function ChannelEnvMock() { return mChannelEnvInstance }),
 }))
 
 // ssh-tmux: keep the pure builders/classifiers real (agent-process branches on

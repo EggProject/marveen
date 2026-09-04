@@ -96,7 +96,16 @@ async function installMocks(): Promise<void> {
     },
   }))
   vi.doMock(join(SRC_DIR, '..', 'config.js'), () => ({ PROJECT_ROOT: m.PROJECT_ROOT }))
-  vi.doMock(join(SRC_DIR, '..', 'channel-provider.js'), () => ({ channelStateDir: m.channelStateDir }))
+  vi.doMock(join(SRC_DIR, '..', 'channel-provider.js'), () => ({
+    ChannelEnv: vi.fn(function ChannelEnvMock() {
+      return {
+        stateDirFor: m.channelStateDir,
+        readTokenFor: vi.fn<() => string | null>(() => null),
+        getToken: vi.fn(() => ''),
+        getChatId: vi.fn(() => ''),
+      }
+    }),
+  }))
   vi.doMock(join(SRC_DIR, '..', 'web', 'agent-config.js'), () => ({ agentDir: m.agentDir }))
   vi.doMock(join(SRC_DIR, 'provider-poller-match.js'), () => ({ matchesProviderPollerCmd: m.matchesProviderPollerCmd }))
 }

@@ -95,10 +95,14 @@ vi.mock('../channel-provider.js', () => ({
     : v === 'googlechat' ? 'googlechat'
     : v === 'teams' ? 'teams'
     : 'telegram',
-  getChannelToken: () => '',
-  getChannelChatId: () => '',
-  channelStateDir: (provider: string, agentDir?: string) => stateDirMock(provider, agentDir),
-  readChannelToken: (provider: string, envFilePath: string) => readTokenMock(provider, envFilePath),
+  ChannelEnv: vi.fn(function ChannelEnvMock() {
+    return {
+      stateDirFor: (provider: string, agentDir?: string) => stateDirMock(provider, agentDir),
+      readTokenFor: (provider: string, envFilePath: string) => readTokenMock(provider, envFilePath),
+      getToken: () => '',
+      getChatId: () => '',
+    }
+  }),
 }))
 
 // ---------------------------------------------------------------------------

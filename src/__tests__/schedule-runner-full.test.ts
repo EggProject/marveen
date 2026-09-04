@@ -34,7 +34,7 @@ import type {
 import type { toPendingRetryView, classifyTelegramSendError } from '../pending-retries.js'
 import type { wrapScheduledTask } from '../prompt-safety.js'
 import type { readFileOr, readAgentRemoteHost, agentDir, listAgentNames } from '../web/agent-config.js'
-import type { channelStateDir } from '../channel-provider.js'
+import type { ChannelEnv } from '../channel-provider.js'
 import type {
   agentSessionName,
   isAgentRunning,
@@ -134,7 +134,7 @@ const mockState = vi.hoisted(() => {
     agentDir: vi.fn<typeof agentDir>((name) => `/tmp/agents/${name}`),
 
     // channel-provider
-    channelStateDir: vi.fn<typeof channelStateDir>((provider, agentDirArg) => agentDirArg ? `${agentDirArg}/channels/${provider}` : `/tmp/channels/${provider}`),
+    channelStateDir: vi.fn<InstanceType<typeof ChannelEnv>['stateDirFor']>((provider, agentDirArg) => agentDirArg ? `${agentDirArg}/channels/${provider}` : `/tmp/channels/${provider}`),
 
     // agent-process
     agentSessionName: vi.fn<typeof agentSessionName>((name) => `agent-${name}`),
@@ -296,11 +296,17 @@ vi.mock('../web/agent-config.js', () => ({
   scheduleIdentitySetup: vi.fn(async () => undefined),
 }))
 
+const mockStateEnvInstance = {
+  stateDirFor: mockState.channelStateDir,
+  readTokenFor: vi.fn<() => string | null>(() => null),
+  getToken: vi.fn(() => ''),
+  getChatId: vi.fn(() => ''),
+}
 vi.mock('../channel-provider.js', async (orig) => {
   const actual = await orig<typeof import('../channel-provider.js')>()
   return {
     ...actual,
-    channelStateDir: mockState.channelStateDir,
+    ChannelEnv: vi.fn(function ChannelEnvMock() { return mockStateEnvInstance }),
   }
 })
 

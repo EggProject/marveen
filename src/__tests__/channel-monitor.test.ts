@@ -133,7 +133,7 @@ const m = vi.hoisted(() => ({
     pluginId: `plugin-${type}`,
   })),
   channelStateDir: vi.fn((provider: string, root?: string) => join(root ?? '/tmp', 'channels', provider)),
-  readChannelToken: vi.fn<typeof ChannelProvider.readChannelToken>(() => null),
+  readChannelToken: vi.fn<() => string | null>(() => null),
   // notify
   notifyChannel: vi.fn(async () => undefined),
   // logger
@@ -286,8 +286,14 @@ vi.mock('../channel-provider.js', async (orig) => {
   return {
     ...actual,
     getProvider: m.getProvider,
-    channelStateDir: m.channelStateDir,
-    readChannelToken: m.readChannelToken,
+    ChannelEnv: vi.fn(function ChannelEnvMock() {
+      return {
+        stateDirFor: m.channelStateDir,
+        readTokenFor: m.readChannelToken,
+        getToken: vi.fn(() => ''),
+        getChatId: vi.fn(() => ''),
+      }
+    }),
   }
 })
 

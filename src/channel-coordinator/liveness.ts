@@ -13,7 +13,7 @@ import { execFileSync } from 'node:child_process'
 import { makeLazyBinResolver } from '../platform.js'
 import { logger } from '../logger.js'
 import { PROJECT_ROOT } from '../config.js'
-import { channelStateDir, type ChannelProviderType } from '../channel-provider.js'
+import { ChannelEnv, type ChannelProviderType } from '../channel-provider.js'
 import { agentDir } from '../web/agent-config.js'
 import { matchesProviderPollerCmd } from './provider-poller-match.js'
 
@@ -190,8 +190,8 @@ export function probeChannelPluginLiveness(
   }
   try {
     const stateDir = agentName
-      ? channelStateDir(providerType, agentDir(agentName))
-      : channelStateDir(providerType)
+      ? new ChannelEnv().stateDirFor(providerType, agentDir(agentName))
+      : new ChannelEnv().stateDirFor(providerType)
     const pidPath = join(stateDir, 'bot.pid')
     let botPid: number | null = null
     if (existsSync(pidPath)) {

@@ -495,23 +495,71 @@ export function getSlackAppSetupInstructions(): string[] {
   ]
 }
 
-// -- Token resolution --
+// -- ChannelEnv: per-instance environment/state-dir/token resolution --
+//
+// Instance form (not static) per `.claude/rules/class-vs-functional-decision.md`:
+// constructor-injected env (DI, satisfies Q4) + per-instance test isolation
+// (satisfies Q5). Methods consume `this.env` for token/chatId lookup; stateDir
+// and readTokenFor deliberately do NOT depend on `this.env` because their
+// pre-D.1 signatures did not take env — callers using them default-construct
+// `new ChannelEnv()`.
 
-export function getChannelToken(provider: ChannelProviderType, env: Record<string, string>): string {
-  if (provider === 'slack') return env['SLACK_BOT_TOKEN'] ?? ''
-  if (provider === 'discord') return env['DISCORD_BOT_TOKEN'] ?? ''
-  if (provider === 'googlechat') return env['GOOGLECHAT_PROJECT_ID'] ?? ''
-  if (provider === 'teams') return env['TEAMS_BOT_APP_ID'] ?? ''
-  return env['TELEGRAM_BOT_TOKEN'] ?? ''
+export class ChannelEnv {
+  static readonly TABLE: Record<ChannelProviderType, {
+    readonly tokenKey: string
+    readonly chatIdKey: string
+    readonly subdir: string
+  }> = {
+    telegram:   { tokenKey: 'TELEGRAM_BOT_TOKEN',          chatIdKey: 'ALLOWED_CHAT_ID',                subdir: 'telegram'   },
+    slack:      { tokenKey: 'SLACK_BOT_TOKEN',             chatIdKey: 'SLACK_CHANNEL_ID',               subdir: 'slack'      },
+    discord:    { tokenKey: 'DISCORD_BOT_TOKEN',           chatIdKey: 'DISCORD_CHANNEL_ID',             subdir: 'discord'    },
+    googlechat: { tokenKey: 'GOOGLECHAT_PROJECT_ID',       chatIdKey: 'GOOGLECHAT_SPACE_ID',            subdir: 'googlechat' },
+    teams:      { tokenKey: 'TEAMS_BOT_APP_ID',            chatIdKey: 'TEAMS_ALLOWED_CONVERSATION_ID',  subdir: 'teams'      },
+  }
+
+  constructor(private readonly env: Record<string, string> = {}) {}
+
+  getToken(provider: ChannelProviderType): string {
+    return this.env[ChannelEnv.TABLE[provider].tokenKey] ?? ''
+  }
+
+  getChatId(provider: ChannelProviderType): string {
+    return this.env[ChannelEnv.TABLE[provider].chatIdKey] ?? ''
+  }
+
+  stateDirFor(provider: ChannelProviderType, agentDir?: string): string {
+    const base = agentDir
+      ? join(agentDir, '.claude', 'channels')
+      : join(homedir(), '.claude', 'channels')
+    switch (provider) {
+      case 'telegram':   return join(base, 'telegram')
+      case 'slack':      return join(base, 'slack')
+      case 'discord':    return join(base, 'discord')
+      case 'googlechat': return join(base, 'googlechat')
+      case 'teams':      return join(base, 'teams')
+    }
+  }
+
+  readTokenFor(provider: ChannelProviderType, envFilePath: string): string | null {
+    if (!existsSync(envFilePath)) return null
+    try {
+      const raw = readFileSync(envFilePath, 'utf8')
+      const key = ChannelEnv.TABLE[provider].tokenKey
+      const match = raw.match(new RegExp(`^${key}=(.+)$`, 'm'))
+      return match ? (match[1] ?? null) : null
+    } catch {
+      return null
+    }
+  }
 }
 
-export function getChannelChatId(provider: ChannelProviderType, env: Record<string, string>): string {
-  if (provider === 'slack') return env['SLACK_CHANNEL_ID'] ?? ''
-  if (provider === 'discord') return env['DISCORD_CHANNEL_ID'] ?? ''
-  if (provider === 'googlechat') return env['GOOGLECHAT_SPACE_ID'] ?? ''
-  if (provider === 'teams') return env['TEAMS_ALLOWED_CONVERSATION_ID'] ?? ''
-  return env['ALLOWED_CHAT_ID'] ?? ''
-}
+// -- Token resolution (legacy free functions) --
+//
+// DELETED in D.1. Migrated to ChannelEnv instance methods. See:
+//   getChannelToken    -> new ChannelEnv(env).getToken(provider)
+//   getChannelChatId  -> new ChannelEnv(env).getChatId(provider)
+//   channelStateDir    -> new ChannelEnv().stateDirFor(provider, agentDir?)
+//   readChannelToken   -> new ChannelEnv().readTokenFor(provider, envFilePath)
 
 // -- Provider registry --
 
@@ -569,35 +617,6 @@ export function getProviderType(envValue: string | undefined): ChannelProviderTy
   return 'telegram'
 }
 
-export function channelStateDir(provider: ChannelProviderType, agentDir?: string): string {
-  const base = agentDir
-    ? join(agentDir, '.claude', 'channels')
-    : join(homedir(), '.claude', 'channels')
-  const subdir =
-    provider === 'slack' ? 'slack'
-    : provider === 'discord' ? 'discord'
-    : provider === 'googlechat' ? 'googlechat'
-    : provider === 'teams' ? 'teams'
-    : 'telegram'
-  return join(base, subdir)
-}
-
-export function readChannelToken(provider: ChannelProviderType, envFilePath: string): string | null {
-  if (!existsSync(envFilePath)) return null
-  let content: string
-  try {
-    content = readFileSync(envFilePath, 'utf-8')
-  } catch {
-    return null
-  }
-  // Google Chat has no bot token; GOOGLECHAT_PROJECT_ID standing in the .env
-  // signals the channel is configured (used by agentHasChannel / hasChannel).
-  const key =
-    provider === 'slack' ? 'SLACK_BOT_TOKEN'
-    : provider === 'discord' ? 'DISCORD_BOT_TOKEN'
-    : provider === 'googlechat' ? 'GOOGLECHAT_PROJECT_ID'
-    : provider === 'teams' ? 'TEAMS_BOT_APP_ID'
-    : 'TELEGRAM_BOT_TOKEN'
-  const match = content.match(new RegExp(`${key}=(.+)`))
-  return match ? match[1].trim() : null
-}
+// channelStateDir / readChannelToken DELETED in D.1 -- migrated to
+//   new ChannelEnv().stateDirFor(provider, agentDir?)
+//   new ChannelEnv().readTokenFor(provider, envFilePath)

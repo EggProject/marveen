@@ -21,7 +21,7 @@
 import { existsSync, readFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { CHANNEL_PROVIDER, CHANNEL_CHAT_ID } from '../config.js'
-import { channelStateDir } from '../channel-provider.js'
+import { ChannelEnv } from '../channel-provider.js'
 import { atomicWriteFileSync } from './atomic-write.js'
 import { logger } from '../logger.js'
 
@@ -36,7 +36,7 @@ interface AccessFile {
 export function ensureDiscordChannelGroup(): void {
   if (CHANNEL_PROVIDER !== 'discord') return
   if (!CHANNEL_CHAT_ID) return
-  const dir = channelStateDir('discord')
+  const dir = new ChannelEnv().stateDirFor('discord')
   const path = join(dir, 'access.json')
 
   let access: AccessFile

@@ -26,7 +26,7 @@ import { execFileSync, execSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ChannelProviderType } from '../channel-provider.js'
-import { channelStateDir } from '../channel-provider.js'
+import { ChannelEnv } from '../channel-provider.js'
 import { logger } from '../logger.js'
 
 const STATE_ENV_VAR: Record<ChannelProviderType, string> = {
@@ -196,7 +196,7 @@ export function collectPollerEvidence(
   agentDirPath: string,
   claudePid: number,
 ): PollerEvidence {
-  const chanDir = channelStateDir(provider, agentDirPath)
+  const chanDir = new ChannelEnv().stateDirFor(provider, agentDirPath)
   const envScanPids = listPollerPidsByStateDir(STATE_ENV_VAR[provider], chanDir)
   // Corroborate bot.pid against the same env-var scan the reaper uses. Without
   // this, a stale bot.pid (nothing ever deletes it) plus OS pid-reuse would
@@ -222,7 +222,7 @@ export function reapChannelOrphans(
   provider: ChannelProviderType,
   agentDirPath: string,
 ): ReapResult {
-  const chanDir = channelStateDir(provider, agentDirPath)
+  const chanDir = new ChannelEnv().stateDirFor(provider, agentDirPath)
   const envVar = STATE_ENV_VAR[provider]
 
   const fromEnvScan = listPollerPidsByStateDir(envVar, chanDir)

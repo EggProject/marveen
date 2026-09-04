@@ -37,7 +37,7 @@ import {
   type AgentRunState,
 } from './ssh-tmux.js'
 import { parseTelegramToken } from './telegram.js'
-import { getProvider, getProviderType, channelStateDir, readChannelToken, type ChannelProviderType } from '../channel-provider.js'
+import { getProvider, getProviderType, ChannelEnv, type ChannelProviderType } from '../channel-provider.js'
 import { CHANNEL_PROVIDER, MAIN_AGENT_ID, STORE_DIR, PROJECT_ROOT, SUBAGENT_INBOX_TEE } from '../config.js'
 import { getEffectiveSettingValue } from '../settings-store.js'
 import { loadProfileTemplate } from './profiles.js'
@@ -835,8 +835,8 @@ export function getAgentRunningSince(name: string): number | null {
 export function agentHasChannel(name: string): boolean {
   const agentProvider = resolveAgentProvider(name)
   const dir = agentDir(name)
-  const agentChannelDir = channelStateDir(agentProvider, dir)
-  const token = readChannelToken(agentProvider, join(agentChannelDir, '.env'))
+  const agentChannelDir = new ChannelEnv().stateDirFor(agentProvider, dir)
+  const token = new ChannelEnv().readTokenFor(agentProvider, join(agentChannelDir, '.env'))
   if (token) return true
   if (agentProvider === 'telegram') return !!parseTelegramToken(name)
   return false
@@ -953,8 +953,8 @@ export function startAgentProcess(name: string, opts: { fresh?: boolean } = {}):
 
   const agentProvider = resolveAgentProvider(name)
   const provider = getProvider(agentProvider)
-  const agentChannelDir = channelStateDir(agentProvider, dir)
-  const token = readChannelToken(agentProvider, join(agentChannelDir, '.env'))
+  const agentChannelDir = new ChannelEnv().stateDirFor(agentProvider, dir)
+  const token = new ChannelEnv().readTokenFor(agentProvider, join(agentChannelDir, '.env'))
   // Backward compat: try legacy Telegram token if provider-aware lookup misses
   let hasChannel = !!token
   if (!token && agentProvider === 'telegram') {

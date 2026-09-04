@@ -59,7 +59,14 @@ vi.mock('../config.js', () => ({
 }))
 
 vi.mock('../channel-provider.js', () => ({
-  channelStateDir: (_provider: string) => CHANNELS_DIR,
+  ChannelEnv: vi.fn(function ChannelEnvMock() {
+    return {
+      stateDirFor: (_provider: string) => CHANNELS_DIR,
+      readTokenFor: vi.fn<() => string | null>(() => null),
+      getToken: vi.fn(() => ''),
+      getChatId: vi.fn(() => ''),
+    }
+  }),
 }))
 
 vi.mock('../logger.js', () => ({

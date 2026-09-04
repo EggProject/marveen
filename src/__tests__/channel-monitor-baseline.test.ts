@@ -48,10 +48,9 @@ import type { parseEtimeToSeconds, decideDownAgentAction } from '../web/agent-re
 import type { getClaudePidForSession, probeChannelPluginLiveness } from '../channel-coordinator/liveness.js'
 import type { readLastIngestionTimestamp } from '../web/inbound-probe.js'
 import type {
-  channelStateDir,
+  ChannelEnv,
   ChannelProvider,
   getProvider,
-  readChannelToken,
 } from '../channel-provider.js'
 import type {
   stuckInputSignature,
@@ -121,8 +120,8 @@ const m = vi.hoisted(() => ({
   probeChannelPluginLiveness: vi.fn<typeof probeChannelPluginLiveness>(() => 'alive'),
   readLastIngestionTimestamp: vi.fn<typeof readLastIngestionTimestamp>(() => null),
   getProvider: vi.fn<typeof getProvider>((type) => ({ type, pluginId: `plugin-${type}` } as ChannelProvider)),
-  channelStateDir: vi.fn<typeof channelStateDir>((provider, root) => `${root ?? '/tmp'}/channels/${provider}`),
-  readChannelToken: vi.fn<typeof readChannelToken>(() => null),
+  channelStateDir: vi.fn<InstanceType<typeof ChannelEnv>['stateDirFor']>((provider, root) => `${root ?? '/tmp'}/channels/${provider}`),
+  readChannelToken: vi.fn<InstanceType<typeof ChannelEnv>['readTokenFor']>(() => null),
   notifyChannel: vi.fn(async () => undefined),
   loggerInfo: vi.fn(),
   loggerWarn: vi.fn(),
@@ -270,8 +269,14 @@ vi.mock('../channel-provider.js', async (orig) => {
   return {
     ...actual,
     getProvider: m.getProvider,
-    channelStateDir: m.channelStateDir,
-    readChannelToken: m.readChannelToken,
+    ChannelEnv: vi.fn(function ChannelEnvMock() {
+      return {
+        stateDirFor: m.channelStateDir,
+        readTokenFor: m.readChannelToken,
+        getToken: vi.fn(() => ''),
+        getChatId: vi.fn(() => ''),
+      }
+    }),
   }
 })
 

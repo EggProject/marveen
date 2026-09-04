@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { logger } from '../logger.js'
 import { CHANNEL_PROVIDER } from '../config.js'
-import { channelStateDir, readChannelToken, type ChannelProviderType } from '../channel-provider.js'
+import { ChannelEnv, type ChannelProviderType } from '../channel-provider.js'
 import { agentDir, listAgentNames, readAgentChannelProvider } from './agent-config.js'
 import { upsertChannelRequest, listPendingChannelRequests, updateChannelRequestName } from '../db.js'
 import { TOOL_TIMEOUTS } from '../tool-timeouts.js'
@@ -74,8 +74,8 @@ async function lookupChannelName(agent: string, channelId: string): Promise<void
   // Authorization: Bearer to slack.com/api/conversations.info. That is a real
   // cross-vendor token leak, not a coverage-only defect.
   if (provider !== 'slack') return
-  const stateDir = channelStateDir(provider, agentDir(agent))
-  const token = readChannelToken(provider, join(stateDir, '.env'))
+  const stateDir = new ChannelEnv().stateDirFor(provider, agentDir(agent))
+  const token = new ChannelEnv().readTokenFor(provider, join(stateDir, '.env'))
   if (!token) return
 
   try {
@@ -106,7 +106,7 @@ function runScanTick(): void {
   for (const name of listAgentNames()) {
     const provider = resolveAgentProvider(name)
     if (provider !== 'slack') continue
-    const stateDir = channelStateDir(provider, agentDir(name))
+    const stateDir = new ChannelEnv().stateDirFor(provider, agentDir(name))
     const auditPath = join(stateDir, 'audit.jsonl')
     activeAgents.add(auditPath)
     scanAuditLog(name, auditPath)

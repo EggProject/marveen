@@ -6,7 +6,7 @@ import { PROJECT_ROOT, STORE_DIR, CHANNEL_PROVIDER } from '../../config.js'
 import { logger } from '../../logger.js'
 import { resolveFromPath } from '../../platform.js'
 import { atomicWriteFileSync } from '../atomic-write.js'
-import { channelStateDir, readChannelToken } from '../../channel-provider.js'
+import { ChannelEnv } from '../../channel-provider.js'
 import { sessionExistsOnHost } from '../agent-process.js'
 import { MAIN_CHANNELS_SESSION } from '../main-agent.js'
 import {
@@ -94,12 +94,12 @@ function claudeAuthPresent(): boolean {
 // telegram-only probe would report "not configured" forever and pop the wizard
 // over a working dashboard. readChannelToken knows each provider's env key.
 function channelConfigured(): boolean {
-  return readChannelToken(CHANNEL_PROVIDER, join(channelStateDir(CHANNEL_PROVIDER), '.env')) != null
+  return new ChannelEnv().readTokenFor(CHANNEL_PROVIDER, join(new ChannelEnv().stateDirFor(CHANNEL_PROVIDER), '.env')) != null
 }
 
 function paired(): boolean {
   try {
-    const a = JSON.parse(readFileSync(join(channelStateDir(CHANNEL_PROVIDER), 'access.json'), 'utf-8')) as {
+    const a = JSON.parse(readFileSync(join(new ChannelEnv().stateDirFor(CHANNEL_PROVIDER), 'access.json'), 'utf-8')) as {
       allowFrom?: unknown[]; groups?: Record<string, unknown>
     }
     const allow = Array.isArray(a.allowFrom) ? a.allowFrom.length : 0

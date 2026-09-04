@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readEnvFile } from './env.js'
 import { DISTRIBUTION_DEFAULT_AGENT_MODEL } from './config-registry.js'
-import { getProviderType, getChannelToken, getChannelChatId, type ChannelProviderType } from './channel-provider.js'
+import { getProviderType, ChannelEnv, type ChannelProviderType } from './channel-provider.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -322,8 +322,8 @@ const rawKanbanLabelColors = (env['KANBAN_LABEL_COLORS'] ?? '#3b82f6,#0ea5e9,#10
 export const KANBAN_LABEL_COLORS = rawKanbanLabelColors.length > 0 ? rawKanbanLabelColors : ['#64748b']
 
 export const CHANNEL_PROVIDER: ChannelProviderType = getProviderType(env['CHANNEL_PROVIDER'])
-export const CHANNEL_TOKEN = getChannelToken(CHANNEL_PROVIDER, env)
-export const CHANNEL_CHAT_ID = getChannelChatId(CHANNEL_PROVIDER, env)
+export const CHANNEL_TOKEN = new ChannelEnv(env).getToken(CHANNEL_PROVIDER)
+export const CHANNEL_CHAT_ID = new ChannelEnv(env).getChatId(CHANNEL_PROVIDER)
 
 // Respawn / keep-alive gate.
 // The in-process channel-plugin monitor (main-agent respawn + sub-agent

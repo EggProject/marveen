@@ -71,12 +71,17 @@ vi.mock('../platform.js', () => ({ resolveFromPath: vi.fn(() => '/bin/echo') }))
 // '../../channel-provider.js' from src/web/routes/. config.ts also imports
 // getProviderType from this module so we spread the original.
 const CHANNEL_STATE_DIR = join(SANDBOX, 'home', '.claude', 'channels', 'telegram')
+const mChannelEnv = vi.hoisted(() => ({
+  stateDirFor: vi.fn(() => CHANNEL_STATE_DIR),
+  readTokenFor: vi.fn<() => string | null>(() => null),
+  getToken: vi.fn(() => ''),
+  getChatId: vi.fn(() => ''),
+}))
 vi.mock('../channel-provider.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../channel-provider.js')>()
   return {
     ...actual,
-    channelStateDir: vi.fn(() => CHANNEL_STATE_DIR),
-    readChannelToken: vi.fn(() => null),
+    ChannelEnv: vi.fn(function ChannelEnvMock() { return mChannelEnv }),
   }
 })
 
@@ -127,7 +132,7 @@ vi.mock('node:child_process', () => ({
 // Import AFTER every mock is registered.
 const { tryHandleOnboarding, identitySavePlan } = await import('../web/routes/onboarding.js')
 const { atomicWriteFileSync } = await import('../web/atomic-write.js')
-const { channelStateDir, readChannelToken } = await import('../channel-provider.js')
+const { channelStateDir, readChannelToken } = { channelStateDir: mChannelEnv.stateDirFor, readChannelToken: mChannelEnv.readTokenFor }
 const { sessionExistsOnHost } = await import('../web/agent-process.js')
 const { hardRestartMarveenChannels, mainChannelsSessionExists, createMainChannelsSession } =
   await import('../web/channel-monitor.js')

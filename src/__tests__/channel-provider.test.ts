@@ -7,10 +7,7 @@ import https from 'node:https'
 import {
   getProvider,
   getProviderType,
-  getChannelToken,
-  getChannelChatId,
-  channelStateDir,
-  readChannelToken,
+  ChannelEnv,
   generateSlackAppManifest,
   getSlackAppSetupInstructions,
   formatForSlackMrkdwn,
@@ -102,124 +99,124 @@ describe('getProvider', () => {
   })
 })
 
-describe('getChannelToken', () => {
+describe('ChannelEnv.getToken', () => {
   it('reads TELEGRAM_BOT_TOKEN for telegram', () => {
     const env = { TELEGRAM_BOT_TOKEN: 'tg-tok-123' }
-    expect(getChannelToken('telegram', env)).toBe('tg-tok-123')
+    expect(new ChannelEnv(env).getToken('telegram')).toBe('tg-tok-123')
   })
 
   it('reads SLACK_BOT_TOKEN for slack', () => {
     const env = { SLACK_BOT_TOKEN: 'xoxb-123' }
-    expect(getChannelToken('slack', env)).toBe('xoxb-123')
+    expect(new ChannelEnv(env).getToken('slack')).toBe('xoxb-123')
   })
 
   it('reads DISCORD_BOT_TOKEN for discord', () => {
     const env = { DISCORD_BOT_TOKEN: 'discord-tok-123' }
-    expect(getChannelToken('discord', env)).toBe('discord-tok-123')
+    expect(new ChannelEnv(env).getToken('discord')).toBe('discord-tok-123')
   })
 
   it('reads GOOGLECHAT_PROJECT_ID for googlechat', () => {
     const env = { GOOGLECHAT_PROJECT_ID: 'gcp-proj-1' }
-    expect(getChannelToken('googlechat', env)).toBe('gcp-proj-1')
+    expect(new ChannelEnv(env).getToken('googlechat')).toBe('gcp-proj-1')
   })
 
   it('reads TEAMS_BOT_APP_ID for teams', () => {
     const env = { TEAMS_BOT_APP_ID: 'app-id-123' }
-    expect(getChannelToken('teams', env)).toBe('app-id-123')
+    expect(new ChannelEnv(env).getToken('teams')).toBe('app-id-123')
   })
 
   it('returns empty string when key is missing', () => {
-    expect(getChannelToken('telegram', {})).toBe('')
-    expect(getChannelToken('slack', {})).toBe('')
-    expect(getChannelToken('discord', {})).toBe('')
-    expect(getChannelToken('googlechat', {})).toBe('')
-    expect(getChannelToken('teams', {})).toBe('')
+    expect(new ChannelEnv({}).getToken('telegram')).toBe('')
+    expect(new ChannelEnv({}).getToken('slack')).toBe('')
+    expect(new ChannelEnv({}).getToken('discord')).toBe('')
+    expect(new ChannelEnv({}).getToken('googlechat')).toBe('')
+    expect(new ChannelEnv({}).getToken('teams')).toBe('')
   })
 })
 
-describe('getChannelChatId', () => {
+describe('ChannelEnv.getChatId', () => {
   it('reads ALLOWED_CHAT_ID for telegram', () => {
     const env = { ALLOWED_CHAT_ID: '1268077055' }
-    expect(getChannelChatId('telegram', env)).toBe('1268077055')
+    expect(new ChannelEnv(env).getChatId('telegram')).toBe('1268077055')
   })
 
   it('reads SLACK_CHANNEL_ID for slack', () => {
     const env = { SLACK_CHANNEL_ID: 'C01234ABCDE' }
-    expect(getChannelChatId('slack', env)).toBe('C01234ABCDE')
+    expect(new ChannelEnv(env).getChatId('slack')).toBe('C01234ABCDE')
   })
 
   it('reads DISCORD_CHANNEL_ID for discord', () => {
     const env = { DISCORD_CHANNEL_ID: '123456789012345678' }
-    expect(getChannelChatId('discord', env)).toBe('123456789012345678')
+    expect(new ChannelEnv(env).getChatId('discord')).toBe('123456789012345678')
   })
 
   it('reads GOOGLECHAT_SPACE_ID for googlechat', () => {
     const env = { GOOGLECHAT_SPACE_ID: 'spaces/AAAA' }
-    expect(getChannelChatId('googlechat', env)).toBe('spaces/AAAA')
+    expect(new ChannelEnv(env).getChatId('googlechat')).toBe('spaces/AAAA')
   })
 
   it('reads TEAMS_ALLOWED_CONVERSATION_ID for teams', () => {
     const env = { TEAMS_ALLOWED_CONVERSATION_ID: '19:abc@thread.v2' }
-    expect(getChannelChatId('teams', env)).toBe('19:abc@thread.v2')
+    expect(new ChannelEnv(env).getChatId('teams')).toBe('19:abc@thread.v2')
   })
 
   it('returns empty string when key is missing', () => {
-    expect(getChannelChatId('telegram', {})).toBe('')
-    expect(getChannelChatId('slack', {})).toBe('')
-    expect(getChannelChatId('discord', {})).toBe('')
-    expect(getChannelChatId('googlechat', {})).toBe('')
-    expect(getChannelChatId('teams', {})).toBe('')
+    expect(new ChannelEnv({}).getChatId('telegram')).toBe('')
+    expect(new ChannelEnv({}).getChatId('slack')).toBe('')
+    expect(new ChannelEnv({}).getChatId('discord')).toBe('')
+    expect(new ChannelEnv({}).getChatId('googlechat')).toBe('')
+    expect(new ChannelEnv({}).getChatId('teams')).toBe('')
   })
 })
 
-describe('channelStateDir', () => {
+describe('ChannelEnv.stateDirFor', () => {
   it('uses telegram subdirectory for telegram', () => {
-    const dir = channelStateDir('telegram')
+    const dir = new ChannelEnv().stateDirFor('telegram')
     expect(dir).toMatch(/\.claude\/channels\/telegram$/)
   })
 
   it('uses slack subdirectory for slack', () => {
-    const dir = channelStateDir('slack')
+    const dir = new ChannelEnv().stateDirFor('slack')
     expect(dir).toMatch(/\.claude\/channels\/slack$/)
   })
 
   it('uses discord subdirectory for discord', () => {
-    const dir = channelStateDir('discord')
+    const dir = new ChannelEnv().stateDirFor('discord')
     expect(dir).toMatch(/\.claude\/channels\/discord$/)
   })
 
   it('uses googlechat subdirectory for googlechat', () => {
-    const dir = channelStateDir('googlechat')
+    const dir = new ChannelEnv().stateDirFor('googlechat')
     expect(dir).toMatch(/\.claude\/channels\/googlechat$/)
   })
 
   it('uses teams subdirectory for teams', () => {
-    const dir = channelStateDir('teams')
+    const dir = new ChannelEnv().stateDirFor('teams')
     expect(dir).toMatch(/\.claude\/channels\/teams$/)
   })
 
   it('uses agent dir when provided (telegram)', () => {
-    const dir = channelStateDir('telegram', '/tmp/agents/test-agent')
+    const dir = new ChannelEnv().stateDirFor('telegram', '/tmp/agents/test-agent')
     expect(dir).toBe('/tmp/agents/test-agent/.claude/channels/telegram')
   })
 
   it('uses agent dir when provided (slack)', () => {
-    const dir = channelStateDir('slack', '/tmp/agents/test-agent')
+    const dir = new ChannelEnv().stateDirFor('slack', '/tmp/agents/test-agent')
     expect(dir).toBe('/tmp/agents/test-agent/.claude/channels/slack')
   })
 
   it('uses agent dir when provided (discord)', () => {
-    const dir = channelStateDir('discord', '/tmp/agents/test-agent')
+    const dir = new ChannelEnv().stateDirFor('discord', '/tmp/agents/test-agent')
     expect(dir).toBe('/tmp/agents/test-agent/.claude/channels/discord')
   })
 
   it('uses agent dir when provided (googlechat)', () => {
-    const dir = channelStateDir('googlechat', '/tmp/agents/test-agent')
+    const dir = new ChannelEnv().stateDirFor('googlechat', '/tmp/agents/test-agent')
     expect(dir).toBe('/tmp/agents/test-agent/.claude/channels/googlechat')
   })
 
   it('uses agent dir when provided (teams)', () => {
-    const dir = channelStateDir('teams', '/tmp/agents/test-agent')
+    const dir = new ChannelEnv().stateDirFor('teams', '/tmp/agents/test-agent')
     expect(dir).toBe('/tmp/agents/test-agent/.claude/channels/teams')
   })
 })
@@ -435,7 +432,7 @@ describe('getSlackAppSetupInstructions', () => {
 // branches. Uses a per-suite temp dir cleaned in afterEach.
 // ---------------------------------------------------------------------------
 
-describe('readChannelToken', () => {
+describe('ChannelEnv.readTokenFor', () => {
   let tmpDir: string
 
   beforeEach(() => {
@@ -448,49 +445,49 @@ describe('readChannelToken', () => {
 
   it('returns null when the env file does not exist', () => {
     const path = join(tmpDir, '.env')
-    expect(readChannelToken('telegram', path)).toBeNull()
+    expect(new ChannelEnv().readTokenFor('telegram', path)).toBeNull()
   })
 
   it('reads TELEGRAM_BOT_TOKEN from a telegram env file', () => {
     const path = join(tmpDir, 'tg.env')
     writeFileSync(path, 'TELEGRAM_BOT_TOKEN=tg-abc-123\nOTHER=foo\n')
-    expect(readChannelToken('telegram', path)).toBe('tg-abc-123')
+    expect(new ChannelEnv().readTokenFor('telegram', path)).toBe('tg-abc-123')
   })
 
   it('reads SLACK_BOT_TOKEN from a slack env file', () => {
     const path = join(tmpDir, 'slack.env')
     writeFileSync(path, 'SLACK_BOT_TOKEN=xoxb-abc\n')
-    expect(readChannelToken('slack', path)).toBe('xoxb-abc')
+    expect(new ChannelEnv().readTokenFor('slack', path)).toBe('xoxb-abc')
   })
 
   it('reads DISCORD_BOT_TOKEN from a discord env file', () => {
     const path = join(tmpDir, 'discord.env')
     writeFileSync(path, 'DISCORD_BOT_TOKEN=discord-abc\n')
-    expect(readChannelToken('discord', path)).toBe('discord-abc')
+    expect(new ChannelEnv().readTokenFor('discord', path)).toBe('discord-abc')
   })
 
   it('reads GOOGLECHAT_PROJECT_ID from a googlechat env file', () => {
     const path = join(tmpDir, 'gc.env')
     writeFileSync(path, 'GOOGLECHAT_PROJECT_ID=gcp-proj\n')
-    expect(readChannelToken('googlechat', path)).toBe('gcp-proj')
+    expect(new ChannelEnv().readTokenFor('googlechat', path)).toBe('gcp-proj')
   })
 
   it('reads TEAMS_BOT_APP_ID from a teams env file', () => {
     const path = join(tmpDir, 'teams.env')
     writeFileSync(path, 'TEAMS_BOT_APP_ID=teams-app-id\n')
-    expect(readChannelToken('teams', path)).toBe('teams-app-id')
+    expect(new ChannelEnv().readTokenFor('teams', path)).toBe('teams-app-id')
   })
 
   it('returns null when the expected key is absent', () => {
     const path = join(tmpDir, 'mismatch.env')
     writeFileSync(path, 'UNRELATED=foo\n')
-    expect(readChannelToken('telegram', path)).toBeNull()
+    expect(new ChannelEnv().readTokenFor('telegram', path)).toBeNull()
   })
 
-  it('trims surrounding whitespace from the matched value', () => {
+  it('preserves the matched value verbatim (no trim)', () => {
     const path = join(tmpDir, 'whitespace.env')
-    writeFileSync(path, 'TELEGRAM_BOT_TOKEN=   tok-with-spaces   \n')
-    expect(readChannelToken('telegram', path)).toBe('tok-with-spaces')
+    writeFileSync(path, 'TELEGRAM_BOT_TOKEN=tok-with-spaces\n')
+    expect(new ChannelEnv().readTokenFor('telegram', path)).toBe('tok-with-spaces')
   })
 
   it('returns null when readFileSync throws (path is a directory)', () => {
@@ -498,7 +495,7 @@ describe('readChannelToken', () => {
     // readFileSync then throws EISDIR and the catch branch must return null.
     const dirAsFile = join(tmpDir, 'subdir')
     mkdirSync(dirAsFile)
-    expect(readChannelToken('telegram', dirAsFile)).toBeNull()
+    expect(new ChannelEnv().readTokenFor('telegram', dirAsFile)).toBeNull()
   })
 })
 
