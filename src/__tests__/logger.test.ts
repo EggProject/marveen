@@ -14,7 +14,7 @@ import type { LoggerLike } from '../logger.js'
 // captures the expected compile error -- if a future refactor accidentally
 // drops the `debug` requirement from LoggerLike, this line will compile cleanly
 // and the @ts-expect-error will itself error, surfacing the regression.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+/* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-empty-function */
 // @ts-expect-error -- LoggerLike requires `debug`; this 3-method mock must NOT compile
 // (if it compiles, the structural requirement was lost -- re-pin).
 const _incompleteLogger: LoggerLike = {
@@ -22,6 +22,7 @@ const _incompleteLogger: LoggerLike = {
   warn: () => {},
   error: () => {},
 }
+/* eslint-enable @typescript-eslint/no-unused-vars, @typescript-eslint/no-empty-function */
 
 describe('logger', () => {
   const originalLogLevel = process.env.LOG_LEVEL
