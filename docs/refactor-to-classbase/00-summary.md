@@ -102,7 +102,7 @@ recent lowest-risk landing; see the post-D.1 paragraph below.
    alongside free-function wrappers) + E.3 (port-lock consumer
    migration in `index.ts`) + E.4 (pidfile consumer migration). E.5
    (free-function removal) + E.6 (`LogFn` removal, gated on H.1 + H.2)
-   LANDED (this commit). See `e-process-lock/` for phase detail.
+   LANDED f20c330. See `e-process-lock/` for phase detail.
 
 3. ~~**`src/auto-restart.ts` → `class AutoRestartSchedule`**~~ WITHDRAWN
    (2026-08-31). Superseded by commit 8f1906c; the class form

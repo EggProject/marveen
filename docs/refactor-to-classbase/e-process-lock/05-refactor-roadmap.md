@@ -165,7 +165,7 @@ uncovered once E.5 removes them.
 
 ## Phase E.3 — PortLock consumer migration (proof)
 
-> **LANDED in `(this commit)`**. Single commit touching `src/index.ts`
+> **LANDED in `f20c330`**. Single commit touching `src/index.ts`
 > (one call site migrated from `acquirePortLock(WEB_PORT, procCtx, { binaryPattern: … })`
 > to `new PortLockAcquirer(procCtx).acquire(WEB_PORT, { binaryPattern: … })`)
 > and `src/__tests__/index.test.ts` (the `vi.mock('../process-lock.js')`
@@ -186,7 +186,7 @@ uncovered once E.5 removes them.
   from `acquirePortLock(WEB_PORT, procCtx, { binaryPattern: … })`
   (`src/index.ts:344`) to the class form. This is the proof consumer
   for E.1; once it passes, E.1 is validated end-to-end.
-- **Files touched (as landed in `(this commit)`):**
+- **Files touched (as landed in `f20c330`):**
   - `src/index.ts` — constructed `new PortLockAcquirer(procCtx)` locally
     inside `acquireLock()` at `:330` and called
     `await new PortLockAcquirer(procCtx).acquire(WEB_PORT, { binaryPattern: … })`
@@ -279,7 +279,7 @@ uncovered once E.5 removes them.
 
 ## Phase E.5 — Free function removal
 
-> **LANDED in `(this commit)`** across two commits:
+> **LANDED in `f20c330`** across two commits:
 > **E.5a = `d4f2d71`** deletes the four `PortLockAcquirer`-related
 > free-function wrappers (`findOwnNodeHolders`, `findOwnBinaryMatches`,
 > `terminateProcesses`, `acquirePortLock`); **E.5b = `8f33a22`** deletes
@@ -448,7 +448,7 @@ H.1 (LoggerLike) ──────────┐
 E.5 has now landed. The pre-conditions that gated it were:
 
 1. E.1, E.2, E.3, E.4 have all merged to `feature-develop`.
-   Verified — `57c78d0` (E.1+E.2), `(this commit)` (E.3),
+   Verified — `57c78d0` (E.1+E.2), `f20c330` (E.3),
    `30509d4` (E.4) are all present on `refactor/classbase`.
 2. The full test suite passes on the merged branch.
 3. The mechanical gate held:
