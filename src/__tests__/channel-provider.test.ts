@@ -485,9 +485,12 @@ describe('ChannelEnv.readTokenFor', () => {
   })
 
   it('preserves the matched value verbatim (no trim)', () => {
+    // Regression pin for the D.1 regex change: the match must NOT strip
+    // surrounding whitespace. Pre-D.1 .trim() would mask hand-edited .env
+    // files where a user accidentally added spaces around the token value.
     const path = join(tmpDir, 'whitespace.env')
-    writeFileSync(path, 'TELEGRAM_BOT_TOKEN=tok-with-spaces\n')
-    expect(new ChannelEnv().readTokenFor('telegram', path)).toBe('tok-with-spaces')
+    writeFileSync(path, 'TELEGRAM_BOT_TOKEN=  tok-with-spaces  \n')
+    expect(new ChannelEnv().readTokenFor('telegram', path)).toBe('  tok-with-spaces  ')
   })
 
   it('returns null when readFileSync throws (path is a directory)', () => {

@@ -531,13 +531,7 @@ export class ChannelEnv {
     const base = agentDir
       ? join(agentDir, '.claude', 'channels')
       : join(homedir(), '.claude', 'channels')
-    switch (provider) {
-      case 'telegram':   return join(base, 'telegram')
-      case 'slack':      return join(base, 'slack')
-      case 'discord':    return join(base, 'discord')
-      case 'googlechat': return join(base, 'googlechat')
-      case 'teams':      return join(base, 'teams')
-    }
+    return join(base, ChannelEnv.TABLE[provider].subdir)
   }
 
   readTokenFor(provider: ChannelProviderType, envFilePath: string): string | null {
