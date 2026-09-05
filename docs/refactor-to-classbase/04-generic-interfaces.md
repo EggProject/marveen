@@ -376,28 +376,39 @@ All `web/*Runner` classes listed in B5 of `03-class-boundaries.md`:
 
 ---
 
-## G7. `LazyBin<TName>`
+## G7. `LazyBin<TName, TResolved>`
 
-Generic version of `makeLazyBinResolver` at `platform.ts:74`.
+Generic version of `makeLazyBinResolver` at `platform.ts:103`.
 
 ### Definition (signature only)
 
 ```ts
-class LazyBin<TName extends string> {
-  constructor(private name: TName, private opts: { resolver?: (n: TName) => string | null } = {}) {}
-  resolve(): string | null
+class LazyBin<
+  TName extends string = string,
+  TResolved extends string | null | undefined = string,
+> {
+  readonly name: TName
+  constructor(name: TName, private readonly resolver: (name: TName) => TResolved)
+  resolve(): TResolved
   invalidate(): void
 }
 ```
 
 ### Type parameters
 
-- `TName extends string` — the binary name; constrained to `string`
+- `TName extends string` -- the binary name; constrained to `string`
   to ensure `name` is a sensible map key.
+- `TResolved extends string | null | undefined = string` -- the
+  resolved-value type. Default `string` covers the
+  `makeLazyBinResolver(name)` factory case. Subclasses (e.g.
+  `ClaudeCodeBinResolver extends LazyBin<'claude', string | undefined>`)
+  widen the second parameter to encode "tried and absent" as a value
+  distinct from the parent's `cached === null` "not yet resolved"
+  sentinel.
 
 ### Variance notes
 
-`TName` is invariant — used in constructor (input) and as a key for
+`TName` is invariant -- used in constructor (input) and as a key for
 internal storage (output via `resolve()` indirectly via `process.env`).
 
 ### Usage example (signature only)
@@ -405,16 +416,18 @@ internal storage (output via `resolve()` indirectly via `process.env`).
 ```ts
 const claudeBin = new LazyBin('claude', resolveFromPath)
 const codeBin = new LazyBin('code', resolveFromPath)
-claudeBin.resolve() // -> string
+claudeBin.resolve() // -> TResolved (string in this case)
+// Adopter with widened TResolved:
+//   ClaudeCodeBinResolver#resolve() returns string | undefined
 ```
 
 ### Adopters
 
-- `src/agent.ts` — the `ClaudeCodeBinResolver` (C1) is a more
+- `src/agent.ts` -- the `ClaudeCodeBinResolver` (C1) is a more
   specialized version that probes filesystem paths; `LazyBin` is
   the underlying shape. Reason: the `makeLazyBinResolver` factory
   returns a closure; the class form is a literal translation.
-- `src/platform.ts` — replaces `PLATFORM` singleton at line 74
+- `src/platform.ts` -- replaces `PLATFORM` singleton at line 24
   plus the `tryResolveFromPath` / `resolveFromPath` pure helpers.
   Reason: the closure factory pattern is the smallest classbase
   refactor in the codebase (per `01-module-state-analysis.md`

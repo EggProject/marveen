@@ -138,13 +138,22 @@ describe('ClaudeCodeBinResolver', () => {
     // returns undefined, `??=` would overwrite the memoised undefined on
     // every subsequent call (since `undefined ??= x` assigns x). The test
     // below would fail under that mutation.
-    setPlatform('darwin', 'arm64')
+    //
+    // Setup note: the ClaudeCodeBinResolver SHORT-CIRCUITS to `return undefined`
+    // on non-linux at src/agent.ts:96 BEFORE touching execSync or existsSync.
+    // To actually exercise the I/O path (and therefore the memoisation
+    // sentinel), the test must run on linux/x64 with both execSync and
+    // existsSync mocked to return "binary absent" (libc detected but path
+    // missing).
+    setPlatform('linux', 'x64')
+    mockExecSync.mockReturnValue('ldd (Debian GLIBC 2.36) 2.36\n')
+    mockExistsSync.mockReturnValue(false)
     const { ClaudeCodeBinResolver } = await import('../agent.js')
     const resolver = new ClaudeCodeBinResolver()
     expect(resolver.resolve()).toBeUndefined()
     // After the first call returned undefined, the resolver must NOT be
     // re-invoked on the next call. execSync is the only side-effecting call
-    // here; if its call count is still 0 after two resolve()s, the parent's
+    // here; if its call count is still 1 after two resolve()s, the parent's
     // `cached === null` guard is intact (undefined was memoised, not
     // confused with "not yet resolved").
     const execCallsAfterFirst = mockExecSync.mock.calls.length

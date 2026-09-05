@@ -4,15 +4,14 @@ import { Socket } from 'node:net'
 import { existsSync, mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import type { RouteContext } from '../web/routes/types.js'
-import { AppError } from '../errors.js'
 
 const H = vi.hoisted(() => {
   const fs = require('node:fs')
   const os = require('node:os')
   const path = require('node:path')
-  // vi.hoisted runs before top-level imports, so the AppError import on line 7
-  // is still in TDZ here. require() bypasses the import order and lets us
-  // resolve AppError before its top-level import is initialised.
+  // vi.hoisted runs before top-level imports, so any top-level `import { AppError }`
+  // would still be in TDZ here. require() resolves it eagerly instead. The local
+  // `AppError` below is what the in-fixture RequestBodyTooLargeError extends.
   const { AppError } = require('../errors.js') as typeof import('../errors.js')
   const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'routes-schedules-'))
   const scheduledTasksDir = path.join(sandbox, 'scheduled-tasks')

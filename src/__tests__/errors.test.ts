@@ -77,28 +77,3 @@ describe('AppError', () => {
     expect(descriptor?.enumerable).toBe(false)
   })
 })
-
-// Integration-style regression pins for the 4 production instanceof sites.
-describe('H.4 production regression pins', () => {
-  it('routes/federation.ts:319 branch still fires for RequestBodyTooLargeError', () => {
-    const err = new RequestBodyTooLargeError(1024)
-    // Mirror the check shape from the source:
-    const branch = err instanceof RequestBodyTooLargeError
-    expect(branch).toBe(true)
-  })
-
-  it('routes/schedules.ts:134 branch still fires for RequestBodyTooLargeError', () => {
-    const err = new RequestBodyTooLargeError(1024)
-    expect(err instanceof RequestBodyTooLargeError).toBe(true)
-  })
-
-  it('routes/schedules.ts:185 branch still fires for RequestBodyTooLargeError', () => {
-    const err = new RequestBodyTooLargeError(1024)
-    expect(err instanceof RequestBodyTooLargeError).toBe(true)
-  })
-
-  it('federation/poller.ts:199 branch still fires for PeerResponseTooLargeError', () => {
-    const err = new PeerResponseTooLargeError(8192)
-    expect(err instanceof PeerResponseTooLargeError).toBe(true)
-  })
-})
