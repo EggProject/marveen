@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { execSync } from 'node:child_process'
 import { PROJECT_ROOT } from './config.js'
+import { LazyBin } from './platform.js'
 
 const TYPING_REFRESH_MS = 4000
 import { logger } from './logger.js'
@@ -78,25 +79,35 @@ function detectLinuxLibc(): 'glibc' | 'musl' {
   }
 }
 
-let cachedClaudeCodeBin: string | undefined | null = null
+// Three-state lazy resolver: null = not yet resolved, string = path resolved,
+// undefined = tried and absent. Extends LazyBin<'claude', string | undefined>
+// per F.7 / 03-class-boundaries.md §F5: the parent handles memoisation (cached
+// === null check) and invalidate(); the subclass supplies only the resolver
+// closure that decides where the Claude Code binary lives on this host.
+//
+// The resolver's early-return on darwin/win32/non-x64-linux SKIPS
+// existsSync/which -- a key behaviour the closure preserved (no I/O cost on
+// macOS dev boxes). The parent resolve() will only invoke our resolver once,
+// then memoise the result (including memoising undefined for absent).
+export class ClaudeCodeBinResolver extends LazyBin<'claude', string | undefined> {
+  constructor() {
+    super('claude', () => {
+      if (process.env.CLAUDE_CODE_BIN) return process.env.CLAUDE_CODE_BIN
+      if (process.platform !== 'linux' || process.arch !== 'x64') return undefined
+      const libc = detectLinuxLibc()
+      const variant = libc === 'musl' ? 'linux-x64-musl' : 'linux-x64'
+      const bin = join(
+        PROJECT_ROOT, 'node_modules', '@anthropic-ai',
+        `claude-agent-sdk-${variant}`, 'claude',
+      )
+      return existsSync(bin) ? bin : undefined
+    })
+  }
+}
+
+const claudeCodeBinResolver = new ClaudeCodeBinResolver()
 function resolveClaudeCodeBin(): string | undefined {
-  if (cachedClaudeCodeBin !== null) return cachedClaudeCodeBin
-  if (process.env.CLAUDE_CODE_BIN) {
-    cachedClaudeCodeBin = process.env.CLAUDE_CODE_BIN
-    return cachedClaudeCodeBin
-  }
-  if (process.platform !== 'linux' || process.arch !== 'x64') {
-    cachedClaudeCodeBin = undefined
-    return undefined
-  }
-  const libc = detectLinuxLibc()
-  const variant = libc === 'musl' ? 'linux-x64-musl' : 'linux-x64'
-  const bin = join(
-    PROJECT_ROOT, 'node_modules', '@anthropic-ai',
-    `claude-agent-sdk-${variant}`, 'claude',
-  )
-  cachedClaudeCodeBin = existsSync(bin) ? bin : undefined
-  return cachedClaudeCodeBin
+  return claudeCodeBinResolver.resolve()
 }
 
 // Backend selector (jun.15 subscription migration). 'worker' (default) routes

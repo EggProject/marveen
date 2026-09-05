@@ -73,13 +73,25 @@ export function resolveFromPath(name: string): string {
 // successful lookup. `invalidate()` drops the memoised value so tests (and any
 // future caller that wants to re-probe after an install change) can force a
 // fresh lookup.
-export class LazyBin<TName extends string = string> {
+//
+// TResolved is the type the subclass resolver returns: `string` for the
+// generic / factory-backed case (binary always expected to be present), but a
+// subclass (e.g. ClaudeCodeBinResolver) can widen it to `string | undefined`
+// to encode "tried and absent" as a value, distinct from "not yet resolved"
+// (the parent's `cached === null` sentinel).
+export class LazyBin<
+  TName extends string = string,
+  TResolved extends string | null | undefined = string,
+> {
   readonly name: TName
-  private cached: string | null = null
-  constructor(name: TName, private readonly resolver: (name: TName) => string = resolveFromPath) {
+  // Three-state cache per F.7 decision: null = not yet resolved;
+  // TResolved = resolved (TResolved itself may carry its own absent signal,
+  // e.g. undefined for the ClaudeCodeBinResolver subclass).
+  private cached: TResolved | null = null
+  constructor(name: TName, private readonly resolver: (name: TName) => TResolved) {
     this.name = name
   }
-  resolve(): string {
+  resolve(): TResolved {
     if (this.cached === null) this.cached = this.resolver(this.name)
     return this.cached
   }
@@ -89,6 +101,6 @@ export class LazyBin<TName extends string = string> {
 }
 
 export function makeLazyBinResolver(name: string): () => string {
-  const bin = new LazyBin(name)
+  const bin = new LazyBin<string, string>(name, resolveFromPath)
   return () => bin.resolve()
 }
