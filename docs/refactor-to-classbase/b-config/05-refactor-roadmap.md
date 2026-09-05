@@ -16,7 +16,25 @@ migrated.
 
 ---
 
-## B.1 — `Config` class extraction (additive)
+## B.1 — `Config` class extraction (additive) — **LANDED** (this commit)
+
+Status: LANDED. The class + 58 re-exports + 10 function re-exports + `config = Config.fromEnv()` singleton landed in the same commit; the 96 importers + 162 `vi.mock` sites are byte-identical pre/post. SHA placeholder below — repoint in a follow-up commit once the merge SHA is known.
+
+- B.1 commit: `(this commit)` — `refactor(config): extract Config class with re-export shim (B.1)`
+
+### B.7 verification note
+
+The B.7 verification step (per `b-config/03-class-boundaries.md §B2`) confirms that `src/config-registry.ts` does NOT require a class wrap. The 5-kérdéses decision tree in `.claude/rules/class-vs-functional-decision.md` scores `SettingsRegistry` at **0/5 IGEN**:
+
+- instance state: no (frozen `const` array)
+- lifecycle: no (no init/close)
+- DI seam: no (no consumer accepts a `SettingsRegistry` instance today)
+- inheritance: no (single literal, no variants)
+- testability: no (already trivially mockable via `vi.mock`)
+
+The 35-entry `SETTINGS_REGISTRY` literal and the 3 free helpers (`getSettingDefinition`, `listSettingModules`, `validateSettingValue`) stay as-is. B.7 verification = green.
+
+---
 
 ### Goal
 
