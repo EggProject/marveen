@@ -110,6 +110,56 @@ recent lowest-risk landing; see the post-D.1 paragraph below.
    on the decision tree). See `i-auto-restart/code-review-handoff.md`
    for the full verifier trail.
 
+4. **`src/config.ts` → `class Config`** LANDED — B.1 (terv
+   `mellow-hugging-wombat.md`). `class Config` introduced at
+   `src/config.ts:31` with 58 readonly fields + 3 instance methods
+   (`currentBotName`/`currentBrandName`/`currentOwnerName`) + 7
+   static methods (`resolveAppTz`/`resolveBrandName`/`resolveServiceId`/
+   `brandSlug`/`appServiceLabel`/`launchdStatusPattern`/
+   `systemdStatusUnits`) + `fromEnv(log?)` factory. The 58 `export
+   const` re-exports and 10 `export function` re-exports became
+   `export const X = config.X` and `export const f = Config.f.bind(
+   Config)` / `(...args) => config.f(...args)` respectively. 96
+   importers + 162 `vi.mock('../config.js', ...)` sites byte-identical
+   pre/post. SHA: `(this commit)` placeholder, see B.1 commit.
+
+   **Why this counts as a lowest-risk win** (in retrospect):
+   - The class form is a "thin wrapper" — every re-export points at
+     the singleton field, so the 96 importers and 162 mock sites
+     resolve byte-equivalently.
+   - The per-call `current*Name()` instance methods already had the
+     right shape (per `03-class-boundaries.md §B1`), so the migration
+     was mechanical.
+   - No cross-module API changes for the 60 importers (signatures
+     preserved byte-for-byte per `review-correctness.md` C1).
+   - Test suite green pre- and post-commit.
+
+5. **`src/db.ts` → `class DbClient`** LANDED — A.1 (terv
+   `mellow-hugging-wombat.md`). `class DbClient` introduced at
+   `src/db.ts:2393` with 5 fields + constructor + `open(config, log,
+   dbPathOverride?)` factory + 5 methods (`query`/`exec`/`transaction`/
+   `getHandle`/`close`) + 2 private statics (`tightenDbPermissions`,
+   `migrateTaskRunsFromJson`). `initDatabase` is now a 5-line
+   wrapper that delegates to `DbClient.open()` and syncs the
+   module-level `let db` singleton; `getDb()` and the 155 free
+   functions that close over `db` are unchanged. 50
+   `vi.mock('../db.js', ...)` sites byte-identical pre/post. SHA:
+   `(this commit)` placeholder, see A.1 commit.
+
+   **Why this counts as a lowest-risk win** (in retrospect):
+   - `getHandle()` is the explicit escape hatch — the 9 production
+     `getDb()` callers (per `a-db/01 §1.3`) keep working unchanged
+     until A.7.
+   - The factory's INTERNAL re-init guard (close `client.handle`)
+     protects repeated `DbClient.open()` calls without leaking fds;
+     the outer `initDatabase` re-init guard (close `db`) protects
+     the 155 free-function callers — two layers, two handles, no
+     interference.
+   - The migrations (`~30 runScript` blocks + `migrateTaskRunsFromJson`)
+     moved into `DbClient.open()` byte-for-byte from `initDatabase`;
+     behavior unchanged.
+   - Test suite green pre- and post-commit.
+
 ### Post-D.1 landing note (2026-09-04)
 
 **D.1 `ChannelEnv` class extraction + full migration — LANDED** (this

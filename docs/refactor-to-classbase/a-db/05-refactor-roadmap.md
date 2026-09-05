@@ -25,7 +25,13 @@ not "should be green" (which is unverifiable without a baseline).
 
 ---
 
-## A.1 — `DbClient` keystone extraction
+## A.1 — `DbClient` keystone extraction — **LANDED** (this commit)
+
+Status: LANDED. The class landed alongside the existing 155 free functions (none of which were rewritten); `initDatabase` is now a 5-line wrapper that delegates to `DbClient.open()` and syncs the module-level `let db` singleton to the new handle. The 50 `vi.mock('../db.js', ...)` sites in `src/__tests__/` are byte-identical pre/post. SHA placeholder below — repoint in a follow-up commit once the merge SHA is known.
+
+- A.1 commit: `(this commit)` — `refactor(db): extract DbClient class with getHandle() escape hatch (A.1)`
+
+---
 
 **Goal:** Introduce `class DbClient` alongside `let db: Database` at
 `src/db.ts:10`. The class wraps the `bun:sqlite` handle, exposes a

@@ -2,35 +2,13 @@ import { Database, pragma, runScript } from './db/sqlite.js'
 import type { SQLQueryBindings } from 'bun:sqlite'
 import { join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, renameSync, chmodSync, openSync, closeSync } from 'node:fs'
-import { STORE_DIR, DB_FILENAME, ALLOWED_CHAT_ID, OLLAMA_URL, APP_TZ } from './config.js'
+import { STORE_DIR, DB_FILENAME, PROJECT_ROOT, ALLOWED_CHAT_ID, OLLAMA_URL, APP_TZ, type Config } from './config.js'
 import { getEffectiveSettingValue } from './settings-store.js'
-import { logger } from './logger.js'
+import { logger, type LoggerLike } from './logger.js'
 import { TOOL_TIMEOUTS } from './tool-timeouts.js'
 
 let db: Database
 
-// Lock the DB file and its sidecars (WAL, SHM, rollback journal) down to
-// owner-only. bun:sqlite opens the main file with the process umask
-// (typically 0o644), which leaves a TOCTOU window where any other local
-// process -- malicious postinstall, rogue shell script, unrelated
-// tool running under the operator's UID -- can open() it for read BEFORE
-// we narrow the mode. The narrowed chmod would not revoke an already-
-// opened fd. Defense in depth:
-//   (1) Pre-create the main DB file via openSync('wx', 0o600) so the
-//       sqlite handle inherits the tight mode on fresh installs and the
-//       race window is closed entirely.
-//   (2) After Database() + PRAGMA wal, chmod the sidecars (WAL/SHM/
-//       journal) -- they were created during the pragma call at umask.
-//       This path also fixes older installs whose files sit at 0o644.
-function tightenDbPermissions(dbPath: string): void {
-  const sidecars = [dbPath, `${dbPath}-wal`, `${dbPath}-shm`, `${dbPath}-journal`]
-  for (const path of sidecars) {
-    if (!existsSync(path)) continue
-    try { chmodSync(path, 0o600) } catch (err) {
-      logger.warn({ err, path }, 'Failed to tighten DB file permissions')
-    }
-  }
-}
 
 // dbPathOverride is for tests: pass ':memory:' (or a temp file path) to open an
 // isolated database instead of the real store/claudeclaw.db. ':memory:' has no
@@ -39,942 +17,27 @@ function tightenDbPermissions(dbPath: string): void {
 // STILL gets pre-create + tighten -- this lets the permission tests exercise the
 // tightening logic on a throwaway file instead of touching the prod DB. The
 // STORE_DIR mkdir stays prod-only; a temp-file override owns its own directory.
+// A.1 — initDatabase is a thin wrapper around DbClient.open() that syncs
+// the module-level `let db` singleton to the new handle. The factory inside
+// DbClient.open() does the actual I/O (mkdir, pre-create DB file, PRAGMAs,
+// tighten file perms, ~30 runScript migrations, migrateTaskRunsFromJson) and
+// holds its OWN re-init guard on `client.handle` so repeated DbClient.open()
+// A.1 note: the close here closes the module-singleton `db` handle (FD cleanup);
+// the `DbClient.open()` factory's internal guard handles its OWN `client.handle`
+// lifecycle. The two layers protect different handles — keeping both prevents
+// FD leak on re-init until A.7 migrates `getDb()` callers to own a `DbClient`
+// instance directly.
 export function initDatabase(dbPathOverride?: string): void {
-  const useOverride = dbPathOverride !== undefined
-  const isMemory = dbPathOverride === ':memory:'
-  if (!useOverride) mkdirSync(STORE_DIR, { recursive: true })
-  // Idempotent re-init: close a previous handle before opening a new one
-  // so repeated calls (tests, hot-reload, recovery paths) do not leak
-  // the old sqlite fd.
   if (db) {
     try { db.close() } catch { /* already closed */ }
   }
-  const dbPath = useOverride ? dbPathOverride! : join(STORE_DIR, DB_FILENAME)
-  // Step 1: close the TOCTOU window on fresh installs. openSync with 'wx'
-  // + 0o600 creates the file ONLY if it doesn't exist and sets the strict
-  // mode atomically. The sqlite handle then opens the existing file rather
-  // than creating one at the default umask. Skipped only for ':memory:'.
-  if (!isMemory && !existsSync(dbPath)) {
-    try {
-      closeSync(openSync(dbPath, 'wx', 0o600))
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException)?.code
-      // EEXIST: a concurrent startup won the race and created it. The
-      // tightenDbPermissions call below will correct its mode.
-      if (code !== 'EEXIST') {
-        logger.warn({ err, dbPath }, 'Pre-create of DB file failed, continuing; mode will be tightened post-open')
-      }
-    }
-  }
-  db = new Database(dbPath, { strict: true })
-  pragma(db, 'journal_mode = WAL')
-  // Performance pragmas: safe with WAL, applied after journal_mode is set.
-  // cache_size: negative value = kibibytes; -65536 → 64 MB page cache.
-  // mmap_size: memory-mapped I/O in bytes; 256 MB. Skipped for :memory: (no file to map).
-  // synchronous = NORMAL: safe under WAL (only full-fsync skipped, not the WAL checkpoint).
-  pragma(db, 'cache_size = -65536')
-  if (!isMemory) pragma(db, 'mmap_size = 268435456')
-  pragma(db, 'synchronous = NORMAL')
-  if (!isMemory) tightenDbPermissions(dbPath)
-
-  runScript(db, `
-    CREATE TABLE IF NOT EXISTS sessions (
-      chat_id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL,
-      updated_at INTEGER NOT NULL,
-      message_count INTEGER NOT NULL DEFAULT 0
-    )
-  `)
-
-  // Migráció: message_count oszlop hozzáadása meglévő DB-hez
-  try {
-    runScript(db, 'ALTER TABLE sessions ADD COLUMN message_count INTEGER NOT NULL DEFAULT 0')
-  } catch {
-    // már létezik, rendben
-  }
-
-  runScript(db, `
-    CREATE TABLE IF NOT EXISTS memories (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      chat_id TEXT NOT NULL,
-      topic_key TEXT,
-      content TEXT NOT NULL,
-      sector TEXT NOT NULL CHECK(sector IN ('semantic','episodic')),
-      salience REAL NOT NULL DEFAULT 1.0,
-      created_at INTEGER NOT NULL,
-      accessed_at INTEGER NOT NULL
-    )
-  `)
-
-  runScript(db, `
-    CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
-      content,
-      content='memories',
-      content_rowid='id'
-    )
-  `)
-
-  runScript(db, `
-    CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
-      INSERT INTO memories_fts(rowid, content) VALUES (new.id, new.content);
-    END
-  `)
-  runScript(db, `
-    CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
-      INSERT INTO memories_fts(memories_fts, rowid, content) VALUES('delete', old.id, old.content);
-    END
-  `)
-  runScript(db, `
-    CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
-      INSERT INTO memories_fts(memories_fts, rowid, content) VALUES('delete', old.id, old.content);
-      INSERT INTO memories_fts(rowid, content) VALUES (new.id, new.content);
-    END
-  `)
-
-  runScript(db, `
-    CREATE TABLE IF NOT EXISTS scheduled_tasks (
-      id TEXT PRIMARY KEY,
-      chat_id TEXT NOT NULL,
-      prompt TEXT NOT NULL,
-      schedule TEXT NOT NULL,
-      next_run INTEGER NOT NULL,
-      last_run INTEGER,
-      last_result TEXT,
-      status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','paused')),
-      created_at INTEGER NOT NULL
-    )
-  `)
-  runScript(db, `CREATE INDEX IF NOT EXISTS idx_tasks_status_next ON scheduled_tasks(status, next_run)`)
-
-  // --- Kanban ---
-  runScript(db, `
-    CREATE TABLE IF NOT EXISTS kanban_cards (
-      id TEXT PRIMARY KEY,
-      title TEXT NOT NULL,
-      description TEXT,
-      status TEXT NOT NULL DEFAULT 'planned' CHECK(status IN ('planned','in_progress','testing','waiting','done')),
-      assignee TEXT,
-      priority TEXT NOT NULL DEFAULT 'normal' CHECK(priority IN ('low','normal','high','urgent')),
-      project TEXT,
-      due_date INTEGER,
-      sort_order REAL NOT NULL DEFAULT 0,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL,
-      archived_at INTEGER
-    )
-  `)
-  // Migration: add project column to kanban_cards for installs created
-  // before #89 (whose CREATE TABLE IF NOT EXISTS ran without `project`
-  // and is a no-op on the next boot). Without this, createKanbanCard
-  // and updateKanbanCard fail with `table kanban_cards has no column
-  // named project` and no card can be saved.
-  try {
-    runScript(db, 'ALTER TABLE kanban_cards ADD COLUMN project TEXT')
-  } catch {
-    // column already exists
-  }
-  try {
-    runScript(db, 'ALTER TABLE kanban_cards ADD COLUMN parent_id TEXT REFERENCES kanban_cards(id)')
-  } catch {
-    // column already exists
-  }
-  runScript(db, 'CREATE INDEX IF NOT EXISTS idx_kanban_parent ON kanban_cards(parent_id)')
-  // Migration: add dispatched_at to kanban_cards (kanban -> agent dispatch
-  // once-only guard). Older installs created the table without it.
-  try {
-    runScript(db, 'ALTER TABLE kanban_cards ADD COLUMN dispatched_at INTEGER')
-  } catch {
-    // column already exists
-  }
-  // Migration: add 'testing' status to kanban_cards CHECK constraint.
-  // SQLite can't ALTER a CHECK constraint, so we recreate the table when the
-  // current schema doesn't yet include 'testing'. Idempotent on fresh DBs.
-  try {
-    const kcSchema = db.prepare<{ sql: string }, SQLQueryBindings[]>("SELECT sql FROM sqlite_master WHERE type='table' AND name='kanban_cards'").get() ?? undefined
-    if (kcSchema?.sql && !kcSchema.sql.includes("'testing'")) {
-      runScript(db, `
-        CREATE TABLE kanban_cards_new (
-          id TEXT PRIMARY KEY,
-          title TEXT NOT NULL,
-          description TEXT,
-          status TEXT NOT NULL DEFAULT 'planned' CHECK(status IN ('planned','in_progress','testing','waiting','done')),
-          assignee TEXT,
-          priority TEXT NOT NULL DEFAULT 'normal' CHECK(priority IN ('low','normal','high','urgent')),
-          project TEXT,
-          due_date INTEGER,
-          sort_order REAL NOT NULL DEFAULT 0,
-          created_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL,
-          archived_at INTEGER,
-          parent_id TEXT REFERENCES kanban_cards_new(id),
-          dispatched_at INTEGER
-        );
-        INSERT INTO kanban_cards_new
-          SELECT id, title, description, status, assignee, priority, project, due_date,
-                 sort_order, created_at, updated_at, archived_at, parent_id, dispatched_at
-          FROM kanban_cards;
-        DROP TABLE kanban_cards;
-        ALTER TABLE kanban_cards_new RENAME TO kanban_cards;
-      `)
-      runScript(db, `CREATE INDEX IF NOT EXISTS idx_kanban_parent ON kanban_cards(parent_id)`)
-      runScript(db, `CREATE INDEX IF NOT EXISTS idx_kanban_status ON kanban_cards(status, archived_at)`)
-    }
-  } catch (err) {
-    logger.warn({ err }, 'kanban_cards testing-status migration failed -- continuing')
-  }
-  // Migration: add agent_id, category, auto_generated columns to memories
-  try {
-    runScript(db, "ALTER TABLE memories ADD COLUMN agent_id TEXT NOT NULL DEFAULT 'marveen'")
-  } catch {
-    // column already exists
-  }
-  try {
-    runScript(db, "ALTER TABLE memories ADD COLUMN category TEXT NOT NULL DEFAULT 'general' CHECK(category IN ('user_pref','project','feedback','learning','shared','general'))")
-  } catch {
-    // column already exists
-  }
-  try {
-    runScript(db, 'ALTER TABLE memories ADD COLUMN auto_generated INTEGER NOT NULL DEFAULT 0')
-  } catch {
-    // column already exists
-  }
-
-  runScript(db, `CREATE INDEX IF NOT EXISTS idx_memories_agent ON memories(agent_id, category)`)
-
-  // --- Conversation-continuity ledger (deterministic; P0 2026-06-02) ---
-  // A durable ROLLING TRANSCRIPT of every channel turn -- inbound user messages
-  // AND outbound replies -- per agent_id + chat_id. On a respawn (a fresh
-  // --channels session with no memory of the live conversation) the SessionStart
-  // replay hook injects the last ~20 turns of context PLUS highlights the open
-  // question (the most recent inbound with no later outbound), so the fresh
-  // session continues exactly where the connection dropped -- ZERO agent
-  // discretion. Generic across all three channel agents (marveen/dia/erno-ba);
-  // agent_id is derived from the session cwd so each session only sees its own
-  // chat. Written by the settings.json hooks (UserPromptSubmit capture +
-  // PostToolUse outbound). UNIQUE(...) makes inbound capture idempotent; outbound
-  // rows carry message_id=NULL so they are never deduped against each other.
-  runScript(db, `
-    CREATE TABLE IF NOT EXISTS conversation_log (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      agent_id TEXT NOT NULL,
-      chat_id TEXT NOT NULL,
-      direction TEXT NOT NULL CHECK(direction IN ('in','out')),
-      message_id TEXT,
-      text TEXT,
-      ts TEXT,
-      created_at INTEGER NOT NULL,
-      UNIQUE(agent_id, chat_id, direction, message_id)
-    )
-  `)
-  runScript(db, `CREATE INDEX IF NOT EXISTS idx_convlog_agent ON conversation_log(agent_id, created_at)`)
-
-  // Migration: hot/warm/cold/shared tier system with an enforced CHECK.
-  // Rebuilds the table whenever its current schema doesn't include the
-  // canonical CHECK -- covers both the legacy ('user_pref'...) and the
-  // post-refactor-no-check states, and is idempotent on fresh DBs.
-  try {
-    const current = db.prepare<{ sql: string }, SQLQueryBindings[]>("SELECT sql FROM sqlite_master WHERE name='memories'").get() ?? undefined
-    const hasCanonicalCheck = !!current?.sql?.match(/CHECK\s*\(\s*category\s+IN\s*\(\s*'hot'\s*,\s*'warm'\s*,\s*'cold'\s*,\s*'shared'\s*\)\s*\)/i)
-    if (current?.sql && !hasCanonicalCheck) {
-      // Preserve keywords if the column exists; older DBs rebuilt this table
-      // before the keywords ADD COLUMN ran, so NULL out in that case.
-      const cols = db.prepare("PRAGMA table_info(memories)").all() as { name: string }[]
-      const keywordsExpr = cols.some(c => c.name === 'keywords') ? 'keywords' : 'NULL'
-      runScript(db, `
-        CREATE TABLE memories_new (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          chat_id TEXT NOT NULL,
-          topic_key TEXT,
-          content TEXT NOT NULL,
-          sector TEXT NOT NULL CHECK(sector IN ('semantic','episodic')),
-          salience REAL NOT NULL DEFAULT 1.0,
-          created_at INTEGER NOT NULL,
-          accessed_at INTEGER NOT NULL,
-          agent_id TEXT NOT NULL DEFAULT 'marveen',
-          category TEXT NOT NULL DEFAULT 'warm' CHECK(category IN ('hot','warm','cold','shared')),
-          auto_generated INTEGER NOT NULL DEFAULT 0,
-          keywords TEXT
-        );
-        INSERT INTO memories_new SELECT id, chat_id, topic_key, content, sector, salience, created_at, accessed_at, agent_id,
-          CASE category
-            WHEN 'hot' THEN 'hot'
-            WHEN 'warm' THEN 'warm'
-            WHEN 'cold' THEN 'cold'
-            WHEN 'shared' THEN 'shared'
-            WHEN 'user_pref' THEN 'warm'
-            WHEN 'project' THEN 'warm'
-            WHEN 'general' THEN 'warm'
-            WHEN 'feedback' THEN 'cold'
-            WHEN 'learning' THEN 'cold'
-            ELSE 'warm'
-          END,
-          auto_generated,
-          ${keywordsExpr}
-        FROM memories;
-        DROP TABLE memories;
-        ALTER TABLE memories_new RENAME TO memories;
-      `)
-      // Recreate FTS and triggers for new schema (now includes keywords)
-      runScript(db, `DROP TABLE IF EXISTS memories_fts`)
-      runScript(db, `CREATE VIRTUAL TABLE memories_fts USING fts5(content, keywords, content='memories', content_rowid='id')`)
-      runScript(db, `DROP TRIGGER IF EXISTS memories_ai`)
-      runScript(db, `DROP TRIGGER IF EXISTS memories_ad`)
-      runScript(db, `DROP TRIGGER IF EXISTS memories_au`)
-      runScript(db, `CREATE TRIGGER memories_ai AFTER INSERT ON memories BEGIN INSERT INTO memories_fts(rowid, content, keywords) VALUES (new.id, new.content, new.keywords); END`)
-      runScript(db, `CREATE TRIGGER memories_ad AFTER DELETE ON memories BEGIN INSERT INTO memories_fts(memories_fts, rowid, content, keywords) VALUES('delete', old.id, old.content, old.keywords); END`)
-      runScript(db, `CREATE TRIGGER memories_au AFTER UPDATE ON memories BEGIN INSERT INTO memories_fts(memories_fts, rowid, content, keywords) VALUES('delete', old.id, old.content, old.keywords); INSERT INTO memories_fts(rowid, content, keywords) VALUES (new.id, new.content, new.keywords); END`)
-      runScript(db, `INSERT INTO memories_fts(memories_fts) VALUES('rebuild')`)
-      runScript(db, `CREATE INDEX IF NOT EXISTS idx_memories_agent ON memories(agent_id, category)`)
-    }
-  } catch (err) {
-    // Previously this silently swallowed every error which masked the
-    // CHECK-constraint drop that Bug #2 described. Log loudly instead so
-    // a broken migration is obvious in the dashboard log.
-    const msg = err instanceof Error ? err.message : String(err)
-    if (!/already exists/i.test(msg)) {
-      console.error('[db] memories migration failed:', msg)
-    }
-  }
-
-  // If the table already has the new schema but no keywords column (edge case)
-  try {
-    runScript(db, 'ALTER TABLE memories ADD COLUMN keywords TEXT')
-  } catch {
-    // column already exists
-  }
-
-  // Migration: embedding column for vector search
-  try {
-    runScript(db, 'ALTER TABLE memories ADD COLUMN embedding TEXT')
-  } catch {
-    // column already exists
-  }
-
-  // Daily logs table
-  runScript(db, `
-    CREATE TABLE IF NOT EXISTS daily_logs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      agent_id TEXT NOT NULL,
-      date TEXT NOT NULL,
-      content TEXT NOT NULL,
-      created_at INTEGER NOT NULL
-    )
-  `)
-  runScript(db, `CREATE INDEX IF NOT EXISTS idx_daily_logs_date ON daily_logs(agent_id, date)`)
-
-  runScript(db, `CREATE INDEX IF NOT EXISTS idx_kanban_status ON kanban_cards(status, archived_at)`)
-
-  runScript(db, `
-    CREATE TABLE IF NOT EXISTS kanban_comments (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      card_id TEXT NOT NULL,
-      author TEXT NOT NULL,
-      content TEXT NOT NULL,
-      created_at INTEGER NOT NULL
-    )
-  `)
-  runScript(db, `CREATE INDEX IF NOT EXISTS idx_kanban_comments_card ON kanban_comments(card_id)`)
-
-  // Status-change audit trail: one row per real status transition so the board
-  // can answer "who moved this card, when, from/to status". Written by
-  // moveKanbanCard only when the status actually changes.
-  runScript(db, `
-    CREATE TABLE IF NOT EXISTS kanban_card_events (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      card_id TEXT NOT NULL,
-      from_status TEXT,
-      to_status TEXT NOT NULL,
-      actor TEXT,
-      created_at INTEGER NOT NULL
-    )
-  `)
-  runScript(db, `CREATE INDEX IF NOT EXISTS idx_kanban_events_card ON kanban_card_events(card_id, created_at)`)
-
-  // --- Kanban labels (tags) -----------------------------------------------
-  // Labels are a separate registry (not hardcoded per-card strings) so the
-  // same label can be reused across many cards and recolored in one place.
-  // The colour itself is validated against the configured palette
-  // (KANBAN_LABEL_COLORS) at the route layer, not hardcoded here.
-  runScript(db, `
-    CREATE TABLE IF NOT EXISTS labels (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      color TEXT NOT NULL,
-      created_at INTEGER NOT NULL
-    )
-  `)
-  runScript(db, `
-    CREATE TABLE IF NOT EXISTS kanban_card_labels (
-      card_id TEXT NOT NULL,
-      label_id TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      PRIMARY KEY (card_id, label_id)
-    )
-  `)
-  runScript(db, `CREATE INDEX IF NOT EXISTS idx_card_labels_label ON kanban_card_labels(label_id)`)
-
-  // --- Agent Messages ---
-  runScript(db, `
-    CREATE TABLE IF NOT EXISTS agent_messages (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      from_agent TEXT NOT NULL,
-      to_agent TEXT NOT NULL,
-      content TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','delivered','done','failed')),
-      result TEXT,
-      created_at INTEGER NOT NULL,
-      delivered_at INTEGER,
-      completed_at INTEGER
-    )
-  `)
-  runScript(db, `CREATE INDEX IF NOT EXISTS idx_agent_messages_status ON agent_messages(status, to_agent)`)
-  // Composite index for thread-listing queries that filter on (from_agent, to_agent) without a status
-  // predicate -- the status index above does not cover these and causes full table scans at scale.
-  runScript(db, `CREATE INDEX IF NOT EXISTS idx_agent_messages_thread ON agent_messages(from_agent, to_agent, created_at)`)
-  // Card 06f062e4: the bus has no sender authentication -- from_agent is
-  // self-declared and every sub-agent spawned under a parent shares that
-  // parent's from_agent string, invisibly to the parent session and its
-  // siblings (the 2026-07-12 self-fill-sweep incident's root cause: a
-  // uat sub-session's message was indistinguishable from any other uat
-  // session's, producing an unpinnable ~15-message contradictory dispute).
-  // This does NOT add authentication (that needs per-agent bus credentials,
-  // a bigger cross-fleet rollout, tracked separately) -- it's the cheap
-  // half: an OPTIONAL, caller-supplied free-text tag a sub-agent can set to
-  // distinguish itself from siblings sharing its parent identity, carried
-  // through to delivery so a human/agent reading the message has SOMETHING
-  // to go on. Self-declared, so it's an attributability aid, not a trust
-  // boundary -- do not treat a present origin_note as proof of anything.
-  try {
-    runScript(db, 'ALTER TABLE agent_messages ADD COLUMN origin_note TEXT')
-  } catch {
-    // column already exists
-  }
-  // Card def5a189: distributed trace context propagated by message-router middleware.
-  // trace_id: root trace identifier spanning an entire agent chain (e.g. morning-chain).
-  // span_id: this message's own span identifier (nanoid).
-  // parent_span_id: sender's span_id -- links child back to parent in the waterfall.
-  try { runScript(db, 'ALTER TABLE agent_messages ADD COLUMN trace_id TEXT') } catch { /* exists */ }
-  try { runScript(db, 'ALTER TABLE agent_messages ADD COLUMN span_id TEXT') } catch { /* exists */ }
-  try { runScript(db, 'ALTER TABLE agent_messages ADD COLUMN parent_span_id TEXT') } catch { /* exists */ }
-
-  // INVARIANT: a row that says 'delivered' must carry a delivered_at.
-  //
-  // On 2026-07-27 an operator bulk-closed a 28-row backlog with raw SQL that
-  // set status without a timestamp. Nothing broke loudly -- but the queue,
-  // which is the only signal we have for "what actually went out", started
-  // claiming that messages had been delivered when they never left. It took an
-  // hour of log archaeology to work out which of them the recipients had
-  // genuinely received and which they had only read out of band, and the answer
-  // was recoverable that day purely by luck.
-  //
-  // Enforced with a trigger rather than a CHECK constraint because SQLite
-  // cannot add a CHECK to an existing table without rebuilding it, and this is
-  // not worth a rebuild of the message log. Self-healing rather than ABORT:
-  // aborting would turn a bookkeeping slip into a failed operation for the
-  // caller, and the point is to keep the RECORD honest, not to police writers.
-  // The row gets a timestamp AND -- if nothing else explains it -- a marker
-  // saying it was closed without ever being delivered, so the distinction
-  // survives in the data instead of in someone's memory.
-  runScript(db, `
-    CREATE TRIGGER IF NOT EXISTS agent_messages_delivered_needs_ts
-    AFTER UPDATE OF status ON agent_messages
-    FOR EACH ROW WHEN NEW.status = 'delivered' AND NEW.delivered_at IS NULL
-    BEGIN
-      UPDATE agent_messages
-         SET delivered_at = CAST(strftime('%s','now') AS INTEGER),
-             result = COALESCE(result, 'closed-without-delivery')
-       WHERE id = NEW.id;
-    END
-  `)
-
-  // One-time L1 backfill: federation system ids are now stored lowercase, but
-  // rows written by a pre-L1 build (an install that federated with a
-  // display-cased id like "Teodor/agent") keep their old case. Left alone,
-  // thread grouping and conversation history key on the exact string and
-  // silently SPLIT such a peer into two threads once new lowercase rows
-  // arrive. Fold the SYSTEM prefix of qualified rows in place (the agent
-  // segment keeps its case -- it is the peer's namespace). Idempotent: an
-  // already-lowercase prefix compares equal and is skipped, so this is a
-  // safe no-op after the first run and on fresh installs.
-  runScript(db, `
-    UPDATE agent_messages
-       SET from_agent = lower(substr(from_agent, 1, instr(from_agent, '/') - 1)) || substr(from_agent, instr(from_agent, '/'))
-     WHERE instr(from_agent, '/') > 0
-       AND substr(from_agent, 1, instr(from_agent, '/') - 1) <> lower(substr(from_agent, 1, instr(from_agent, '/') - 1))
-  `)
-  runScript(db, `
-    UPDATE agent_messages
-       SET to_agent = lower(substr(to_agent, 1, instr(to_agent, '/') - 1)) || substr(to_agent, instr(to_agent, '/'))
-     WHERE instr(to_agent, '/') > 0
-       AND substr(to_agent, 1, instr(to_agent, '/') - 1) <> lower(substr(to_agent, 1, instr(to_agent, '/') - 1))
-  `)
-
-  // --- Pending Channel Requests (Slack channel opt-in workflow) ---
-  runScript(db, `
-    CREATE TABLE IF NOT EXISTS pending_channel_requests (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      agent TEXT NOT NULL,
-      channel_id TEXT NOT NULL,
-      channel_name TEXT,
-      user_id TEXT,
-      requested_at INTEGER NOT NULL,
-      resolved_at INTEGER,
-      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','denied'))
-    )
-  `)
-  runScript(db, `CREATE UNIQUE INDEX IF NOT EXISTS idx_pcr_agent_channel ON pending_channel_requests(agent, channel_id) WHERE status = 'pending'`)
-  try { runScript(db, 'ALTER TABLE pending_channel_requests ADD COLUMN resolved_at INTEGER') } catch { /* already exists */ }
-
-  // --- Task Run History ---
-  // Log every scheduled-task firing so the dashboard overview's "tasksToday"
-  // survives dashboard restarts. Replaces the old store/task-run-history.json
-  // which had a plain read-modify-write race under concurrent/restart.
-  runScript(db, `
-    CREATE TABLE IF NOT EXISTS task_runs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      agent TEXT NOT NULL,
-      ts INTEGER NOT NULL
-    )
-  `)
-  runScript(db, `CREATE INDEX IF NOT EXISTS idx_task_runs_ts ON task_runs(ts)`)
-  // Migration: add status column to task_runs (introduced 2026-06-13)
-  try { runScript(db, `ALTER TABLE task_runs ADD COLUMN status TEXT NOT NULL DEFAULT 'fired'`) } catch { /* already present */ }
-
-  // --- Pending Scheduled Task Retries ---
-  // Busy-skipped scheduled tasks used to live in an in-memory Map. On a
-  // dashboard restart (or crash), the queue was lost -- even though the
-  // operator had asked for the task to run, it silently disappeared.
-  // This table persists each busy-retry across restarts so nothing is
-  // dropped. When a row crosses the alert threshold, the alerting layer
-  // stamps alert_sent_at before each Telegram send and clears it on
-  // delivery failure, yielding at-least-once delivery with no double-
-  // alerting on concurrent ticks. The scheduler itself never abandons:
-  // it keeps retrying until the session frees up or the operator
-  // cancels from the UI.
-  runScript(db, `
-    CREATE TABLE IF NOT EXISTS pending_task_retries (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      task_name TEXT NOT NULL,
-      agent_name TEXT NOT NULL,
-      first_attempt INTEGER NOT NULL,
-      last_attempt INTEGER NOT NULL,
-      attempt_count INTEGER NOT NULL DEFAULT 1,
-      last_reason TEXT,
-      alert_sent_at INTEGER,
-      UNIQUE(task_name, agent_name)
-    )
-  `)
-  runScript(db, `CREATE INDEX IF NOT EXISTS idx_pending_retries_first_attempt ON pending_task_retries(first_attempt)`)
-
-  runScript(db, `
-    CREATE TABLE IF NOT EXISTS background_tasks (
-      id TEXT PRIMARY KEY,
-      agent_id TEXT NOT NULL,
-      prompt TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'running' CHECK(status IN ('running','done','failed','timeout')),
-      tmux_session TEXT,
-      started_at INTEGER NOT NULL,
-      finished_at INTEGER,
-      output TEXT
-    )
-  `)
-  runScript(db, `CREATE INDEX IF NOT EXISTS idx_bg_tasks_agent ON background_tasks(agent_id, status)`)
-
-  // --- Token Usage Monitoring ---
-  runScript(db, `
-    CREATE TABLE IF NOT EXISTS token_usage (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      agent TEXT NOT NULL,
-      session_id TEXT NOT NULL,
-      timestamp INTEGER NOT NULL,
-      input_tokens INTEGER NOT NULL DEFAULT 0,
-      output_tokens INTEGER NOT NULL DEFAULT 0,
-      cache_read_tokens INTEGER NOT NULL DEFAULT 0,
-      cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
-      thinking_tokens INTEGER NOT NULL DEFAULT 0,
-      model TEXT,
-      content_preview TEXT,
-      tool_name TEXT,
-      task_title TEXT,
-      project TEXT
-    )
-  `)
-  runScript(db, `CREATE INDEX IF NOT EXISTS idx_token_usage_agent ON token_usage(agent)`)
-  runScript(db, `CREATE INDEX IF NOT EXISTS idx_token_usage_ts ON token_usage(timestamp)`)
-  runScript(db, `CREATE INDEX IF NOT EXISTS idx_token_usage_agent_ts ON token_usage(agent, timestamp)`)
-  // Migrations for columns added after initial release
-  try { runScript(db, 'ALTER TABLE token_usage ADD COLUMN thinking_tokens INTEGER NOT NULL DEFAULT 0') } catch { /* already exists */ }
-  try { runScript(db, 'ALTER TABLE token_usage ADD COLUMN model TEXT') } catch { /* already exists */ }
-
-  // Deduplicate existing rows before creating unique index
-  try {
-    runScript(db, `CREATE UNIQUE INDEX IF NOT EXISTS idx_token_usage_dedup ON token_usage(agent, session_id, timestamp, input_tokens, output_tokens)`)
-  } catch {
-    runScript(db, `
-      DELETE FROM token_usage WHERE id NOT IN (
-        SELECT MIN(id) FROM token_usage
-        GROUP BY agent, session_id, timestamp, input_tokens, output_tokens
-      )
-    `)
-    runScript(db, `CREATE UNIQUE INDEX IF NOT EXISTS idx_token_usage_dedup ON token_usage(agent, session_id, timestamp, input_tokens, output_tokens)`)
-  }
-
-  runScript(db, `
-    CREATE TABLE IF NOT EXISTS token_usage_cursors (
-      file_path TEXT PRIMARY KEY,
-      last_line INTEGER NOT NULL DEFAULT 0,
-      last_size INTEGER NOT NULL DEFAULT 0
-    )
-  `)
-
-  // --- Idea Box ---
-  runScript(db, `
-    CREATE TABLE IF NOT EXISTS idea_box (
-      id TEXT PRIMARY KEY,
-      title TEXT NOT NULL,
-      description TEXT,
-      category TEXT NOT NULL DEFAULT 'Egyéb',
-      status TEXT NOT NULL DEFAULT 'new' CHECK(status IN ('new','reviewed','kanban','rejected')),
-      source TEXT NOT NULL DEFAULT 'marveen',
-      kanban_id TEXT,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    )
-  `)
-  runScript(db, `CREATE INDEX IF NOT EXISTS idx_idea_box_status ON idea_box(status)`)
-  runScript(db, `CREATE INDEX IF NOT EXISTS idx_idea_box_category ON idea_box(category)`)
-  // impact/effort scoring -- added after initial release; safe ALTER on existing DBs
-  try { runScript(db, 'ALTER TABLE idea_box ADD COLUMN impact INTEGER') } catch { /* already exists */ }
-  try { runScript(db, 'ALTER TABLE idea_box ADD COLUMN effort INTEGER') } catch { /* already exists */ }
-
-  // --- Idea Comments ---
-  runScript(db, `
-    CREATE TABLE IF NOT EXISTS idea_comments (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      idea_id TEXT NOT NULL,
-      author TEXT NOT NULL,
-      content TEXT NOT NULL,
-      created_at INTEGER NOT NULL
-    )
-  `)
-  runScript(db, `CREATE INDEX IF NOT EXISTS idx_idea_comments_idea ON idea_comments(idea_id)`)
-
-  // --- Idea Status Log ---
-  runScript(db, `
-    CREATE TABLE IF NOT EXISTS idea_status_log (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      idea_id TEXT NOT NULL,
-      from_status TEXT,
-      to_status TEXT NOT NULL,
-      actor TEXT NOT NULL DEFAULT 'system',
-      note TEXT,
-      created_at INTEGER NOT NULL
-    )
-  `)
-  runScript(db, `CREATE INDEX IF NOT EXISTS idx_idea_status_log_idea ON idea_status_log(idea_id, created_at)`)
-
-  // --- Tool Call Log (auto-recorder) ---
-  runScript(db, `
-    CREATE TABLE IF NOT EXISTS tool_call_log (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      session_id TEXT NOT NULL,
-      tool_name TEXT NOT NULL,
-      input_summary TEXT,
-      success INTEGER NOT NULL DEFAULT 1,
-      created_at INTEGER NOT NULL
-    )
-  `)
-  runScript(db, `CREATE INDEX IF NOT EXISTS idx_tool_log_session ON tool_call_log(session_id, created_at)`)
-  runScript(db, `CREATE INDEX IF NOT EXISTS idx_tool_log_ts ON tool_call_log(created_at)`)
-  // Idempotent column additions -- guard with PRAGMA so second run does not error.
-  const toolLogCols = (db.prepare('PRAGMA table_info(tool_call_log)').all() as { name: string }[]).map(r => r.name)
-  if (!toolLogCols.includes('agent_id'))    runScript(db, 'ALTER TABLE tool_call_log ADD COLUMN agent_id TEXT')
-  if (!toolLogCols.includes('trace_id'))    runScript(db, 'ALTER TABLE tool_call_log ADD COLUMN trace_id TEXT')
-  if (!toolLogCols.includes('duration_ms')) runScript(db, 'ALTER TABLE tool_call_log ADD COLUMN duration_ms INTEGER')
-
-  // --- Skill Usage Log (persistent, no prune -- feeds dream-engine skill health) ---
-  runScript(db, `
-    CREATE TABLE IF NOT EXISTS skill_usage (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      agent_id TEXT NOT NULL,
-      skill_name TEXT NOT NULL,
-      trigger_type TEXT NOT NULL CHECK(trigger_type IN ('tool_call', 'skill_read')),
-      session_id TEXT,
-      created_at INTEGER NOT NULL
-    )
-  `)
-  runScript(db, `CREATE INDEX IF NOT EXISTS idx_skill_usage_agent ON skill_usage(agent_id, created_at)`)
-  runScript(db, `CREATE INDEX IF NOT EXISTS idx_skill_usage_skill ON skill_usage(skill_name, created_at)`)
-
-  // --- Config Change Log (audit trail for /api/settings writes) ---
-  // Background-only: no UI surfaces this table yet (product decision). For
-  // secret settings, callers must pass null for old_value/new_value -- this
-  // table only ever holds plaintext for non-secret registry entries.
-  runScript(db, `
-    CREATE TABLE IF NOT EXISTS config_change_log (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      key TEXT NOT NULL,
-      old_value TEXT,
-      new_value TEXT,
-      actor TEXT NOT NULL DEFAULT 'unknown',
-      created_at INTEGER NOT NULL
-    )
-  `)
-  runScript(db, `CREATE INDEX IF NOT EXISTS idx_config_change_log_key ON config_change_log(key, created_at)`)
-
-  // --- Store File Audit (fs-watch events on store/) ---
-  // Records every write/rename in the store/ directory. Content is NEVER
-  // stored -- only path, event type and file size. Sensitive files
-  // (.dashboard-token, vault.json, .vault-key) are flagged so the UI can
-  // render them without leaking values.
-  runScript(db, `
-    CREATE TABLE IF NOT EXISTS store_file_audit (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      rel_path TEXT NOT NULL,
-      event_type TEXT NOT NULL,
-      is_sensitive INTEGER NOT NULL DEFAULT 0,
-      file_size INTEGER,
-      agent TEXT,
-      created_at INTEGER NOT NULL
-    )
-  `)
-  runScript(db, `CREATE INDEX IF NOT EXISTS idx_store_file_audit_ts ON store_file_audit(created_at)`)
-  // Migration: add agent column to installs that created the table before this column existed.
-  try { runScript(db, `ALTER TABLE store_file_audit ADD COLUMN agent TEXT`) } catch { /* column already exists */ }
-
-  // --- CostOps (local cost ledger) ---
-  // Read-mostly, FOCUS-inspired. cost_sources = provider/subscription origin,
-  // cost_line_items = individual charge rows (estimate or provider-sourced).
-  // No secrets/account IDs stored raw. Budgets are config-driven (costops/config.ts's
-  // BudgetEntry, from store/costops-config.json) -- there is deliberately no separate
-  // `budgets` DB table: an earlier draft of this schema had one, but it was never
-  // read from or written to (config.budgets was always the actual source), so it was
-  // a dead, unused second source of truth. Removed rather than wired up, since the
-  // config file already covers this fully and a DB table would just be a sync burden
-  // for no benefit.
-  runScript(db, `
-    CREATE TABLE IF NOT EXISTS cost_sources (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      provider TEXT NOT NULL,
-      source_type TEXT NOT NULL,
-      account_ref TEXT,
-      currency TEXT NOT NULL DEFAULT 'HUF',
-      active INTEGER NOT NULL DEFAULT 1,
-      notes TEXT,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    )
-  `)
-  runScript(db, `
-    CREATE TABLE IF NOT EXISTS cost_line_items (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      source_id TEXT NOT NULL REFERENCES cost_sources(id),
-      charge_period_start INTEGER NOT NULL,
-      charge_period_end INTEGER NOT NULL,
-      charge_category TEXT NOT NULL,
-      service_name TEXT,
-      usage_type TEXT,
-      consumed_quantity REAL,
-      consumed_unit TEXT,
-      billed_cost REAL NOT NULL,
-      effective_cost REAL,
-      currency TEXT NOT NULL DEFAULT 'HUF',
-      confidence TEXT NOT NULL,
-      data_freshness INTEGER NOT NULL,
-      source_ref TEXT,
-      dedup_key TEXT UNIQUE,
-      created_at INTEGER NOT NULL
-    )
-  `)
-  runScript(db, `CREATE INDEX IF NOT EXISTS idx_cost_line_items_period ON cost_line_items(charge_period_start, charge_period_end)`)
-  runScript(db, `CREATE INDEX IF NOT EXISTS idx_cost_line_items_source ON cost_line_items(source_id)`)
-
-  // --- Vault SSH Keys (shared pool) ---
-  runScript(db, `
-    CREATE TABLE IF NOT EXISTS vault_ssh_keys (
-      id TEXT PRIMARY KEY,
-      label TEXT NOT NULL,
-      username TEXT NOT NULL,
-      vault_key_id TEXT NOT NULL,
-      public_key TEXT NOT NULL,
-      fingerprint TEXT NOT NULL,
-      key_type TEXT NOT NULL DEFAULT 'ed25519',
-      created_at INTEGER NOT NULL
-    )
-  `)
-  runScript(db, `CREATE INDEX IF NOT EXISTS idx_vault_ssh_keys_label ON vault_ssh_keys(label)`)
-
-  // --- Vault SSH Servers ---
-  runScript(db, `
-    CREATE TABLE IF NOT EXISTS vault_ssh_servers (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      host TEXT NOT NULL,
-      port INTEGER NOT NULL DEFAULT 22,
-      username TEXT NOT NULL,
-      ssh_key_id TEXT REFERENCES vault_ssh_keys(id),
-      description TEXT,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    )
-  `)
-  runScript(db, `CREATE INDEX IF NOT EXISTS idx_vault_ssh_servers_name ON vault_ssh_servers(name)`)
-  // Migrations for installs that ran earlier schema versions. MUST run before
-  // the ssh_key_id index below: on an install where vault_ssh_servers already
-  // existed (pre-dating this column), CREATE TABLE IF NOT EXISTS above is a
-  // no-op and never adds ssh_key_id -- indexing it before this ALTER TABLE
-  // runs throws "no such column: ssh_key_id" and crashes startup entirely
-  // (2026-07-01 incident: dashboard 502'd, crash-looped on every restart).
-  // Drop legacy per-server key columns that are no longer written or read.
-  // On older installs these were added via ALTER TABLE; fresh installs never had them.
-  // SQLite 3.35+ is required; try-catch makes this a no-op on either scenario.
-  try { runScript(db, 'ALTER TABLE vault_ssh_servers DROP COLUMN key_type') } catch { /* column absent or SQLite pre-3.35 */ }
-  try { runScript(db, 'ALTER TABLE vault_ssh_servers DROP COLUMN fingerprint') } catch { /* column absent or SQLite pre-3.35 */ }
-  try { runScript(db, 'ALTER TABLE vault_ssh_servers DROP COLUMN vault_key_id') } catch { /* column absent or SQLite pre-3.35 */ }
-  try { runScript(db, 'ALTER TABLE vault_ssh_servers DROP COLUMN key_expires_at') } catch { /* column absent or SQLite pre-3.35 */ }
-  try { runScript(db, 'ALTER TABLE vault_ssh_servers ADD COLUMN ssh_key_id TEXT REFERENCES vault_ssh_keys(id)') } catch { /* already exists */ }
-  runScript(db, `CREATE INDEX IF NOT EXISTS idx_vault_ssh_servers_key ON vault_ssh_servers(ssh_key_id)`)
-
-  // --- Approvals (HITL) ---
-  runScript(db, `
-    CREATE TABLE IF NOT EXISTS approvals (
-      id TEXT PRIMARY KEY,
-      agent_id TEXT NOT NULL,
-      category TEXT NOT NULL,
-      action_description TEXT NOT NULL,
-      action_payload TEXT,
-      status TEXT NOT NULL DEFAULT 'pending'
-        CHECK(status IN ('pending','approved','rejected','timeout')),
-      timeout_at INTEGER,
-      telegram_message_id INTEGER,
-      requested_at INTEGER NOT NULL DEFAULT (unixepoch()),
-      resolved_at INTEGER,
-      resolved_by TEXT
-    )
-  `)
-  runScript(db, `CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status, requested_at)`)
-  runScript(db, `CREATE INDEX IF NOT EXISTS idx_approvals_agent ON approvals(agent_id, requested_at)`)
-
-  // --- Dashboard browser login (OPTIONAL; the bearer token stays primary) ---
-  // Zero rows here = exactly the token-only behavior. A row is created only when
-  // the operator opts in (Settings card or the dashboard-user CLI). No seeded
-  // credentials -- the byte-copy-fresh-install rule forbids any default user.
-  // password_hash is a PHC string (see web/password-hash.ts). username is
-  // UNIQUE COLLATE NOCASE so logins are case-insensitive.
-  runScript(db, `
-    CREATE TABLE IF NOT EXISTS dashboard_users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT NOT NULL UNIQUE COLLATE NOCASE,
-      password_hash TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL,
-      disabled INTEGER NOT NULL DEFAULT 0
-    )
-  `)
-  // Browser login sessions. NOT named `sessions` -- that table already maps
-  // Telegram chats to Claude session ids. Only sha256(session_id) is stored, so
-  // a DB leak does not hand out live sessions. Rows survive dashboard restarts;
-  // the in-memory cache in web/auth-sessions.ts rehydrates from here lazily.
-  runScript(db, `
-    CREATE TABLE IF NOT EXISTS auth_sessions (
-      id_hash TEXT PRIMARY KEY,
-      user_id INTEGER NOT NULL,
-      username TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      last_seen_at INTEGER NOT NULL,
-      user_agent TEXT,
-      remote_note TEXT
-    )
-  `)
-  runScript(db, `CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id)`)
-
-  // Per-device dashboard keys (AUTHPLAN1 #1). One row per enrolled device
-  // (Bridge install, phone) so a single device can be revoked without rotating
-  // the shared dashboard token. Only sha256(key) is stored -- the raw value is
-  // shown once at mint time. expires_at is OPT-IN (null = lives until revoked;
-  // a rarely used phone must not die silently). Zero rows = feature off; the
-  // auth gate falls through exactly as before, so fresh installs see no change.
-  runScript(db, `
-    CREATE TABLE IF NOT EXISTS device_keys (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      key_hash TEXT NOT NULL UNIQUE,
-      name TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      last_used_at INTEGER,
-      expires_at INTEGER,
-      install_id TEXT
-    )
-  `)
-  // Bridge pairing (AUTHPLAN1 #2): links a device key to the SSH enrollment's
-  // marveen-remote:<uuid> so revoking the key can drop the authorized_keys
-  // line in the same step. Null for keys minted outside the pairing flow.
-  try { runScript(db, `ALTER TABLE device_keys ADD COLUMN install_id TEXT`) } catch { /* column already exists */ }
-
-  // --- OTel Distributed Tracing ---
-  // SQLite-native span store. No external OTel SDK: spans are written via
-  // /api/spans and the message-router middleware injects trace context into
-  // agent_messages rows transparently (agents don't need to know about tracing).
-  // trace_id: root identifier shared across the entire chain (generated once
-  //   by the message-router for the root message, inherited by all children).
-  // span_id: per-message unique id (nanoid).
-  // parent_span_id: null for root; sender's span_id for downstream messages.
-  // The tool_call_log.trace_id column (added by #274) holds the Claude Code
-  // native tool_use_id (per-call span) -- a DIFFERENT, narrower concept. The
-  // waterfall UI joins otel_spans (inter-agent latency) with tool_call_log
-  // (intra-agent tool timing) via agent_id + time overlap.
-  runScript(db, `
-    CREATE TABLE IF NOT EXISTS otel_spans (
-      trace_id        TEXT NOT NULL,
-      span_id         TEXT NOT NULL,
-      parent_span_id  TEXT,
-      agent_id        TEXT NOT NULL,
-      operation       TEXT NOT NULL,
-      start_ms        INTEGER NOT NULL,
-      end_ms          INTEGER,
-      status          TEXT NOT NULL DEFAULT 'ok' CHECK(status IN ('ok','error','timeout','running')),
-      attributes      TEXT,
-      PRIMARY KEY (trace_id, span_id)
-    )
-  `)
-  runScript(db, `CREATE INDEX IF NOT EXISTS idx_otel_spans_trace ON otel_spans(trace_id, start_ms)`)
-  runScript(db, `CREATE INDEX IF NOT EXISTS idx_otel_spans_agent ON otel_spans(agent_id, start_ms)`)
-
-  // One-shot migration from the old JSON file (which had a read-modify-write
-  // race). Import rows if they exist, then rename the file so we don't keep
-  // re-importing. Wrapped in a transaction so a crash mid-import is safe.
-  migrateTaskRunsFromJson()
+  const client = DbClient.open(
+    { STORE_DIR, DB_FILENAME, PROJECT_ROOT },
+    logger,
+    dbPathOverride,
+  )
+  db = client.getHandle()
 }
-
-function migrateTaskRunsFromJson(): void {
-  const legacyPath = join(STORE_DIR, 'task-run-history.json')
-  if (!existsSync(legacyPath)) return
-  const existingCount = (db.prepare('SELECT COUNT(*) as c FROM task_runs').get() as { c: number }).c
-  if (existingCount > 0) {
-    // Already migrated in a previous run. Rename the file out of the way if
-    // still present so the migration doesn't keep re-running with zero effect.
-    try { renameSync(legacyPath, `${legacyPath}.migrated`) } catch { /* fine */ }
-    return
-  }
-  try {
-    const raw = readFileSync(legacyPath, 'utf-8')
-    const arr = JSON.parse(raw)
-    if (!Array.isArray(arr)) return
-    const insert = db.prepare('INSERT INTO task_runs (name, agent, ts) VALUES (?, ?, ?)')
-    const tx = db.transaction((rows: unknown[]) => {
-      for (const e of rows) {
-        if (!e || typeof e !== 'object') continue
-        const { name, agent, ts } = e as { name?: unknown; agent?: unknown; ts?: unknown }
-        if (typeof name !== 'string' || typeof agent !== 'string' || typeof ts !== 'number') continue
-        insert.run(name, agent, ts)
-      }
-    })
-    tx(arr)
-    try { renameSync(legacyPath, `${legacyPath}.migrated`) } catch { /* fine */ }
-  } catch { /* corrupt file, skip */ }
-}
-
 export function getDb(): Database {
   return db
 }
@@ -3306,3 +2369,1055 @@ export function listOtelTraces(limit = 50): OtelTraceSummary[] {
   `).all(limit) as OtelTraceSummary[]
 }
 
+
+
+// =========================================================================
+// A.1 — class DbClient (keystone extraction)
+//
+// The class encapsulates the bun:sqlite handle, the WAL/cache_size/mmap/
+// synchronous PRAGMA application, the file-permission tightening, and the
+// ~30 schema migrations that previously lived in initDatabase(). It exposes
+// a narrow SQL facade (query/exec/transaction) plus a getHandle() escape
+// hatch for the 9 production callers that still use getDb() today.
+//
+// The 155 free functions in this file are unchanged; initDatabase is now a
+// thin wrapper that delegates to DbClient.open() and syncs the module-
+// level `let db` singleton to the new handle. The factory's INTERNAL re-
+// init guard (close-then-reopen on client.handle) protects repeated
+// DbClient.open() calls; the outer initDatabase re-init guard (close
+// `db` first) protects the 155 free-function callers that close over the
+// module singleton. The two guards don't interfere because each operates
+// on a different handle.
+//
+// A.1 ≠ A.7: A.7 singleton removal is a separate, later phase. Today both
+// the class and the singleton exist in parallel.
+// =========================================================================
+
+export class DbClient {
+  private readonly config: Pick<Config, 'STORE_DIR' | 'DB_FILENAME' | 'PROJECT_ROOT'>
+  private readonly log: LoggerLike
+  private handle: Database | null = null
+
+  // -- constructor: no I/O. The factory below opens the handle. --
+  constructor(
+    config: Pick<Config, 'STORE_DIR' | 'DB_FILENAME' | 'PROJECT_ROOT'>,
+    log: LoggerLike,
+  ) {
+    this.config = config
+    this.log = log
+  }
+
+  // -- factory: opens + initializes + runs migrations --
+  //
+  // dbPathOverride: pass ':memory:' (or a temp file path) to open an
+  // isolated database instead of the real store/claudeclaw.db. Same
+  // contract as the pre-A.1 initDatabase.
+  static open(
+    config: Pick<Config, 'STORE_DIR' | 'DB_FILENAME' | 'PROJECT_ROOT'>,
+    log: LoggerLike,
+    dbPathOverride?: string,
+  ): DbClient {
+    const client = new DbClient(config, log)
+
+    // Re-init guard: close the client instance's OWN handle (if any)
+    // before opening a new one. Operates on client.handle only, NOT on
+    // the module-level `let db` singleton -- that's initDatabase's job.
+    if (client.handle) {
+      try { client.handle.close() } catch { /* already closed */ }
+    }
+
+    const useOverride = dbPathOverride !== undefined
+
+
+    const isMemory = dbPathOverride === ':memory:'
+    if (!useOverride) mkdirSync(config.STORE_DIR, { recursive: true })
+    const dbPath = useOverride ? dbPathOverride! : join(config.STORE_DIR, config.DB_FILENAME)
+    // Step 1: close the TOCTOU window on fresh installs. openSync with 'wx'
+    // + 0o600 creates the file ONLY if it doesn't exist and sets the strict
+    // mode atomically. The sqlite handle then opens the existing file rather
+    // than creating one at the default umask. Skipped only for ':memory:'.
+    if (!isMemory && !existsSync(dbPath)) {
+      try {
+        closeSync(openSync(dbPath, 'wx', 0o600))
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException)?.code
+        // EEXIST: a concurrent startup won the race and created it. The
+        // tightenDbPermissions call below will correct its mode.
+        if (code !== 'EEXIST') {
+          log.warn({ err, dbPath }, 'Pre-create of DB file failed, continuing; mode will be tightened post-open')
+        }
+      }
+    }
+
+    const handle = new Database(dbPath, { strict: true })
+    pragma(handle, 'journal_mode = WAL')
+    // Performance pragmas: safe with WAL, applied after journal_mode is set.
+    // cache_size: negative value = kibibytes; -65536 → 64 MB page cache.
+    // mmap_size: memory-mapped I/O in bytes; 256 MB. Skipped for :memory: (no file to map).
+    // synchronous = NORMAL: safe under WAL (only full-fsync skipped, not the WAL checkpoint).
+    pragma(handle, 'cache_size = -65536')
+    if (!isMemory) pragma(handle, 'mmap_size = 268435456')
+    pragma(handle, 'synchronous = NORMAL')
+    if (!isMemory) DbClient.tightenDbPermissions(log, dbPath)
+
+
+    runScript(handle, `
+      CREATE TABLE IF NOT EXISTS sessions (
+        chat_id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        updated_at INTEGER NOT NULL,
+        message_count INTEGER NOT NULL DEFAULT 0
+      )
+    `)
+
+    // Migráció: message_count oszlop hozzáadása meglévő DB-hez
+    try {
+      runScript(handle, 'ALTER TABLE sessions ADD COLUMN message_count INTEGER NOT NULL DEFAULT 0')
+    } catch {
+      // már létezik, rendben
+    }
+
+    runScript(handle, `
+      CREATE TABLE IF NOT EXISTS memories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        chat_id TEXT NOT NULL,
+        topic_key TEXT,
+        content TEXT NOT NULL,
+        sector TEXT NOT NULL CHECK(sector IN ('semantic','episodic')),
+        salience REAL NOT NULL DEFAULT 1.0,
+        created_at INTEGER NOT NULL,
+        accessed_at INTEGER NOT NULL
+      )
+    `)
+
+    runScript(handle, `
+      CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
+        content,
+        content='memories',
+        content_rowid='id'
+      )
+    `)
+
+    runScript(handle, `
+      CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
+        INSERT INTO memories_fts(rowid, content) VALUES (new.id, new.content);
+      END
+    `)
+    runScript(handle, `
+      CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
+        INSERT INTO memories_fts(memories_fts, rowid, content) VALUES('delete', old.id, old.content);
+      END
+    `)
+    runScript(handle, `
+      CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
+        INSERT INTO memories_fts(memories_fts, rowid, content) VALUES('delete', old.id, old.content);
+        INSERT INTO memories_fts(rowid, content) VALUES (new.id, new.content);
+      END
+    `)
+
+    runScript(handle, `
+      CREATE TABLE IF NOT EXISTS scheduled_tasks (
+        id TEXT PRIMARY KEY,
+        chat_id TEXT NOT NULL,
+        prompt TEXT NOT NULL,
+        schedule TEXT NOT NULL,
+        next_run INTEGER NOT NULL,
+        last_run INTEGER,
+        last_result TEXT,
+        status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','paused')),
+        created_at INTEGER NOT NULL
+      )
+    `)
+    runScript(handle, `CREATE INDEX IF NOT EXISTS idx_tasks_status_next ON scheduled_tasks(status, next_run)`)
+
+    // --- Kanban ---
+    runScript(handle, `
+      CREATE TABLE IF NOT EXISTS kanban_cards (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        description TEXT,
+        status TEXT NOT NULL DEFAULT 'planned' CHECK(status IN ('planned','in_progress','testing','waiting','done')),
+        assignee TEXT,
+        priority TEXT NOT NULL DEFAULT 'normal' CHECK(priority IN ('low','normal','high','urgent')),
+        project TEXT,
+        due_date INTEGER,
+        sort_order REAL NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        archived_at INTEGER
+      )
+    `)
+    // Migration: add project column to kanban_cards for installs created
+    // before #89 (whose CREATE TABLE IF NOT EXISTS ran without `project`
+    // and is a no-op on the next boot). Without this, createKanbanCard
+    // and updateKanbanCard fail with `table kanban_cards has no column
+    // named project` and no card can be saved.
+    try {
+      runScript(handle, 'ALTER TABLE kanban_cards ADD COLUMN project TEXT')
+    } catch {
+      // column already exists
+    }
+    try {
+      runScript(handle, 'ALTER TABLE kanban_cards ADD COLUMN parent_id TEXT REFERENCES kanban_cards(id)')
+    } catch {
+      // column already exists
+    }
+    runScript(handle, 'CREATE INDEX IF NOT EXISTS idx_kanban_parent ON kanban_cards(parent_id)')
+    // Migration: add dispatched_at to kanban_cards (kanban -> agent dispatch
+    // once-only guard). Older installs created the table without it.
+    try {
+      runScript(handle, 'ALTER TABLE kanban_cards ADD COLUMN dispatched_at INTEGER')
+    } catch {
+      // column already exists
+    }
+    // Migration: add 'testing' status to kanban_cards CHECK constraint.
+    // SQLite can't ALTER a CHECK constraint, so we recreate the table when the
+    // current schema doesn't yet include 'testing'. Idempotent on fresh DBs.
+    try {
+      const kcSchema = handle.prepare<{ sql: string }, SQLQueryBindings[]>("SELECT sql FROM sqlite_master WHERE type='table' AND name='kanban_cards'").get() ?? undefined
+      if (kcSchema?.sql && !kcSchema.sql.includes("'testing'")) {
+        runScript(handle, `
+          CREATE TABLE kanban_cards_new (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            description TEXT,
+            status TEXT NOT NULL DEFAULT 'planned' CHECK(status IN ('planned','in_progress','testing','waiting','done')),
+            assignee TEXT,
+            priority TEXT NOT NULL DEFAULT 'normal' CHECK(priority IN ('low','normal','high','urgent')),
+            project TEXT,
+            due_date INTEGER,
+            sort_order REAL NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            archived_at INTEGER,
+            parent_id TEXT REFERENCES kanban_cards_new(id),
+            dispatched_at INTEGER
+          );
+          INSERT INTO kanban_cards_new
+            SELECT id, title, description, status, assignee, priority, project, due_date,
+                   sort_order, created_at, updated_at, archived_at, parent_id, dispatched_at
+            FROM kanban_cards;
+          DROP TABLE kanban_cards;
+          ALTER TABLE kanban_cards_new RENAME TO kanban_cards;
+        `)
+        runScript(handle, `CREATE INDEX IF NOT EXISTS idx_kanban_parent ON kanban_cards(parent_id)`)
+        runScript(handle, `CREATE INDEX IF NOT EXISTS idx_kanban_status ON kanban_cards(status, archived_at)`)
+      }
+    } catch (err) {
+      logger.warn({ err }, 'kanban_cards testing-status migration failed -- continuing')
+    }
+    // Migration: add agent_id, category, auto_generated columns to memories
+    try {
+      runScript(handle, "ALTER TABLE memories ADD COLUMN agent_id TEXT NOT NULL DEFAULT 'marveen'")
+    } catch {
+      // column already exists
+    }
+    try {
+      runScript(handle, "ALTER TABLE memories ADD COLUMN category TEXT NOT NULL DEFAULT 'general' CHECK(category IN ('user_pref','project','feedback','learning','shared','general'))")
+    } catch {
+      // column already exists
+    }
+    try {
+      runScript(handle, 'ALTER TABLE memories ADD COLUMN auto_generated INTEGER NOT NULL DEFAULT 0')
+    } catch {
+      // column already exists
+    }
+
+    runScript(handle, `CREATE INDEX IF NOT EXISTS idx_memories_agent ON memories(agent_id, category)`)
+
+    // --- Conversation-continuity ledger (deterministic; P0 2026-06-02) ---
+    // A durable ROLLING TRANSCRIPT of every channel turn -- inbound user messages
+    // AND outbound replies -- per agent_id + chat_id. On a respawn (a fresh
+    // --channels session with no memory of the live conversation) the SessionStart
+    // replay hook injects the last ~20 turns of context PLUS highlights the open
+    // question (the most recent inbound with no later outbound), so the fresh
+    // session continues exactly where the connection dropped -- ZERO agent
+    // discretion. Generic across all three channel agents (marveen/dia/erno-ba);
+    // agent_id is derived from the session cwd so each session only sees its own
+    // chat. Written by the settings.json hooks (UserPromptSubmit capture +
+    // PostToolUse outbound). UNIQUE(...) makes inbound capture idempotent; outbound
+    // rows carry message_id=NULL so they are never deduped against each other.
+    runScript(handle, `
+      CREATE TABLE IF NOT EXISTS conversation_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        agent_id TEXT NOT NULL,
+        chat_id TEXT NOT NULL,
+        direction TEXT NOT NULL CHECK(direction IN ('in','out')),
+        message_id TEXT,
+        text TEXT,
+        ts TEXT,
+        created_at INTEGER NOT NULL,
+        UNIQUE(agent_id, chat_id, direction, message_id)
+      )
+    `)
+    runScript(handle, `CREATE INDEX IF NOT EXISTS idx_convlog_agent ON conversation_log(agent_id, created_at)`)
+
+    // Migration: hot/warm/cold/shared tier system with an enforced CHECK.
+    // Rebuilds the table whenever its current schema doesn't include the
+    // canonical CHECK -- covers both the legacy ('user_pref'...) and the
+    // post-refactor-no-check states, and is idempotent on fresh DBs.
+    try {
+      const current = handle.prepare<{ sql: string }, SQLQueryBindings[]>("SELECT sql FROM sqlite_master WHERE name='memories'").get() ?? undefined
+      const hasCanonicalCheck = !!current?.sql?.match(/CHECK\s*\(\s*category\s+IN\s*\(\s*'hot'\s*,\s*'warm'\s*,\s*'cold'\s*,\s*'shared'\s*\)\s*\)/i)
+      if (current?.sql && !hasCanonicalCheck) {
+        // Preserve keywords if the column exists; older DBs rebuilt this table
+        // before the keywords ADD COLUMN ran, so NULL out in that case.
+        const cols = handle.prepare("PRAGMA table_info(memories)").all() as { name: string }[]
+        const keywordsExpr = cols.some(c => c.name === 'keywords') ? 'keywords' : 'NULL'
+        runScript(handle, `
+          CREATE TABLE memories_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            chat_id TEXT NOT NULL,
+            topic_key TEXT,
+            content TEXT NOT NULL,
+            sector TEXT NOT NULL CHECK(sector IN ('semantic','episodic')),
+            salience REAL NOT NULL DEFAULT 1.0,
+            created_at INTEGER NOT NULL,
+            accessed_at INTEGER NOT NULL,
+            agent_id TEXT NOT NULL DEFAULT 'marveen',
+            category TEXT NOT NULL DEFAULT 'warm' CHECK(category IN ('hot','warm','cold','shared')),
+            auto_generated INTEGER NOT NULL DEFAULT 0,
+            keywords TEXT
+          );
+          INSERT INTO memories_new SELECT id, chat_id, topic_key, content, sector, salience, created_at, accessed_at, agent_id,
+            CASE category
+              WHEN 'hot' THEN 'hot'
+              WHEN 'warm' THEN 'warm'
+              WHEN 'cold' THEN 'cold'
+              WHEN 'shared' THEN 'shared'
+              WHEN 'user_pref' THEN 'warm'
+              WHEN 'project' THEN 'warm'
+              WHEN 'general' THEN 'warm'
+              WHEN 'feedback' THEN 'cold'
+              WHEN 'learning' THEN 'cold'
+              ELSE 'warm'
+            END,
+            auto_generated,
+            ${keywordsExpr}
+          FROM memories;
+          DROP TABLE memories;
+          ALTER TABLE memories_new RENAME TO memories;
+        `)
+        // Recreate FTS and triggers for new schema (now includes keywords)
+        runScript(handle, `DROP TABLE IF EXISTS memories_fts`)
+        runScript(handle, `CREATE VIRTUAL TABLE memories_fts USING fts5(content, keywords, content='memories', content_rowid='id')`)
+        runScript(handle, `DROP TRIGGER IF EXISTS memories_ai`)
+        runScript(handle, `DROP TRIGGER IF EXISTS memories_ad`)
+        runScript(handle, `DROP TRIGGER IF EXISTS memories_au`)
+        runScript(handle, `CREATE TRIGGER memories_ai AFTER INSERT ON memories BEGIN INSERT INTO memories_fts(rowid, content, keywords) VALUES (new.id, new.content, new.keywords); END`)
+        runScript(handle, `CREATE TRIGGER memories_ad AFTER DELETE ON memories BEGIN INSERT INTO memories_fts(memories_fts, rowid, content, keywords) VALUES('delete', old.id, old.content, old.keywords); END`)
+        runScript(handle, `CREATE TRIGGER memories_au AFTER UPDATE ON memories BEGIN INSERT INTO memories_fts(memories_fts, rowid, content, keywords) VALUES('delete', old.id, old.content, old.keywords); INSERT INTO memories_fts(rowid, content, keywords) VALUES (new.id, new.content, new.keywords); END`)
+        runScript(handle, `INSERT INTO memories_fts(memories_fts) VALUES('rebuild')`)
+        runScript(handle, `CREATE INDEX IF NOT EXISTS idx_memories_agent ON memories(agent_id, category)`)
+      }
+    } catch (err) {
+      // Previously this silently swallowed every error which masked the
+      // CHECK-constraint drop that Bug #2 described. Log loudly instead so
+      // a broken migration is obvious in the dashboard log.
+      const msg = err instanceof Error ? err.message : String(err)
+      if (!/already exists/i.test(msg)) {
+        console.error('[handle] memories migration failed:', msg)
+      }
+    }
+
+    // If the table already has the new schema but no keywords column (edge case)
+    try {
+      runScript(handle, 'ALTER TABLE memories ADD COLUMN keywords TEXT')
+    } catch {
+      // column already exists
+    }
+
+    // Migration: embedding column for vector search
+    try {
+      runScript(handle, 'ALTER TABLE memories ADD COLUMN embedding TEXT')
+    } catch {
+      // column already exists
+    }
+
+    // Daily logs table
+    runScript(handle, `
+      CREATE TABLE IF NOT EXISTS daily_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        agent_id TEXT NOT NULL,
+        date TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      )
+    `)
+    runScript(handle, `CREATE INDEX IF NOT EXISTS idx_daily_logs_date ON daily_logs(agent_id, date)`)
+
+    runScript(handle, `CREATE INDEX IF NOT EXISTS idx_kanban_status ON kanban_cards(status, archived_at)`)
+
+    runScript(handle, `
+      CREATE TABLE IF NOT EXISTS kanban_comments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        card_id TEXT NOT NULL,
+        author TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      )
+    `)
+    runScript(handle, `CREATE INDEX IF NOT EXISTS idx_kanban_comments_card ON kanban_comments(card_id)`)
+
+    // Status-change audit trail: one row per real status transition so the board
+    // can answer "who moved this card, when, from/to status". Written by
+    // moveKanbanCard only when the status actually changes.
+    runScript(handle, `
+      CREATE TABLE IF NOT EXISTS kanban_card_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        card_id TEXT NOT NULL,
+        from_status TEXT,
+        to_status TEXT NOT NULL,
+        actor TEXT,
+        created_at INTEGER NOT NULL
+      )
+    `)
+    runScript(handle, `CREATE INDEX IF NOT EXISTS idx_kanban_events_card ON kanban_card_events(card_id, created_at)`)
+
+    // --- Kanban labels (tags) -----------------------------------------------
+    // Labels are a separate registry (not hardcoded per-card strings) so the
+    // same label can be reused across many cards and recolored in one place.
+    // The colour itself is validated against the configured palette
+    // (KANBAN_LABEL_COLORS) at the route layer, not hardcoded here.
+    runScript(handle, `
+      CREATE TABLE IF NOT EXISTS labels (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        color TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      )
+    `)
+    runScript(handle, `
+      CREATE TABLE IF NOT EXISTS kanban_card_labels (
+        card_id TEXT NOT NULL,
+        label_id TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (card_id, label_id)
+      )
+    `)
+    runScript(handle, `CREATE INDEX IF NOT EXISTS idx_card_labels_label ON kanban_card_labels(label_id)`)
+
+    // --- Agent Messages ---
+    runScript(handle, `
+      CREATE TABLE IF NOT EXISTS agent_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        from_agent TEXT NOT NULL,
+        to_agent TEXT NOT NULL,
+        content TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','delivered','done','failed')),
+        result TEXT,
+        created_at INTEGER NOT NULL,
+        delivered_at INTEGER,
+        completed_at INTEGER
+      )
+    `)
+    runScript(handle, `CREATE INDEX IF NOT EXISTS idx_agent_messages_status ON agent_messages(status, to_agent)`)
+    // Composite index for thread-listing queries that filter on (from_agent, to_agent) without a status
+    // predicate -- the status index above does not cover these and causes full table scans at scale.
+    runScript(handle, `CREATE INDEX IF NOT EXISTS idx_agent_messages_thread ON agent_messages(from_agent, to_agent, created_at)`)
+    // Card 06f062e4: the bus has no sender authentication -- from_agent is
+    // self-declared and every sub-agent spawned under a parent shares that
+    // parent's from_agent string, invisibly to the parent session and its
+    // siblings (the 2026-07-12 self-fill-sweep incident's root cause: a
+    // uat sub-session's message was indistinguishable from any other uat
+    // session's, producing an unpinnable ~15-message contradictory dispute).
+    // This does NOT add authentication (that needs per-agent bus credentials,
+    // a bigger cross-fleet rollout, tracked separately) -- it's the cheap
+    // half: an OPTIONAL, caller-supplied free-text tag a sub-agent can set to
+    // distinguish itself from siblings sharing its parent identity, carried
+    // through to delivery so a human/agent reading the message has SOMETHING
+    // to go on. Self-declared, so it's an attributability aid, not a trust
+    // boundary -- do not treat a present origin_note as proof of anything.
+    try {
+      runScript(handle, 'ALTER TABLE agent_messages ADD COLUMN origin_note TEXT')
+    } catch {
+      // column already exists
+    }
+    // Card def5a189: distributed trace context propagated by message-router middleware.
+    // trace_id: root trace identifier spanning an entire agent chain (e.g. morning-chain).
+    // span_id: this message's own span identifier (nanoid).
+    // parent_span_id: sender's span_id -- links child back to parent in the waterfall.
+    try { runScript(handle, 'ALTER TABLE agent_messages ADD COLUMN trace_id TEXT') } catch { /* exists */ }
+    try { runScript(handle, 'ALTER TABLE agent_messages ADD COLUMN span_id TEXT') } catch { /* exists */ }
+    try { runScript(handle, 'ALTER TABLE agent_messages ADD COLUMN parent_span_id TEXT') } catch { /* exists */ }
+
+    // INVARIANT: a row that says 'delivered' must carry a delivered_at.
+    //
+    // On 2026-07-27 an operator bulk-closed a 28-row backlog with raw SQL that
+    // set status without a timestamp. Nothing broke loudly -- but the queue,
+    // which is the only signal we have for "what actually went out", started
+    // claiming that messages had been delivered when they never left. It took an
+    // hour of log archaeology to work out which of them the recipients had
+    // genuinely received and which they had only read out of band, and the answer
+    // was recoverable that day purely by luck.
+    //
+    // Enforced with a trigger rather than a CHECK constraint because SQLite
+    // cannot add a CHECK to an existing table without rebuilding it, and this is
+    // not worth a rebuild of the message log. Self-healing rather than ABORT:
+    // aborting would turn a bookkeeping slip into a failed operation for the
+    // caller, and the point is to keep the RECORD honest, not to police writers.
+    // The row gets a timestamp AND -- if nothing else explains it -- a marker
+    // saying it was closed without ever being delivered, so the distinction
+    // survives in the data instead of in someone's memory.
+    runScript(handle, `
+      CREATE TRIGGER IF NOT EXISTS agent_messages_delivered_needs_ts
+      AFTER UPDATE OF status ON agent_messages
+      FOR EACH ROW WHEN NEW.status = 'delivered' AND NEW.delivered_at IS NULL
+      BEGIN
+        UPDATE agent_messages
+           SET delivered_at = CAST(strftime('%s','now') AS INTEGER),
+               result = COALESCE(result, 'closed-without-delivery')
+         WHERE id = NEW.id;
+      END
+    `)
+
+    // One-time L1 backfill: federation system ids are now stored lowercase, but
+    // rows written by a pre-L1 build (an install that federated with a
+    // display-cased id like "Teodor/agent") keep their old case. Left alone,
+    // thread grouping and conversation history key on the exact string and
+    // silently SPLIT such a peer into two threads once new lowercase rows
+    // arrive. Fold the SYSTEM prefix of qualified rows in place (the agent
+    // segment keeps its case -- it is the peer's namespace). Idempotent: an
+    // already-lowercase prefix compares equal and is skipped, so this is a
+    // safe no-op after the first run and on fresh installs.
+    runScript(handle, `
+      UPDATE agent_messages
+         SET from_agent = lower(substr(from_agent, 1, instr(from_agent, '/') - 1)) || substr(from_agent, instr(from_agent, '/'))
+       WHERE instr(from_agent, '/') > 0
+         AND substr(from_agent, 1, instr(from_agent, '/') - 1) <> lower(substr(from_agent, 1, instr(from_agent, '/') - 1))
+    `)
+    runScript(handle, `
+      UPDATE agent_messages
+         SET to_agent = lower(substr(to_agent, 1, instr(to_agent, '/') - 1)) || substr(to_agent, instr(to_agent, '/'))
+       WHERE instr(to_agent, '/') > 0
+         AND substr(to_agent, 1, instr(to_agent, '/') - 1) <> lower(substr(to_agent, 1, instr(to_agent, '/') - 1))
+    `)
+
+    // --- Pending Channel Requests (Slack channel opt-in workflow) ---
+    runScript(handle, `
+      CREATE TABLE IF NOT EXISTS pending_channel_requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        agent TEXT NOT NULL,
+        channel_id TEXT NOT NULL,
+        channel_name TEXT,
+        user_id TEXT,
+        requested_at INTEGER NOT NULL,
+        resolved_at INTEGER,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','denied'))
+      )
+    `)
+    runScript(handle, `CREATE UNIQUE INDEX IF NOT EXISTS idx_pcr_agent_channel ON pending_channel_requests(agent, channel_id) WHERE status = 'pending'`)
+    try { runScript(handle, 'ALTER TABLE pending_channel_requests ADD COLUMN resolved_at INTEGER') } catch { /* already exists */ }
+
+    // --- Task Run History ---
+    // Log every scheduled-task firing so the dashboard overview's "tasksToday"
+    // survives dashboard restarts. Replaces the old store/task-run-history.json
+    // which had a plain read-modify-write race under concurrent/restart.
+    runScript(handle, `
+      CREATE TABLE IF NOT EXISTS task_runs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        agent TEXT NOT NULL,
+        ts INTEGER NOT NULL
+      )
+    `)
+    runScript(handle, `CREATE INDEX IF NOT EXISTS idx_task_runs_ts ON task_runs(ts)`)
+    // Migration: add status column to task_runs (introduced 2026-06-13)
+    try { runScript(handle, `ALTER TABLE task_runs ADD COLUMN status TEXT NOT NULL DEFAULT 'fired'`) } catch { /* already present */ }
+
+    // --- Pending Scheduled Task Retries ---
+    // Busy-skipped scheduled tasks used to live in an in-memory Map. On a
+    // dashboard restart (or crash), the queue was lost -- even though the
+    // operator had asked for the task to run, it silently disappeared.
+    // This table persists each busy-retry across restarts so nothing is
+    // dropped. When a row crosses the alert threshold, the alerting layer
+    // stamps alert_sent_at before each Telegram send and clears it on
+    // delivery failure, yielding at-least-once delivery with no double-
+    // alerting on concurrent ticks. The scheduler itself never abandons:
+    // it keeps retrying until the session frees up or the operator
+    // cancels from the UI.
+    runScript(handle, `
+      CREATE TABLE IF NOT EXISTS pending_task_retries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_name TEXT NOT NULL,
+        agent_name TEXT NOT NULL,
+        first_attempt INTEGER NOT NULL,
+        last_attempt INTEGER NOT NULL,
+        attempt_count INTEGER NOT NULL DEFAULT 1,
+        last_reason TEXT,
+        alert_sent_at INTEGER,
+        UNIQUE(task_name, agent_name)
+      )
+    `)
+    runScript(handle, `CREATE INDEX IF NOT EXISTS idx_pending_retries_first_attempt ON pending_task_retries(first_attempt)`)
+
+    runScript(handle, `
+      CREATE TABLE IF NOT EXISTS background_tasks (
+        id TEXT PRIMARY KEY,
+        agent_id TEXT NOT NULL,
+        prompt TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'running' CHECK(status IN ('running','done','failed','timeout')),
+        tmux_session TEXT,
+        started_at INTEGER NOT NULL,
+        finished_at INTEGER,
+        output TEXT
+      )
+    `)
+    runScript(handle, `CREATE INDEX IF NOT EXISTS idx_bg_tasks_agent ON background_tasks(agent_id, status)`)
+
+    // --- Token Usage Monitoring ---
+    runScript(handle, `
+      CREATE TABLE IF NOT EXISTS token_usage (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        agent TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        timestamp INTEGER NOT NULL,
+        input_tokens INTEGER NOT NULL DEFAULT 0,
+        output_tokens INTEGER NOT NULL DEFAULT 0,
+        cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+        cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+        thinking_tokens INTEGER NOT NULL DEFAULT 0,
+        model TEXT,
+        content_preview TEXT,
+        tool_name TEXT,
+        task_title TEXT,
+        project TEXT
+      )
+    `)
+    runScript(handle, `CREATE INDEX IF NOT EXISTS idx_token_usage_agent ON token_usage(agent)`)
+    runScript(handle, `CREATE INDEX IF NOT EXISTS idx_token_usage_ts ON token_usage(timestamp)`)
+    runScript(handle, `CREATE INDEX IF NOT EXISTS idx_token_usage_agent_ts ON token_usage(agent, timestamp)`)
+    // Migrations for columns added after initial release
+    try { runScript(handle, 'ALTER TABLE token_usage ADD COLUMN thinking_tokens INTEGER NOT NULL DEFAULT 0') } catch { /* already exists */ }
+    try { runScript(handle, 'ALTER TABLE token_usage ADD COLUMN model TEXT') } catch { /* already exists */ }
+
+    // Deduplicate existing rows before creating unique index
+    try {
+      runScript(handle, `CREATE UNIQUE INDEX IF NOT EXISTS idx_token_usage_dedup ON token_usage(agent, session_id, timestamp, input_tokens, output_tokens)`)
+    } catch {
+      runScript(handle, `
+        DELETE FROM token_usage WHERE id NOT IN (
+          SELECT MIN(id) FROM token_usage
+          GROUP BY agent, session_id, timestamp, input_tokens, output_tokens
+        )
+      `)
+      runScript(handle, `CREATE UNIQUE INDEX IF NOT EXISTS idx_token_usage_dedup ON token_usage(agent, session_id, timestamp, input_tokens, output_tokens)`)
+    }
+
+    runScript(handle, `
+      CREATE TABLE IF NOT EXISTS token_usage_cursors (
+        file_path TEXT PRIMARY KEY,
+        last_line INTEGER NOT NULL DEFAULT 0,
+        last_size INTEGER NOT NULL DEFAULT 0
+      )
+    `)
+
+    // --- Idea Box ---
+    runScript(handle, `
+      CREATE TABLE IF NOT EXISTS idea_box (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        description TEXT,
+        category TEXT NOT NULL DEFAULT 'Egyéb',
+        status TEXT NOT NULL DEFAULT 'new' CHECK(status IN ('new','reviewed','kanban','rejected')),
+        source TEXT NOT NULL DEFAULT 'marveen',
+        kanban_id TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    `)
+    runScript(handle, `CREATE INDEX IF NOT EXISTS idx_idea_box_status ON idea_box(status)`)
+    runScript(handle, `CREATE INDEX IF NOT EXISTS idx_idea_box_category ON idea_box(category)`)
+    // impact/effort scoring -- added after initial release; safe ALTER on existing DBs
+    try { runScript(handle, 'ALTER TABLE idea_box ADD COLUMN impact INTEGER') } catch { /* already exists */ }
+    try { runScript(handle, 'ALTER TABLE idea_box ADD COLUMN effort INTEGER') } catch { /* already exists */ }
+
+    // --- Idea Comments ---
+    runScript(handle, `
+      CREATE TABLE IF NOT EXISTS idea_comments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        idea_id TEXT NOT NULL,
+        author TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      )
+    `)
+    runScript(handle, `CREATE INDEX IF NOT EXISTS idx_idea_comments_idea ON idea_comments(idea_id)`)
+
+    // --- Idea Status Log ---
+    runScript(handle, `
+      CREATE TABLE IF NOT EXISTS idea_status_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        idea_id TEXT NOT NULL,
+        from_status TEXT,
+        to_status TEXT NOT NULL,
+        actor TEXT NOT NULL DEFAULT 'system',
+        note TEXT,
+        created_at INTEGER NOT NULL
+      )
+    `)
+    runScript(handle, `CREATE INDEX IF NOT EXISTS idx_idea_status_log_idea ON idea_status_log(idea_id, created_at)`)
+
+    // --- Tool Call Log (auto-recorder) ---
+    runScript(handle, `
+      CREATE TABLE IF NOT EXISTS tool_call_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL,
+        tool_name TEXT NOT NULL,
+        input_summary TEXT,
+        success INTEGER NOT NULL DEFAULT 1,
+        created_at INTEGER NOT NULL
+      )
+    `)
+    runScript(handle, `CREATE INDEX IF NOT EXISTS idx_tool_log_session ON tool_call_log(session_id, created_at)`)
+    runScript(handle, `CREATE INDEX IF NOT EXISTS idx_tool_log_ts ON tool_call_log(created_at)`)
+    // Idempotent column additions -- guard with PRAGMA so second run does not error.
+    const toolLogCols = (handle.prepare('PRAGMA table_info(tool_call_log)').all() as { name: string }[]).map(r => r.name)
+    if (!toolLogCols.includes('agent_id'))    runScript(handle, 'ALTER TABLE tool_call_log ADD COLUMN agent_id TEXT')
+    if (!toolLogCols.includes('trace_id'))    runScript(handle, 'ALTER TABLE tool_call_log ADD COLUMN trace_id TEXT')
+    if (!toolLogCols.includes('duration_ms')) runScript(handle, 'ALTER TABLE tool_call_log ADD COLUMN duration_ms INTEGER')
+
+    // --- Skill Usage Log (persistent, no prune -- feeds dream-engine skill health) ---
+    runScript(handle, `
+      CREATE TABLE IF NOT EXISTS skill_usage (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        agent_id TEXT NOT NULL,
+        skill_name TEXT NOT NULL,
+        trigger_type TEXT NOT NULL CHECK(trigger_type IN ('tool_call', 'skill_read')),
+        session_id TEXT,
+        created_at INTEGER NOT NULL
+      )
+    `)
+    runScript(handle, `CREATE INDEX IF NOT EXISTS idx_skill_usage_agent ON skill_usage(agent_id, created_at)`)
+    runScript(handle, `CREATE INDEX IF NOT EXISTS idx_skill_usage_skill ON skill_usage(skill_name, created_at)`)
+
+    // --- Config Change Log (audit trail for /api/settings writes) ---
+    // Background-only: no UI surfaces this table yet (product decision). For
+    // secret settings, callers must pass null for old_value/new_value -- this
+    // table only ever holds plaintext for non-secret registry entries.
+    runScript(handle, `
+      CREATE TABLE IF NOT EXISTS config_change_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        key TEXT NOT NULL,
+        old_value TEXT,
+        new_value TEXT,
+        actor TEXT NOT NULL DEFAULT 'unknown',
+        created_at INTEGER NOT NULL
+      )
+    `)
+    runScript(handle, `CREATE INDEX IF NOT EXISTS idx_config_change_log_key ON config_change_log(key, created_at)`)
+
+    // --- Store File Audit (fs-watch events on store/) ---
+    // Records every write/rename in the store/ directory. Content is NEVER
+    // stored -- only path, event type and file size. Sensitive files
+    // (.dashboard-token, vault.json, .vault-key) are flagged so the UI can
+    // render them without leaking values.
+    runScript(handle, `
+      CREATE TABLE IF NOT EXISTS store_file_audit (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rel_path TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        is_sensitive INTEGER NOT NULL DEFAULT 0,
+        file_size INTEGER,
+        agent TEXT,
+        created_at INTEGER NOT NULL
+      )
+    `)
+    runScript(handle, `CREATE INDEX IF NOT EXISTS idx_store_file_audit_ts ON store_file_audit(created_at)`)
+    // Migration: add agent column to installs that created the table before this column existed.
+    try { runScript(handle, `ALTER TABLE store_file_audit ADD COLUMN agent TEXT`) } catch { /* column already exists */ }
+
+    // --- CostOps (local cost ledger) ---
+    // Read-mostly, FOCUS-inspired. cost_sources = provider/subscription origin,
+    // cost_line_items = individual charge rows (estimate or provider-sourced).
+    // No secrets/account IDs stored raw. Budgets are config-driven (costops/config.ts's
+    // BudgetEntry, from store/costops-config.json) -- there is deliberately no separate
+    // `budgets` DB table: an earlier draft of this schema had one, but it was never
+    // read from or written to (config.budgets was always the actual source), so it was
+    // a dead, unused second source of truth. Removed rather than wired up, since the
+    // config file already covers this fully and a DB table would just be a sync burden
+    // for no benefit.
+    runScript(handle, `
+      CREATE TABLE IF NOT EXISTS cost_sources (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        source_type TEXT NOT NULL,
+        account_ref TEXT,
+        currency TEXT NOT NULL DEFAULT 'HUF',
+        active INTEGER NOT NULL DEFAULT 1,
+        notes TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    `)
+    runScript(handle, `
+      CREATE TABLE IF NOT EXISTS cost_line_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source_id TEXT NOT NULL REFERENCES cost_sources(id),
+        charge_period_start INTEGER NOT NULL,
+        charge_period_end INTEGER NOT NULL,
+        charge_category TEXT NOT NULL,
+        service_name TEXT,
+        usage_type TEXT,
+        consumed_quantity REAL,
+        consumed_unit TEXT,
+        billed_cost REAL NOT NULL,
+        effective_cost REAL,
+        currency TEXT NOT NULL DEFAULT 'HUF',
+        confidence TEXT NOT NULL,
+        data_freshness INTEGER NOT NULL,
+        source_ref TEXT,
+        dedup_key TEXT UNIQUE,
+        created_at INTEGER NOT NULL
+      )
+    `)
+    runScript(handle, `CREATE INDEX IF NOT EXISTS idx_cost_line_items_period ON cost_line_items(charge_period_start, charge_period_end)`)
+    runScript(handle, `CREATE INDEX IF NOT EXISTS idx_cost_line_items_source ON cost_line_items(source_id)`)
+
+    // --- Vault SSH Keys (shared pool) ---
+    runScript(handle, `
+      CREATE TABLE IF NOT EXISTS vault_ssh_keys (
+        id TEXT PRIMARY KEY,
+        label TEXT NOT NULL,
+        username TEXT NOT NULL,
+        vault_key_id TEXT NOT NULL,
+        public_key TEXT NOT NULL,
+        fingerprint TEXT NOT NULL,
+        key_type TEXT NOT NULL DEFAULT 'ed25519',
+        created_at INTEGER NOT NULL
+      )
+    `)
+    runScript(handle, `CREATE INDEX IF NOT EXISTS idx_vault_ssh_keys_label ON vault_ssh_keys(label)`)
+
+    // --- Vault SSH Servers ---
+    runScript(handle, `
+      CREATE TABLE IF NOT EXISTS vault_ssh_servers (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        host TEXT NOT NULL,
+        port INTEGER NOT NULL DEFAULT 22,
+        username TEXT NOT NULL,
+        ssh_key_id TEXT REFERENCES vault_ssh_keys(id),
+        description TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    `)
+    runScript(handle, `CREATE INDEX IF NOT EXISTS idx_vault_ssh_servers_name ON vault_ssh_servers(name)`)
+    // Migrations for installs that ran earlier schema versions. MUST run before
+    // the ssh_key_id index below: on an install where vault_ssh_servers already
+    // existed (pre-dating this column), CREATE TABLE IF NOT EXISTS above is a
+    // no-op and never adds ssh_key_id -- indexing it before this ALTER TABLE
+    // runs throws "no such column: ssh_key_id" and crashes startup entirely
+    // (2026-07-01 incident: dashboard 502'd, crash-looped on every restart).
+    // Drop legacy per-server key columns that are no longer written or read.
+    // On older installs these were added via ALTER TABLE; fresh installs never had them.
+    // SQLite 3.35+ is required; try-catch makes this a no-op on either scenario.
+    try { runScript(handle, 'ALTER TABLE vault_ssh_servers DROP COLUMN key_type') } catch { /* column absent or SQLite pre-3.35 */ }
+    try { runScript(handle, 'ALTER TABLE vault_ssh_servers DROP COLUMN fingerprint') } catch { /* column absent or SQLite pre-3.35 */ }
+    try { runScript(handle, 'ALTER TABLE vault_ssh_servers DROP COLUMN vault_key_id') } catch { /* column absent or SQLite pre-3.35 */ }
+    try { runScript(handle, 'ALTER TABLE vault_ssh_servers DROP COLUMN key_expires_at') } catch { /* column absent or SQLite pre-3.35 */ }
+    try { runScript(handle, 'ALTER TABLE vault_ssh_servers ADD COLUMN ssh_key_id TEXT REFERENCES vault_ssh_keys(id)') } catch { /* already exists */ }
+    runScript(handle, `CREATE INDEX IF NOT EXISTS idx_vault_ssh_servers_key ON vault_ssh_servers(ssh_key_id)`)
+
+    // --- Approvals (HITL) ---
+    runScript(handle, `
+      CREATE TABLE IF NOT EXISTS approvals (
+        id TEXT PRIMARY KEY,
+        agent_id TEXT NOT NULL,
+        category TEXT NOT NULL,
+        action_description TEXT NOT NULL,
+        action_payload TEXT,
+        status TEXT NOT NULL DEFAULT 'pending'
+          CHECK(status IN ('pending','approved','rejected','timeout')),
+        timeout_at INTEGER,
+        telegram_message_id INTEGER,
+        requested_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        resolved_at INTEGER,
+        resolved_by TEXT
+      )
+    `)
+    runScript(handle, `CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status, requested_at)`)
+    runScript(handle, `CREATE INDEX IF NOT EXISTS idx_approvals_agent ON approvals(agent_id, requested_at)`)
+
+    // --- Dashboard browser login (OPTIONAL; the bearer token stays primary) ---
+    // Zero rows here = exactly the token-only behavior. A row is created only when
+    // the operator opts in (Settings card or the dashboard-user CLI). No seeded
+    // credentials -- the byte-copy-fresh-install rule forbids any default user.
+    // password_hash is a PHC string (see web/password-hash.ts). username is
+    // UNIQUE COLLATE NOCASE so logins are case-insensitive.
+    runScript(handle, `
+      CREATE TABLE IF NOT EXISTS dashboard_users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        password_hash TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        disabled INTEGER NOT NULL DEFAULT 0
+      )
+    `)
+    // Browser login sessions. NOT named `sessions` -- that table already maps
+    // Telegram chats to Claude session ids. Only sha256(session_id) is stored, so
+    // a DB leak does not hand out live sessions. Rows survive dashboard restarts;
+    // the in-memory cache in web/auth-sessions.ts rehydrates from here lazily.
+    runScript(handle, `
+      CREATE TABLE IF NOT EXISTS auth_sessions (
+        id_hash TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        username TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        last_seen_at INTEGER NOT NULL,
+        user_agent TEXT,
+        remote_note TEXT
+      )
+    `)
+    runScript(handle, `CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id)`)
+
+    // Per-device dashboard keys (AUTHPLAN1 #1). One row per enrolled device
+    // (Bridge install, phone) so a single device can be revoked without rotating
+    // the shared dashboard token. Only sha256(key) is stored -- the raw value is
+    // shown once at mint time. expires_at is OPT-IN (null = lives until revoked;
+    // a rarely used phone must not die silently). Zero rows = feature off; the
+    // auth gate falls through exactly as before, so fresh installs see no change.
+    runScript(handle, `
+      CREATE TABLE IF NOT EXISTS device_keys (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        key_hash TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        last_used_at INTEGER,
+        expires_at INTEGER,
+        install_id TEXT
+      )
+    `)
+    // Bridge pairing (AUTHPLAN1 #2): links a device key to the SSH enrollment's
+    // marveen-remote:<uuid> so revoking the key can drop the authorized_keys
+    // line in the same step. Null for keys minted outside the pairing flow.
+    try { runScript(handle, `ALTER TABLE device_keys ADD COLUMN install_id TEXT`) } catch { /* column already exists */ }
+
+    // --- OTel Distributed Tracing ---
+    // SQLite-native span store. No external OTel SDK: spans are written via
+    // /api/spans and the message-router middleware injects trace context into
+    // agent_messages rows transparently (agents don't need to know about tracing).
+    // trace_id: root identifier shared across the entire chain (generated once
+    //   by the message-router for the root message, inherited by all children).
+    // span_id: per-message unique id (nanoid).
+    // parent_span_id: null for root; sender's span_id for downstream messages.
+    // The tool_call_log.trace_id column (added by #274) holds the Claude Code
+    // native tool_use_id (per-call span) -- a DIFFERENT, narrower concept. The
+    // waterfall UI joins otel_spans (inter-agent latency) with tool_call_log
+    // (intra-agent tool timing) via agent_id + time overlap.
+    runScript(handle, `
+      CREATE TABLE IF NOT EXISTS otel_spans (
+        trace_id        TEXT NOT NULL,
+        span_id         TEXT NOT NULL,
+        parent_span_id  TEXT,
+        agent_id        TEXT NOT NULL,
+        operation       TEXT NOT NULL,
+        start_ms        INTEGER NOT NULL,
+        end_ms          INTEGER,
+        status          TEXT NOT NULL DEFAULT 'ok' CHECK(status IN ('ok','error','timeout','running')),
+        attributes      TEXT,
+        PRIMARY KEY (trace_id, span_id)
+      )
+    `)
+    runScript(handle, `CREATE INDEX IF NOT EXISTS idx_otel_spans_trace ON otel_spans(trace_id, start_ms)`)
+    runScript(handle, `CREATE INDEX IF NOT EXISTS idx_otel_spans_agent ON otel_spans(agent_id, start_ms)`)
+
+    // One-shot migration from the old JSON file (which had a read-modify-write
+    // race). Import rows if they exist, then rename the file so we don't keep
+    // re-importing. Wrapped in a transaction so a crash mid-import is safe.
+    DbClient.migrateTaskRunsFromJson(handle, config)
+
+    client.handle = handle
+    return client
+  }
+
+  // -- query<T>: thin wrapper around handle.prepare(...).all(...) --
+  query<T = unknown>(sql: string, params?: SQLQueryBindings[]): T[] {
+    if (!this.handle) throw new Error('DbClient: handle is closed')
+    const stmt = this.handle.prepare(sql)
+    return (params ? stmt.all(...params) : stmt.all()) as T[]
+  }
+
+  // -- exec: thin wrapper around handle.prepare(...).run(...) --
+  exec(sql: string, params?: SQLQueryBindings[]): void {
+    if (!this.handle) throw new Error('DbClient: handle is closed')
+    const stmt = this.handle.prepare(sql)
+    if (params) stmt.run(...params)
+    else stmt.run()
+  }
+
+  // -- transaction<T>: thin wrapper around handle.transaction(fn)() --
+  transaction<T>(fn: () => T): T {
+    if (!this.handle) throw new Error('DbClient: handle is closed')
+    return this.handle.transaction(fn)()
+  }
+
+  // -- getHandle: escape hatch for the 9 production getDb() callers. --
+  // Returns the underlying bun:sqlite Database instance. The 155 free
+  // functions in this module continue to close over the module-level
+  // `let db` singleton (synced by initDatabase), NOT over an injected
+  // DbClient; this hook exists for direct-import consumers that want to
+  // bypass the free-function facade without waiting for A.7.
+  getHandle(): Database {
+    if (!this.handle) throw new Error('DbClient: handle is closed')
+    return this.handle
+  }
+
+  // -- close: lifecycle. Closes the underlying handle; subsequent
+  //    query/exec/transaction/getHandle calls throw. --
+  close(): void {
+    if (this.handle) {
+      try { this.handle.close() } catch { /* already closed */ }
+      this.handle = null
+    }
+  }
+
+  // -- private static: tighten file permissions on the DB file and its
+  //    WAL/SHM/journal sidecars. The sidecars are created during the
+  //    WAL pragma call at umask, so they need a post-open chmod too. --
+  private static tightenDbPermissions(log: LoggerLike, dbPath: string): void {
+    const sidecars = [dbPath, `${dbPath}-wal`, `${dbPath}-shm`, `${dbPath}-journal`]
+    for (const path of sidecars) {
+      if (!existsSync(path)) continue
+      try { chmodSync(path, 0o600) } catch (err) {
+        log.warn({ err, path }, 'Failed to tighten DB file permissions')
+      }
+    }
+  }
+
+  // -- private static: one-shot JSON-to-task_runs importer. Replaces
+  //    the legacy `store/task-run-history.json` (read-modify-write race
+  //    under concurrent/restart). Idempotent: an already-migrated file is
+  //    renamed out of the way so the import doesn't re-run. Wrapped in a
+  //    transaction so a crash mid-import is safe. --
+  private static migrateTaskRunsFromJson(handle: Database, config: Pick<Config, 'STORE_DIR'>): void {
+    const legacyPath = join(config.STORE_DIR, 'task-run-history.json')
+    if (!existsSync(legacyPath)) return
+    const existingCount = (handle.prepare('SELECT COUNT(*) as c FROM task_runs').get() as { c: number }).c
+    if (existingCount > 0) {
+      // Already migrated in a previous run. Rename the file out of the way if
+      // still present so the migration doesn't keep re-running with zero effect.
+      try { renameSync(legacyPath, `${legacyPath}.migrated`) } catch { /* fine */ }
+      return
+    }
+    try {
+      const raw = readFileSync(legacyPath, 'utf-8')
+      const arr = JSON.parse(raw)
+      if (!Array.isArray(arr)) return
+      const insert = handle.prepare('INSERT INTO task_runs (name, agent, ts) VALUES (?, ?, ?)')
+      const tx = handle.transaction((rows: unknown[]) => {
+        for (const e of rows) {
+          if (!e || typeof e !== 'object') continue
+          const { name, agent, ts } = e as { name?: unknown; agent?: unknown; ts?: unknown }
+          if (typeof name !== 'string' || typeof agent !== 'string' || typeof ts !== 'number') continue
+          insert.run(name, agent, ts)
+        }
+      })
+      tx(arr)
+      try { renameSync(legacyPath, `${legacyPath}.migrated`) } catch { /* fine */ }
+    } catch { /* corrupt file, skip */ }
+  }
+}

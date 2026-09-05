@@ -37,7 +37,11 @@ describe('OWNER_NAME default value', () => {
     // Regression guard for the empty-env-blanks-identity defect: the constant
     // must route through envOr (empty-string-tolerant) and fall back to the
     // placeholder literal, not a hardcoded personal name.
-    expect(src).toMatch(/OWNER_NAME\s*=\s*envOr\(\s*'OWNER_NAME'\s*,\s*OWNER_NAME_PLACEHOLDER\s*\)/)
+    // Post-B.1: the assignment is inside the Config class constructor
+    // (`this.OWNER_NAME = envOr(...)`); pre-B.1 it was module-level
+    // (`export const OWNER_NAME = envOr(...)`). Both forms preserve the
+    // semantic. Match either.
+    expect(src).toMatch(/(?:this\.)?OWNER_NAME\s*=\s*envOr\(\s*'OWNER_NAME'\s*,\s*(?:this\.)?OWNER_NAME_PLACEHOLDER\s*\)/)
   })
 })
 
