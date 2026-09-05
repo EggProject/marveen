@@ -98,3 +98,5 @@ coverage-temp/
 
 # Throwaway worktrees agents create while the live-install guard is engaged.
 .worktrees/
+
+.claude/plans
