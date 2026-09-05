@@ -55,10 +55,14 @@ function tsFiles(dir: string): string[] {
 // - The LHS may have a `() => <ret>` type annotation that contains `=`; the
 //   `(?:=>[^=]+)*` repetition in the annotation group lets `=` inside `=>`
 //   pass through without short-circuiting the type-annotation match.
+// - `new <LazyBinSubclass>(...).resolve()` at module scope reproduces the
+//   same hazard as `new LazyBin(...).resolve()`: the resolver runs at
+//   import time. Subclasses are listed explicitly (ClaudeCodeBinResolver
+//   per F.7); add new ones here as they land.
 // The LazyBin branch requires `.resolve()` to follow the constructor call, so
 // a bare `new LazyBin('tmux')` at module scope (lazy constructor) is NOT
 // flagged -- verified by the negative test at L82.
-const TOP_LEVEL_RESOLVE = /^(?:export\s+)?(?:const|let|var)\s+\w+\s*(?::[^=]+(?:=>[^=]+)*)?=\s*(?:resolveFromPath\(|makeLazyBinResolver\([^)]*\)\s*\(|makeLazyBinResolver\([^)]*\)\s*\([^)]*\)|(?:await\s+)?\(?\s*new\s+LazyBin(?:\s*<[^>]+>)?\s*\(.*?\)\.resolve\(\))/
+const TOP_LEVEL_RESOLVE = /^(?:export\s+)?(?:const|let|var)\s+\w+\s*(?::[^=]+(?:=>[^=]+)*)?=\s*(?:resolveFromPath\(|makeLazyBinResolver\([^)]*\)\s*\(|makeLazyBinResolver\([^)]*\)\s*\([^)]*\)|(?:await\s+)?\(?\s*new\s+(?:LazyBin|ClaudeCodeBinResolver)(?:\s*<[^>]+>)?\s*\(.*?\)\.resolve\(\))/
 
 describe('no import-time binary resolution', () => {
   const files = tsFiles(SRC)
@@ -79,7 +83,7 @@ describe('no import-time binary resolution', () => {
     }
     expect(
       offenders,
-      'Use makeLazyBinResolver(name) instead (or `new LazyBin(name)` if you need invalidate()), or move the call inside a function so it runs at first use -- resolveFromPath / new LazyBin(...).resolve() / makeLazyBinResolver(...)() at module scope throws at import time when the binary is missing, which kills unrelated test suites and the dashboard boot.',
+      'Use makeLazyBinResolver(name) instead (or `new LazyBin(name, resolver)` / a LazyBin subclass if you need invalidate()), or move the call inside a function so it runs at first use -- resolveFromPath / new LazyBin(...).resolve() / makeLazyBinResolver(...)() / new <LazyBinSubclass>(...).resolve() at module scope throws at import time when the binary is missing, which kills unrelated test suites and the dashboard boot.',
     ).toEqual([])
   })
 
@@ -105,6 +109,12 @@ describe('no import-time binary resolution', () => {
     // Function-type annotation containing `=>` -- the annotation group must
     // span the `=` inside the arrow without short-circuiting.
     expect(TOP_LEVEL_RESOLVE.test("const X: () => string = new LazyBin('tmux').resolve()")).toBe(true)
+    // LazyBin subclass constructors carry the same hazard: `new ClaudeCodeBinResolver()`
+    // inherits the parent's `resolve()` which runs the resolver at import
+    // time when invoked eagerly (F.7 added ClaudeCodeBinResolver; any
+    // future subclass must be added to the alternation above).
+    expect(TOP_LEVEL_RESOLVE.test("const X = new ClaudeCodeBinResolver().resolve()")).toBe(true)
+    expect(TOP_LEVEL_RESOLVE.test("export const X = new ClaudeCodeBinResolver().resolve()")).toBe(true)
     // Invoked factory: `makeLazyBinResolver(name)()` resolves at import time
     // exactly like `resolveFromPath(name)` does.
     expect(TOP_LEVEL_RESOLVE.test("const X = makeLazyBinResolver('tmux')()")).toBe(true)

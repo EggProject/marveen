@@ -34,6 +34,13 @@ beforeEach(() => {
   originalPlatform = process.platform
   originalArch = process.arch
   originalEnv = { ...process.env }
+  // CLAUDE_CODE_BIN is this project's own production override (read at
+  // src/agent.ts:95); the sibling suite guards the same way at
+  // agent-run-paths.test.ts:76. Without this delete, 2 of the 5 tests fail
+  // on any machine that exports the variable (e.g. shell profile / deploy
+  // unit): the glibc test gets /usr/local/bin/claude and fails the toMatch,
+  // the darwin test gets /usr/local/bin/claude and fails toBeUndefined.
+  delete process.env.CLAUDE_CODE_BIN
   mockExecSync.mockReset()
   mockExistsSync.mockReset()
 })
@@ -70,6 +77,9 @@ describe('ClaudeCodeBinResolver', () => {
     const { ClaudeCodeBinResolver } = await import('../agent.js')
     const resolver = new ClaudeCodeBinResolver()
     const result = resolver.resolve()
+    // Pins that execSync was actually consulted (not a constant-return stub):
+    // without this assertion, removing detectLinuxLibc() would still pass.
+    expect(mockExecSync).toHaveBeenCalledWith('ldd --version 2>&1', expect.objectContaining({ encoding: 'utf-8' }))
     expect(result).toBeDefined()
     expect(result).toMatch(/claude-agent-sdk-linux-x64\/claude$/)
   })
@@ -101,5 +111,44 @@ describe('ClaudeCodeBinResolver', () => {
     expect(resolver.resolve()).toBe('/first/claude')
     process.env.CLAUDE_CODE_BIN = '/second/claude'
     expect(resolver.resolve()).toBe('/first/claude')
+  })
+
+  it('instance name has the literal type "claude" -- per F.7 spec test (b)', async () => {
+    // TS-level pin: if a future refactor widens LazyBin's TName from 'claude'
+    // to string, the next line becomes a compile error, surfacing the type
+    // distinctness regression without needing a separate `tsc --noEmit` step.
+    const { ClaudeCodeBinResolver } = await import('../agent.js')
+    const r = new ClaudeCodeBinResolver()
+    const literalName: 'claude' = r.name
+    expect(literalName).toBe('claude')
+  })
+
+  it('memoises the "tried and absent" undefined -- not re-resolved on subsequent calls', async () => {
+    // Pins the parent's `cached === null` sentinel check: for
+    // TResolved = string | undefined, an undefined result must NOT collide
+    // with the "not yet resolved" sentinel, otherwise every subsequent
+    // resolve() would re-invoke the resolver (and re-pay the I/O cost).
+    //
+    // Regression vector: the eslint prefer-nullish-coalescing rule applied
+    // to src/platform.ts:95 would rewrite
+    //   if (this.cached === null) this.cached = this.resolver(this.name)
+    // to
+    //   this.cached ??= this.resolver(this.name)
+    // which is UNSAFE for `string | undefined`: after a first resolve() that
+    // returns undefined, `??=` would overwrite the memoised undefined on
+    // every subsequent call (since `undefined ??= x` assigns x). The test
+    // below would fail under that mutation.
+    setPlatform('darwin', 'arm64')
+    const { ClaudeCodeBinResolver } = await import('../agent.js')
+    const resolver = new ClaudeCodeBinResolver()
+    expect(resolver.resolve()).toBeUndefined()
+    // After the first call returned undefined, the resolver must NOT be
+    // re-invoked on the next call. execSync is the only side-effecting call
+    // here; if its call count is still 0 after two resolve()s, the parent's
+    // `cached === null` guard is intact (undefined was memoised, not
+    // confused with "not yet resolved").
+    const execCallsAfterFirst = mockExecSync.mock.calls.length
+    expect(resolver.resolve()).toBeUndefined()
+    expect(mockExecSync.mock.calls.length).toBe(execCallsAfterFirst)
   })
 })

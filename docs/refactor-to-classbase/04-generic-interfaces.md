@@ -403,9 +403,9 @@ internal storage (output via `resolve()` indirectly via `process.env`).
 ### Usage example (signature only)
 
 ```ts
-const claudeBin = new LazyBin('claude')
-const codeBin = new LazyBin('code')
-claudeBin.resolve() // -> string | null
+const claudeBin = new LazyBin('claude', resolveFromPath)
+const codeBin = new LazyBin('code', resolveFromPath)
+claudeBin.resolve() // -> string
 ```
 
 ### Adopters

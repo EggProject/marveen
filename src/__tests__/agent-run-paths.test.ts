@@ -1,6 +1,6 @@
 // Coverage tests for src/agent.ts. Targets the three surfaces the brief asked
 // for: resolveClaudeCodeBin (linux libc variant + env override), the
-// module-level cachedClaudeCodeBin memoisation, and runAgent's SDK prompt
+// module-level claudeCodeBinResolver memoisation, and runAgent's SDK prompt
 // shape (options object passed to @anthropic-ai/claude-agent-sdk's query()).
 //
 // classifyAgentResult is already covered by agent-result-classification.test.ts
@@ -64,7 +64,7 @@ async function* hangUntilAbort(signal: AbortSignal | undefined): AsyncIterable<n
 }
 
 beforeEach(() => {
-  // Module-level cache (cachedClaudeCodeBin, AGENT_TIMEOUT_MS, logger) must be
+  // Module-level cache (claudeCodeBinResolver, AGENT_TIMEOUT_MS, logger) must be
   // fresh per test -- otherwise the first test's env override pollutes every
   // subsequent call.
   vi.resetModules()
@@ -565,13 +565,13 @@ describe('resolveClaudeCodeBin -- platform/libc gating', () => {
 })
 
 // =============================================================================
-// cachedClaudeCodeBin -- module-level memoisation (the "cache !== null" branch)
+// claudeCodeBinResolver -- module-level memoisation (the "cache !== null" branch)
 //
 // Same SDK-backend routing as above; we call runAgent twice and verify the
 // second invocation skips the resolver.
 // =============================================================================
 
-describe('cachedClaudeCodeBin -- module-level memoisation', () => {
+describe('claudeCodeBinResolver -- module-level memoisation', () => {
   beforeEach(() => {
     process.env.MARVEEN_AGENT_BACKEND = 'sdk'
   })
@@ -612,7 +612,7 @@ describe('cachedClaudeCodeBin -- module-level memoisation', () => {
   })
 
   it('memoises the bin-not-on-disk branch: second call does not re-execute existsSync', async () => {
-    // After the first call, cachedClaudeCodeBin is `undefined` (not `null`),
+    // After the first call, the LazyBin cache is `undefined` (not `null`),
     // so the cache hit branch returns early. Both mock counts should equal
     // what they were after a single runAgent call.
     setPlatform('linux', 'x64')
