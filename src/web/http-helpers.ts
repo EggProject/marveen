@@ -2,6 +2,7 @@ import http from 'node:http'
 import { readFileSync, statSync } from 'node:fs'
 import { extname } from 'node:path'
 import { gzipSync } from 'node:zlib'
+import { AppError } from '../errors.js'
 
 export const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -22,11 +23,10 @@ export const MIME: Record<string, string> = {
 // real cap (e.g. schedule endpoints cap at 256KB) pass `maxBytes`.
 export const DEFAULT_READ_BODY_MAX_BYTES = 20 * 1024 * 1024
 
-export class RequestBodyTooLargeError extends Error {
+export class RequestBodyTooLargeError extends AppError {
   readonly limit: number
   constructor(limit: number) {
     super(`Request body exceeded ${limit} bytes`)
-    this.name = 'RequestBodyTooLargeError'
     this.limit = limit
   }
 }

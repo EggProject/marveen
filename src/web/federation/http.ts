@@ -4,10 +4,13 @@
 // dashboard process -- which also hosts the router and every monitor. Every
 // byte read from a peer goes through this reader.
 
-export class PeerResponseTooLargeError extends Error {
+import { AppError } from '../../errors.js'
+
+export class PeerResponseTooLargeError extends AppError {
+  readonly limit: number
   constructor(limit: number) {
     super(`Peer response exceeded ${limit} bytes`)
-    this.name = 'PeerResponseTooLargeError'
+    this.limit = limit
   }
 }
 
