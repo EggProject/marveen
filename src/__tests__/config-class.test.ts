@@ -114,11 +114,6 @@ afterEach(() => {
 // =========================================================================
 
 describe('Config class — field surface', () => {
-  it('PROJECT_ROOT ends with the worktree directory name', async () => {
-    const { mod } = await loadConfig()
-    expect(mod.config.PROJECT_ROOT.endsWith('claw-refactor-b1a1')).toBe(true)
-  })
-
   it('STORE_DIR ends with /store', async () => {
     const { mod } = await loadConfig()
     expect(mod.config.STORE_DIR.endsWith('/store')).toBe(true)

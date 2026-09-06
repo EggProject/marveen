@@ -213,8 +213,8 @@ describe('DbClient.open WAL close-reopen edge case', () => {
 // close between them; the second open must succeed.
 // =========================================================================
 
-describe('DbClient.open re-init guard', () => {
-  it('open() twice on a file-backed path closes the first handle internally', () => {
+describe('DbClient.open re-init (caller must close first)', () => {
+  it('file-backed: close() + open() on the same path succeeds', () => {
     const dbPath = join(tmpDir, 'reinit.db')
     const first = DbClient.open(config, logger, dbPath)
     first.exec('CREATE TABLE t (id INTEGER PRIMARY KEY)')
@@ -222,13 +222,13 @@ describe('DbClient.open re-init guard', () => {
     expect(() => DbClient.open(config, logger, dbPath)).not.toThrow()
   })
 
-  it('open() twice on a memory path closes the first handle internally', () => {
+  it('memory: close() + open() on :memory: succeeds', () => {
     const first = DbClient.open(config, logger, ':memory:')
     expect(() => first.close()).not.toThrow()
     expect(() => DbClient.open(config, logger, ':memory:')).not.toThrow()
   })
 
-  it('module-singleton `db` is untouched when only DbClient.open() is called', async () => {
+  it('module-singleton `db` is untouched when only DbClient.open() is called', () => {
     // The 155 free functions close over the module-singleton `db`. A bare
     // DbClient.open() must NOT close that singleton. We can't read it from
     // outside, but we can prove the invariant: open a memory DbClient,
