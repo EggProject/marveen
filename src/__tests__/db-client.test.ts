@@ -11,7 +11,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest'
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { Database } from 'bun:sqlite'
 import { DbClient } from '../db.js'
 import { logger } from '../logger.js'
@@ -392,14 +392,12 @@ describe('DbClient.open serialize migrateTaskRunsFromJson with file lock', () =>
     return { storeDir, dbPath, legacyPath, jsonRows }
   }
 
-  it('two parallel open() calls produce exactly N rows (no duplicate inserts)', () => {
-    // Fresh DB + JSON with 2 rows. Two parallel open() calls. The lock
-    // ensures only one migrates. In single-threaded JS the calls run
-    // sequentially, but the lock mechanism (acquire/release around the
-    // existingCount check + insert) is what prevents the race in
-    // multi-process scenarios; this test documents the post-condition.
+  it('two parallel open() calls produce exactly N rows (multi-process)', async () => {
+    // Fresh DB + JSON with 2 rows. Two child processes call DbClient.open
+    // on the same path concurrently; the mkdir-based lock ensures only
+    // one migrates. This test FAILS if the lock is removed (both children
+    // would pass the existingCount > 0 check and double-insert).
     const storeDir = mkdtempSync(join(tmpdir(), 'marveen-race-parallel-'))
-    const cfg = { ...config, STORE_DIR: storeDir }
     const dbPath = join(storeDir, 'race.db')
     const lockDir = join(storeDir, '.task_runs_migrate.lock')
     try {
@@ -411,21 +409,44 @@ describe('DbClient.open serialize migrateTaskRunsFromJson with file lock', () =>
         ]),
       )
 
-      const c1 = DbClient.open(cfg, logger, dbPath)
-      const c2 = DbClient.open(cfg, logger, dbPath)
+      // Child script: open + close on the shared path. The child runs as
+      // a separate bun process so the lock actually serialises two
+      // concurrent migrations.
+      const childScript = join(storeDir, 'child.mts')
+      const repoRoot = process.cwd()
+      writeFileSync(
+        childScript,
+        [
+          `import { DbClient } from '${repoRoot}/src/db.ts'`,
+          `import { logger } from '${repoRoot}/src/logger.ts'`,
+          `const cfg = { STORE_DIR: process.env.STORE_DIR!, DB_FILENAME: 'race.db', PROJECT_ROOT: ${JSON.stringify(repoRoot)} }`,
+          `const c = DbClient.open(cfg, logger, process.env.STORE_DIR + '/race.db')`,
+          `c.close()`,
+        ].join('\n'),
+      )
 
-      // Exactly N rows. The first open inserts them and renames the JSON;
-      // the second open sees the renamed JSON and returns immediately.
-      const rows = c1.query<{ c: number }>('SELECT COUNT(*) as c FROM task_runs')
+      // Spawn 2 children in parallel. Bun.spawn returns a subprocess;
+      // .exited is a promise that resolves with the exit code.
+      const env = { ...process.env, STORE_DIR: storeDir }
+      const [r1, r2] = await Promise.all([
+        Bun.spawn(['bun', 'run', childScript], { env, cwd: repoRoot }).exited,
+        Bun.spawn(['bun', 'run', childScript], { env, cwd: repoRoot }).exited,
+      ])
+      expect(r1).toBe(0)
+      expect(r2).toBe(0)
+
+      // Exactly N rows (2 from the JSON, no duplicate). The first child
+      // acquires the lock, migrates, releases; the second child waits on
+      // the lock then sees the renamed JSON and returns.
+      const client = DbClient.open({ ...config, STORE_DIR: storeDir }, logger, dbPath)
+      const rows = client.query<{ c: number }>('SELECT COUNT(*) as c FROM task_runs')
       expect(rows[0]?.c).toBe(2)
 
       // JSON has been renamed, lock dir has been released.
       expect(existsSync(join(storeDir, 'task-run-history.json'))).toBe(false)
       expect(existsSync(join(storeDir, 'task-run-history.json.migrated'))).toBe(true)
       expect(existsSync(lockDir)).toBe(false)
-
-      c1.close()
-      c2.close()
+      client.close()
     } finally {
       rmSync(storeDir, { recursive: true, force: true })
     }
@@ -443,16 +464,11 @@ describe('DbClient.open serialize migrateTaskRunsFromJson with file lock', () =>
       )
 
       // Simulate "another process holds the lock" by creating the lock
-      // dir + pid file manually. PID 2147483646 is well above the typical
-      // PID range on Linux/macOS (default /proc/sys/kernel/pid_max is
-      // 4194304), so process.kill(pid, 0) returns ESRCH (process dead).
+      // dir + pid file manually. The pid is the current process (alive);
+      // a stale-pid detection in the production code checks process.kill
+      // before assuming the holder is dead.
       const lockDir = join(storeDir, '.task_runs_migrate.lock')
       mkdirSync(lockDir)
-      writeFileSync(join(lockDir, 'pid'), '2147483646')
-
-      // open() must NOT migrate: the lock is held by a "live" holder.
-      // We need the lock to be considered NOT-stale so it's not taken
-      // over; use a PID that is alive (current process).
       writeFileSync(join(lockDir, 'pid'), String(process.pid))
 
       const client = DbClient.open(cfg, logger, dbPath)
