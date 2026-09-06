@@ -48,7 +48,7 @@ thin pass-throughs.
   constructor, `query`, `exec`, `transaction`, `getHandle`, `close`.
 
 **Risk level:** **Low.** The class is purely additive; no consumer
-changes behavior. The 9 production `getDb()` callers (per `01 §1.3`)
+changes behavior. The 40 production `getDb()` callers (per `01 §1.3`)
 keep working unchanged.
 
 **Test coverage requirement:**
@@ -345,7 +345,7 @@ from `db.js`, the removal breaks the build.
 - `bun --bun vitest run`: full suite must remain at baseline + new
   green (the 50 `vi.mock('../db.js')` rewrites must produce the
   same assertion outcomes).
-- The 9 production `getDb()` callers must have migrated to
+- The 40 production `getDb()` callers must have migrated to
   `dbClient.getHandle()` OR received a `DbClient` instance via
   constructor injection.
 

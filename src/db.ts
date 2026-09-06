@@ -20,13 +20,11 @@ let db: Database
 // A.1 — initDatabase is a thin wrapper around DbClient.open() that syncs
 // the module-level `let db` singleton to the new handle. The factory inside
 // DbClient.open() does the actual I/O (mkdir, pre-create DB file, PRAGMAs,
-// tighten file perms, ~30 runScript migrations, migrateTaskRunsFromJson) and
-// holds its OWN re-init guard on `client.handle` so repeated DbClient.open()
-// A.1 note: the close here closes the module-singleton `db` handle (FD cleanup);
-// the `DbClient.open()` factory's internal guard handles its OWN `client.handle`
-// lifecycle. The two layers protect different handles — keeping both prevents
-// FD leak on re-init until A.7 migrates `getDb()` callers to own a `DbClient`
-// instance directly.
+// tighten file perms, ~30 runScript migrations, migrateTaskRunsFromJson).
+// The close here closes the module-singleton `db` handle (FD cleanup) so
+// repeated initDatabase() calls do not leak fds. A.7 will migrate getDb()
+// callers to own a DbClient instance directly; until then, the singleton
+// remains the entry point for the 40 production free-function callers.
 export function initDatabase(dbPathOverride?: string): void {
   if (db) {
     try { db.close() } catch { /* already closed */ }
@@ -2378,16 +2376,15 @@ export function listOtelTraces(limit = 50): OtelTraceSummary[] {
 // synchronous PRAGMA application, the file-permission tightening, and the
 // ~30 schema migrations that previously lived in initDatabase(). It exposes
 // a narrow SQL facade (query/exec/transaction) plus a getHandle() escape
-// hatch for the 9 production callers that still use getDb() today.
+// hatch for the 40 production callers that still use getDb() today.
 //
 // The 155 free functions in this file are unchanged; initDatabase is now a
 // thin wrapper that delegates to DbClient.open() and syncs the module-
-// level `let db` singleton to the new handle. The factory's INTERNAL re-
-// init guard (close-then-reopen on client.handle) protects repeated
-// DbClient.open() calls; the outer initDatabase re-init guard (close
-// `db` first) protects the 155 free-function callers that close over the
-// module singleton. The two guards don't interfere because each operates
-// on a different handle.
+// level `let db` singleton to the new handle. The initDatabase re-init
+// guard (close `db` first) protects the 155 free-function callers that
+// close over the module singleton. DbClient.open() constructs a fresh
+// client each call and does not need its own re-init guard — the
+// singleton guard is the only layer that closes anything.
 //
 // A.1 ≠ A.7: A.7 singleton removal is a separate, later phase. Today both
 // the class and the singleton exist in parallel.
@@ -2417,14 +2414,11 @@ export class DbClient {
     log: LoggerLike,
     dbPathOverride?: string,
   ): DbClient {
+    // open() always constructs a fresh client whose `handle` is null; the
+    // module-singleton `let db` close guard lives in initDatabase() (the
+    // caller) and is the only re-init guard that protects anything. See
+    // initDatabase() for the layer that closes the previous singleton.
     const client = new DbClient(config, log)
-
-    // Re-init guard: close the client instance's OWN handle (if any)
-    // before opening a new one. Operates on client.handle only, NOT on
-    // the module-level `let db` singleton -- that's initDatabase's job.
-    if (client.handle) {
-      try { client.handle.close() } catch { /* already closed */ }
-    }
 
     const useOverride = dbPathOverride !== undefined
 
@@ -2604,7 +2598,7 @@ export class DbClient {
         runScript(handle, `CREATE INDEX IF NOT EXISTS idx_kanban_status ON kanban_cards(status, archived_at)`)
       }
     } catch (err) {
-      logger.warn({ err }, 'kanban_cards testing-status migration failed -- continuing')
+      log.warn({ err }, 'kanban_cards testing-status migration failed -- continuing')
     }
     // Migration: add agent_id, category, auto_generated columns to memories
     try {
@@ -2716,7 +2710,7 @@ export class DbClient {
       // a broken migration is obvious in the dashboard log.
       const msg = err instanceof Error ? err.message : String(err)
       if (!/already exists/i.test(msg)) {
-        console.error('[handle] memories migration failed:', msg)
+        console.error('[db] memories migration failed:', msg)
       }
     }
 
@@ -3355,7 +3349,7 @@ export class DbClient {
     return this.handle.transaction(fn)()
   }
 
-  // -- getHandle: escape hatch for the 9 production getDb() callers. --
+  // -- getHandle: escape hatch for the 40 production getDb() callers. --
   // Returns the underlying bun:sqlite Database instance. The 155 free
   // functions in this module continue to close over the module-level
   // `let db` singleton (synced by initDatabase), NOT over an injected

@@ -136,7 +136,7 @@ recent lowest-risk landing; see the post-D.1 paragraph below.
 
 5. **`src/db.ts` → `class DbClient`** LANDED — A.1 (terv
    `mellow-hugging-wombat.md`). `class DbClient` introduced at
-   `src/db.ts:2393` with 5 fields + constructor + `open(config, log,
+   `src/db.ts:2394` with 5 fields + constructor + `open(config, log,
    dbPathOverride?)` factory + 5 methods (`query`/`exec`/`transaction`/
    `getHandle`/`close`) + 2 private statics (`tightenDbPermissions`,
    `migrateTaskRunsFromJson`). `initDatabase` is now a 5-line
@@ -147,14 +147,14 @@ recent lowest-risk landing; see the post-D.1 paragraph below.
    `(this commit)` placeholder, see A.1 commit.
 
    **Why this counts as a lowest-risk win** (in retrospect):
-   - `getHandle()` is the explicit escape hatch — the 9 production
+   - `getHandle()` is the explicit escape hatch — the 40 production
      `getDb()` callers (per `a-db/01 §1.3`) keep working unchanged
      until A.7.
-   - The factory's INTERNAL re-init guard (close `client.handle`)
-     protects repeated `DbClient.open()` calls without leaking fds;
-     the outer `initDatabase` re-init guard (close `db`) protects
-     the 155 free-function callers — two layers, two handles, no
-     interference.
+   - The `initDatabase` re-init guard (close `db`) protects the
+     155 free-function callers that close over the module singleton.
+     `DbClient.open()` constructs a fresh instance each call and does
+     not need its own re-init guard — the singleton guard in
+     `initDatabase` is the only layer that closes anything.
    - The migrations (`~30 runScript` blocks + `migrateTaskRunsFromJson`)
      moved into `DbClient.open()` byte-for-byte from `initDatabase`;
      behavior unchanged.
