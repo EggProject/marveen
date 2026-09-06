@@ -9,9 +9,9 @@
 // assertion would catch it.
 
 import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest'
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync, existsSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { Database } from 'bun:sqlite'
 import { DbClient } from '../db.js'
 import { logger } from '../logger.js'
@@ -376,11 +376,10 @@ describe('DbClient.open closes raw handle on migration throw', () => {
 describe('DbClient.open serialize migrateTaskRunsFromJson with file lock', () => {
   // Helper: a per-test isolated STORE_DIR so the lock dir and JSON file
   // don't collide with other tests or the real production store.
-  function setupRaceSandbox(label: string): { storeDir: string; dbPath: string; legacyPath: string; jsonRows: number } {
+  function setupRaceSandbox(label: string): { storeDir: string; dbPath: string; legacyPath: string } {
     const storeDir = mkdtempSync(join(tmpdir(), `marveen-race-${label}-`))
     const dbPath = join(storeDir, 'race.db')
     const legacyPath = join(storeDir, 'task-run-history.json')
-    const jsonRows = 3
     writeFileSync(
       legacyPath,
       JSON.stringify([
@@ -389,7 +388,7 @@ describe('DbClient.open serialize migrateTaskRunsFromJson with file lock', () =>
         { name: `${label}-c`, agent: 'agent-3', ts: 3 },
       ]),
     )
-    return { storeDir, dbPath, legacyPath, jsonRows }
+    return { storeDir, dbPath, legacyPath }
   }
 
   it('two parallel open() calls produce exactly N rows (multi-process)', async () => {
@@ -420,7 +419,7 @@ describe('DbClient.open serialize migrateTaskRunsFromJson with file lock', () =>
           `import { DbClient } from '${repoRoot}/src/db.ts'`,
           `import { logger } from '${repoRoot}/src/logger.ts'`,
           `const cfg = { STORE_DIR: process.env.STORE_DIR!, DB_FILENAME: 'race.db', PROJECT_ROOT: ${JSON.stringify(repoRoot)} }`,
-          `const c = DbClient.open(cfg, logger, process.env.STORE_DIR + '/race.db')`,
+          `const c = DbClient.open(cfg, logger, \`${process.env.STORE_DIR}/race.db\`)`,
           `c.close()`,
         ].join('\n'),
       )
