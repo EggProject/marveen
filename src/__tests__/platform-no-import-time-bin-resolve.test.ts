@@ -62,7 +62,7 @@ function tsFiles(dir: string): string[] {
 // The LazyBin branch requires `.resolve()` to follow the constructor call, so
 // a bare `new LazyBin('tmux')` at module scope (lazy constructor) is NOT
 // flagged -- verified by the negative test at L82.
-const TOP_LEVEL_RESOLVE = /^(?:export\s+)?(?:const|let|var)\s+\w+\s*(?::[^=]+(?:=>[^=]+)*)?=\s*(?:resolveFromPath\(|makeLazyBinResolver\([^)]*\)\s*\(|makeLazyBinResolver\([^)]*\)\s*\([^)]*\)|(?:await\s+)?\(?\s*new\s+(?:LazyBin|ClaudeCodeBinResolver)(?:\s*<[^>]+>)?\s*\(.*?\)\.resolve\(\))/
+const TOP_LEVEL_RESOLVE = /^(?:export\s+)?(?:const|let|var)\s+\w+\s*(?::[^=]+(?:=>[^=]+)*)?=\s*(?:resolveFromPath\(|makeLazyBinResolver\([^)]*\)\s*\(|makeLazyBinResolver\([^)]*\)\s*\([^)]*\)|(?:await\s+)?\(?\s*new\s+(?:LazyBin|ClaudeCodeBinResolver)(?:\s*<[^>]+>)?\s*\(.*?\)\.resolve\(\))/ms
 
 describe('no import-time binary resolution', () => {
   const files = tsFiles(SRC)
@@ -74,12 +74,14 @@ describe('no import-time binary resolution', () => {
   it('no src module calls resolveFromPath at module scope', () => {
     const offenders: string[] = []
     for (const file of files) {
-      const lines = readFileSync(file, 'utf-8').split('\n')
-      lines.forEach((line, i) => {
-        if (TOP_LEVEL_RESOLVE.test(line)) {
-          offenders.push(`${file.slice(SRC.length + 1)}:${i + 1}: ${line.trim()}`)
-        }
-      })
+      const source = readFileSync(file, 'utf-8')
+      const matches = source.matchAll(new RegExp(TOP_LEVEL_RESOLVE.source, 'gms'))
+      for (const match of matches) {
+        const start = match.index ?? 0
+        const lineNumber = source.slice(0, start).split('\n').length
+        const line = source.split('\n')[lineNumber - 1] ?? ''
+        offenders.push(`${file.slice(SRC.length + 1)}:${lineNumber}: ${line.trim()}`)
+      }
     }
     expect(
       offenders,
@@ -106,6 +108,9 @@ describe('no import-time binary resolution', () => {
     // synchronous so this is just sugar over `.resolve()`).
     expect(TOP_LEVEL_RESOLVE.test("const X = await new LazyBin('tmux').resolve()")).toBe(true)
     expect(TOP_LEVEL_RESOLVE.test("const X = await (new LazyBin('tmux')).resolve()")).toBe(true)
+    // A top-level call can span lines; the scanner must still treat the
+    // continuation as part of the declaration rather than missing the hazard.
+    expect(TOP_LEVEL_RESOLVE.test("const X =\n  new LazyBin('tmux').resolve()")).toBe(true)
     // Function-type annotation containing `=>` -- the annotation group must
     // span the `=` inside the arrow without short-circuiting.
     expect(TOP_LEVEL_RESOLVE.test("const X: () => string = new LazyBin('tmux').resolve()")).toBe(true)
