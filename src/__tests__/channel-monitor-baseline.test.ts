@@ -592,15 +592,12 @@ describe('baseline: handleMarveenDown first-time softReconnectMarveen() success 
 })
 
 // ============================================================================
-// LINE 1285 -- `if (providerLabel === 'telegram' && !marveenDownState.conflictProbed)`
-// else branch. Fires when providerLabel !== 'telegram' OR conflictProbed is true.
-// We drive the probe behaviour by triggering TWO consecutive cascade entries;
-// the IF branch fires unconditionally on every fresh handleMarveenDown entry
-// because the `&& !marveenDownState.conflictProbed` guard was dropped. The
-// within-tick spam-guard no longer exists; each fresh down-spell re-issues
-// the diagnostic. This test verifies that the probe is dispatched
-// on the first cascade entry, and that the second simulated entry (after
-// recovery) does NOT re-fire the probe because shouldEscalateMarveenDown
+// LINE 1285 -- `if (providerLabel === 'telegram')` branch.
+// Fires only for the Telegram provider. We drive the probe behaviour by
+// triggering TWO consecutive cascade entries; the probe is dispatched on the
+// first fresh handleMarveenDown entry. This test verifies that the probe is
+// dispatched on the first cascade entry, and that the second simulated entry
+// (after recovery) does NOT re-fire the probe because shouldEscalateMarveenDown
 // requires MARVEEN_DOWN_CONFIRM_MS (120s) of continuous down before it
 // re-triggers handleMarveenDown within the test's tick window.
 // ============================================================================

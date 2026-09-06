@@ -8,11 +8,12 @@
 // between the concrete subclass and Error in the prototype chain.
 //
 // AppError is abstract -- subclasses must extend it; direct `new AppError(...)`
-// throws. The runtime guard is required because @ts-ignore / `as any` bypass
-// the TS2511 compile-time check. ErrorOptions is forwarded to super so
-// `{ cause }` flows through, and `this.name = new.target.name` is required
-// because the Error base class sets `.name` from the constructor context, not
-// from the concrete subclass.
+// throws. The runtime guard is required because abstract constructors are
+// enforced only at compile time. There is no `code` field, avoiding collisions
+// with Node errno names, and no method beyond the constructor. ErrorOptions is
+// forwarded to super so `{ cause }` flows through, and assigning
+// `this.name = new.target.name` is required so each concrete subclass reports
+// its own name instead of inheriting `Error`.
 //
 // Pre-existing subclasses (DeferToPeerError, RemoteEnrollError, TelegramApi-
 // Error, KeychainUnavailableError, PasswordPolicyError, UserFacingError,

@@ -48,7 +48,7 @@ const REAL_INPUT_BOX = [
 // plain `-p` capture the dim is gone, so this reads as parked input ('typing')
 // and a fresh session whose only prompts arrive through the readiness gate can
 // never receive its first prompt. Only the ghost-stripped view reads it idle.
-const V2_1_201_FRESH_GHOST_BOX = [
+const RECENT_RENDERER_FRESH_GHOST_BOX = [
   `${ESC}[38;5;37m${SEP}${ESC}[39m`,
   `${ESC}[39m❯${NBSP}${ESC}[2mTry "how do I log an error?"${ESC}[0m`,
   `${ESC}[38;5;37m${SEP}${ESC}[39m`,
@@ -108,7 +108,7 @@ describe('ghost suggestion does not trigger stuck-input recovery', () => {
 // fresh worker/agent is not judged "not ready" forever (chicken-and-egg).
 describe('fresh-session readiness (ghost example-suggestion)', () => {
   it('a fresh dim example-suggestion box reads IDLE once the ghost is stripped', () => {
-    const stripped = stripGhostSuggestion(V2_1_201_FRESH_GHOST_BOX)
+    const stripped = stripGhostSuggestion(RECENT_RENDERER_FRESH_GHOST_BOX)
     expect(stripped).not.toContain('Try "how do I log an error?"')
     expect(detectPaneState(stripped)).toBe('idle') // NOT 'typing'
     expect(paneLooksIdle(stripped)).toBe(true)
@@ -161,9 +161,9 @@ describe('fresh-session readiness (ghost example-suggestion)', () => {
 
 // Wiring guard: the readiness gate must resolve typing-vs-idle through the
 // dim-ghost-tolerant idleOrGhost path (which only scrapes the ghost-STRIPPED
-// captureParkedInputView when the plain view looks like typing) -- otherwise the
-// A subsequent renderer revision re-introduced the dim-ghost on fresh sessions,
-// re-breaking first-prompt delivery.
+// captureParkedInputView when the plain view looks like typing). A subsequent
+// renderer revision re-introduced the dim-ghost on fresh sessions, re-breaking
+// first-prompt delivery.
 describe('isSessionReadyForPrompt wiring (dim-ghost tolerant idle)', () => {
   it('resolves idle through idleOrGhost/captureParkedInputView and saturation on the plain capture', () => {
     const src = readFileSync(
