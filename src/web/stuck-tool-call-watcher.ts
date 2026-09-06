@@ -15,12 +15,12 @@
 // respawn-pane path resumeMarveenSession() -- NOT the launchctl hard-restart.
 // `tmux respawn-pane -k` replaces only the pane's claude process: it does NOT
 // `tmux kill-session`, so an attached client is never kicked ([exited], the
-// #248 user-visible crash), and it runs the pane-attribution detached-claude
+// user-visible crash), and it runs the pane-attribution detached-claude
 // reap first (breaking the orphan->409->freeze doom-loop the env-grep reap on
 // the launchctl/channels.sh path never cleaned). A CPU-profile guard skips the
 // recovery unless the process matches the idle stdio-wedge profile.
 //
-// Critical guard (Marveen 2026-06-02 review): a legitimate long-running
+// Critical guard: a legitimate long-running
 // tool-call (slow Anthropic inference, multi-stage research agent) MUST
 // NOT trigger this. Two layers of false-positive protection:
 //   1. seconds >= freezeSeconds (180s default) -- below that, just record.
