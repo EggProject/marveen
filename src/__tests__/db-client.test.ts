@@ -408,6 +408,18 @@ describe('DbClient.open serialize migrateTaskRunsFromJson with file lock', () =>
         ]),
       )
 
+      // Pre-initialize the .db file in the parent process: DbClient.open()
+      // constructs `new Database(dbPath, { strict: true })` which throws
+      // SQLITE_CANTOPEN if the file does not exist. Without this pre-init
+      // step, the first child process's Database constructor throws before
+      // the mkdir lock can even be tested. Open + close here creates the
+      // file (with pragmas + empty migrations) so the children's open
+      // resolves an existing file.
+      {
+        const preInit = DbClient.open({ ...config, STORE_DIR: storeDir }, logger, dbPath)
+        preInit.close()
+      }
+
       // Child script: open + close on the shared path. The child runs as
       // a separate bun process so the lock actually serialises two
       // concurrent migrations.
@@ -419,7 +431,7 @@ describe('DbClient.open serialize migrateTaskRunsFromJson with file lock', () =>
           `import { DbClient } from '${repoRoot}/src/db.ts'`,
           `import { logger } from '${repoRoot}/src/logger.ts'`,
           `const cfg = { STORE_DIR: process.env.STORE_DIR!, DB_FILENAME: 'race.db', PROJECT_ROOT: ${JSON.stringify(repoRoot)} }`,
-          `const c = DbClient.open(cfg, logger, \`${process.env.STORE_DIR}/race.db\`)`,
+          `const c = DbClient.open(cfg, logger, process.env.STORE_DIR + '/race.db')`,
           `c.close()`,
         ].join('\n'),
       )
