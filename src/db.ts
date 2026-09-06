@@ -2469,10 +2469,7 @@ export class DbClient {
     // timeout per test. Skip the lock for :memory:.
     const migrationLockDir = dbPath === ':memory:'
       ? null
-      : join(
-          dirname(dbPath),
-          `.task_runs_migrate.${dbPath.replace(/[^a-zA-Z0-9._-]/g, '_')}.lock`,
-        )
+      : join(dirname(dbPath), '.task_runs_migrate.lock')
     const lockStartTime = Date.now()
     const lockTimeoutMs = 5000
     const lockPollMs = 50

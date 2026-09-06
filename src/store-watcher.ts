@@ -97,19 +97,7 @@ export class StoreWatcher {
     if (last !== undefined && now - last < DEDUP_MS) return
     this.recentEvents.set(rel, now)
     if (this.recentEvents.size > 200) {
-      let _dedupPruned = 0
-      for (const [k, t] of this.recentEvents) {
-        if (now - t >= DEDUP_MS) {
-          this.recentEvents.delete(k)
-          _dedupPruned += 1
-        }
-      }
-      // Hard-cap fallback: if every entry is still fresh (within DEDUP_MS)
-      // the per-entry prune above deleted 0. Without this guard, a sustained
-      // burst > DEDUP_MS can grow the Map past 500 with no prune happening.
-      if (_dedupPruned === 0 && this.recentEvents.size > 500) {
-        this.recentEvents.clear()
-      }
+      for (const [k, t] of this.recentEvents) if (now - t >= DEDUP_MS) this.recentEvents.delete(k)
     }
 
     // New file -- record it and mark as known.
@@ -188,7 +176,7 @@ export class StoreWatcher {
     try {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
         const rel = relBase ? `${relBase}/${entry.name}` : entry.name
-        if (entry.isDirectory() && !entry.isSymbolicLink()) {
+        if (entry.isDirectory()) {
           StoreWatcher.scanStore(join(dir, entry.name), known, rel)
         } else {
           known.add(rel)

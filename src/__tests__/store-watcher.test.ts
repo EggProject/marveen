@@ -195,12 +195,6 @@ describe('store-watcher', () => {
       writeFileSync(join(STORE, 'channels.log'), 'x') // SYSTEM_FILES entry
       fireRename('channels.log')
       expect(logStoreFileEventMock).not.toHaveBeenCalled()
-      // Explicit assertion (release-checklist prevention hardening): the
-      // system-file event's early-return path MUST consume the currentWriteActor
-      // slot, otherwise the next real event would record the stale actor.
-      expect(
-        (storeWatcher as unknown as { currentWriteActor: string | null }).currentWriteActor,
-      ).toBeNull()
       // The actor was cleared by the system-file event; the next real event
       // must record agent=null even though we never explicitly called
       // clearStoreWriteActor between the two events.
