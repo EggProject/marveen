@@ -2444,7 +2444,14 @@ export class DbClient {
     }
 
     const handle = new Database(dbPath, { strict: true })
-    pragma(handle, 'journal_mode = WAL')
+    try {
+      // Migration block: pragmas + ~30 runScript migrations + JSON task_runs
+      // import. Any throw here (corrupted schema, bad migration data) would
+      // leak the raw FD and the file lock unless we close the handle in
+      // the catch below. The handle is created above but only assigned to
+      // client.handle after this block (client.handle = handle, below), so
+      // client.close() cannot reach it on the throw path.
+      pragma(handle, 'journal_mode = WAL')
     // Performance pragmas: safe with WAL, applied after journal_mode is set.
     // cache_size: negative value = kibibytes; -65536 → 64 MB page cache.
     // mmap_size: memory-mapped I/O in bytes; 256 MB. Skipped for :memory: (no file to map).
@@ -3323,6 +3330,14 @@ export class DbClient {
     // race). Import rows if they exist, then rename the file so we don't keep
     // re-importing. Wrapped in a transaction so a crash mid-import is safe.
     DbClient.migrateTaskRunsFromJson(handle, config)
+    } catch (e) {
+      // Close the raw handle so the file lock is released; subsequent
+      // DbClient.open() on the same path can then succeed without
+      // contention. Without this, the FD + WAL/SHM locks would survive
+      // until process exit.
+      try { handle.close() } catch { /* already closed */ }
+      throw e
+    }
 
     client.handle = handle
     return client

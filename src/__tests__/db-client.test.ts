@@ -8,8 +8,8 @@
 // cache_size / synchronous pragmas, the WAL close-reopen edge-case
 // assertion would catch it.
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest'
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Database } from 'bun:sqlite'
@@ -18,6 +18,33 @@ import { logger } from '../logger.js'
 import { STORE_DIR, DB_FILENAME, PROJECT_ROOT } from '../config.js'
 
 const config = { STORE_DIR, DB_FILENAME, PROJECT_ROOT }
+
+// -- Migration injection (Commit 1 / Commit 2 tests) -----------------------
+// Wrap runScript so individual tests can force a throw at a specific call
+// count, then delegate back to the real impl for normal-call tests. Default
+// behaviour is a pass-through so the existing tests in this file are
+// unaffected.
+
+const migrationInjection = vi.hoisted(() => ({ failAfter: -1, callCount: 0 }))
+
+vi.mock('../db/sqlite.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../db/sqlite.js')>()
+  return {
+    ...actual,
+    runScript: (db: unknown, sql: string) => {
+      migrationInjection.callCount++
+      if (migrationInjection.failAfter >= 0 && migrationInjection.callCount > migrationInjection.failAfter) {
+        throw new Error(`injected migration failure at call ${migrationInjection.callCount}`)
+      }
+      return actual.runScript(db as never, sql)
+    },
+  }
+})
+
+beforeEach(() => {
+  migrationInjection.failAfter = -1
+  migrationInjection.callCount = 0
+})
 
 // -- Sandbox lifecycle ----------------------------------------------------
 
@@ -263,5 +290,66 @@ describe('module surface', () => {
 
   it('class surface: open is a static method', () => {
     expect(typeof DbClient.open).toBe('function')
+  })
+})
+
+// =========================================================================
+// Commit 1 — Migration FD leak fix
+// =========================================================================
+//
+// The raw SQLite handle is created at the top of DbClient.open and assigned
+// to client.handle only at the very end of the migration block. Any throw
+// between those two points (corrupted schema, bad migration data) used to
+// leak the raw FD + file lock until process exit.
+//
+// The fix wraps the migration block in try/catch and closes the raw handle
+// on throw. The behavioural assertion: after a throwing migration, a
+// subsequent DbClient.open() on the same file path must succeed with no
+// lock contention (the FD has been released).
+
+describe('DbClient.open closes raw handle on migration throw', () => {
+  it('second open() on the same file path succeeds after a migration throw', () => {
+    const dbPath = join(tmpDir, 'fd-leak.db')
+    // Force runScript to throw on the very first call. The throw happens
+    // BEFORE client.handle is assigned, so the raw handle would leak
+    // without the fix.
+    migrationInjection.failAfter = 0
+
+    // The first open() must propagate the injected error verbatim.
+    expect(() => DbClient.open(config, logger, dbPath)).toThrow(
+      /injected migration failure/,
+    )
+
+    // Reset injection so the second open() runs the real migration block.
+    // With the FD leak fix, the raw handle was closed in the catch above;
+    // the file lock is gone, so this open() succeeds and reaches
+    // client.handle = handle.
+    migrationInjection.failAfter = -1
+    migrationInjection.callCount = 0
+    const second = DbClient.open(config, logger, dbPath)
+    expect(second.getHandle()).toBeInstanceOf(Database)
+    // The second open is fully usable (pragma and migration completed).
+    expect(second.query<{ n: number }>('SELECT 1 as n')).toEqual([{ n: 1 }])
+    second.close()
+  })
+
+  it('Database.prototype.close is invoked exactly once on the raw handle when the migration throws', () => {
+    // The catch block must call handle.close() to release the FD + file
+    // lock. Spy on Database.prototype.close to count the invocations.
+    const closeSpy = vi.spyOn(Database.prototype, 'close')
+    try {
+      const dbPath = join(tmpDir, 'fd-leak-spy.db')
+      migrationInjection.failAfter = 0
+
+      expect(() => DbClient.open(config, logger, dbPath)).toThrow(
+        /injected migration failure/,
+      )
+
+      // Exactly one close call: the raw handle from the first (failing)
+      // open(). If the fix were absent, closeSpy would have 0 calls.
+      expect(closeSpy).toHaveBeenCalledTimes(1)
+    } finally {
+      closeSpy.mockRestore()
+    }
   })
 })
