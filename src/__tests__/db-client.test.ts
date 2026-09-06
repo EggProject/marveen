@@ -412,11 +412,15 @@ describe('DbClient.open serialize migrateTaskRunsFromJson with file lock', () =>
       // constructs `new Database(dbPath, { strict: true })` which throws
       // SQLITE_CANTOPEN if the file does not exist. Without this pre-init
       // step, the first child process's Database constructor throws before
-      // the mkdir lock can even be tested. Open + close here creates the
-      // file (with pragmas + empty migrations) so the children's open
-      // resolves an existing file.
+      // the mkdir lock can even be tested. Pre-create the .db file with
+      // strict: false (does NOT run the migration or apply pragmas) so
+      // the children's DbClient.open (strict: true) resolves an existing
+      // file. Using DbClient.open here would run the full migration,
+      // renaming the JSON to .migrated before the children spawn —
+      // making the test vacuous (children would find no JSON and skip
+      // migration, never testing the lock).
       {
-        const preInit = DbClient.open({ ...config, STORE_DIR: storeDir }, logger, dbPath)
+        const preInit = new Database(dbPath, { strict: false })
         preInit.close()
       }
 
