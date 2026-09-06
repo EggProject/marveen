@@ -474,11 +474,16 @@ describe('DbClient.open serialize migrateTaskRunsFromJson with file lock', () =>
     const legacyPath = join(storeDir, 'task-run-history.json')
     // The test suite globally forbids process.kill (src/__tests__/setup/
     // forbid-system-calls.ts). Spy on process.kill for this test and
-    // simulate an alive foreign pid (the holder would be a different
-    // live process holding the lock). The real holder pid is not used
-    // by the production code path here -- we only need the spy to make
-    // the isMigrationLockStale kill(0) check return "alive".
-    const killSpy = vi.spyOn(process, 'kill').mockImplementation(((() => true) as unknown) as typeof process.kill)
+    // simulate an alive foreign pid (the holder is a different live
+    // process holding the lock, with pid=88888888 which is a pid the
+    // production code has NOT seen before). The kill(0) check in
+    // isMigrationLockStale will be invoked against 88888888, and the
+    // spy must return success (= alive) so the takeover is rejected.
+    const FOREIGN_PID = 88888888
+    const killSpy = vi.spyOn(process, 'kill').mockImplementation(((pid: number, _sig?: number) => {
+      if (pid === FOREIGN_PID) return true
+      return true
+    }) as typeof process.kill)
     try {
       writeFileSync(
         legacyPath,
@@ -486,18 +491,15 @@ describe('DbClient.open serialize migrateTaskRunsFromJson with file lock', () =>
       )
 
       // Simulate "another process holds the lock" by writing the lock
-      // dir + pid + token files. The pid is a different number from
-      // process.pid (so the production code goes through the kill(0)
-      // path, not the self-pid token-check path); the token is an
-      // arbitrary UUID that does not match this process's own
-      // MIGRATION_LOCK_TOKEN (which doesn't matter for the kill(0)
-      // path, but keeps the fixture realistic).
+      // dir + pid + token files. The pid is DIFFERENT from process.pid
+      // (so the production code goes through the kill(0) path, not the
+      // self-pid token-check path); the token is an arbitrary UUID that
+      // does not match this process's MIGRATION_LOCK_TOKEN.
       const lockDir = join(storeDir, '.task_runs_migrate.lock')
       mkdirSync(lockDir)
-      writeFileSync(join(lockDir, 'pid'), String(process.pid))
-      writeFileSync(join(lockDir, 'token'), MIGRATION_LOCK_TOKEN)
+      writeFileSync(join(lockDir, 'pid'), String(FOREIGN_PID))
+      writeFileSync(join(lockDir, 'token'), 'foreign-process-token-uuid-not-ours')
 
-      // The held lock is taken by THIS process (matching pid + token);
       // DbClient.open's retry loop will wait the full 5s timeout before
       // giving up. Wrap the open in try/catch so the test asserts the
       // held-lock invariant (JSON not migrated) rather than the
@@ -542,6 +544,17 @@ describe('DbClient.open serialize migrateTaskRunsFromJson with file lock', () =>
   it('stale lock (PID of a dead process) is taken over and migration runs', () => {
     const { storeDir, dbPath, legacyPath } = setupRaceSandbox('stale')
     const cfg = { ...config, STORE_DIR: storeDir }
+    // Mock process.kill to simulate ESRCH for the dead PID -- the test must
+    // be deterministic regardless of whether PID 999999999 happens to be
+    // alive on the host, and regardless of MARVEEN_TEST_ALLOW_PROCESS_KILL.
+    const killSpy = vi.spyOn(process, 'kill').mockImplementation(((pid: number, _sig?: number) => {
+      if (pid === 999999999) {
+        const err = new Error('No such process') as NodeJS.ErrnoException
+        err.code = 'ESRCH'
+        throw err
+      }
+      return true
+    }) as typeof process.kill)
     try {
       // Pretend a previous crashed process left a lock dir with a pid
       // that doesn't exist anymore. PID 999999999 is virtually never a
@@ -562,6 +575,7 @@ describe('DbClient.open serialize migrateTaskRunsFromJson with file lock', () =>
       // Lock dir released by the takeover path.
       expect(existsSync(lockDir)).toBe(false)
     } finally {
+      killSpy.mockRestore()
       rmSync(storeDir, { recursive: true, force: true })
     }
   })

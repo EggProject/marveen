@@ -3503,36 +3503,45 @@ export class DbClient {
     } catch { /* corrupt file, skip */ }
   }
 
-  // -- private static: mkdir-based file lock acquire. mkdir is atomic on
-  //    POSIX (returns EEXIST if the directory already exists). The lock
-  //    directory contains a `pid` file AND a `token` file; if the holder
-  //    is dead (or its token doesn't match this process's), the lock is
-  //    considered stale and taken over. The token defeats the PID-
-  //    recycling race (Linux reuses crashed PIDs immediately). --
+  // -- private static: mkdir-based file lock acquire. The lock directory
+  //    contains a `pid` file AND a `token` file; if the holder is dead
+  //    (or its token doesn't match this process's), the lock is considered
+  //    stale and taken over. The token defeats the PID-recycling race
+  //    (Linux reuses crashed PIDs immediately).
+  //
+  //    Atomicity: mkdirSync with recursive: true silently swallows EEXIST
+  //    (no-op on existing dir), which would re-introduce the original
+  //    TOCTOU race between existsSync and mkdirSync. We avoid that by
+  //    using openSync(path, 'wx') on a FILE inside the lock dir -- 'wx'
+  //    is O_CREAT|O_EXCL, which is guaranteed-atomic on POSIX and throws
+  //    EEXIST if any other process has already created the file. The lock
+  //    dir itself is created with recursive: true (safe: parents only). --
   private static tryAcquireMigrationLock(lockDir: string): boolean {
-    if (existsSync(lockDir)) {
+    // Ensure parents exist (STORE_DIR may not exist on first-ever start).
+    // recursive: true here is safe -- we only create ancestor directories,
+    // not the lock dir itself, so EEXIST on the ancestors is benign.
+    try { mkdirSync(lockDir, { recursive: true }) } catch { /* fine */ }
+    const pidFile = join(lockDir, 'pid')
+    const tokenFile = join(lockDir, 'token')
+    if (existsSync(pidFile)) {
       if (!DbClient.isMigrationLockStale(lockDir)) {
         return false  // Held by a live process (matching pid + token)
       }
       // Stale: remove the pid + token files, then the dir, and re-attempt.
-      try { unlinkSync(join(lockDir, 'pid')) } catch { /* fine */ }
-      try { unlinkSync(join(lockDir, 'token')) } catch { /* fine */ }
+      try { unlinkSync(pidFile) } catch { /* fine */ }
+      try { unlinkSync(tokenFile) } catch { /* fine */ }
       try { rmdirSync(lockDir) } catch { /* fine */ }
     }
+    // Atomic create via O_EXCL: if another process raced ahead and created
+    // the pid file between our existsSync and now, openSync throws EEXIST
+    // and we report not-acquired (the caller retries).
     try {
-      // recursive: true so the lock is also created when STORE_DIR does
-      // not exist yet (e.g. first-ever start, or a test that points
-      // STORE_DIR at a fresh tmpdir). The existsSync check above
-      // guarantees the dir is absent here, so the EEXIST swallowing
-      // behaviour of recursive: true cannot mask a parallel acquirer.
-      mkdirSync(lockDir, { recursive: true })
-      writeFileSync(join(lockDir, 'pid'), String(process.pid))
-      writeFileSync(join(lockDir, 'token'), MIGRATION_LOCK_TOKEN)
-      return true
+      closeSync(openSync(pidFile, 'wx', 0o600))
     } catch {
-      // Lost the race against another acquirer; treat as not acquired.
       return false
     }
+    writeFileSync(tokenFile, MIGRATION_LOCK_TOKEN)
+    return true
   }
 
   // -- private static: best-effort release. Idempotent. --
