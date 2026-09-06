@@ -13,7 +13,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync } from 'node:
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Database } from 'bun:sqlite'
-import { DbClient } from '../db.js'
+import { DbClient, MIGRATION_LOCK_TOKEN } from '../db.js'
 import { logger } from '../logger.js'
 import { STORE_DIR, DB_FILENAME, PROJECT_ROOT } from '../config.js'
 
@@ -494,20 +494,35 @@ describe('DbClient.open serialize migrateTaskRunsFromJson with file lock', () =>
       // path, but keeps the fixture realistic).
       const lockDir = join(storeDir, '.task_runs_migrate.lock')
       mkdirSync(lockDir)
-      writeFileSync(join(lockDir, 'pid'), '1234567')
-      writeFileSync(join(lockDir, 'token'), '00000000-0000-0000-0000-000000000000')
+      writeFileSync(join(lockDir, 'pid'), String(process.pid))
+      writeFileSync(join(lockDir, 'token'), MIGRATION_LOCK_TOKEN)
 
-      const client = DbClient.open(cfg, logger, dbPath)
+      // The held lock is taken by THIS process (matching pid + token);
+      // DbClient.open's retry loop will wait the full 5s timeout before
+      // giving up. Wrap the open in try/catch so the test asserts the
+      // held-lock invariant (JSON not migrated) rather than the
+      // retry-timeout error.
+      let openError: unknown = null
+      let client: ReturnType<typeof DbClient.open> | null = null
+      try {
+        client = DbClient.open(cfg, logger, dbPath)
+      } catch (e) {
+        openError = e
+      }
+      expect(openError).toBeInstanceOf(Error)
+      expect((openError as Error).message).toMatch(/migration lock/)
       expect(existsSync(legacyPath)).toBe(true)
       expect(existsSync(`${legacyPath}.migrated`)).toBe(false)
-      const rows = client.query<{ c: number }>('SELECT COUNT(*) as c FROM task_runs')
-      expect(rows[0]?.c).toBe(0)
-      client.close()
+      // The lock dir is cleaned up by the finally-block's rmSync(storeDir)
+      // (the lock dir is inside storeDir); no separate cleanup needed.
+      // The client variable stays null because the open failed; no query
+      // or close on a null reference.
+      expect(client).toBeNull()
     } finally {
       killSpy.mockRestore()
       rmSync(storeDir, { recursive: true, force: true })
     }
-  })
+  }, 10_000)
 
   it('lock dir is released after open() completes (success path)', () => {
     const { storeDir, dbPath } = setupRaceSandbox('release')

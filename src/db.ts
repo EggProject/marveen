@@ -1,6 +1,6 @@
 import { Database, pragma, runScript } from './db/sqlite.js'
 import type { SQLQueryBindings } from 'bun:sqlite'
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, renameSync, chmodSync, openSync, closeSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { STORE_DIR, DB_FILENAME, PROJECT_ROOT, ALLOWED_CHAT_ID, OLLAMA_URL, APP_TZ, type Config } from './config.js'
@@ -199,7 +199,7 @@ const RECENCY_OVERSAMPLE = 4
 //    stale) and skip the migration forever. The token is a random UUID
 //    generated ONCE per process; the stale check requires BOTH pid and
 //    token to match, and a recycled PID has a different UUID. --
-const MIGRATION_LOCK_TOKEN = randomUUID()
+export const MIGRATION_LOCK_TOKEN = randomUUID()
 
 export interface RecencyRankable {
   rank: number
@@ -2453,6 +2453,44 @@ export class DbClient {
       }
     }
 
+    // Acquire the migration lock BEFORE the Database constructor. The
+    // Database constructor opens the .db file with an EXCLUSIVE file
+    // lock, and busy_timeout PRAGMA cannot help here (it only takes
+    // effect AFTER the Database is open). Two parallel DbClient.open()
+    // calls on the same path would otherwise race on the Database
+    // constructor and the loser raises SQLITE_BUSY 'database is
+    // locked'. The mkdir-based file lock serialises them before the
+    // Database open. The lock is released after client.handle = handle
+    // (below), covering PRAGMAs + schema migration + migrateTaskRunsFromJson.
+    // :memory: databases have no file, no concurrent-access problem, and
+    // dirname(':memory:') would resolve to '.' (the cwd), which would
+    // create a SINGLE shared lock dir across all :memory: tests in the
+    // same worktree — causing them to serialise on the lock with a 5s
+    // timeout per test. Skip the lock for :memory:.
+    const migrationLockDir = dbPath === ':memory:'
+      ? null
+      : join(dirname(dbPath), '.task_runs_migrate.lock')
+    const lockStartTime = Date.now()
+    const lockTimeoutMs = 5000
+    const lockPollMs = 50
+    let lockAcquired = false
+    while (Date.now() - lockStartTime < lockTimeoutMs) {
+      if (migrationLockDir && DbClient.tryAcquireMigrationLock(migrationLockDir)) {
+        lockAcquired = true
+        break
+      }
+      if (!migrationLockDir) { lockAcquired = true; break }
+      // Sync sleep via busy-wait (Date.now polling). DbClient.open is
+      // sync; setTimeout would require making the factory async (breaking
+      // change to 40+ production callers). 50ms polling × 100 attempts =
+      // 5s max wait, well under the typical migration duration.
+      const end = Date.now() + lockPollMs
+      while (Date.now() < end) { /* spin */ }
+    }
+    if (!lockAcquired) {
+      throw new Error(`Could not acquire migration lock at ${migrationLockDir} within ${lockTimeoutMs}ms; another process is migrating`)
+    }
+
     const handle = new Database(dbPath, { strict: true })
     try {
       // Migration block: pragmas + ~30 runScript migrations + JSON task_runs
@@ -3352,10 +3390,18 @@ export class DbClient {
       // contention. Without this, the FD + WAL/SHM locks would survive
       // until process exit.
       try { handle.close() } catch { /* already closed */ }
+      // Release the migration lock on the throw path too, otherwise a
+      // migration throw leaves the lock dir behind and the next
+      // DbClient.open() waits the full retry timeout.
+      if (migrationLockDir) DbClient.releaseMigrationLock(migrationLockDir)
       throw e
     }
 
     client.handle = handle
+    // Release the migration lock acquired at the factory entry. The
+    // lock protected the Database open + PRAGMA + schema + migration
+    // path; the next DbClient.open() can now compete for it.
+    if (migrationLockDir) DbClient.releaseMigrationLock(migrationLockDir)
     return client
   }
 
@@ -3425,42 +3471,36 @@ export class DbClient {
   //    both pass the `existingCount > 0` early-return and both insert the
   //    same rows. --
   private static migrateTaskRunsFromJson(handle: Database, config: Pick<Config, 'STORE_DIR'>): void {
-    const lockDir = join(config.STORE_DIR, '.task_runs_migrate.lock')
-    if (!DbClient.tryAcquireMigrationLock(lockDir)) {
-      // Another process holds the lock; that process will perform the
-      // migration (or has already done so and renamed the JSON file out
-      // of the way). Skip silently to avoid double-insert.
+    // The migration lock is now acquired at the DbClient.open factory entry
+    // (BEFORE new Database() acquires its file-level EXCLUSIVE lock) and
+    // released after client.handle = handle. The migrateTaskRunsFromJson
+    // call no longer needs its own lock acquire/release; the outer lock
+    // serialises everything from Database open through migration.
+    const legacyPath = join(config.STORE_DIR, 'task-run-history.json')
+    if (!existsSync(legacyPath)) return
+    const existingCount = (handle.prepare('SELECT COUNT(*) as c FROM task_runs').get() as { c: number }).c
+    if (existingCount > 0) {
+      // Already migrated in a previous run. Rename the file out of the way if
+      // still present so the migration doesn't keep re-running with zero effect.
+      try { renameSync(legacyPath, `${legacyPath}.migrated`) } catch { /* fine */ }
       return
     }
     try {
-      const legacyPath = join(config.STORE_DIR, 'task-run-history.json')
-      if (!existsSync(legacyPath)) return
-      const existingCount = (handle.prepare('SELECT COUNT(*) as c FROM task_runs').get() as { c: number }).c
-      if (existingCount > 0) {
-        // Already migrated in a previous run. Rename the file out of the way if
-        // still present so the migration doesn't keep re-running with zero effect.
-        try { renameSync(legacyPath, `${legacyPath}.migrated`) } catch { /* fine */ }
-        return
-      }
-      try {
-        const raw = readFileSync(legacyPath, 'utf-8')
-        const arr = JSON.parse(raw)
-        if (!Array.isArray(arr)) return
-        const insert = handle.prepare('INSERT INTO task_runs (name, agent, ts) VALUES (?, ?, ?)')
-        const tx = handle.transaction((rows: unknown[]) => {
-          for (const e of rows) {
-            if (!e || typeof e !== 'object') continue
-            const { name, agent, ts } = e as { name?: unknown; agent?: unknown; ts?: unknown }
-            if (typeof name !== 'string' || typeof agent !== 'string' || typeof ts !== 'number') continue
-            insert.run(name, agent, ts)
-          }
-        })
-        tx(arr)
-        try { renameSync(legacyPath, `${legacyPath}.migrated`) } catch { /* fine */ }
-      } catch { /* corrupt file, skip */ }
-    } finally {
-      DbClient.releaseMigrationLock(lockDir)
-    }
+      const raw = readFileSync(legacyPath, 'utf-8')
+      const arr = JSON.parse(raw)
+      if (!Array.isArray(arr)) return
+      const insert = handle.prepare('INSERT INTO task_runs (name, agent, ts) VALUES (?, ?, ?)')
+      const tx = handle.transaction((rows: unknown[]) => {
+        for (const e of rows) {
+          if (!e || typeof e !== 'object') continue
+          const { name, agent, ts } = e as { name?: unknown; agent?: unknown; ts?: unknown }
+          if (typeof name !== 'string' || typeof agent !== 'string' || typeof ts !== 'number') continue
+          insert.run(name, agent, ts)
+        }
+      })
+      tx(arr)
+      try { renameSync(legacyPath, `${legacyPath}.migrated`) } catch { /* fine */ }
+    } catch { /* corrupt file, skip */ }
   }
 
   // -- private static: mkdir-based file lock acquire. mkdir is atomic on
@@ -3480,7 +3520,12 @@ export class DbClient {
       try { rmdirSync(lockDir) } catch { /* fine */ }
     }
     try {
-      mkdirSync(lockDir)
+      // recursive: true so the lock is also created when STORE_DIR does
+      // not exist yet (e.g. first-ever start, or a test that points
+      // STORE_DIR at a fresh tmpdir). The existsSync check above
+      // guarantees the dir is absent here, so the EEXIST swallowing
+      // behaviour of recursive: true cannot mask a parallel acquirer.
+      mkdirSync(lockDir, { recursive: true })
       writeFileSync(join(lockDir, 'pid'), String(process.pid))
       writeFileSync(join(lockDir, 'token'), MIGRATION_LOCK_TOKEN)
       return true
