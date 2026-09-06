@@ -2,6 +2,7 @@ import { Database, pragma, runScript } from './db/sqlite.js'
 import type { SQLQueryBindings } from 'bun:sqlite'
 import { join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, renameSync, chmodSync, openSync, closeSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import { STORE_DIR, DB_FILENAME, PROJECT_ROOT, ALLOWED_CHAT_ID, OLLAMA_URL, APP_TZ, type Config } from './config.js'
 import { getEffectiveSettingValue } from './settings-store.js'
 import { logger, type LoggerLike } from './logger.js'
@@ -190,6 +191,15 @@ export const RECENCY_TAU_SEC = 7 * 86400
 // Candidates fetched per requested row before re-ranking. Bounded so a broad
 // query still touches at most 4x the requested rows.
 const RECENCY_OVERSAMPLE = 4
+
+// -- Per-process unique token for the migration lock. Used to defeat the
+//    PID-recycling race: on Linux a crashed process's PID is immediately
+//    reused, so the new process can have the same PID as the old lock
+//    holder; a self-PID-only stale check would then return false (not
+//    stale) and skip the migration forever. The token is a random UUID
+//    generated ONCE per process; the stale check requires BOTH pid and
+//    token to match, and a recycled PID has a different UUID. --
+const MIGRATION_LOCK_TOKEN = randomUUID()
 
 export interface RecencyRankable {
   rank: number
@@ -3455,20 +3465,24 @@ export class DbClient {
 
   // -- private static: mkdir-based file lock acquire. mkdir is atomic on
   //    POSIX (returns EEXIST if the directory already exists). The lock
-  //    directory contains a `pid` file; if the holder is dead, the lock
-  //    is considered stale and taken over. --
+  //    directory contains a `pid` file AND a `token` file; if the holder
+  //    is dead (or its token doesn't match this process's), the lock is
+  //    considered stale and taken over. The token defeats the PID-
+  //    recycling race (Linux reuses crashed PIDs immediately). --
   private static tryAcquireMigrationLock(lockDir: string): boolean {
     if (existsSync(lockDir)) {
       if (!DbClient.isMigrationLockStale(lockDir)) {
-        return false  // Held by a live process
+        return false  // Held by a live process (matching pid + token)
       }
-      // Stale: remove the pid file, then the dir, and re-attempt.
+      // Stale: remove the pid + token files, then the dir, and re-attempt.
       try { unlinkSync(join(lockDir, 'pid')) } catch { /* fine */ }
+      try { unlinkSync(join(lockDir, 'token')) } catch { /* fine */ }
       try { rmdirSync(lockDir) } catch { /* fine */ }
     }
     try {
       mkdirSync(lockDir)
       writeFileSync(join(lockDir, 'pid'), String(process.pid))
+      writeFileSync(join(lockDir, 'token'), MIGRATION_LOCK_TOKEN)
       return true
     } catch {
       // Lost the race against another acquirer; treat as not acquired.
@@ -3479,15 +3493,18 @@ export class DbClient {
   // -- private static: best-effort release. Idempotent. --
   private static releaseMigrationLock(lockDir: string): void {
     try { unlinkSync(join(lockDir, 'pid')) } catch { /* fine */ }
+    try { unlinkSync(join(lockDir, 'token')) } catch { /* fine */ }
     try { rmdirSync(lockDir) } catch { /* fine */ }
   }
 
   // -- private static: stale-lock detection. A lock is stale if its pid
-  //    file points at a process that no longer exists (or is unreadable).
-  //    ESM modules may keep workers alive briefly after main exits, so
-  //    we accept `EPERM` (exists but no permission) as "still alive".
-  //    A self-PID match is also "alive" (the current process IS the
-  //    holder), and is checked cheaply before the signal-0 syscall. --
+  //    file points at a process that no longer exists, OR if its token
+  //    doesn't match this process's MIGRATION_LOCK_TOKEN (which catches
+  //    the PID-recycling case where the kernel reassigned the same PID
+  //    to a different process with a different UUID). A self-PID match
+  //    is checked cheaply first as a fast path. ESM modules may keep
+  //    workers alive briefly after main exits, so we accept `EPERM`
+  //    (exists but no permission) as "still alive". --
   private static isMigrationLockStale(lockDir: string): boolean {
     const pidFile = join(lockDir, 'pid')
     let pid: number
@@ -3497,7 +3514,17 @@ export class DbClient {
       return true  // Can't read PID file -> stale
     }
     if (!Number.isFinite(pid) || pid <= 0) return true
-    if (pid === process.pid) return false  // Self -> alive (cheap check)
+    if (pid === process.pid) {
+      // Cheap fast path: PID matches. Verify the token too -- without
+      // this check, a recycled PID would falsely appear alive.
+      try {
+        const token = readFileSync(join(lockDir, 'token'), 'utf-8').trim()
+        if (token === MIGRATION_LOCK_TOKEN) return false  // Self + same token -> alive
+      } catch {
+        // Token file missing or unreadable -> stale (be conservative).
+      }
+      return true
+    }
     try {
       process.kill(pid, 0)
       return false  // PID is alive (signal 0 = check existence)

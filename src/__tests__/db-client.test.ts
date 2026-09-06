@@ -463,24 +463,35 @@ describe('DbClient.open serialize migrateTaskRunsFromJson with file lock', () =>
     }
   })
 
-  it('a held lock prevents the second open() from migrating (JSON file stays)', () => {
+  it('a held lock prevents the second open() from migrating (JSON file stays)', async () => {
     const storeDir = mkdtempSync(join(tmpdir(), 'marveen-race-held-'))
     const cfg = { ...config, STORE_DIR: storeDir }
     const dbPath = join(storeDir, 'held.db')
     const legacyPath = join(storeDir, 'task-run-history.json')
+    // The test suite globally forbids process.kill (src/__tests__/setup/
+    // forbid-system-calls.ts). Spy on process.kill for this test and
+    // simulate an alive foreign pid (the holder would be a different
+    // live process holding the lock). The real holder pid is not used
+    // by the production code path here -- we only need the spy to make
+    // the isMigrationLockStale kill(0) check return "alive".
+    const killSpy = vi.spyOn(process, 'kill').mockImplementation(((() => true) as unknown) as typeof process.kill)
     try {
       writeFileSync(
         legacyPath,
         JSON.stringify([{ name: 'h-a', agent: 'a', ts: 1 }]),
       )
 
-      // Simulate "another process holds the lock" by creating the lock
-      // dir + pid file manually. The pid is the current process (alive);
-      // a stale-pid detection in the production code checks process.kill
-      // before assuming the holder is dead.
+      // Simulate "another process holds the lock" by writing the lock
+      // dir + pid + token files. The pid is a different number from
+      // process.pid (so the production code goes through the kill(0)
+      // path, not the self-pid token-check path); the token is an
+      // arbitrary UUID that does not match this process's own
+      // MIGRATION_LOCK_TOKEN (which doesn't matter for the kill(0)
+      // path, but keeps the fixture realistic).
       const lockDir = join(storeDir, '.task_runs_migrate.lock')
       mkdirSync(lockDir)
-      writeFileSync(join(lockDir, 'pid'), String(process.pid))
+      writeFileSync(join(lockDir, 'pid'), '1234567')
+      writeFileSync(join(lockDir, 'token'), '00000000-0000-0000-0000-000000000000')
 
       const client = DbClient.open(cfg, logger, dbPath)
       expect(existsSync(legacyPath)).toBe(true)
@@ -489,6 +500,7 @@ describe('DbClient.open serialize migrateTaskRunsFromJson with file lock', () =>
       expect(rows[0]?.c).toBe(0)
       client.close()
     } finally {
+      killSpy.mockRestore()
       rmSync(storeDir, { recursive: true, force: true })
     }
   })
@@ -523,6 +535,44 @@ describe('DbClient.open serialize migrateTaskRunsFromJson with file lock', () =>
       // open() detects the stale lock, takes it over, and migrates.
       const client = DbClient.open(cfg, logger, dbPath)
       // Migration ran: JSON renamed, rows inserted.
+      expect(existsSync(legacyPath)).toBe(false)
+      expect(existsSync(`${legacyPath}.migrated`)).toBe(true)
+      const rows = client.query<{ c: number }>('SELECT COUNT(*) as c FROM task_runs')
+      expect(rows[0]?.c).toBe(3)
+      client.close()
+      // Lock dir released by the takeover path.
+      expect(existsSync(lockDir)).toBe(false)
+    } finally {
+      rmSync(storeDir, { recursive: true, force: true })
+    }
+  })
+
+  it('stale lock (recycled PID with mismatched token) is taken over and migration runs', () => {
+    // Pre-fix behavior (PID-only stale check): if pid === process.pid,
+    // the lock is treated as alive and migration is skipped forever.
+    // Linux reuses crashed PIDs immediately, so a recycled-PID attacker
+    // (or a benign race after a crash) would lock out migration for
+    // every subsequent DbClient.open() until the stale lock is manually
+    // deleted. The fix is a per-process UUID 'token' file alongside the
+    // pid file: isMigrationLockStale requires BOTH pid AND token to
+    // match (otherwise stale -> takeover). This test simulates the
+    // recycled-PID scenario by writing pid=process.pid (the fast-path
+    // match) and a token that does NOT match the current process's
+    // token -- the lock must be taken over and the migration must run.
+    const { storeDir, dbPath, legacyPath } = setupRaceSandbox('pidrecycle')
+    const cfg = { ...config, STORE_DIR: storeDir }
+    try {
+      const lockDir = join(storeDir, '.task_runs_migrate.lock')
+      mkdirSync(lockDir)
+      writeFileSync(join(lockDir, 'pid'), String(process.pid))
+      // A recognisably-different token; the production code's read+compare
+      // must return "stale" because MIGRATION_LOCK_TOKEN (this process's
+      // own UUID, generated at module load time) does not equal this.
+      writeFileSync(join(lockDir, 'token'), 'deadbeef-dead-beef-dead-beefdeadbeef')
+
+      const client = DbClient.open(cfg, logger, dbPath)
+      // Migration ran despite the "self" pid: the token mismatch made
+      // the stale check return true, so the lock was taken over.
       expect(existsSync(legacyPath)).toBe(false)
       expect(existsSync(`${legacyPath}.migrated`)).toBe(true)
       const rows = client.query<{ c: number }>('SELECT COUNT(*) as c FROM task_runs')
