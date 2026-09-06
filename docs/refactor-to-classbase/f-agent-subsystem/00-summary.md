@@ -224,3 +224,22 @@ Rationale for the order:
   `grep -rn "from ['\"]\\./X\\.js['\"]" src/ --include='*.ts' | grep -v __tests__`
 - Test-mock counts verified via
   `grep -rn "vi\\.mock.*['\"]\\./X['\"]\\|vi\\.mock.*X\\.js" src/__tests__/ --include='*.ts'`
+
+---
+
+- **F.3 LANDED — `StoreWatcher` class extraction (this commit).** Single-class
+  extraction (≈130 LOC new in src/store-watcher.ts), zero production caller
+  changes (7 sites in src/index.ts + 3 dashboard routes kept verbatim via
+  re-export shim), zero vi.mock site changes (4 sites in test files kept
+  verbatim). The class form pins the FR2 invariant: a `private readonly
+  fsWatcher` field + strict start-time assertion replaces the loose
+  `if (watcher) return` guard, catching the `vi.resetModules()` double-handle
+  leak at the type level AND at runtime. 6 new tests pin the warn-on-double-start,
+  stop-then-start, DI injection, resetModules isolation, singleton-vs-shim identity,
+  and per-start fresh FSWatcher behaviours.
+
+  **Forward-compat note:** the 4 existing `vi.mock('../store-watcher.js', ...)`
+  factories mock only the legacy free functions (`startStoreWatcher`,
+  `stopStoreWatcher`, `setStoreWriteActor`). They do NOT mock the new
+  `StoreWatcher` class or `storeWatcher` singleton. If a future test imports
+  these new symbols via a `vi.mock` factory, extend the factory.

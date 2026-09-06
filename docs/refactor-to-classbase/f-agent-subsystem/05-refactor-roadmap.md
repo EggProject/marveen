@@ -182,6 +182,8 @@ the class definition restores the prior shape.
 **Yes** (with F.4 — both touch the same `STORE_DIR` but write to
 different files).
 
+**Status:** LANDED — see commit (this commit).
+
 ---
 
 ## F.4 — `SettingsStore` class extraction

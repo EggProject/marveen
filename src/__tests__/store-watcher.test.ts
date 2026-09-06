@@ -16,6 +16,7 @@ import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vites
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { LoggerLike } from '../logger.js'
 
 // SANDBOX STORE_DIR -- redirect PROJECT_ROOT/STORE_DIR to a tmpdir so modules
 // that freeze those paths at module load (channel-monitor.ts:828
@@ -47,6 +48,7 @@ mkdirSync(STORE, { recursive: true })
 
 let watchCallback: ((eventType: string, filename: string | null) => void) | null = null
 let watchArgs: { dir: string; options: unknown } | null = null
+let watchCallCount = 0
 let mockWatchShouldThrow = false
 let mockCloseShouldThrow = false
 
@@ -58,6 +60,7 @@ vi.mock('node:fs', async (orig) => {
       if (mockWatchShouldThrow) throw new Error('mock watch failure')
       watchCallback = cb
       watchArgs = { dir, options }
+      watchCallCount += 1
       return {
         close: () => {
           if (mockCloseShouldThrow) throw new Error('mock close failure')
@@ -101,6 +104,8 @@ vi.mock('../logger.js', () => ({
 // --- Subject under test --------------------------------------------------
 
 const {
+  StoreWatcher,
+  storeWatcher,
   startStoreWatcher,
   stopStoreWatcher,
   setStoreWriteActor,
@@ -131,6 +136,7 @@ describe('store-watcher', () => {
     // every test and filename collisions across tests cannot leak.
     watchCallback = null
     watchArgs = null
+    watchCallCount = 0
     mockWatchShouldThrow = false
     mockCloseShouldThrow = false
     logStoreFileEventMock.mockReset()
@@ -678,6 +684,158 @@ describe('store-watcher', () => {
         null,
       )
       sw.stopStoreWatcher()
+      vi.doUnmock('node:fs')
+      vi.doUnmock('../config.js')
+      vi.doUnmock('../db.js')
+      vi.doUnmock('../logger.js')
+      vi.resetModules()
+    })
+  })
+
+  // ---- Class form: FR2 + DI --------------------------------------------
+
+  describe('class form (FR2 + DI)', () => {
+    // T1. start() called twice without stop() warns and does not register
+    // a second watcher handle.
+    it('start() called twice without stop() warns and does not register a second watcher handle', () => {
+      startStoreWatcher()
+      const firstWatchArgs = watchArgs
+      startStoreWatcher()
+      // Reference-equal: the second call early-returned before reaching
+      // watch(); a bodiless start that re-entered watch() would have
+      // reassigned watchArgs to a new object and failed toBe().
+      expect(watchArgs).toBe(firstWatchArgs)
+      expect(warnMock).toHaveBeenCalledWith(
+        { storeDir: STORE },
+        'store-watcher: start() called twice without stop()',
+      )
+    })
+
+    // T2. warnMock fires exactly once with the FR2 payload on a double start.
+    it('warnMock fires exactly once with the FR2 payload on a double start', () => {
+      // Inspect the singleton to confirm the initial state is null.
+      expect((storeWatcher as unknown as { fsWatcher: unknown }).fsWatcher).toBeNull()
+      startStoreWatcher()
+      startStoreWatcher()
+      expect(warnMock).toHaveBeenCalledTimes(1)
+      expect(warnMock).toHaveBeenCalledWith(
+        { storeDir: STORE },
+        'store-watcher: start() called twice without stop()',
+      )
+    })
+
+    // T3. stop() then start() re-creates a fresh FSWatcher handle.
+    it('stop() then start() re-creates a fresh FSWatcher handle', () => {
+      startStoreWatcher()
+      const firstWatchArgs = watchArgs
+      stopStoreWatcher()
+      startStoreWatcher()
+      expect(watchArgs).not.toBe(firstWatchArgs)
+      expect(watchArgs!.dir).toBe(STORE)
+      expect(watchArgs!.options).toEqual({ recursive: true })
+    })
+
+    // T4. constructor accepts injected storeDir + log (DI works for tests;
+    // production defaults still resolve to STORE_DIR + logger).
+    it('constructor accepts injected storeDir + log (DI works for tests; production defaults still resolve to STORE_DIR + logger)', () => {
+      const customInfo = vi.fn()
+      const customWarn = vi.fn()
+      const customLog = {
+        info: (obj: unknown, msg?: string) => customInfo(obj, msg),
+        warn: (obj: unknown, msg?: string) => customWarn(obj, msg),
+        debug: vi.fn(),
+        error: vi.fn(),
+      } as unknown as LoggerLike
+      const sw = new StoreWatcher({ storeDir: '/tmp/di-test', log: customLog })
+      sw.start()
+      expect(watchArgs!.dir).toBe('/tmp/di-test')
+      expect(customInfo).toHaveBeenCalledWith(
+        { dir: '/tmp/di-test', knownCount: 0 },
+        'Store file watcher started',
+      )
+      // Cleanup so subsequent tests are not affected by this custom instance.
+      sw.stop()
+    })
+
+    // T6. the singleton storeWatcher and the named re-exports point at the
+    // SAME instance (no double-handle hazard from the shim).
+    it('the singleton storeWatcher and the named re-exports point at the SAME instance (no double-handle hazard from the shim)', () => {
+      expect((storeWatcher as unknown as { fsWatcher: unknown }).fsWatcher).toBeNull()
+      startStoreWatcher()
+      expect((storeWatcher as unknown as { fsWatcher: unknown }).fsWatcher).not.toBeNull()
+      stopStoreWatcher()
+      expect((storeWatcher as unknown as { fsWatcher: unknown }).fsWatcher).toBeNull()
+    })
+
+    // T5. vi.resetModules() re-import creates a new StoreWatcher singleton
+    // (FR2: no leaked handle from the old module graph). MUST be last in this
+    // describe: vi.resetModules() clears the module cache and the test relies
+    // on re-importing '../store-watcher.js'.
+    it('vi.resetModules() re-import creates a new StoreWatcher singleton (FR2: no leaked handle from the old module graph)', async () => {
+      // Start in the original module graph: watch() fires once, watchCallCount = 1.
+      startStoreWatcher()
+      expect(watchCallCount).toBe(1)
+
+      vi.resetModules()
+
+      // Re-mock the deps that the prior scanStore test un-registered via
+      // vi.doUnmock. Without this the re-imported module would resolve
+      // 'node:fs' to the REAL module and our watch() counter would not fire.
+      vi.doMock('node:fs', async (orig) => {
+        const actual = await orig<typeof import('node:fs')>()
+        return {
+          ...actual,
+          watch: ((dir: string, options: unknown, cb: (eventType: string, filename: string | null) => void) => {
+            watchCallback = cb
+            watchArgs = { dir, options }
+            watchCallCount += 1
+            return {
+              close: () => {
+                if (mockCloseShouldThrow) throw new Error('mock close failure')
+              },
+            } as unknown as ReturnType<typeof actual.watch>
+          }) as typeof actual.watch,
+        }
+      })
+      vi.doMock('../config.js', async (orig) => {
+        const actual = await orig<typeof import('../config.js')>()
+        return { ...actual, ...configSandbox, STORE_DIR: STORE }
+      })
+      vi.doMock('../db.js', () => ({
+        logStoreFileEvent: (
+          relPath: string,
+          eventType: string,
+          isSensitive: number,
+          fileSize: number | null,
+          agent: string | null,
+        ) => {
+          logStoreFileEventMock(relPath, eventType, isSensitive, fileSize, agent)
+        },
+      }))
+      vi.doMock('../logger.js', () => ({
+        logger: {
+          info: (obj: unknown, msg?: string) => infoMock(obj, msg),
+          warn: (obj: unknown, msg?: string) => warnMock(obj, msg),
+          debug: vi.fn(),
+          error: vi.fn(),
+        },
+      }))
+
+      const reimported = await import('../store-watcher.js')
+
+      // Reset the counter so we measure ONLY the new module graph's watch() call.
+      // A naive class form whose singleton leaked across resetModules could
+      // make the re-imported start() trigger 0 (didn't start) or 2+ (leaked
+      // handle) watch() calls.
+      watchCallCount = 0
+      reimported.startStoreWatcher()
+      expect(watchCallCount).toBe(1)
+
+      // The re-imported singleton is a fresh instance distinct from the
+      // original top-level one (proves module-scope re-evaluation worked).
+      expect(reimported.storeWatcher).not.toBe(storeWatcher)
+
+      reimported.stopStoreWatcher()
       vi.doUnmock('node:fs')
       vi.doUnmock('../config.js')
       vi.doUnmock('../db.js')

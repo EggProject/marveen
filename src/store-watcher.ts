@@ -1,8 +1,8 @@
-import { watch, statSync, readdirSync } from 'node:fs'
+import { watch, statSync, readdirSync, type FSWatcher } from 'node:fs'
 import { basename, join } from 'node:path'
 import { STORE_DIR } from './config.js'
 import { logStoreFileEvent } from './db.js'
-import { logger } from './logger.js'
+import { logger, type LoggerLike } from './logger.js'
 
 // --- System file denylist ---
 // Only files NOT on this list (and not matching SYSTEM_RE) are logged.
@@ -37,124 +37,165 @@ const SYSTEM_FILES = new Set([
 // Also covers atomic-write temp files (keep in sync with settings-store.ts).
 const SYSTEM_RE = /\.pid$|\.tmp$|\.tmp\.[a-f0-9]+$|\.migrated$|\.bak$|^\.DS_Store$/
 
-// --- Agent attribution slot ---
-// Node.js is single-threaded; a route handler sets this before writing,
-// the watch callback reads and clears it in the next event-loop tick.
-// For direct writes (Bash/Write tool from outside the process), this stays
-// null -- stored as null, shown as "ismeretlen" in the UI. There is no
-// OS-level mechanism to identify the writer without a process audit daemon,
-// so null is the honest and correct value.
-let currentWriteActor: string | null = null
-
-export function setStoreWriteActor(actor: string): void {
-  currentWriteActor = actor
-}
-
-export function clearStoreWriteActor(): void {
-  currentWriteActor = null
-}
-
-// --- Known-files tracking for creation detection ---
-// Populated at watcher startup by scanning store/. A rename event for a path
-// NOT in this set where the file NOW EXISTS means a new file was created.
-let knownFiles = new Set<string>()
-
-function scanStore(dir: string, relBase: string = ''): void {
-  try {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const rel = relBase ? `${relBase}/${entry.name}` : entry.name
-      if (entry.isDirectory()) {
-        scanStore(join(dir, entry.name), rel)
-      } else {
-        knownFiles.add(rel)
-      }
-    }
-  } catch { /* non-fatal; store may not exist yet */ }
-}
-
-// --- Dedup ---
+// --- Dedup window constant ---
 // fs.watch fires the same (eventType, filename) multiple times for a single
 // logical operation. Collapse repeats within a short window.
 const DEDUP_MS = 1000
-const recentEvents = new Map<string, number>()
 
-let watcher: ReturnType<typeof watch> | null = null
+export class StoreWatcher {
+  // FR2 invariant: one instance owns at most one FSWatcher handle.
+  // `readonly` enforces the type-level promise; the runtime assertion in
+  // `start()` enforces it at start-time.
+  private readonly fsWatcher: FSWatcher | null = null
+  private readonly storeDir: string
+  private readonly log: LoggerLike
+  // Agent attribution slot -- consumed by the next watch event.
+  private currentWriteActor: string | null = null
+  // Known-files set for creation detection; rescan on start() repopulates.
+  private knownFiles: Set<string> = new Set()
+  // Dedup map survives across stop()/start() on purpose: a 1s window
+  // across the lifecycle boundary is fine and matches pre-class behaviour.
+  private readonly recentEvents: Map<string, number> = new Map()
 
-function isSystemFile(rel: string): boolean {
-  const name = basename(rel)
-  return SYSTEM_FILES.has(name) || SYSTEM_RE.test(name)
-}
+  // Arrow-property callback binds `this` lexically at construction time,
+  // so the fs.watch handle ALWAYS sees the correct instance even when the
+  // module is re-evaluated (FR2 root cause).
+  private readonly onFsEvent = (eventType: string, filename: string | null): void => {
+    if (!filename) return
+    const rel = filename.replace(/\\/g, '/')
 
-export function startStoreWatcher(): void {
-  if (watcher) return
+    // Consume (clear) the actor slot for ALL events, including system-file
+    // events, so a slot set before a denylist-ed write cannot leak to the
+    // next unrelated event.
+    const agent = this.currentWriteActor
+    this.currentWriteActor = null
 
-  knownFiles = new Set<string>()
-  scanStore(STORE_DIR)
+    // Only rename events can indicate a new file. change = modification.
+    if (eventType !== 'rename') return
 
-  try {
-    watcher = watch(STORE_DIR, { recursive: true }, (eventType, filename) => {
-      if (!filename) return
-      const rel = filename.replace(/\\/g, '/')
+    // Skip system and temp files -- Marveen's own runtime writes.
+    if (StoreWatcher.isSystemFile(rel)) return
 
-      // Consume (clear) the actor slot for ALL events, including system-file
-      // events, so a slot set before a denylist-ed write cannot leak to the
-      // next unrelated event.
-      const agent = currentWriteActor
-      currentWriteActor = null
+    // If the file no longer exists it was deleted or renamed away -- not a creation.
+    let fileSize: number | null = null
+    try {
+      const st = statSync(`${this.storeDir}/${rel}`)
+      fileSize = st.size
+    } catch {
+      // File gone: deletion or rename-away. Update knownFiles and skip.
+      this.knownFiles.delete(rel)
+      return
+    }
 
-      // Only rename events can indicate a new file. change = modification.
-      if (eventType !== 'rename') return
+    // Already known -> not a new creation (could be a rename-to-same or
+    // replace; ignore to avoid false positives).
+    if (this.knownFiles.has(rel)) return
 
-      // Skip system and temp files -- Marveen's own runtime writes.
-      if (isSystemFile(rel)) return
+    // Dedup: fs.watch may fire the rename event several times.
+    const now = Date.now()
+    const last = this.recentEvents.get(rel)
+    if (last !== undefined && now - last < DEDUP_MS) return
+    this.recentEvents.set(rel, now)
+    if (this.recentEvents.size > 200) {
+      for (const [k, t] of this.recentEvents) if (now - t >= DEDUP_MS) this.recentEvents.delete(k)
+    }
 
-      // If the file no longer exists it was deleted or renamed away -- not a creation.
-      let fileSize: number | null = null
-      try {
-        const st = statSync(`${STORE_DIR}/${rel}`)
-        fileSize = st.size
-      } catch {
-        // File gone: deletion or rename-away. Update knownFiles and skip.
-        knownFiles.delete(rel)
-        return
+    // New file -- record it and mark as known.
+    this.knownFiles.add(rel)
+
+    try {
+      // Every entry in the historical SENSITIVE_NAMES set (now removed) was
+      // also in SYSTEM_FILES, so the isSystemFile filter above already
+      // prevents those names from reaching this log call. The is_sensitive
+      // flag is therefore always 0 here -- hardcoded to keep the
+      // "do not audit secrets" contract.
+      logStoreFileEvent(rel, 'create', 0, fileSize, agent)
+    } catch (err) {
+      this.log.warn({ err, rel }, 'store-watcher: failed to log new file event')
+    }
+  }
+
+  constructor(deps?: { storeDir?: string; log?: LoggerLike }) {
+    // Production: both default to the module-level STORE_DIR + logger.
+    // Tests pass overrides via the constructor so vi.mock('../config.js')
+    // and vi.mock('../logger.js') still take effect (the constructor's
+    // defaults evaluate AFTER vi.mock resolves).
+    this.storeDir = deps?.storeDir ?? STORE_DIR
+    this.log = deps?.log ?? logger
+  }
+
+  start(): void {
+    // FR2 fix: strict assertion replaces `if (watcher) return`. The
+    // `private readonly` field prevents accidental reassignment; the
+    // runtime check catches the calling-start-twice vector and warns.
+    if (this.fsWatcher !== null) {
+      this.log.warn(
+        { storeDir: this.storeDir },
+        'store-watcher: start() called twice without stop()',
+      )
+      return
+    }
+
+    this.knownFiles = new Set<string>()
+    StoreWatcher.scanStore(this.storeDir, this.knownFiles, '')
+
+    try {
+      const handle = watch(this.storeDir, { recursive: true }, this.onFsEvent)
+      // Cast-through-unknown reassignment of a readonly field -- the
+      // standard TS workaround for `private readonly` fields that the
+      // owning class assigns post-construction. Do NOT remove `readonly`
+      // to avoid this cast; the FR2 invariant depends on the type-level
+      // promise.
+      ;(this as unknown as { fsWatcher: FSWatcher }).fsWatcher = handle
+      this.log.info(
+        { dir: this.storeDir, knownCount: this.knownFiles.size },
+        'Store file watcher started',
+      )
+    } catch (err) {
+      this.log.warn({ err }, 'Store file watcher failed to start')
+    }
+  }
+
+  stop(): void {
+    if (this.fsWatcher === null) return
+    try { this.fsWatcher.close() } catch { /* best-effort */ }
+    ;(this as unknown as { fsWatcher: FSWatcher | null }).fsWatcher = null
+  }
+
+  setActor(actor: string): void { this.currentWriteActor = actor }
+  clearActor(): void { this.currentWriteActor = null }
+
+  // --- private static helpers ---
+
+  private static isSystemFile(rel: string): boolean {
+    const name = basename(rel)
+    return SYSTEM_FILES.has(name) || SYSTEM_RE.test(name)
+  }
+
+  private static scanStore(dir: string, known: Set<string>, relBase: string): void {
+    try {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const rel = relBase ? `${relBase}/${entry.name}` : entry.name
+        if (entry.isDirectory()) {
+          StoreWatcher.scanStore(join(dir, entry.name), known, rel)
+        } else {
+          known.add(rel)
+        }
       }
-
-      // Already known → not a new creation (could be a rename-to-same or
-      // replace; ignore to avoid false positives).
-      if (knownFiles.has(rel)) return
-
-      // Dedup: fs.watch may fire the rename event several times.
-      const now = Date.now()
-      const dedupKey = rel
-      const last = recentEvents.get(dedupKey)
-      if (last !== undefined && now - last < DEDUP_MS) return
-      recentEvents.set(dedupKey, now)
-      if (recentEvents.size > 200) {
-        for (const [k, t] of recentEvents) if (now - t >= DEDUP_MS) recentEvents.delete(k)
-      }
-
-      // New file -- record it and mark as known.
-      knownFiles.add(rel)
-
-      try {
-        // Every entry in the historical SENSITIVE_NAMES set (now removed) was
-        // also in SYSTEM_FILES, so the isSystemFile filter above already
-        // prevents those names from reaching this log call. The is_sensitive
-        // flag is therefore always 0 here -- hardcoded to keep the
-        // "do not audit secrets" contract.
-        logStoreFileEvent(rel, 'create', 0, fileSize, agent)
-      } catch (err) {
-        logger.warn({ err, rel }, 'store-watcher: failed to log new file event')
-      }
-    })
-    logger.info({ dir: STORE_DIR, knownCount: knownFiles.size }, 'Store file watcher started')
-  } catch (err) {
-    logger.warn({ err }, 'Store file watcher failed to start')
+    } catch { /* non-fatal; store may not exist yet */ }
   }
 }
 
-export function stopStoreWatcher(): void {
-  if (!watcher) return
-  try { watcher.close() } catch { /* best-effort */ }
-  watcher = null
-}
+// Module-scope singleton -- per-graph invariant pin. The free functions
+// below delegate LITERALLY to this instance; if a future caller constructs
+// a separate instance, FR2 leaks across the boundary.
+export const storeWatcher = new StoreWatcher()
+
+// Re-export shim -- LITERALLY this shape, not `() => new StoreWatcher().start()`:
+//   export function startStoreWatcher(): void { storeWatcher.start() }
+// If the shim constructed a fresh instance per call, the singleton and
+// the named re-export would diverge and T6 would fail.
+export function startStoreWatcher(): void { storeWatcher.start() }
+export function stopStoreWatcher(): void { storeWatcher.stop() }
+export function setStoreWriteActor(actor: string): void { storeWatcher.setActor(actor) }
+export function clearStoreWriteActor(): void { storeWatcher.clearActor() }
