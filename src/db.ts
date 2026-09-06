@@ -2459,6 +2459,12 @@ export class DbClient {
     pragma(handle, 'cache_size = -65536')
     if (!isMemory) pragma(handle, 'mmap_size = 268435456')
     pragma(handle, 'synchronous = NORMAL')
+    // busy_timeout: 5s wait on SQLITE_BUSY before failing. Required for
+    // multi-process SQLite access — the file-level lock on migrateTaskRunsFromJson
+    // serialises the migration, but the underlying DB connection also contends
+    // on the same WAL file. Without busy_timeout the second open() raises
+    // "database is locked" before the mkdir lock has a chance to gate.
+    pragma(handle, 'busy_timeout = 5000')
     if (!isMemory) DbClient.tightenDbPermissions(log, dbPath)
 
 
