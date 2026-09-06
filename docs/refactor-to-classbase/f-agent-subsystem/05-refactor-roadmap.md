@@ -182,7 +182,7 @@ the class definition restores the prior shape.
 **Yes** (with F.4 — both touch the same `STORE_DIR` but write to
 different files).
 
-**Status:** LANDED — see commit (this commit).
+**Status:** LANDED — see commit 63278739ba8b600aa044e476739ee8dbbceb47ce.
 
 ---
 

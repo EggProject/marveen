@@ -227,7 +227,7 @@ Rationale for the order:
 
 ---
 
-- **F.3 LANDED — `StoreWatcher` class extraction (this commit).** Single-class
+- **F.3 LANDED — `StoreWatcher` class extraction 63278739ba8b600aa044e476739ee8dbbceb47ce.** Single-class
   extraction (≈130 LOC new in src/store-watcher.ts), zero production caller
   changes (7 sites in src/index.ts + 3 dashboard routes kept verbatim via
   re-export shim), zero vi.mock site changes (4 sites in test files kept
