@@ -43,8 +43,8 @@ function tsFiles(dir: string): string[] {
 // a function body and is therefore already lazy.
 //
 // All three eager shapes land here:
-//   1. resolveFromPath(<name>)                       -- pre-state hazard
-//   2. new LazyBin(<name>).resolve()                 -- H.3 class hazard (HR5)
+//   1. resolveFromPath(<name>)                       -- function-call hazard
+//   2. new LazyBin(<name>).resolve()                 -- class-instance hazard
 //   3. makeLazyBinResolver(<name>)()                 -- invoked factory, also eager
 //
 // Variant notes:
@@ -91,9 +91,9 @@ describe('no import-time binary resolution', () => {
     expect(TOP_LEVEL_RESOLVE.test("const TMUX = resolveFromPath('tmux')")).toBe(true)
     expect(TOP_LEVEL_RESOLVE.test("export const CLAUDE = resolveFromPath('claude')")).toBe(true)
     expect(TOP_LEVEL_RESOLVE.test("const TMUX: string = resolveFromPath('tmux')")).toBe(true)
-    // LazyBin-shaped resolution must also be caught (HR5 / H.3): a module-scope
-    // `const X = new LazyBin('tmux').resolve()` reproduces the 2026-08-13 CI
-    // incident -- .resolve() runs at import time and throws on a missing binary.
+    // LazyBin-shaped resolution must also be caught: a module-scope
+    // `const X = new LazyBin('tmux').resolve()` triggers the same eager-IO
+    // hazard -- .resolve() runs at import time and throws on a missing binary.
     expect(TOP_LEVEL_RESOLVE.test("const X = new LazyBin('tmux').resolve()")).toBe(true)
     expect(TOP_LEVEL_RESOLVE.test("export const X = new LazyBin('tmux').resolve()")).toBe(true)
     expect(TOP_LEVEL_RESOLVE.test("const X: string = new LazyBin('tmux').resolve()")).toBe(true)

@@ -110,10 +110,9 @@ describe('ownerAllowedDomains', () => {
 // The egress gate and the reader are edited with different threat models: the
 // gate answers "may the main agent call this host" (a LAN box is ordinary), the
 // reader answers "may a fetch target be steered here". Inheriting the first into
-// the second without a filter widens the inward-facing boundary. Reported on
-// #797 with five values that all passed through before this.
+// the second without a filter widens the inward-facing boundary.
 describe('isPublicFetchHost', () => {
-  it('rejects the five values that reproduced in review', () => {
+  it('rejects the five host-shaped values that widened the inbound boundary', () => {
     for (const bad of ['127.0.0.1', 'localhost', '169.254.169.254', '192.168.1.50', '*']) {
       expect(isPublicFetchHost(bad)).toBe(false)
     }

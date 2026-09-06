@@ -1,18 +1,17 @@
-// Stuck tool-call watchdog for the main channels session (2026-06-02 incident).
+// Stuck tool-call watchdog for the main channels session.
 //
-// Symptom & root cause (from cold-memory entry `marveen,deafness,Worked for`):
+// Symptom & root cause:
 //   Marveen's TUI gets stuck at "Worked for 31s" indefinitely. The Telegram
 //   reply tool-call hung server-side (no client-side timeout), and the
 //   claude TUI render loop blocks on its stdio pipe. CPU drops to 0.3%,
-//   IO-wait. The bun channel-plugin poller is still alive, so #240's
+//   IO-wait. The bun channel-plugin poller is still alive, so a
 //   bun-alive short-circuit hides the freeze from the main recovery cascade --
-//   stage 1-4 never fires. Inbound traffic is read by bun and delivered into
-//   the prompt buffer, but the TUI can never act on it: Szabi sees "Marveen
-//   válaszol, de a válasz nem jön meg Telegramra".
+//   the cascade stages never fire. Inbound traffic is read by bun and
+//   delivered into the prompt buffer, but the TUI can never act on it.
 //
 // Detection: parse the TUI's "<verb> for Ns" progress line; if the same
 // tag+seconds is observed across multiple polls AND the seconds value has
-// reached freezeSeconds, the tool-call is wedged. Recovery (#248 fix) is the
+// reached freezeSeconds, the tool-call is wedged. Recovery is the
 // respawn-pane path resumeMarveenSession() -- NOT the launchctl hard-restart.
 // `tmux respawn-pane -k` replaces only the pane's claude process: it does NOT
 // `tmux kill-session`, so an attached client is never kicked ([exited], the

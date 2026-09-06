@@ -198,10 +198,10 @@ describe('settings-store', () => {
     expect(getEffectiveSettingValue('KANBAN_WIP_WARN_PCT')).toBe(77)
   })
 
-  // ----- __test_handleWatchEvent: extracted per cycle 47-48 so the if/else
-  //       branches (filename === 'config-overrides.json') are deterministically
+  // ----- __test_handleWatchEvent: extracted so the if/else branches
+  //       (filename === 'config-overrides.json') are deterministically
   //       reachable without a real directory watcher. The branch[0]
-  //       (filename match -> reload cache) was previously uncovered because
+  //       (filename match -> reload cache) is otherwise uncovered because
   //       fs.watch triggers are racy / platform-dependent.
 
   it('__test_handleWatchEvent reloads the cache on config-overrides.json rename (branch[0])', () => {

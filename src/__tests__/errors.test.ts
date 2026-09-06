@@ -32,7 +32,7 @@ describe('AppError', () => {
     expect(e.message).toBe('Peer response exceeded 8192 bytes')
   })
 
-  // (4) Chain node: subclass IS-A AppError (HR6 #1 backward-compat).
+  // (4) Chain node: subclass IS-A AppError (backward-compat invariant).
   it('both subclasses are instanceof AppError', () => {
     const a = new RequestBodyTooLargeError(1024)
     const b = new PeerResponseTooLargeError(8192)
@@ -42,7 +42,7 @@ describe('AppError', () => {
 
   // (5) Backward-compat regression pin: instanceof<X> + instanceof<Error>
   //     stay true. Negative: subclasses do NOT spuriously match each other.
-  it('concrete subclass discriminators stay correct post-H.4', () => {
+  it('concrete subclass discriminators stay correct', () => {
     const a = new RequestBodyTooLargeError(1024)
     const b = new PeerResponseTooLargeError(8192)
     expect(a).toBeInstanceOf(RequestBodyTooLargeError)
@@ -54,7 +54,7 @@ describe('AppError', () => {
   })
 
   // (6) NEW field: PeerResponseTooLargeError.limit survives the throw.
-  //     HR5 symmetry with RequestBodyTooLargeError.limit.
+  //     Symmetric with RequestBodyTooLargeError.limit.
   it('PeerResponseTooLargeError persists the limit field', () => {
     const e = new PeerResponseTooLargeError(4096)
     expect(e.limit).toBe(4096)
@@ -66,8 +66,9 @@ describe('AppError', () => {
     expect(e.limit).toBe(2048)
   })
 
-  // (8) HR6 #4 cause descriptor: super(message, { cause }) yields
-  //     enumerable: false cause (pino serialiser + JSON.stringify invariant).
+  // (8) Cause descriptor: super(message, { cause }) yields a non-enumerable
+  //     `cause` property (pino serialiser + JSON.stringify invariant -- the
+  //     cause must NOT appear in the object's own enumerable keys).
   it('cause via ErrorOptions is non-enumerable', () => {
     const root = new Error('root')
     const e = new _ConcreteAppError('msg', { cause: root })

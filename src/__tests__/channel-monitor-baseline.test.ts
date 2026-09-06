@@ -32,7 +32,9 @@ import { mkdirSync, rmSync, existsSync, writeFileSync } from 'node:fs'
 
 // ----------------------------------------------------------------------------
 // Production type imports: each mock declaration uses vi.fn<typeof prodFn>()
-// so the production signature is the single source of truth (cycle 2-4 lesson).
+// so the production signature is the single source of truth; the mock's call
+// signature must mirror the production function exactly, including default
+// args, otherwise vi.fn() produces a wider type than the production code.
 // ----------------------------------------------------------------------------
 import type {
   agentSessionName,
@@ -593,10 +595,10 @@ describe('baseline: handleMarveenDown first-time softReconnectMarveen() success 
 // LINE 1285 -- `if (providerLabel === 'telegram' && !marveenDownState.conflictProbed)`
 // else branch. Fires when providerLabel !== 'telegram' OR conflictProbed is true.
 // We drive the probe behaviour by triggering TWO consecutive cascade entries;
-// after the cycle 39 fix (line 1285 dropped the `&& !marveenDownState.conflictProbed`
-// guard), the IF branch fires unconditionally on every fresh handleMarveenDown
-// entry. The within-tick spam-guard no longer exists; each fresh down-spell
-// re-issues the diagnostic. This test verifies that the probe is dispatched
+// the IF branch fires unconditionally on every fresh handleMarveenDown entry
+// because the `&& !marveenDownState.conflictProbed` guard was dropped. The
+// within-tick spam-guard no longer exists; each fresh down-spell re-issues
+// the diagnostic. This test verifies that the probe is dispatched
 // on the first cascade entry, and that the second simulated entry (after
 // recovery) does NOT re-fire the probe because shouldEscalateMarveenDown
 // requires MARVEEN_DOWN_CONFIRM_MS (120s) of continuous down before it

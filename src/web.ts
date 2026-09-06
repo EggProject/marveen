@@ -391,7 +391,7 @@ export function startWebServer(port = 3420): http.Server {
 
   // CostOps: reflect the local config's fixed costs into the ledger once at boot + every
   // 10 minutes. Deliberately NOT done inside the GET /api/costs/summary handler -- a read
-  // endpoint must not write (was flagged in review); this is the one place that does.
+  // endpoint must not write; this is the one place that does.
   const costsSyncInterval = webOnly ? undefined : startCostsSyncTask()
   if (!webOnly) logger.info('CostOps fixed-cost sync started (10min poll + startup)')
 

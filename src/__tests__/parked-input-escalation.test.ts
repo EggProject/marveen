@@ -1,14 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest'
 
-// clearStaleParkedInput (agent-process.ts) contract, as of v1.18.3 + the dim-guard:
-//   - MAIN agent box: NEVER auto-cleared (a parked line could be a real reply --
-//     the 2026-06-30 "Balogh" near-miss); the operator escalation is MUTED
-//     (v1.18.3) so NO notifyChannel fires on the main box either.
+// clearStaleParkedInput (agent-process.ts) contract:
+//   - MAIN agent box: NEVER auto-cleared (a parked line could be a real reply);
+//     the operator escalation is MUTED so NO notifyChannel fires on the main
+//     box.
 //   - sub-agent box: keep the Ctrl-U clear path for a REAL parked line.
-//   - DIM-GUARD (Szabi insight): a ghost/phantom line renders DIM (SGR-2 faint);
+//   - DIM-GUARD: a ghost/phantom line renders DIM (SGR-2 faint);
 //     captureParkedInputView strips it, so it reads as NO parked text and is NEVER
-//     treated as a wedge (no clear, no escalate) -- for ANY agent. This is the fix
-//     for the 2026-06-30 "Koszi a halakat." dim-fragment false-positive.
+//     treated as a wedge (no clear, no escalate) -- for ANY agent.
 //
 // capturePane (-p) and captureParkedInputView (-e) are LOCAL to agent-process and
 // go through node:child_process execFileSync, so we mock execFileSync with
@@ -66,7 +65,7 @@ describe('clearStaleParkedInput', () => {
   it('NEVER auto-clears the main agent box, and (escalation muted) never notifies', async () => {
     for (let i = 0; i < 4; i++) { await clearStaleParkedInput(MAIN_CHANNELS_SESSION); clock += COOLDOWN }
     expect(clearKeystrokes().length).toBe(0)        // main box untouched by clearing keystrokes
-    expect(vi.mocked(notifyChannel)).toHaveBeenCalledTimes(0) // muted (v1.18.3)
+    expect(vi.mocked(notifyChannel)).toHaveBeenCalledTimes(0) // muted on main box
   }, 20_000) // 4 sequential real 2s stable-confirm delays
 
   it('attempts the Ctrl-U clear for a SUB-agent box with a REAL parked line', async () => {

@@ -727,7 +727,7 @@ describe('apply phase: DB row skip branches on missing fields', () => {
 // ===========================================================================
 // 10. memories: `mem.auto_generated ?? 0` / `mem.keywords ?? null`
 // ---------------------------------------------------------------------------
-// Ha a memóriasor nem tartalmazza ezeket a mezőket, a fallback 0 / null.
+// Ha a rekord nem tartalmazza ezeket a mezőket, a fallback 0 / null.
 // ===========================================================================
 
 describe('apply phase: memory auto_generated/keywords fallback', () => {

@@ -40,7 +40,7 @@ const REAL_INPUT_BOX = [
   FOOTER,
 ].join('\n')
 
-// A FRESH Claude Code >= v2.1.201 session: the empty input box shows a dim
+// A FRESH Claude Code session (recent renderer): the empty input box shows a dim
 // (SGR 2) EXAMPLE-SUGGESTION placeholder `Try "..."`, and the gap after the ❯
 // glyph is a NON-BREAKING SPACE (U+00A0) -- exactly like a genuinely parked
 // message. Captured live 2026-07-07 from marveen-worker (footer `bypass
@@ -102,11 +102,11 @@ describe('ghost suggestion does not trigger stuck-input recovery', () => {
   })
 })
 
-// Regression: Claude Code >= v2.1.201 renders a dim example-suggestion in a
+// Regression: a recent Claude Code renderer renders a dim example-suggestion in a
 // fresh session's empty input box, which a plain `-p` capture cannot tell from
 // parked text. isSessionReadyForPrompt must read the GHOST-STRIPPED view so a
 // fresh worker/agent is not judged "not ready" forever (chicken-and-egg).
-describe('v2.1.201 fresh-session readiness (ghost example-suggestion)', () => {
+describe('fresh-session readiness (ghost example-suggestion)', () => {
   it('a fresh dim example-suggestion box reads IDLE once the ghost is stripped', () => {
     const stripped = stripGhostSuggestion(V2_1_201_FRESH_GHOST_BOX)
     expect(stripped).not.toContain('Try "how do I log an error?"')
@@ -162,7 +162,8 @@ describe('v2.1.201 fresh-session readiness (ghost example-suggestion)', () => {
 // Wiring guard: the readiness gate must resolve typing-vs-idle through the
 // dim-ghost-tolerant idleOrGhost path (which only scrapes the ghost-STRIPPED
 // captureParkedInputView when the plain view looks like typing) -- otherwise the
-// v2.1.202 fresh-session dim ghost re-breaks first-prompt delivery.
+// A subsequent renderer revision re-introduced the dim-ghost on fresh sessions,
+// re-breaking first-prompt delivery.
 describe('isSessionReadyForPrompt wiring (dim-ghost tolerant idle)', () => {
   it('resolves idle through idleOrGhost/captureParkedInputView and saturation on the plain capture', () => {
     const src = readFileSync(

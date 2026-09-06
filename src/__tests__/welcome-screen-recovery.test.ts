@@ -7,9 +7,9 @@ import {
   decideStuckInputAction,
 } from '../pane-state.js'
 
-// End-to-end regression guard for the REAL production wedge (2026-06-26):
-// a delivered multi-row inter-agent message parked in a Claude Code v2.1.170
-// fresh-session WELCOME screen (logo + model + cwd, box between two rule lines,
+// End-to-end regression guard for the production wedge:
+// a delivered multi-row inter-agent message parked in a fresh Claude Code
+// WELCOME screen (logo + model + cwd, box between two rule lines,
 // no idle footer). Before the P1 fix, liveInputBox anchored on the idle footer,
 // so detectPaneState returned 'unknown' and the whole recovery stack was blind
 // -> the agent stayed wedged until a manual restart. This fixture is the actual

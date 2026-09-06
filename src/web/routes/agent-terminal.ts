@@ -53,11 +53,11 @@ function tmux(args: string[]): Promise<void> {
   })
 }
 
-// Sanitize a literal keys payload before it hits send-keys. Motivation
-// (v1.19.0, Szabi UX): on a VPS the operator pastes a token-login link / auth
-// code into the terminal input, and copy-paste often drags along leading/trailing
-// whitespace or a trailing newline -- the newline would prematurely SUBMIT the
-// half-pasted line, and stray spaces corrupt the code/URL. So for a PASTE
+// Sanitize a literal keys payload before it hits send-keys. On a VPS the
+// operator pastes a token-login link / auth code into the terminal input, and
+// copy-paste often drags along leading/trailing whitespace or a trailing
+// newline -- the newline would prematurely SUBMIT the half-pasted line, and
+// stray spaces corrupt the code/URL. So for a PASTE
 // (multi-char payload) we strip bracketed-paste markers, drop all CR/LF (a login
 // URL/code is single-line; an embedded newline can only hurt), and trim the
 // outer whitespace. A single keystroke (length <= 1) is passed through untouched

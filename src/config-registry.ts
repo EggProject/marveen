@@ -405,7 +405,7 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     key: 'SCHEDULER_TZ',
     type: 'string',
     default: '',
-    description: 'A telepítés időzónája (IANA, pl. Europe/Budapest). EGY zóna vezérli az ütemezést (cron) ÉS minden megjelenített időt (heartbeat, napi napló, memória-címkék). Üresen hagyva a gép saját időzónáját használja. A módosítás a szolgáltatás újraindításakor lép életbe.',
+    description: 'A telepítés időzónája (IANA, pl. Europe/Budapest). EGY zóna vezérli az ütemezést (cron) ÉS minden megjelenített időt (heartbeat, napi napló, ügynök-címkék). Üresen hagyva a gép saját időzónáját használja. A módosítás a szolgáltatás újraindításakor lép életbe.',
     module: 'system',
     secret: false,
     requiresRestart: true,

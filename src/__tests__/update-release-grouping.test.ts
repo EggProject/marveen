@@ -27,10 +27,10 @@ describe('groupByRelease', () => {
     expect(groups.map(g => g.version)).toEqual(['', 'v1.20.0', 'v1.19.0'])
     // upcoming = commits above the newest release marker
     expect(groups[0].commits.map(x => x.short)).toEqual(['aaa'])
-    // v1.20.0 = the commits older than its marker, down to the next marker
+    // latest-release group = the commits older than its marker, down to the next marker
     expect(groups[1].commits.map(x => x.short)).toEqual(['ccc', 'ddd'])
     expect(groups[1].summary).toBe('memory isolation + worker robustness')
-    // v1.19.0 = the remaining older commits
+    // previous-release group = the remaining older commits
     expect(groups[2].commits.map(x => x.short)).toEqual(['fff'])
     expect(groups[2].summary).toBe('SSH Vault')
   })

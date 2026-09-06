@@ -40,8 +40,6 @@ const REAUTH_MARKERS: { rx: RegExp; reason: string }[] = [
 // failure shows in the active error/prompt region at the bottom; scanning the
 // full capture would false-positive whenever an agent merely *discusses* these
 // strings higher up -- e.g. an agent reviewing THIS code, or a chat about a 401.
-// (Caught in review 2026-06-03: the reviewer's own pane was full of these
-// markers from reading reauth-detect.ts and would have falsely badged.)
 const TAIL_LINES = 15
 
 // Self-quote guard (found 2026-07-13: 5 false escalations in ~18h, each

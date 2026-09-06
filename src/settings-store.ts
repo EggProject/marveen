@@ -32,11 +32,11 @@ function loadFromDisk(): Record<string, string | number> {
 cache = loadFromDisk()
 
 // Watcher callback extracted to a testable pure function. The if/else branch
-// (filename === 'config-overrides.json' -> cache reload, otherwise no-op) was
-// previously unreachable from unit tests because the fs.watch trigger is
-// inherently racy and platform-dependent; per cycle 47-48 we expose the
-// decision as `__test_handleWatchEvent` so the suite can exercise both
-// branches deterministically without an actual directory watcher.
+// (filename === 'config-overrides.json' -> cache reload, otherwise no-op) is
+// unreachable from unit tests through the real fs.watch trigger because the
+// underlying call is inherently racy and platform-dependent; exposing it as
+// `__test_handleWatchEvent` lets the suite exercise both branches
+// deterministically without an actual directory watcher.
 export function __test_handleWatchEvent(_event: unknown, filename: string | null): void {
   if (filename === 'config-overrides.json') cache = loadFromDisk()
 }

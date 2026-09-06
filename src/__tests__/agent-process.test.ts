@@ -2950,9 +2950,9 @@ describe('clearStaleParkedInput -- main-agent failure accounting', () => {
 // discardPlaceholderBuffer(session, host = null): host omitted vs explicit.
 //
 // Production call sites always pass opts/host explicitly, so the defaults
-// never fire. The __test_* wrappers (cycle 47-48 pattern, f75caf6) expose
-// each helper with no optional params, so calling them exercises the
-// default-arg branch on the underlying private function.
+// never fire. The __test_* wrappers expose each helper with no optional
+// params, so calling them exercises the default-arg branch on the
+// underlying private function.
 // =========================================================================
 describe('__test_runTmux (default args)', () => {
   it('uses the `opts = {}` default when the caller passes none (L765)', () => {

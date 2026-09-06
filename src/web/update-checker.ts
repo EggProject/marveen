@@ -11,7 +11,7 @@ export interface UpdateCommit {
 }
 
 export interface UpdateRelease {
-  /** Release tag, e.g. "v1.20.0"; empty string for the not-yet-released group. */
+  /** Release tag (semver, e.g. "vMAJOR.MINOR.PATCH"); empty string for the not-yet-released group. */
   version: string
   /** Human-language summary for the version (release-commit subject after "--",
    * or the release-commit body when present). Empty when none is available. */

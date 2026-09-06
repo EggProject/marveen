@@ -568,7 +568,7 @@ export function renderQuarantineReader(template: string, domains: string[]): str
   // Anchor on the LAST bullet inside the Domain restriction section, not on the
   // last bullet in the file: the moment a backtick-bullet appears in any later
   // section, a file-wide anchor would silently relocate the per-install block
-  // there. Raised in review on #797.
+  // there.
   const headingRx = /^##\s+Domain restriction\s*$/m
   const heading = headingRx.exec(stripped)
   const sectionStart = heading ? heading.index + heading[0].length : 0

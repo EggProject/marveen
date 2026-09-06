@@ -1,23 +1,23 @@
-// Base class for project-defined errors (introduced in H.4).
+// Base class for project-defined errors.
 //
 // Convention: any new error class in src/ should extend AppError rather than
 // Error directly. AppError centralises the post-construction
 // `this.name = new.target.name` assignment so individual subclasses no longer
 // need to hand-set `this.name`. Existing instanceof<X> answers on concrete
-// subclasses stay byte-identical: the new AppError prototype sits between the
-// concrete subclass and Error in the prototype chain.
+// subclasses stay byte-identical because the new AppError prototype sits
+// between the concrete subclass and Error in the prototype chain.
 //
 // AppError is abstract -- subclasses must extend it; direct `new AppError(...)`
-// throws. There is no code field (per 03-class-boundaries.md §C3 -- it would
-// collide with Node errno names) and no method beyond the constructor.
+// throws. The runtime guard is required because @ts-ignore / `as any` bypass
+// the TS2511 compile-time check. ErrorOptions is forwarded to super so
+// `{ cause }` flows through, and `this.name = new.target.name` is required
+// because the Error base class sets `.name` from the constructor context, not
+// from the concrete subclass.
 //
 // Pre-existing subclasses (DeferToPeerError, RemoteEnrollError, TelegramApi-
 // Error, KeychainUnavailableError, PasswordPolicyError, UserFacingError,
-// FederationPollInternalError) continue to `extends Error` and migrate in
-// later, non-H.4 phases.
-//
-// See docs/refactor-to-classbase/h-cross-cutting/05-refactor-roadmap.md §H.4
-// and 06-risks-and-mitigations.md §HR6.
+// FederationPollInternalError) continue to extend Error directly; the AppError
+// base class is not retroactively applied to them.
 
 export abstract class AppError extends Error {
   constructor(message: string, options?: ErrorOptions) {

@@ -2076,7 +2076,7 @@ export async function clearStaleParkedInput(session: string, host: string | null
   return true
 }
 
-// Test-only escape hatches (cycle 47-48 pattern, f75caf6 precedent).
+// Test-only escape hatches.
 //
 // The agent-process helpers below are private but their default-arg branches
 // (`opts = {}`, `opts.timeout ?? 3000`, `host: string | null = null`) were

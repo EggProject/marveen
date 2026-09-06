@@ -31,7 +31,9 @@ import { mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs'
 
 // ----------------------------------------------------------------------------
 // Production type imports: each mock declaration uses vi.fn<typeof prodFn>()
-// so the production signature is the single source of truth (cycle 2/3 lesson).
+// so the production signature is the single source of truth; the mock's call
+// signature must mirror the production function exactly, including default
+// args, otherwise vi.fn() produces a wider type than the production code.
 // ----------------------------------------------------------------------------
 import type {
   capturePane,

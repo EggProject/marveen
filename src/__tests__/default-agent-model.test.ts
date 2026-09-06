@@ -65,8 +65,9 @@ describe('agent-config default wiring', () => {
   })
 
   it("leaves the bare 'opus' alias pinned to 4.8", () => {
-    // Deliberate upstream decision (v1.23.2): raising the install default must
-    // not silently reconfigure agents whose config says the generic 'opus'.
+    // The bare 'opus' alias stays pinned to its current model so that raising
+    // the install default never silently reconfigures agents whose config
+    // references the generic 'opus' alias.
     expect(MODEL_ALIASES['opus']).toBe('claude-opus-4-8[1m]')
     expect(resolveModelId('opus')).toBe('claude-opus-4-8[1m]')
   })

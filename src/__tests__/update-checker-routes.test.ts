@@ -342,7 +342,7 @@ describe('refreshUpdateStatus -- commits ahead', () => {
     expect(status.commits[0].message).toBe('fix: newest')
     expect(status.commits[0].author).toBe('C')
     expect(status.commits[0].date).toBe('2026-01-03T00:00:00Z')
-    // Release grouping: upcoming=[3333], v1.20.0=[1111] (commits older than
+    // Release grouping: upcoming=[3333], latest-release=[1111] (commits older than
     // the release marker; the marker itself is the group boundary, not a
     // member of the group).
     expect(status.releases).toBeDefined()
@@ -683,8 +683,9 @@ describe('groupByRelease -- body-summary + trailer-stripping edges', () => {
   })
 
   it('falls back to the empty summary when the release subject has no `--` separator and no text after the version', async () => {
-    // Subject is exactly `chore(release): v2.0.3` -- m[2] is the empty
-    // string, so the `(m[2] || '')` short-circuit hits its right branch.
+    // Subject is exactly `chore(release): vX.Y.Z` with no `--` summary and no
+    // text after the version -- m[2] is the empty string, so the
+    // `(m[2] || '')` short-circuit hits its right branch.
     const commits = [c('rel', 'chore(release): v2.0.3')]
     const { groupByRelease } = await loadSUT()
     const groups = groupByRelease(commits, [''])

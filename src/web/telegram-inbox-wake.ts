@@ -55,10 +55,9 @@ const SUB_TELEGRAM_WAKE_DEBOUNCE_MS = 60 * 1000
 const SUB_TELEGRAM_WAKE_MAX_DEBOUNCE_MS = 30 * 60 * 1000
 // Max wake-nudges spent on ONE stuck inbox before giving up. A session that
 // never drains after this many nudges is not going to; further nudges just spam
-// it every backoff window forever (the failure mode called out in review). The
-// budget is per DISTINCT backlog: when a NEW inbound arrives (the inbox file's
-// mtime advances) the attempt counter resets, so a genuinely new message always
-// gets a fresh round of nudges.
+// it every backoff window forever. The budget is per DISTINCT backlog: when
+// a NEW inbound arrives (the inbox file's mtime advances) the attempt counter
+// resets, so a genuinely new message always gets a fresh round of nudges.
 const SUB_TELEGRAM_WAKE_MAX_ATTEMPTS = 5
 // Content-free wake prompt. The channel-inbox-drain UserPromptSubmit hook
 // PREPENDS the claimed (already security-framed) <channel> messages above this
