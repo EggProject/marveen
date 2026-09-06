@@ -9,7 +9,7 @@
 // assertion would catch it.
 
 import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest'
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Database } from 'bun:sqlite'
@@ -350,6 +350,161 @@ describe('DbClient.open closes raw handle on migration throw', () => {
       expect(closeSpy).toHaveBeenCalledTimes(1)
     } finally {
       closeSpy.mockRestore()
+    }
+  })
+})
+
+// =========================================================================
+// Commit 2 — migrateTaskRunsFromJson race fix (mkdir-based file lock)
+// =========================================================================
+//
+// Pre-existing race: two parallel DbClient.open() calls on a fresh install
+// both passed the existingCount > 0 early-return and both inserted the
+// same rows (task_runs has no UNIQUE constraint on (name, agent, ts)).
+//
+// The fix serializes the migration with a mkdir-based file lock. The lock
+// dir is `<STORE_DIR>/.task_runs_migrate.lock` and contains a `pid` file;
+// if the holder is dead, the lock is taken over (stale-lock detection).
+// mkdir is atomic on POSIX (returns EEXIST if the dir already exists).
+//
+// Tests:
+//   1. Parallel open() calls produce exactly N rows (no duplicates)
+//   2. A held lock prevents the second open() from migrating
+//   3. After successful open(), the lock dir is gone (released)
+//   4. A stale lock (dead PID) is taken over
+
+describe('DbClient.open serialize migrateTaskRunsFromJson with file lock', () => {
+  // Helper: a per-test isolated STORE_DIR so the lock dir and JSON file
+  // don't collide with other tests or the real production store.
+  function setupRaceSandbox(label: string): { storeDir: string; dbPath: string; legacyPath: string; jsonRows: number } {
+    const storeDir = mkdtempSync(join(tmpdir(), `marveen-race-${label}-`))
+    const dbPath = join(storeDir, 'race.db')
+    const legacyPath = join(storeDir, 'task-run-history.json')
+    const jsonRows = 3
+    writeFileSync(
+      legacyPath,
+      JSON.stringify([
+        { name: `${label}-a`, agent: 'agent-1', ts: 1 },
+        { name: `${label}-b`, agent: 'agent-2', ts: 2 },
+        { name: `${label}-c`, agent: 'agent-3', ts: 3 },
+      ]),
+    )
+    return { storeDir, dbPath, legacyPath, jsonRows }
+  }
+
+  it('two parallel open() calls produce exactly N rows (no duplicate inserts)', () => {
+    // Fresh DB + JSON with 2 rows. Two parallel open() calls. The lock
+    // ensures only one migrates. In single-threaded JS the calls run
+    // sequentially, but the lock mechanism (acquire/release around the
+    // existingCount check + insert) is what prevents the race in
+    // multi-process scenarios; this test documents the post-condition.
+    const storeDir = mkdtempSync(join(tmpdir(), 'marveen-race-parallel-'))
+    const cfg = { ...config, STORE_DIR: storeDir }
+    const dbPath = join(storeDir, 'race.db')
+    const lockDir = join(storeDir, '.task_runs_migrate.lock')
+    try {
+      writeFileSync(
+        join(storeDir, 'task-run-history.json'),
+        JSON.stringify([
+          { name: 'p-a', agent: 'agent-1', ts: 10 },
+          { name: 'p-b', agent: 'agent-2', ts: 20 },
+        ]),
+      )
+
+      const c1 = DbClient.open(cfg, logger, dbPath)
+      const c2 = DbClient.open(cfg, logger, dbPath)
+
+      // Exactly N rows. The first open inserts them and renames the JSON;
+      // the second open sees the renamed JSON and returns immediately.
+      const rows = c1.query<{ c: number }>('SELECT COUNT(*) as c FROM task_runs')
+      expect(rows[0]?.c).toBe(2)
+
+      // JSON has been renamed, lock dir has been released.
+      expect(existsSync(join(storeDir, 'task-run-history.json'))).toBe(false)
+      expect(existsSync(join(storeDir, 'task-run-history.json.migrated'))).toBe(true)
+      expect(existsSync(lockDir)).toBe(false)
+
+      c1.close()
+      c2.close()
+    } finally {
+      rmSync(storeDir, { recursive: true, force: true })
+    }
+  })
+
+  it('a held lock prevents the second open() from migrating (JSON file stays)', () => {
+    const storeDir = mkdtempSync(join(tmpdir(), 'marveen-race-held-'))
+    const cfg = { ...config, STORE_DIR: storeDir }
+    const dbPath = join(storeDir, 'held.db')
+    const legacyPath = join(storeDir, 'task-run-history.json')
+    try {
+      writeFileSync(
+        legacyPath,
+        JSON.stringify([{ name: 'h-a', agent: 'a', ts: 1 }]),
+      )
+
+      // Simulate "another process holds the lock" by creating the lock
+      // dir + pid file manually. PID 2147483646 is well above the typical
+      // PID range on Linux/macOS (default /proc/sys/kernel/pid_max is
+      // 4194304), so process.kill(pid, 0) returns ESRCH (process dead).
+      const lockDir = join(storeDir, '.task_runs_migrate.lock')
+      mkdirSync(lockDir)
+      writeFileSync(join(lockDir, 'pid'), '2147483646')
+
+      // open() must NOT migrate: the lock is held by a "live" holder.
+      // We need the lock to be considered NOT-stale so it's not taken
+      // over; use a PID that is alive (current process).
+      writeFileSync(join(lockDir, 'pid'), String(process.pid))
+
+      const client = DbClient.open(cfg, logger, dbPath)
+      expect(existsSync(legacyPath)).toBe(true)
+      expect(existsSync(`${legacyPath}.migrated`)).toBe(false)
+      const rows = client.query<{ c: number }>('SELECT COUNT(*) as c FROM task_runs')
+      expect(rows[0]?.c).toBe(0)
+      client.close()
+    } finally {
+      rmSync(storeDir, { recursive: true, force: true })
+    }
+  })
+
+  it('lock dir is released after open() completes (success path)', () => {
+    const { storeDir, dbPath } = setupRaceSandbox('release')
+    const cfg = { ...config, STORE_DIR: storeDir }
+    try {
+      const client = DbClient.open(cfg, logger, dbPath)
+      client.close()
+      // The lock dir must be gone (released in finally). If it leaked,
+      // subsequent opens would see a stale lock.
+      const lockDir = join(storeDir, '.task_runs_migrate.lock')
+      expect(existsSync(lockDir)).toBe(false)
+    } finally {
+      rmSync(storeDir, { recursive: true, force: true })
+    }
+  })
+
+  it('stale lock (PID of a dead process) is taken over and migration runs', () => {
+    const { storeDir, dbPath, legacyPath } = setupRaceSandbox('stale')
+    const cfg = { ...config, STORE_DIR: storeDir }
+    try {
+      // Pretend a previous crashed process left a lock dir with a pid
+      // that doesn't exist anymore. PID 999999999 is virtually never a
+      // real process on any sane system; process.kill(pid, 0) returns
+      // ESRCH for it.
+      const lockDir = join(storeDir, '.task_runs_migrate.lock')
+      mkdirSync(lockDir)
+      writeFileSync(join(lockDir, 'pid'), '999999999')
+
+      // open() detects the stale lock, takes it over, and migrates.
+      const client = DbClient.open(cfg, logger, dbPath)
+      // Migration ran: JSON renamed, rows inserted.
+      expect(existsSync(legacyPath)).toBe(false)
+      expect(existsSync(`${legacyPath}.migrated`)).toBe(true)
+      const rows = client.query<{ c: number }>('SELECT COUNT(*) as c FROM task_runs')
+      expect(rows[0]?.c).toBe(3)
+      client.close()
+      // Lock dir released by the takeover path.
+      expect(existsSync(lockDir)).toBe(false)
+    } finally {
+      rmSync(storeDir, { recursive: true, force: true })
     }
   })
 })

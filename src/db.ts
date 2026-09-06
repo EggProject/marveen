@@ -1,7 +1,7 @@
 import { Database, pragma, runScript } from './db/sqlite.js'
 import type { SQLQueryBindings } from 'bun:sqlite'
 import { join } from 'node:path'
-import { existsSync, mkdirSync, readFileSync, renameSync, chmodSync, openSync, closeSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, chmodSync, openSync, closeSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { STORE_DIR, DB_FILENAME, PROJECT_ROOT, ALLOWED_CHAT_ID, OLLAMA_URL, APP_TZ, type Config } from './config.js'
 import { getEffectiveSettingValue } from './settings-store.js'
 import { logger, type LoggerLike } from './logger.js'
@@ -3401,32 +3401,104 @@ export class DbClient {
   //    the legacy `store/task-run-history.json` (read-modify-write race
   //    under concurrent/restart). Idempotent: an already-migrated file is
   //    renamed out of the way so the import doesn't re-run. Wrapped in a
-  //    transaction so a crash mid-import is safe. --
+  //    transaction so a crash mid-import is safe.
+  //
+  //    Serialized via a mkdir-based file lock (no new deps). The lock is
+  //    held from BEFORE the existingCount check until AFTER the insert,
+  //    so two parallel DbClient.open() calls on a fresh install cannot
+  //    both pass the `existingCount > 0` early-return and both insert the
+  //    same rows. --
   private static migrateTaskRunsFromJson(handle: Database, config: Pick<Config, 'STORE_DIR'>): void {
-    const legacyPath = join(config.STORE_DIR, 'task-run-history.json')
-    if (!existsSync(legacyPath)) return
-    const existingCount = (handle.prepare('SELECT COUNT(*) as c FROM task_runs').get() as { c: number }).c
-    if (existingCount > 0) {
-      // Already migrated in a previous run. Rename the file out of the way if
-      // still present so the migration doesn't keep re-running with zero effect.
-      try { renameSync(legacyPath, `${legacyPath}.migrated`) } catch { /* fine */ }
+    const lockDir = join(config.STORE_DIR, '.task_runs_migrate.lock')
+    if (!DbClient.tryAcquireMigrationLock(lockDir)) {
+      // Another process holds the lock; that process will perform the
+      // migration (or has already done so and renamed the JSON file out
+      // of the way). Skip silently to avoid double-insert.
       return
     }
     try {
-      const raw = readFileSync(legacyPath, 'utf-8')
-      const arr = JSON.parse(raw)
-      if (!Array.isArray(arr)) return
-      const insert = handle.prepare('INSERT INTO task_runs (name, agent, ts) VALUES (?, ?, ?)')
-      const tx = handle.transaction((rows: unknown[]) => {
-        for (const e of rows) {
-          if (!e || typeof e !== 'object') continue
-          const { name, agent, ts } = e as { name?: unknown; agent?: unknown; ts?: unknown }
-          if (typeof name !== 'string' || typeof agent !== 'string' || typeof ts !== 'number') continue
-          insert.run(name, agent, ts)
-        }
-      })
-      tx(arr)
-      try { renameSync(legacyPath, `${legacyPath}.migrated`) } catch { /* fine */ }
-    } catch { /* corrupt file, skip */ }
+      const legacyPath = join(config.STORE_DIR, 'task-run-history.json')
+      if (!existsSync(legacyPath)) return
+      const existingCount = (handle.prepare('SELECT COUNT(*) as c FROM task_runs').get() as { c: number }).c
+      if (existingCount > 0) {
+        // Already migrated in a previous run. Rename the file out of the way if
+        // still present so the migration doesn't keep re-running with zero effect.
+        try { renameSync(legacyPath, `${legacyPath}.migrated`) } catch { /* fine */ }
+        return
+      }
+      try {
+        const raw = readFileSync(legacyPath, 'utf-8')
+        const arr = JSON.parse(raw)
+        if (!Array.isArray(arr)) return
+        const insert = handle.prepare('INSERT INTO task_runs (name, agent, ts) VALUES (?, ?, ?)')
+        const tx = handle.transaction((rows: unknown[]) => {
+          for (const e of rows) {
+            if (!e || typeof e !== 'object') continue
+            const { name, agent, ts } = e as { name?: unknown; agent?: unknown; ts?: unknown }
+            if (typeof name !== 'string' || typeof agent !== 'string' || typeof ts !== 'number') continue
+            insert.run(name, agent, ts)
+          }
+        })
+        tx(arr)
+        try { renameSync(legacyPath, `${legacyPath}.migrated`) } catch { /* fine */ }
+      } catch { /* corrupt file, skip */ }
+    } finally {
+      DbClient.releaseMigrationLock(lockDir)
+    }
+  }
+
+  // -- private static: mkdir-based file lock acquire. mkdir is atomic on
+  //    POSIX (returns EEXIST if the directory already exists). The lock
+  //    directory contains a `pid` file; if the holder is dead, the lock
+  //    is considered stale and taken over. --
+  private static tryAcquireMigrationLock(lockDir: string): boolean {
+    if (existsSync(lockDir)) {
+      if (!DbClient.isMigrationLockStale(lockDir)) {
+        return false  // Held by a live process
+      }
+      // Stale: remove the pid file, then the dir, and re-attempt.
+      try { unlinkSync(join(lockDir, 'pid')) } catch { /* fine */ }
+      try { rmdirSync(lockDir) } catch { /* fine */ }
+    }
+    try {
+      mkdirSync(lockDir)
+      writeFileSync(join(lockDir, 'pid'), String(process.pid))
+      return true
+    } catch {
+      // Lost the race against another acquirer; treat as not acquired.
+      return false
+    }
+  }
+
+  // -- private static: best-effort release. Idempotent. --
+  private static releaseMigrationLock(lockDir: string): void {
+    try { unlinkSync(join(lockDir, 'pid')) } catch { /* fine */ }
+    try { rmdirSync(lockDir) } catch { /* fine */ }
+  }
+
+  // -- private static: stale-lock detection. A lock is stale if its pid
+  //    file points at a process that no longer exists (or is unreadable).
+  //    ESM modules may keep workers alive briefly after main exits, so
+  //    we accept `EPERM` (exists but no permission) as "still alive".
+  //    A self-PID match is also "alive" (the current process IS the
+  //    holder), and is checked cheaply before the signal-0 syscall. --
+  private static isMigrationLockStale(lockDir: string): boolean {
+    const pidFile = join(lockDir, 'pid')
+    let pid: number
+    try {
+      pid = parseInt(readFileSync(pidFile, 'utf-8').trim(), 10)
+    } catch {
+      return true  // Can't read PID file -> stale
+    }
+    if (!Number.isFinite(pid) || pid <= 0) return true
+    if (pid === process.pid) return false  // Self -> alive (cheap check)
+    try {
+      process.kill(pid, 0)
+      return false  // PID is alive (signal 0 = check existence)
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException)?.code
+      if (code === 'EPERM') return false  // Exists but no permission -> alive
+      return true  // ESRCH or other -> dead
+    }
   }
 }
