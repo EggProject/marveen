@@ -1,8 +1,9 @@
 // Pure unit tests for the MemoryStoreError class shape.
 // Mirrors the H.4 errors.test.ts pattern: no DB, no fs, no mocks.
 // Verifies the AppError convention: new.target.name plumbing, readonly
-// query field, message format, ErrorOptions cause propagation, and the
-// abstract guard on AppError itself.
+// query field, message format, and ErrorOptions cause propagation.
+// The AppError abstract-guard test lives in src/__tests__/errors.test.ts
+// (H.4 coverage) and is not duplicated here.
 
 import { describe, expect, it } from 'vitest'
 import { AppError } from '../errors.js'
@@ -42,7 +43,12 @@ describe('MemoryStoreError', () => {
     expect(e.cause).toBeUndefined()
   })
 
-  it('refuses direct AppError instantiation (abstract guard)', () => {
-    expect(() => new (AppError as unknown as new (msg: string) => Error)('x')).toThrow(TypeError)
+  it('handles empty options object without setting cause', () => {
+    // A stray empty options object must not propagate as `cause: undefined`
+    // through ErrorOptions; the Error.prototype.cause getter stays unset.
+    const e = new MemoryStoreError('SELECT 1', {})
+    expect(e.cause).toBeUndefined()
+    const errorWithCause = new MemoryStoreError('q', { cause: 'explicit' })
+    expect(errorWithCause.cause).toBe('explicit')
   })
 })

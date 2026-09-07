@@ -2017,7 +2017,7 @@ describe('backfillEmbeddings else branch', () => {
     const row = getDb().prepare("SELECT embedding FROM memories WHERE agent_id='agent-be' LIMIT 1").get() as { embedding: string | null }
     expect(row.embedding).toBeNull()
   })
-  it('returns [] when FTS query throws', () => {
+  it('throws MemoryStoreError when FTS query fails', () => {
     saveMemory('chat-fts', 'apple pie', 'semantic')
     // Spy on prepare to throw on the FTS MATCH statement (only first call).
     const original = Database.prototype.prepare
