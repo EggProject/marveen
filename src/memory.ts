@@ -11,6 +11,7 @@ import {
   pruneTokenUsage,
   getMemoriesForChat,
   listKanbanCardsSummary,
+  MemoryStoreError,
   type Memory,
 } from './db.js'
 import { runAgent } from './agent.js'
@@ -80,7 +81,17 @@ export async function buildMemoryContext(
   chatId: string,
   userMessage: string
 ): Promise<string> {
-  const ftsResults = searchMemories(userMessage, chatId, 3)
+  let ftsResults: Memory[]
+  try {
+    ftsResults = searchMemories(userMessage, chatId, 3)
+  } catch (err) {
+    if (err instanceof MemoryStoreError) {
+      // Graceful degradation: FTS5 parse failure → empty FTS results, recent memories still available
+      ftsResults = []
+    } else {
+      throw err
+    }
+  }
   const recent = recentMemories(chatId, 5)
 
   const seen = new Set<number>()

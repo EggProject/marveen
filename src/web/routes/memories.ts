@@ -2,6 +2,7 @@ import {
   saveAgentMemory, getAgentMemories, searchAgentMemories, getMemoryStats, updateMemory,
   hybridSearch, backfillEmbeddings, clearMemoryCache,
   searchMemories, getMemoriesForChat, getDb, touchMemoriesAccessed,
+  MemoryStoreError,
   type Memory,
 } from '../../db.js'
 import { MAIN_AGENT_ID, ALLOWED_CHAT_ID, OLLAMA_URL, APP_TZ } from '../../config.js'
@@ -86,7 +87,16 @@ export async function tryHandleMemories(ctx: RouteContext): Promise<boolean> {
           .all(agentId, `%${q}%`, `%${q}%`, limit) as Memory[]
       }
     } else if (q) {
-      results = searchMemories(q, ALLOWED_CHAT_ID, limit)
+      try {
+        results = searchMemories(q, ALLOWED_CHAT_ID, limit)
+      } catch (err) {
+        if (err instanceof MemoryStoreError) {
+          // Fall through to LIKE fallback below
+          results = []
+        } else {
+          throw err
+        }
+      }
       if (results.length === 0) {
         const db2 = getDb()
         results = db2.prepare('SELECT * FROM memories WHERE content LIKE ? ORDER BY accessed_at DESC LIMIT ?').all(`%${q}%`, limit) as Memory[]

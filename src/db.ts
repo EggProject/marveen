@@ -4,6 +4,7 @@ import { join, dirname } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, renameSync, chmodSync, openSync, closeSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { STORE_DIR, DB_FILENAME, PROJECT_ROOT, ALLOWED_CHAT_ID, OLLAMA_URL, APP_TZ, type Config } from './config.js'
+import { AppError } from './errors.js'
 import { getEffectiveSettingValue } from './settings-store.js'
 import { logger, type LoggerLike } from './logger.js'
 import { TOOL_TIMEOUTS } from './tool-timeouts.js'
@@ -250,8 +251,8 @@ export function searchMemories(query: string, chatId: string, limit = 3): Memory
       )
       .all(terms, chatId, limit * RECENCY_OVERSAMPLE) as (Memory & { rank: number })[]
     return withoutRank(reRankByRecency(candidates, limit)) as Memory[]
-  } catch {
-    return []
+  } catch (err) {
+    throw new MemoryStoreError(terms, { cause: err })
   }
 }
 
@@ -3587,5 +3588,13 @@ export class DbClient {
       if (code === 'EPERM') return false  // Exists but no permission -> alive
       return true  // ESRCH or other -> dead
     }
+  }
+}
+
+export class MemoryStoreError extends AppError {
+  readonly query: string
+  constructor(query: string, options?: ErrorOptions) {
+    super(`MemoryStore query failed: ${query}`, options)
+    this.query = query
   }
 }

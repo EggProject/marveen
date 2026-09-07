@@ -150,6 +150,7 @@ const {
   stampMessageTrace, expireTimedOutApprovals,
   upsertOtelSpan, closeOtelSpan, getOtelTrace, listOtelTraces,
   RECENCY_LAMBDA, RECENCY_TAU_SEC,
+  MemoryStoreError,
 } = dbModule
 
 // ---------------------------------------------------------------------------
@@ -2029,8 +2030,7 @@ describe('backfillEmbeddings else branch', () => {
       return original.call(this, sql)
     } as typeof Database.prototype.prepare
     try {
-      const out = searchMemories('apple', 'chat-fts', 5)
-      expect(out).toEqual([])
+      expect(() => searchMemories('apple', 'chat-fts', 5)).toThrow(MemoryStoreError)
     } finally {
       Database.prototype.prepare = original
     }

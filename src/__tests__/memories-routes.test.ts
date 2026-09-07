@@ -34,48 +34,62 @@ import { mkTempDir, rmTempDir, snapshotEnv } from './setup/temp-sandbox.js'
 
 // --- hoisted harness --------------------------------------------------------
 
-const H = vi.hoisted(() => ({
-  // config constants
-  MAIN_AGENT_ID: 'marveen',
-  ALLOWED_CHAT_ID: 'chat-42',
-  OLLAMA_URL: 'http://ollama.test:11434',
-  APP_TZ: 'Europe/Budapest',
+const H = vi.hoisted(() => {
+  // Shared MemoryStoreError stub: the SUT uses `instanceof MemoryStoreError` to
+  // narrow in the catch block. Both the SUT (via the mocked db.js) and the
+  // throwing tests must resolve to the SAME class for instanceof to work.
+  class StubMemoryStoreError extends Error {
+    readonly query: string
+    constructor(query: string) {
+      super(`MemoryStore query failed: ${query}`)
+      this.name = 'MemoryStoreError'
+      this.query = query
+    }
+  }
+  return {
+    // config constants
+    MAIN_AGENT_ID: 'marveen',
+    ALLOWED_CHAT_ID: 'chat-42',
+    OLLAMA_URL: 'http://ollama.test:11434',
+    APP_TZ: 'Europe/Budapest',
 
-  // db
-  saveAgentMemory: vi.fn<(...a: unknown[]) => { id: number }>(() => ({ id: 1 })),
-  getAgentMemories: vi.fn<(...a: unknown[]) => unknown[]>(() => []),
-  searchAgentMemories: vi.fn<(...a: unknown[]) => unknown[]>(() => []),
-  getMemoryStats: vi.fn<() => unknown>(() => ({ total: 0, byAgent: {}, byTier: {}, withEmbedding: 0 })),
-  updateMemory: vi.fn<(...a: unknown[]) => boolean>(() => true),
-  hybridSearch: vi.fn<(...a: unknown[]) => Promise<unknown[]>>(async () => []),
-  backfillEmbeddings: vi.fn<() => Promise<number>>(async () => 0),
-  clearMemoryCache: vi.fn<() => void>(),
-  searchMemories: vi.fn<(...a: unknown[]) => unknown[]>(() => []),
-  getMemoriesForChat: vi.fn<(...a: unknown[]) => unknown[]>(() => []),
-  touchMemoriesAccessed: vi.fn<(ids: number[]) => void>(),
+    // db
+    saveAgentMemory: vi.fn<(...a: unknown[]) => { id: number }>(() => ({ id: 1 })),
+    getAgentMemories: vi.fn<(...a: unknown[]) => unknown[]>(() => []),
+    searchAgentMemories: vi.fn<(...a: unknown[]) => unknown[]>(() => []),
+    getMemoryStats: vi.fn<() => unknown>(() => ({ total: 0, byAgent: {}, byTier: {}, withEmbedding: 0 })),
+    updateMemory: vi.fn<(...a: unknown[]) => boolean>(() => true),
+    hybridSearch: vi.fn<(...a: unknown[]) => Promise<unknown[]>>(async () => []),
+    backfillEmbeddings: vi.fn<() => Promise<number>>(async () => 0),
+    clearMemoryCache: vi.fn<() => void>(),
+    searchMemories: vi.fn<(...a: unknown[]) => unknown[]>(() => []),
+    getMemoriesForChat: vi.fn<(...a: unknown[]) => unknown[]>(() => []),
+    touchMemoriesAccessed: vi.fn<(ids: number[]) => void>(),
+    MemoryStoreError: StubMemoryStoreError,
 
-  // db -- prepared statement plumbing for the two raw-SQL branches
-  dbAll: vi.fn<(...a: unknown[]) => unknown[]>(() => []),
-  dbRun: vi.fn<(...a: unknown[]) => { changes: number }>(() => ({ changes: 1 })),
-  dbPrepare: vi.fn<(sql: string) => unknown>(),
-  getDb: vi.fn<() => unknown>(),
+    // db -- prepared statement plumbing for the two raw-SQL branches
+    dbAll: vi.fn<(...a: unknown[]) => unknown[]>(() => []),
+    dbRun: vi.fn<(...a: unknown[]) => { changes: number }>(() => ({ changes: 1 })),
+    dbPrepare: vi.fn<(sql: string) => unknown>(),
+    getDb: vi.fn<() => unknown>(),
 
-  // logger
-  loggerInfo: vi.fn<(...a: unknown[]) => void>(),
-  loggerWarn: vi.fn<(...a: unknown[]) => void>(),
-  loggerError: vi.fn<(...a: unknown[]) => void>(),
-  loggerDebug: vi.fn<(...a: unknown[]) => void>(),
+    // logger
+    loggerInfo: vi.fn<(...a: unknown[]) => void>(),
+    loggerWarn: vi.fn<(...a: unknown[]) => void>(),
+    loggerError: vi.fn<(...a: unknown[]) => void>(),
+    loggerDebug: vi.fn<(...a: unknown[]) => void>(),
 
-  // http-helpers
-  readBody: vi.fn<(req: unknown) => Promise<Buffer>>(),
-  json: vi.fn<(res: unknown, data: unknown, status?: number) => void>(),
-  jsonMaybeGzip: vi.fn<(req: unknown, res: unknown, data: unknown, status?: number) => void>(),
+    // http-helpers
+    readBody: vi.fn<(req: unknown) => Promise<Buffer>>(),
+    json: vi.fn<(res: unknown, data: unknown, status?: number) => void>(),
+    jsonMaybeGzip: vi.fn<(req: unknown, res: unknown, data: unknown, status?: number) => void>(),
 
-  // auth-gate / auth-sessions -- not imported by the SUT; stubbed because the
-  // brief mandates them in the mock set.
-  resolveOwnerAuth: vi.fn(),
-  createSession: vi.fn(),
-}))
+    // auth-gate / auth-sessions -- not imported by the SUT; stubbed because the
+    // brief mandates them in the mock set.
+    resolveOwnerAuth: vi.fn(),
+    createSession: vi.fn(),
+  }
+})
 
 // The prepared-statement double records the SQL it was built from so tests can
 // assert *which* fallback query ran, and returns the shared all/run spies.
@@ -101,6 +115,7 @@ vi.mock('../db.js', () => ({
   getMemoriesForChat: H.getMemoriesForChat,
   getDb: H.getDb,
   touchMemoriesAccessed: H.touchMemoriesAccessed,
+  MemoryStoreError: H.MemoryStoreError,
 }))
 
 vi.mock('../config.js', () => ({
@@ -595,6 +610,20 @@ describe('GET /api/memories', () => {
       )
       expect(r.json()).toHaveLength(2)
       expect(H.touchMemoriesAccessed).toHaveBeenCalledWith([9, 10])
+    })
+
+    it('falls through to LIKE fallback when searchMemories throws MemoryStoreError', async () => {
+      // Both the SUT and this test resolve MemoryStoreError via the mocked db.js,
+      // so `instanceof MemoryStoreError` narrows correctly inside the route handler.
+      H.searchMemories.mockImplementation(() => { throw new H.MemoryStoreError('broken') })
+      H.dbAll.mockReturnValue([mem(11)])
+
+      const r = await call('GET', '/api/memories?q=alpha&limit=3')
+
+      expect(r.status).toBe(200)
+      expect(r.json()).toHaveLength(1)
+      expect(r.json()[0].id).toBe(11)
+      expect(H.touchMemoriesAccessed).toHaveBeenCalledWith([11])
     })
   })
 

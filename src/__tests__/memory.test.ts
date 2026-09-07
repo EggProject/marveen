@@ -73,6 +73,21 @@ let existsReturn = false
 // vi.mock factories
 // ---------------------------------------------------------------------------
 
+// Shared MemoryStoreError stub: the SUT uses `instanceof MemoryStoreError` to
+// narrow in the catch block. Both the SUT (via the mocked db.js) and the
+// throwing tests must resolve to the SAME class for instanceof to work.
+const mockState = vi.hoisted(() => {
+  class StubMemoryStoreError extends Error {
+    readonly query: string
+    constructor(query: string) {
+      super(`MemoryStore query failed: ${query}`)
+      this.name = 'MemoryStoreError'
+      this.query = query
+    }
+  }
+  return { MemoryStoreError: StubMemoryStoreError }
+})
+
 vi.mock('node:fs', async () => {
   const actual = await vi.importActual<typeof import('node:fs')>('node:fs')
   return {
@@ -91,7 +106,9 @@ vi.mock('node:fs', async () => {
 })
 
 vi.mock('../db.js', () => ({
+  MemoryStoreError: mockState.MemoryStoreError,
   searchMemories: (query: string, chatId: string, limit = 3) => {
+    if (ftsShouldThrow) throw ftsThrowError
     return ftsResults
       .filter((m) => m.chat_id === chatId)
       .slice(0, limit)
@@ -185,6 +202,8 @@ const {
 // ---------------------------------------------------------------------------
 
 let sandbox = ''
+let ftsShouldThrow = false
+let ftsThrowError: Error = new Error('default mock throw')
 beforeEach(() => {
   sandbox = mkdtempSync(join(tmpdir(), 'memory-test-'))
   ftsResults.length = 0
@@ -203,6 +222,8 @@ beforeEach(() => {
   mkdirCalls.length = 0
   writeFileCalls.length = 0
   existsReturn = false
+  ftsShouldThrow = false
+  ftsThrowError = new Error('default mock throw')
   logDebugMock.mockReset()
   logInfoMock.mockReset()
   logErrorMock.mockReset()
@@ -270,6 +291,32 @@ describe('buildMemoryContext', () => {
     const out = await buildMemoryContext('chat-1', 'q')
     expect(out).toContain('- recent-only (episodic)')
     expect(touchMemoryCalls).toEqual([11])
+  })
+
+  it('falls back to empty ftsResults when searchMemories throws MemoryStoreError', async () => {
+    // Setup: mock searchMemories to throw MemoryStoreError; mock recentMemories to return one memory.
+    // Use the hoisted stub so the `instanceof` narrowing in buildMemoryContext matches.
+    ftsShouldThrow = true
+    ftsThrowError = new mockState.MemoryStoreError('broken FTS query')
+    recentResults.push(mem({ id: 42, content: 'recent-fallback', sector: 'semantic' }))
+
+    // Assert: the returned string contains the recent memory but NOT the failed FTS content;
+    // the function does NOT re-throw.
+    const out = await buildMemoryContext('chat-1', 'q')
+    expect(out).toContain('- recent-fallback (semantic)')
+    expect(out).not.toContain('broken FTS query')
+    // The recent memory should have been touched (ftsResults=[] fallback still runs the recent branch).
+    expect(touchMemoryCalls).toEqual([42])
+  })
+
+  it('re-throws non-MemoryStoreError errors from searchMemories', async () => {
+    // Setup: mock searchMemories to throw a generic Error (NOT a MemoryStoreError).
+    const cause = new Error('disk full')
+    ftsShouldThrow = true
+    ftsThrowError = cause
+
+    // Assert: buildMemoryContext rejects with the same Error (not swallowed).
+    await expect(buildMemoryContext('chat-1', 'q')).rejects.toBe(cause)
   })
 })
 
