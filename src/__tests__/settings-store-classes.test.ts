@@ -227,25 +227,38 @@ describe('settings-store class form (F.4)', () => {
   })
 
   // ---- T6 ------------------------------------------------------------------
-  // Cache identity preservation. getOverrides() returns `{ ...this.cache }`
-  // -- a spread copy. Subsequent setOverride creates a fresh `next` object
-  // and rebinds this.cache; the previously-returned reference MUST be
-  // immutable. This is a defensive regression test for the spread
-  // convention documented at the original src/settings-store.ts:60.
-  it('T6: getOverrides() returns an immutable spread; later setOverride does NOT mutate the returned object', () => {
+  // Cache identity preservation (load-bearing). getOverrides() returns
+  // `{ ...this.cache }` -- a fresh spread copy on every call. Two
+  // consecutive calls MUST produce two distinct object references
+  // (a !== b). If the implementation dropped the spread and returned
+  // `this.cache` directly, both calls would return the SAME reference,
+  // and this assertion would FAIL.
+  //
+  // The original "spread is immutable under setOverride" variant was
+  // vacuous: setOverride rebinds `this.cache = next` to a fresh object,
+  // so the old reference stays unchanged EITHER WAY (with or without
+  // the spread). Reference-identity is the only assertion that actually
+  // distinguishes the two implementations.
+  it('T6: getOverrides() returns a fresh spread object on every call (reference inequality)', () => {
     const instance = new SettingsStore()
-    const before = instance.getOverrides()
-    expect(before.FOO).toBeUndefined()
-
     const result = instance.setOverride('KANBAN_WIP_WARN_PCT', 42)
     expect(result.ok).toBe(true)
 
-    // The previously-returned spread object must NOT have been mutated.
-    expect(before.FOO).toBeUndefined()
-    expect(before.KANBAN_WIP_WARN_PCT).toBeUndefined()
+    const a = instance.getOverrides()
+    const b = instance.getOverrides()
 
-    // A fresh getOverrides() call sees the new value.
-    const after = instance.getOverrides()
-    expect(after.KANBAN_WIP_WARN_PCT).toBe(42)
+    // Load-bearing: a and b are distinct object references.
+    expect(a).not.toBe(b)
+    // The two snapshots are equal in content (same keys + values).
+    expect(a).toEqual(b)
+    // And both see the override we just set.
+    expect(a.KANBAN_WIP_WARN_PCT).toBe(42)
+    expect(b.KANBAN_WIP_WARN_PCT).toBe(42)
+
+    // Sanity check that mutating a does NOT bleed into b or into the
+    // instance's internal cache (the spread must be a copy).
+    ;(a as Record<string, unknown>).KANBAN_WIP_WARN_PCT = 'mutated'
+    expect(b.KANBAN_WIP_WARN_PCT).toBe(42)
+    expect(instance.getOverrides().KANBAN_WIP_WARN_PCT).toBe(42)
   })
 })
