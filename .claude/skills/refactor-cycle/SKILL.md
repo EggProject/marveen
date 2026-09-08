@@ -95,6 +95,54 @@ ln -sf <repo>/node_modules $HOME/claw-verify-a/node_modules
 `$HOME`, never `/tmp` (CLAUDE.md §8). Separate worktrees also stop two concurrent
 vitest runs from tripping each other's `store/` guard.
 
+### 5b. Vacuous-test audit (mandatory sub-step in every verifier)
+
+Step 4's plan review catches authoring-time defects (plan claims, file:line
+references, gate numbers). It is structurally unable to catch defects in the
+*output* (the actual test file) because the test file does not exist yet at
+plan-review time. The post-implementation verifiers must therefore do an
+output audit that plan review cannot: walk every `it()` block in the new test
+file and decide whether its assertion would fail if the implementation were
+gutted to a constant return or no-op.
+
+For each `it()` block in the new test file, every verifier must explicitly:
+
+1. Identify the assertion(s) in the test.
+2. Mentally gut the implementation that the test exercises (e.g.,
+   `setOverride` returns `{ok: true}` without writing anything; `getOverrides`
+   returns `{}`; the watch callback is a no-op; the constructor drops its
+   `opts` argument).
+3. State which assertions FAIL under the gut (load-bearing) vs which PASS
+   regardless (vacuous).
+4. List the specific no-op gutting scenario for each vacuous assertion.
+
+The verdict MUST be captured in the verifier's structured output as a
+`vacuousCount` integer (or equivalent field). If `vacuousCount > 0`, the
+workflow short-circuits before the merge: the implementer rewrites the
+vacuous test to be load-bearing, re-commits, and re-runs the verifiers.
+
+**Why this is mandatory, not optional.** CLAUDE.md §8 has the rule
+("megbukna-e ez az assertion no-opra kibelezve"), but the rule did not
+propagate into the F.4 verifier prompts. The result: T6
+(`expect(before.FOO).toBeUndefined()`) shipped in commit `ac13503` because the
+assertion passed whether or not the spread existed — `setOverride` rebinds
+`this.cache = next` to a fresh object, so the old reference is unchanged
+either way. The vacuous assertion was caught only by user-typed
+`/code-review max --fix`, NOT by either verifier fork.
+
+This is the second corpus hit (precedent: 2026-08-30 E.1/E.2 — two test
+fixtures with `getProcessCommand: () => null` produced vacuous
+`expect(Array.isArray(result)).toBe(true)` assertions that passed the
+implementer, both verifier forks, AND the gate checks).
+
+Both cases share a common shape: the test fixture makes the input a no-op,
+the assertion checks a structural property of the return value (e.g.,
+`Array.is`, `=== undefined`), and the assertion passes whether or not the
+implementation does anything. The vacuous-test audit is the structural
+countermeasure — only an explicit gutting walk-through per `it()` block
+catches the pattern; coverage-based and equivalence-based verifiers are
+structurally blind to it.
+
 ### 6. Check the commit author
 
 `git log -1 --format='%an <%ae> | %cn <%ce>'` against `git config user.email`.
@@ -131,6 +179,7 @@ Re-measure at write time. Do not copy numbers from your own plan.
 | Default `= {}` on both wrapper and method | Default on the method only; wrapper takes `opts?:` |
 | A new method keeping a `ctx` parameter it could read from `this` | Drop the parameter |
 | New tests whose fixtures make the assertion unfalsifiable | Step 4's concrete-assertion rule |
+| Vacuous assertions passing regardless of implementation | Step 5b vacuous-test audit (verifier MUST walk gutting per `it()`) |
 
 ## Verification
 
@@ -141,4 +190,5 @@ The cycle is done when, measured flag-free at HEAD:
 - tsc and lint have not grown
 - `git diff <SHA>~1 <SHA> -- <files the plan promised not to touch>` is empty
 - both verifiers PASS and `/code-review` findings are fixed and committed
+- both verifiers reported `vacuousCount === 0` for every new `it()` block (Step 5b)
 - no doc states a number that a re-measurement contradicts
