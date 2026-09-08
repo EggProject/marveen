@@ -11,6 +11,8 @@ import {
   isFederationWireEndpoint,
   SESSION_COOKIE_NAME,
 } from '../web/auth-gate.js'
+import { createAuthGate } from '../web/auth-gate.js'
+import type { LoggerLike } from '../logger.js'
 import { createSession, _clearSessionCacheForTest } from '../web/auth-sessions.js'
 import { createDeviceKey, _clearDeviceKeyCacheForTest } from '../web/auth-device-keys.js'
 import {
@@ -157,6 +159,39 @@ describe('federation endpoint scoping is preserved', () => {
   it('federation scoping does not leak onto a non-federation path', () => {
     const r = resolveAuth(mkReq({ authorization: 'Bearer some-peer-token' }), mkUrl('/api/memories'), '/api/memories', 'GET', TOKEN)
     expect(r).toEqual({ kind: 'none' })
+  })
+})
+
+describe('AuthGate.getRouteContextAuth (factory projection)', () => {
+  const noopLog: LoggerLike = {
+    info: () => {},
+    warn: () => {},
+    error: () => {},
+    debug: () => {},
+  }
+  const gate = createAuthGate({ log: noopLog, dashboardToken: TOKEN })
+
+  it('projects the token arm to { kind: token }', () => {
+    expect(gate.getRouteContextAuth({ kind: 'token' })).toEqual({ kind: 'token' })
+  })
+
+  it('projects the device arm, dropping deviceId', () => {
+    expect(gate.getRouteContextAuth({ kind: 'device', device: 'phone', deviceId: 7 }))
+      .toEqual({ kind: 'device', device: 'phone' })
+  })
+
+  it('projects the session arm with user field', () => {
+    expect(gate.getRouteContextAuth({ kind: 'session', user: 'alice' }))
+      .toEqual({ kind: 'session', user: 'alice' })
+  })
+
+  it('projects the federation arm with peer field', () => {
+    expect(gate.getRouteContextAuth({ kind: 'federation', peer: 'remote-1' }))
+      .toEqual({ kind: 'federation', peer: 'remote-1' })
+  })
+
+  it('collapses the none arm to undefined', () => {
+    expect(gate.getRouteContextAuth({ kind: 'none' })).toBeUndefined()
   })
 })
 

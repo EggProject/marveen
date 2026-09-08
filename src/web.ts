@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { execSync, execFileSync } from 'node:child_process'
 import { PROJECT_ROOT, WEB_HOST, DASHBOARD_PUBLIC_URL, DASHBOARD_ALLOWED_ORIGINS, MAIN_AGENT_ID } from './config.js'
 import { loadOrCreateDashboardToken } from './web/dashboard-auth.js'
-import { resolveAuth, requiresAuth, isFederationWireEndpoint, type AuthResult } from './web/auth-gate.js'
+import { defaultGate, type AuthResult } from './web/auth-gate.js'
 import { sweepExpiredSessions } from './web/auth-sessions.js'
 import { sweepExpiredDeviceKeys } from './web/auth-device-keys.js'
 import { isBlockedCrossOriginWrite, originMatchesServedHost } from './web/csrf-origin.js'
@@ -139,9 +139,9 @@ export function startWebServer(port = 3420): http.Server {
     // fleet curl call keeps working with users present or absent. requiresAuth()
     // decides whether a missing principal is a 401 (gated /api/* + fleet
     // manifest) or a public probe (auth status/login, avatars).
-    const auth: AuthResult = resolveAuth(req, url, path, method, DASHBOARD_TOKEN)
-    if (requiresAuth(path, method) && auth.kind === 'none') {
-      if (isFederationWireEndpoint(path, method)) {
+    const auth: AuthResult = defaultGate.resolveAuth(req, url, path, method)
+    if (defaultGate.requiresAuth(path, method) && auth.kind === 'none') {
+      if (defaultGate.isFederationWireEndpoint(path, method)) {
         // 401s are otherwise silent; federation-endpoint auth failures are the
         // brute-force surface -- make them visible (round-2 scoped-token gate).
         logger.warn({ path, method }, 'federation: rejected wire-endpoint auth')
@@ -151,12 +151,7 @@ export function startWebServer(port = 3420): http.Server {
       return
     }
     const fedPeerForCtx: string | null = auth.kind === 'federation' ? auth.peer : null
-    const ctxAuth =
-      auth.kind === 'token' ? { kind: 'token' as const }
-      : auth.kind === 'device' ? { kind: 'device' as const, device: auth.device }
-      : auth.kind === 'session' ? { kind: 'session' as const, user: auth.user }
-      : auth.kind === 'federation' ? { kind: 'federation' as const, peer: auth.peer }
-      : undefined
+    const ctxAuth = defaultGate.getRouteContextAuth(auth)
 
     // The mobile-login QR needs a URL the phone can actually reach. When the
     // desktop opens the dashboard on localhost, window.location.origin is
