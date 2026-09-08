@@ -186,7 +186,11 @@ describe('settings-store class form (F.4)', () => {
       expect(inst.getOverrides().BAR).toBe(99)
     }
 
-    // T3e -- subdirectory path: cache NOT reloaded (basename-only check).
+    // T3e -- subdirectory path: cache NOT reloaded (full-filename match; the
+    // matcher does NOT extract basename, so 'subdir/config-overrides.json'
+    // does NOT equal 'config-overrides.json'). Documents the current
+    // contract; if a future refactor switches to basename extraction this
+    // test would START reloading for subdir paths and would need to flip.
     {
       const inst = fresh(99)
       writeFileSync(OVERRIDES, JSON.stringify({ BAR: 200 }))
