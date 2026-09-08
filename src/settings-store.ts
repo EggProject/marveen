@@ -4,6 +4,7 @@ import { STORE_DIR } from './config.js'
 import { readEnvFile } from './env.js'
 import { atomicWriteFileSync } from './web/atomic-write.js'
 import { getSettingDefinition, validateSettingValue, type SettingDefinition } from './config-registry.js'
+import { logger, type LoggerLike } from './logger.js'
 
 // Writable override layer for registry-backed settings. Resolution order for
 // any registered key is: config-overrides.json > .env > registry default.
@@ -14,50 +15,94 @@ import { getSettingDefinition, validateSettingValue, type SettingDefinition } fr
 // cache directly without waiting for the watch event.
 export const OVERRIDES_PATH = join(STORE_DIR, 'config-overrides.json')
 
-let cache: Record<string, string | number> = {}
-let watcher: FSWatcher | undefined
+export class SettingsStore {
+  private cache: Record<string, string | number> = {}
+  private watcher: FSWatcher | undefined
+  private readonly log: LoggerLike
 
-function loadFromDisk(): Record<string, string | number> {
-  try {
-    if (!existsSync(OVERRIDES_PATH)) return {}
-    const raw = readFileSync(OVERRIDES_PATH, 'utf-8')
-    const parsed = JSON.parse(raw)
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed
-    return {}
-  } catch {
-    return {}
+  // Arrow-property callback binds `this` lexically at construction time
+  // (F.3 pattern: src/store-watcher.ts:60-66) -- survives vi.resetModules()
+  // re-evaluation AND the watcher handle ALWAYS sees the correct instance.
+  private readonly onFsEvent = (_eventType: string, filename: string | null): void => {
+    if (filename === 'config-overrides.json') this.cache = this.loadFromDisk()
   }
-}
 
-cache = loadFromDisk()
+  constructor(opts: { log?: LoggerLike } = {}) {
+    this.log = opts.log ?? logger
+    this.cache = this.loadFromDisk()
+  }
 
-// Watcher callback extracted to a testable pure function. The if/else branch
-// (filename === 'config-overrides.json' -> cache reload, otherwise no-op) is
-// unreachable from unit tests through the real fs.watch trigger because the
-// underlying call is inherently racy and platform-dependent; exposing it as
-// `__test_handleWatchEvent` lets the suite exercise both branches
-// deterministically without an actual directory watcher.
-export function __test_handleWatchEvent(_event: unknown, filename: string | null): void {
-  if (filename === 'config-overrides.json') cache = loadFromDisk()
-}
+  private loadFromDisk(): Record<string, string | number> {
+    try {
+      if (!existsSync(OVERRIDES_PATH)) return {}
+      const raw = readFileSync(OVERRIDES_PATH, 'utf-8')
+      const parsed = JSON.parse(raw)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed
+      return {}
+    } catch {
+      return {}
+    }
+  }
 
-// Lazily start the directory watch on first use rather than at import time,
-// so importing this module in a test (no STORE_DIR yet) does not throw.
-function ensureWatching(): void {
-  if (watcher) return
-  try {
+  // FR2 fix: mirrors F.3 StoreWatcher.start() pattern (src/store-watcher.ts:140-150)
+  // -- WARN + RETURN, NOT strict THROW. The runtime check warns on the second call
+  // without opening a duplicate fs.watch handle.
+  private ensureWatching(): void {
+    if (this.watcher) {
+      this.log.warn(
+        { storeDir: STORE_DIR },
+        'settings-store: ensureWatching called twice (FR2 double-fs.watch guard)',
+      )
+      return
+    }
+    try {
+      mkdirSync(STORE_DIR, { recursive: true })
+      this.watcher = watch(STORE_DIR, { persistent: false }, this.onFsEvent)
+    } catch {
+      // Best-effort: if the platform/FS doesn't support watching the
+      // directory, the cache simply stays as of the last read/write from this
+      // process -- still correct for the common single-process case.
+    }
+  }
+
+  // Public test escape hatch -- delegates to the arrow-property callback.
+  __test_handleWatchEvent(event: unknown, filename: string | null): void {
+    this.onFsEvent(typeof event === 'string' ? event : 'rename', filename)
+  }
+
+  getOverrides(): Record<string, string | number> {
+    this.ensureWatching()
+    return { ...this.cache }
+  }
+
+  getEffectiveSettingValue(key: string): string | number {
+    this.ensureWatching()
+    const def = getSettingDefinition(key)
+    if (!def) throw new Error(`Unknown setting key: ${key}`)
+    if (key in this.cache) return coerce(def, this.cache[key])
+    const envValue = readEnvFile([key])[key]
+    if (envValue !== undefined) return coerce(def, envValue)
+    return def.default
+  }
+
+  setOverride(key: string, rawValue: unknown): SetOverrideResult {
+    const def = getSettingDefinition(key)
+    if (!def) return { ok: false, error: `Ismeretlen kulcs: ${key}` }
+
+    const validation = validateSettingValue(def, rawValue)
+    if (!validation.ok) return { ok: false, error: validation.error }
+
+    this.ensureWatching()
     mkdirSync(STORE_DIR, { recursive: true })
-    watcher = watch(STORE_DIR, { persistent: false }, __test_handleWatchEvent)
-  } catch {
-    // Best-effort: if the platform/FS doesn't support watching the
-    // directory, the cache simply stays as of the last read/write from this
-    // process -- still correct for the common single-process case.
+    const next = { ...this.loadFromDisk(), [key]: validation.value! }
+    atomicWriteFileSync(OVERRIDES_PATH, JSON.stringify(next, null, 2))
+    this.cache = next
+    return { ok: true }
   }
-}
 
-export function getOverrides(): Record<string, string | number> {
-  ensureWatching()
-  return { ...cache }
+  reloadOverridesForTest(): void {
+    this.cache = this.loadFromDisk()
+  }
 }
 
 function coerce(def: SettingDefinition, raw: string | number): string | number {
@@ -65,47 +110,15 @@ function coerce(def: SettingDefinition, raw: string | number): string | number {
   return String(raw)
 }
 
-// Resolves the effective value for a registered key: override > .env >
-// registry default. Reads .env fresh (cheap, scoped to one key) rather than
-// relying on the boot-time config.ts constants, so this resolution stays
-// correct independent of when the process last restarted.
-export function getEffectiveSettingValue(key: string): string | number {
-  ensureWatching()
-  const def = getSettingDefinition(key)
-  if (!def) throw new Error(`Unknown setting key: ${key}`)
-  if (key in cache) return coerce(def, cache[key])
-  const envValue = readEnvFile([key])[key]
-  if (envValue !== undefined) return coerce(def, envValue)
-  return def.default
-}
+// Module-singleton + thin re-export shim (F.3 pattern, byte-identical mocks).
+const settingsStore = new SettingsStore()
+export function getOverrides(): Record<string, string | number> { return settingsStore.getOverrides() }
+export function getEffectiveSettingValue(key: string): string | number { return settingsStore.getEffectiveSettingValue(key) }
+export function setOverride(key: string, rawValue: unknown): SetOverrideResult { return settingsStore.setOverride(key, rawValue) }
+export function reloadOverridesForTest(): void { settingsStore.reloadOverridesForTest() }
+export function __test_handleWatchEvent(event: unknown, filename: string | null): void { settingsStore.__test_handleWatchEvent(event, filename) }
 
 export interface SetOverrideResult {
   ok: boolean
   error?: string
-}
-
-// Validates against the registry, then atomically persists the whole
-// overrides file and updates the in-memory cache. Validation happens before
-// any disk write, so an invalid value never reaches the file -- combined
-// with the atomic write, a failure at any point leaves the previous state
-// fully intact (no partial save).
-export function setOverride(key: string, rawValue: unknown): SetOverrideResult {
-  const def = getSettingDefinition(key)
-  if (!def) return { ok: false, error: `Ismeretlen kulcs: ${key}` }
-
-  const validation = validateSettingValue(def, rawValue)
-  if (!validation.ok) return { ok: false, error: validation.error }
-
-  ensureWatching()
-  mkdirSync(STORE_DIR, { recursive: true })
-  const next = { ...loadFromDisk(), [key]: validation.value! }
-  atomicWriteFileSync(OVERRIDES_PATH, JSON.stringify(next, null, 2))
-  cache = next
-  return { ok: true }
-}
-
-// Test-only escape hatch: forces the in-memory cache back to whatever is
-// currently on disk (or empty if absent), bypassing the watch debounce.
-export function reloadOverridesForTest(): void {
-  cache = loadFromDisk()
 }
