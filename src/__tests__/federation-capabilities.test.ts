@@ -37,6 +37,11 @@ beforeEach(() => {
   rmSync(join(TMP, CAPABILITY_CACHE_FILENAME), { force: true })
   rmSync(join(TMP, 'federation.json'), { force: true })
   rmSync(join(TMP, '.dashboard-token'), { force: true })
+  // The test-dashboard-token.ts setupFile sets DASHBOARD_TOKEN globally for
+  // every vitest worker. This suite writes its own on-disk token and expects
+  // loadOrCreateDashboardToken's file branch to win -- clear the env so the
+  // env-first branch doesn't shadow the file token we just wrote.
+  delete process.env.DASHBOARD_TOKEN
   _setCapabilityStoreDirForTest(TMP)
   _setFederationStoreDirForTest(TMP)
 })

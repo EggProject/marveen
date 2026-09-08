@@ -1,10 +1,10 @@
 // Unified auth resolution for the dashboard HTTP gate.
 //
-// The factory form centralises the dependency bundle (logger, dashboard token)
-// without imposing class ceremony. The module-level singleton (defaultGate)
-// is constructed eagerly at module init; the free functions below survive as
-// thin wrappers so the 6 existing importers (src/web.ts + 5 test files) keep
-// their call sites byte-equivalent.
+// The factory form centralises the dashboard token without imposing class
+// ceremony. The module-level singleton (defaultGate) is constructed eagerly
+// at module init; the free functions below survive as thin wrappers so the
+// 6 existing importers (src/web.ts + 5 test files) keep their call sites
+// byte-equivalent.
 //
 // Precedence (first match wins):
 //   1. Authorization: Bearer <dashboard token>   -> { kind: 'token' }
@@ -20,9 +20,7 @@ import { checkBearerToken } from './dashboard-auth.js'
 import { identifyFederationCaller } from './federation/config.js'
 import { resolveSession } from './auth-sessions.js'
 import { resolveDeviceKey } from './auth-device-keys.js'
-import type { LoggerLike } from '../logger.js'
 import type { RouteContext } from './routes/types.js'
-import { logger } from '../logger.js'
 import { loadOrCreateDashboardToken } from './dashboard-auth.js'
 
 export type AuthResult =
@@ -49,7 +47,6 @@ export function parseCookies(header: string | undefined): Record<string, string>
 }
 
 export interface AuthGateDeps {
-  readonly log: LoggerLike
   readonly dashboardToken: string
 }
 
@@ -131,15 +128,19 @@ export function createAuthGate(deps: AuthGateDeps): AuthGate {
 }
 
 export const defaultGate: AuthGate = createAuthGate({
-  log: logger,
   dashboardToken: loadOrCreateDashboardToken(),
 })
 
+// Backward-compat shim: the 5 test files imported the pre-factory signature
+// with `dashboardToken` as a positional argument. The factory centralises the
+// token in the `defaultGate` singleton, so the parameter is ignored here.
+// Remove this shim once the callers migrate to `createAuthGate` or `defaultGate`.
 export function resolveAuth(
   req: http.IncomingMessage,
   url: URL,
   path: string,
   method: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _dashboardToken: string,
 ): AuthResult {
   return defaultGate.resolveAuth(req, url, path, method)

@@ -51,6 +51,8 @@ const H = vi.hoisted(() => {
     resolveAuth: mkFn(),
     requiresAuth: mkFn(),
     isFederationWireEndpoint: mkFn(),
+    getRouteContextAuth: mkFn(),
+    defaultGate: undefined as unknown,
     sweepExpiredSessions: mkFn(),
     sweepExpiredDeviceKeys: mkFn(),
     isBlockedCrossOriginWrite: mkFn(),
@@ -202,6 +204,8 @@ function registerMocks(config: ConfigShape): void {
     resolveAuth: H.resolveAuth,
     requiresAuth: H.requiresAuth,
     isFederationWireEndpoint: H.isFederationWireEndpoint,
+    getRouteContextAuth: H.getRouteContextAuth,
+    defaultGate: H.defaultGate,
   }))
   vi.doMock('../web/auth-sessions.js', () => ({ sweepExpiredSessions: H.sweepExpiredSessions }))
   vi.doMock('../web/auth-device-keys.js', () => ({ sweepExpiredDeviceKeys: H.sweepExpiredDeviceKeys }))
@@ -378,6 +382,19 @@ beforeEach(() => {
   H.resolveAuth.mockReturnValue({ kind: 'token' })
   H.requiresAuth.mockReturnValue(false)
   H.isFederationWireEndpoint.mockReturnValue(false)
+  H.getRouteContextAuth.mockImplementation((auth) => {
+    if (auth.kind === 'token') return { kind: 'token' }
+    if (auth.kind === 'device') return { kind: 'device', device: auth.device }
+    if (auth.kind === 'session') return { kind: 'session', user: auth.user }
+    if (auth.kind === 'federation') return { kind: 'federation', peer: auth.peer }
+    return undefined
+  })
+  H.defaultGate = {
+    resolveAuth: H.resolveAuth,
+    requiresAuth: H.requiresAuth,
+    isFederationWireEndpoint: H.isFederationWireEndpoint,
+    getRouteContextAuth: H.getRouteContextAuth,
+  }
   H.listAgentNames.mockReturnValue([])
   H.shouldRegisterHooks.mockReturnValue({ register: false, reason: 'test' })
   H.pruneStaleHooksFromSettingsFile.mockReturnValue([])
@@ -1080,7 +1097,9 @@ describe('auth gate', () => {
     expect(ctx.path).toBe('/api/x')
     expect(ctx.method).toBe('PUT')
     expect(ctx.url.searchParams.get('y')).toBe('1')
-    expect(H.resolveAuth).toHaveBeenCalledWith(expect.anything(), expect.any(URL), '/api/x', 'PUT', 'TOK')
+    // web.ts calls defaultGate.resolveAuth(req, url, path, method) -- 4 args,
+    // the dashboard token lives on the defaultGate singleton, not per-call.
+    expect(H.resolveAuth).toHaveBeenCalledWith(expect.anything(), expect.any(URL), '/api/x', 'PUT')
   })
 
   it('falls back to "/" and GET when the request carries neither', async () => {
@@ -1089,7 +1108,7 @@ describe('auth gate', () => {
 
     await request({})
 
-    expect(H.resolveAuth).toHaveBeenCalledWith(expect.anything(), expect.any(URL), '/', 'GET', 'TOK')
+    expect(H.resolveAuth).toHaveBeenCalledWith(expect.anything(), expect.any(URL), '/', 'GET')
   })
 })
 

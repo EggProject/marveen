@@ -12,7 +12,6 @@ import {
   SESSION_COOKIE_NAME,
 } from '../web/auth-gate.js'
 import { createAuthGate } from '../web/auth-gate.js'
-import type { LoggerLike } from '../logger.js'
 import { createSession, _clearSessionCacheForTest } from '../web/auth-sessions.js'
 import { createDeviceKey, _clearDeviceKeyCacheForTest } from '../web/auth-device-keys.js'
 import {
@@ -163,13 +162,7 @@ describe('federation endpoint scoping is preserved', () => {
 })
 
 describe('AuthGate.getRouteContextAuth (factory projection)', () => {
-  const noopLog: LoggerLike = {
-    info: () => {},
-    warn: () => {},
-    error: () => {},
-    debug: () => {},
-  }
-  const gate = createAuthGate({ log: noopLog, dashboardToken: TOKEN })
+  const gate = createAuthGate({ dashboardToken: TOKEN })
 
   it('projects the token arm to { kind: token }', () => {
     expect(gate.getRouteContextAuth({ kind: 'token' })).toEqual({ kind: 'token' })

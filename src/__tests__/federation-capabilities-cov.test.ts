@@ -188,10 +188,11 @@ describe('federation/capabilities supplemental coverage', () => {
 
   it('containsPrivateData prefers the DASHBOARD_TOKEN env var over the on-disk token file', async () => {
     // The DASHBOARD_TOKEN env-first branch of readDashboardTokenBestEffort
-    // is cold in the default test env (DASHBOARD_TOKEN unset). Plant an
-    // on-disk token AND set the env var so the env path wins, and a leak of
-    // the on-disk token would still be caught (the env var is a different
-    // string).
+    // is always taken in the default test env (the test-dashboard-token.ts
+    // setupFile sets DASHBOARD_TOKEN before any module loads). Plant an
+    // on-disk token AND override the env var to a different value so the
+    // env path wins, and a leak of the on-disk token would still be caught
+    // (the env var is a different string).
     const caps = await import('../web/federation/capabilities.js')
     const onDisk = 'o'.repeat(64)
     const inEnv = 'e'.repeat(64)
