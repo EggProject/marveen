@@ -2270,71 +2270,107 @@ export interface Approval {
   resolved_by: string | null
 }
 
-export function createApproval(params: {
-  id: string
-  agent_id: string
-  category: string
-  action_description: string
-  action_payload?: string | null
-  timeout_at?: number | null
-}): Approval {
-  const now = Math.floor(Date.now() / 1000)
-  db.prepare(`
-    INSERT INTO approvals (id, agent_id, category, action_description, action_payload, timeout_at, requested_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    params.id,
-    params.agent_id,
-    params.category,
-    params.action_description,
-    params.action_payload ?? null,
-    params.timeout_at ?? null,
-    now,
-  )
-  return {
-    id: params.id,
-    agent_id: params.agent_id,
-    category: params.category,
-    action_description: params.action_description,
-    action_payload: params.action_payload ?? null,
-    status: 'pending',
-    timeout_at: params.timeout_at ?? null,
-    telegram_message_id: null,
-    requested_at: now,
-    resolved_at: null,
-    resolved_by: null,
+// Method names mirror the free-function shim so the delegation is
+// one-to-one and the diff is greppable from the old to the new form.
+
+// Per-entity store for the approvals table (HITL). Constructed with a
+// bun:sqlite handle accessor and a logger; the module-singleton below
+// is reached by free-function callers through the thin shim. Phase 7
+// will move the singleton into App; new consumers should construct
+// ApprovalStore directly with DI. The accessor resolves the current
+// handle on every call so the module-level `let db` can be replaced by
+// initDatabase() without rebinding the singleton.
+export class ApprovalStore {
+  private readonly getDb: () => Database
+  private readonly log: LoggerLike
+
+  constructor(deps?: { getDb?: () => Database; log?: LoggerLike }) {
+    // Production: defaults evaluate to the module-level getDb() and
+    // logger so the module-singleton works without DI. Tests that pass
+    // a custom getDb via the constructor override the closure; tests
+    // that vi.mock('../db.js') do NOT touch this constructor at all --
+    // the mock replaces the module-level free functions, which the
+    // shim below delegates to. The deps object is optional so the
+    // call-site `new ApprovalStore()` (e.g. test fixtures, future
+    // Phase 7 wiring) stays zero-argument.
+    this.getDb = deps?.getDb ?? getDb
+    this.log = deps?.log ?? logger
   }
-}
 
-export function getApproval(id: string): Approval | undefined {
-  return db.prepare<Approval, SQLQueryBindings[]>('SELECT * FROM approvals WHERE id = ?').get(id ?? undefined) ?? undefined
-}
+  create(params: {
+    id: string
+    agent_id: string
+    category: string
+    action_description: string
+    action_payload?: string | null
+    timeout_at?: number | null
+  }): Approval {
+    const now = Math.floor(Date.now() / 1000)
+    this.getDb().prepare(`
+      INSERT INTO approvals (id, agent_id, category, action_description, action_payload, timeout_at, requested_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      params.id,
+      params.agent_id,
+      params.category,
+      params.action_description,
+      params.action_payload ?? null,
+      params.timeout_at ?? null,
+      now,
+    )
+    return {
+      id: params.id,
+      agent_id: params.agent_id,
+      category: params.category,
+      action_description: params.action_description,
+      action_payload: params.action_payload ?? null,
+      status: 'pending',
+      timeout_at: params.timeout_at ?? null,
+      telegram_message_id: null,
+      requested_at: now,
+      resolved_at: null,
+      resolved_by: null,
+    }
+  }
 
-export function resolveApproval(id: string, status: 'approved' | 'rejected' | 'timeout', resolvedBy: string, telegramMessageId?: number | null): boolean {
-  const now = Math.floor(Date.now() / 1000)
-  return db.prepare(`
-    UPDATE approvals
-    SET status = ?, resolved_at = ?, resolved_by = ?,
-        telegram_message_id = COALESCE(?, telegram_message_id)
-    WHERE id = ? AND status = 'pending'
-  `).run(status, now, resolvedBy, telegramMessageId ?? null, id).changes > 0
-}
+  get(id: string): Approval | undefined {
+    return this.getDb().prepare<Approval, SQLQueryBindings[]>('SELECT * FROM approvals WHERE id = ?').get(id ?? undefined) ?? undefined
+  }
 
-export function listApprovals(opts: {
-  agent_id?: string
-  category?: string
-  status?: string
-  limit?: number
-}): Approval[] {
-  const conditions: string[] = []
-  const params: SQLQueryBindings[] = []
-  if (opts.agent_id) { conditions.push('agent_id = ?'); params.push(opts.agent_id) }
-  if (opts.category) { conditions.push('category = ?'); params.push(opts.category) }
-  if (opts.status) { conditions.push('status = ?'); params.push(opts.status) }
-  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
-  const limit = Math.min(opts.limit ?? 100, 500)
-  params.push(limit)
-  return db.prepare<Approval, SQLQueryBindings[]>(`SELECT * FROM approvals ${where} ORDER BY requested_at DESC LIMIT ?`).all(...params)
+  resolve(id: string, status: 'approved' | 'rejected' | 'timeout', resolvedBy: string, telegramMessageId?: number | null): boolean {
+    const now = Math.floor(Date.now() / 1000)
+    return this.getDb().prepare(`
+      UPDATE approvals
+      SET status = ?, resolved_at = ?, resolved_by = ?,
+          telegram_message_id = COALESCE(?, telegram_message_id)
+      WHERE id = ? AND status = 'pending'
+    `).run(status, now, resolvedBy, telegramMessageId ?? null, id).changes > 0
+  }
+
+  list(opts: {
+    agent_id?: string
+    category?: string
+    status?: string
+    limit?: number
+  }): Approval[] {
+    const conditions: string[] = []
+    const params: SQLQueryBindings[] = []
+    if (opts.agent_id) { conditions.push('agent_id = ?'); params.push(opts.agent_id) }
+    if (opts.category) { conditions.push('category = ?'); params.push(opts.category) }
+    if (opts.status) { conditions.push('status = ?'); params.push(opts.status) }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+    const limit = Math.min(opts.limit ?? 100, 500)
+    params.push(limit)
+    return this.getDb().prepare<Approval, SQLQueryBindings[]>(`SELECT * FROM approvals ${where} ORDER BY requested_at DESC LIMIT ?`).all(...params)
+  }
+
+  expireTimedOut(): number {
+    const now = Math.floor(Date.now() / 1000)
+    return this.getDb().prepare(`
+      UPDATE approvals SET status = 'timeout', resolved_at = ?
+      WHERE status = 'pending' AND timeout_at IS NOT NULL AND timeout_at <= ?
+    `).run(now, now).changes
+  }
 }
 
 // Stamp trace context onto an agent_messages row that was created without one.
@@ -2353,12 +2389,37 @@ export function stampMessageTrace(
   `).run(traceId, spanId, parentSpanId, id).changes > 0
 }
 
+// Module-singleton + thin re-export shim. Free-function callers stay
+// byte-equivalent; new consumers should construct ApprovalStore
+// directly with DI.
+const approvalStore = new ApprovalStore()
+
+export function createApproval(params: {
+  id: string
+  agent_id: string
+  category: string
+  action_description: string
+  action_payload?: string | null
+  timeout_at?: number | null
+}): Approval {
+  return approvalStore.create(params)
+}
+export function getApproval(id: string): Approval | undefined {
+  return approvalStore.get(id)
+}
+export function resolveApproval(id: string, status: 'approved' | 'rejected' | 'timeout', resolvedBy: string, telegramMessageId?: number | null): boolean {
+  return approvalStore.resolve(id, status, resolvedBy, telegramMessageId)
+}
+export function listApprovals(opts: {
+  agent_id?: string
+  category?: string
+  status?: string
+  limit?: number
+}): Approval[] {
+  return approvalStore.list(opts)
+}
 export function expireTimedOutApprovals(): number {
-  const now = Math.floor(Date.now() / 1000)
-  return db.prepare(`
-    UPDATE approvals SET status = 'timeout', resolved_at = ?
-    WHERE status = 'pending' AND timeout_at IS NOT NULL AND timeout_at <= ?
-  `).run(now, now).changes
+  return approvalStore.expireTimedOut()
 }
 
 // --- OTel Distributed Tracing ---
