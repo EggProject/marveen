@@ -2275,9 +2275,8 @@ export interface Approval {
 
 // Per-entity store for the approvals table (HITL). Constructed with a
 // bun:sqlite handle accessor and a logger; the module-singleton below
-// is reached by free-function callers through the thin shim. Phase 7
-// will move the singleton into App; new consumers should construct
-// ApprovalStore directly with DI. The accessor resolves the current
+// is reached by free-function callers through the thin shim. New
+// consumers construct ApprovalStore directly with DI. The accessor resolves the current
 // handle on every call so the module-level `let db` can be replaced by
 // initDatabase() without rebinding the singleton.
 export class ApprovalStore {
@@ -2291,8 +2290,8 @@ export class ApprovalStore {
     // that vi.mock('../db.js') do NOT touch this constructor at all --
     // the mock replaces the module-level free functions, which the
     // shim below delegates to. The deps object is optional so the
-    // call-site `new ApprovalStore()` (e.g. test fixtures, future
-    // Phase 7 wiring) stays zero-argument.
+    // call-site `new ApprovalStore()` stays zero-argument for module-
+    // singleton usage.
     this.getDb = deps?.getDb ?? getDb
     this.log = deps?.log ?? logger
   }
