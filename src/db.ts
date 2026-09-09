@@ -2274,26 +2274,24 @@ export interface Approval {
 // one-to-one and the diff is greppable from the old to the new form.
 
 // Per-entity store for the approvals table (HITL). Constructed with a
-// bun:sqlite handle accessor and a logger; the module-singleton below
-// is reached by free-function callers through the thin shim. New
-// consumers construct ApprovalStore directly with DI. The accessor resolves the current
+// bun:sqlite handle accessor; the module-singleton below is reached by
+// free-function callers through the thin shim. New consumers construct
+// ApprovalStore directly with DI. The accessor resolves the current
 // handle on every call so the module-level `let db` can be replaced by
 // initDatabase() without rebinding the singleton.
 export class ApprovalStore {
   private readonly getDb: () => Database
-  private readonly log: LoggerLike
 
-  constructor(deps?: { getDb?: () => Database; log?: LoggerLike }) {
-    // Production: defaults evaluate to the module-level getDb() and
-    // logger so the module-singleton works without DI. Tests that pass
-    // a custom getDb via the constructor override the closure; tests
-    // that vi.mock('../db.js') do NOT touch this constructor at all --
-    // the mock replaces the module-level free functions, which the
-    // shim below delegates to. The deps object is optional so the
-    // call-site `new ApprovalStore()` stays zero-argument for module-
-    // singleton usage.
+  constructor(deps?: { getDb?: () => Database }) {
+    // Production: the default evaluates to the module-level getDb() so
+    // the module-singleton works without DI. Tests that pass a custom
+    // getDb via the constructor override the closure; tests that
+    // vi.mock('../db.js') do NOT touch this constructor at all -- the
+    // mock replaces the module-level free functions, which the shim
+    // below delegates to. The deps object is optional so the call-site
+    // `new ApprovalStore()` stays zero-argument for module-singleton
+    // usage.
     this.getDb = deps?.getDb ?? getDb
-    this.log = deps?.log ?? logger
   }
 
   create(params: {

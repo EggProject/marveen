@@ -7,14 +7,14 @@
 // own intent in its it() title and in the comment directly above it.
 //
 // Sandbox: each test creates its own `new Database(':memory:')` via the
-// createSchema() helper, then constructs `new ApprovalStore({ getDb: () => db,
-// log: noopLog })` with a closure that resolves the live handle on every
-// method invocation. This mirrors the module-singleton's `new ApprovalStore()`
-// shape (which defaults deps to getDb + logger) while giving each test a
-// fresh, isolated schema.
+// createSchema() helper, then constructs `new ApprovalStore({ getDb: () => db })`
+// with a closure that resolves the live handle on every method invocation.
+// This mirrors the module-singleton's `new ApprovalStore()` shape (which
+// defaults deps to the module-level getDb) while giving each test a fresh,
+// isolated schema.
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { Database } from 'bun:sqlite'
+import { Database, type SQLQueryBindings } from 'bun:sqlite'
 import { runScript } from '../db/sqlite.js'
 import type { LoggerLike } from '../logger.js'
 import type { ApprovalStore as ApprovalStoreType } from '../db.js'
@@ -26,8 +26,8 @@ beforeAll(async () => {
   ApprovalStore = mod.ApprovalStore
 })
 
-// Same shape as src/__tests__/process-lock-classes.test.ts:18-20 -- a plain
-// object literal already satisfies LoggerLike structurally, so no cast.
+// noopLog is still used by T13's DbClient.open() factory call (DbClient
+// requires a LoggerLike), but ApprovalStore no longer accepts a logger.
 const noop = (): undefined => undefined
 const noopLog: LoggerLike = { info: noop, warn: noop, error: noop, debug: noop }
 
@@ -60,7 +60,7 @@ function createSchema(db: Database): void {
 function makeStore(): { store: ApprovalStoreType; db: Database } {
   const db = new Database(':memory:')
   createSchema(db)
-  const store = new ApprovalStore({ getDb: () => db, log: noopLog })
+  const store = new ApprovalStore({ getDb: () => db })
   return { store, db }
 }
 
@@ -326,27 +326,27 @@ describe('ApprovalStore class form', () => {
 
   // ---- T11 -----------------------------------------------------------------
   // DI override via constructor deps.getDb. Construct
-  // `new ApprovalStore({ getDb: () => customDb, log: noopLog })` where
-  // customDb is a separate :memory: handle. Write through the store, then
-  // read through `customDb.prepare(...)` directly: the row must be visible
-  // through the raw handle (proving the closure wires through). A
-  // regression where the constructor's DI dep was ignored would leave the
-  // store writing to the wrong (or no) handle.
+  // `new ApprovalStore({ getDb: () => customDb })` where customDb is a
+  // separate :memory: handle. Write through the store, then read through
+  // `customDb.prepare(...)` directly: the row must be visible through the
+  // raw handle (proving the closure wires through). A regression where
+  // the constructor's DI dep was ignored would leave the store writing
+  // to the wrong (or no) handle.
   it('T11: DI override via constructor deps.getDb', () => {
     const customDb = new Database(':memory:')
     try {
       createSchema(customDb)
-      const diStore = new ApprovalStore({ getDb: () => customDb, log: noopLog })
+      const diStore = new ApprovalStore({ getDb: () => customDb })
 
       diStore.create({ id: 'di-1', agent_id: 'a', category: 'c', action_description: 'd' })
 
       // Read through the raw handle: the row MUST be there.
-      const row = customDb.prepare(`SELECT id, status FROM approvals WHERE id = ?`).get('di-1') as { id: string; status: string } | undefined
+      const row = customDb.prepare<{ id: string; status: string }, SQLQueryBindings[]>(`SELECT id, status FROM approvals WHERE id = ?`).get('di-1') ?? undefined
       expect(row?.id).toBe('di-1')
       expect(row?.status).toBe('pending')
 
       // Read through a fresh store on the SAME closure: same row.
-      const sameView = new ApprovalStore({ getDb: () => customDb, log: noopLog })
+      const sameView = new ApprovalStore({ getDb: () => customDb })
       expect(sameView.get('di-1')?.id).toBe('di-1')
     } finally {
       customDb.close()
@@ -392,7 +392,7 @@ describe('ApprovalStore class form', () => {
       noopLog,
       ':memory:',
     )
-    const diStore = new ApprovalStore({ getDb: () => client.getHandle(), log: noopLog })
+    const diStore = new ApprovalStore({ getDb: () => client.getHandle() })
 
     // create
     const created = diStore.create({
@@ -434,7 +434,7 @@ describe('ApprovalStore class form', () => {
     dbModule.initDatabase(':memory:')
 
     // Class-side store (closure over getDb so it sees the same handle)
-    const classStore = new ApprovalStore({ getDb: () => dbModule.getDb(), log: noopLog })
+    const classStore = new ApprovalStore({ getDb: () => dbModule.getDb() })
 
     // 1) create via shim -> both views see it
     dbModule.createApproval({
