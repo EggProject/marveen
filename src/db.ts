@@ -1670,10 +1670,11 @@ export interface IdeaStatusLogRow {
 }
 
 // Per-entity store for idea_box + idea_comments + idea_status_log. Constructed
-// with a bun:sqlite handle accessor and a logger; held by App via the module-
-// singleton and reached by free-function callers through the thin shim below.
-// The accessor resolves the current handle on every call so the module-level
-// `let db` can be replaced by initDatabase() without rebinding the singleton.
+// with a bun:sqlite handle accessor and a logger. There is no production
+// consumer of the class form yet: the only instance is the module-singleton
+// below, reached by free-function callers through the thin shim. The accessor
+// resolves the current handle on every call so the module-level `let db` can
+// be replaced by initDatabase() without rebinding the singleton.
 export class IdeaStore {
   private readonly getDb: () => Database
   private readonly log: LoggerLike
@@ -1689,7 +1690,7 @@ export class IdeaStore {
     if (opts?.status) { q += ' AND status = ?'; params.push(opts.status) }
     if (opts?.category) { q += ' AND category = ?'; params.push(opts.category) }
     q += ' ORDER BY created_at DESC'
-    return this.getDb().prepare(q).all(...params) as IdeaBoxRow[]
+    return this.getDb().prepare<IdeaBoxRow, string[]>(q).all(...params)
   }
 
   create(idea: Omit<IdeaBoxRow, 'created_at' | 'updated_at'>): void {
@@ -1720,24 +1721,27 @@ export class IdeaStore {
   }
 
   categories(): string[] {
-    return (this.getDb().prepare('SELECT DISTINCT category FROM idea_box ORDER BY category').all() as { category: string }[]).map(r => r.category)
+    return this.getDb().prepare<{ category: string }, []>('SELECT DISTINCT category FROM idea_box ORDER BY category').all().map(r => r.category)
   }
 
   comments(ideaId: string): IdeaComment[] {
-    return this.getDb().prepare('SELECT * FROM idea_comments WHERE idea_id = ? ORDER BY created_at ASC').all(ideaId) as IdeaComment[]
+    return this.getDb().prepare<IdeaComment, [string]>('SELECT * FROM idea_comments WHERE idea_id = ? ORDER BY created_at ASC').all(ideaId)
   }
 
   addComment(ideaId: string, author: string, content: string): IdeaComment {
     const now = Math.floor(Date.now() / 1000)
-    const info = this.getDb().prepare(
+    // Resolve the handle once: both statements below belong to one logical
+    // write, so they must not straddle two different handles.
+    const db = this.getDb()
+    const info = db.prepare(
       'INSERT INTO idea_comments (idea_id, author, content, created_at) VALUES (?, ?, ?, ?)'
     ).run(ideaId, author, content, now)
-    this.getDb().prepare('UPDATE idea_box SET updated_at = ? WHERE id = ?').run(now, ideaId)
+    db.prepare('UPDATE idea_box SET updated_at = ? WHERE id = ?').run(now, ideaId)
     return { id: Number(info.lastInsertRowid), idea_id: ideaId, author, content, created_at: now }
   }
 
   statusLog(ideaId: string): IdeaStatusLogRow[] {
-    return this.getDb().prepare('SELECT * FROM idea_status_log WHERE idea_id = ? ORDER BY created_at ASC').all(ideaId) as IdeaStatusLogRow[]
+    return this.getDb().prepare<IdeaStatusLogRow, [string]>('SELECT * FROM idea_status_log WHERE idea_id = ? ORDER BY created_at ASC').all(ideaId)
   }
 
   logStatusChange(
@@ -1754,10 +1758,13 @@ export class IdeaStore {
   }
 
   revertFromKanban(kanbanId: string): string | null {
-    const idea = this.getDb().prepare<{ id: string; status: string }, SQLQueryBindings[]>("SELECT id, status FROM idea_box WHERE kanban_id = ? AND status = 'kanban'").get(kanbanId ?? undefined) ?? undefined
+    // Resolve the handle once: the SELECT and the UPDATE below belong to one
+    // logical write, so they must not straddle two different handles.
+    const db = this.getDb()
+    const idea = db.prepare<{ id: string; status: string }, SQLQueryBindings[]>("SELECT id, status FROM idea_box WHERE kanban_id = ? AND status = 'kanban'").get(kanbanId) ?? undefined
     if (!idea) return null
     const now = Math.floor(Date.now() / 1000)
-    this.getDb().prepare("UPDATE idea_box SET status = 'reviewed', kanban_id = NULL, updated_at = ? WHERE id = ?").run(now, idea.id)
+    db.prepare("UPDATE idea_box SET status = 'reviewed', kanban_id = NULL, updated_at = ? WHERE id = ?").run(now, idea.id)
     this.logStatusChange(idea.id, 'kanban', 'reviewed', 'system', `Kanban card removed: ${kanbanId}`)
     return idea.id
   }

@@ -1,28 +1,10 @@
-// Tests for the class form invariants of src/db.ts:1634 IdeaStore cluster.
+// Tests for the class form invariants of src/db.ts:1672 IdeaStore cluster.
 //
 // The free-function form (listIdeas / createIdea / updateIdea / ...) is
 // covered by src/__tests__/db-100.test.ts idea_box / comments + status log +
-// revert describe blocks. This file adds 15 it() blocks per the plan that
-// specifically exercise the IdeaStore class:
-//
-//   1. list() default order (created_at DESC, no filter)
-//   2. list() status filter
-//   3. create() round-trip (timestamps stamped + row persisted)
-//   4. update() patch fields (all 7 patchable fields round-trip)
-//   5. update() missing id returns false; existing id returns true
-//   6. delete() idempotent (true then false)
-//   7. categories() DISTINCT sorted
-//   8. addComment() bumps parent idea's updated_at
-//   9. comments() ASC order
-//   10. statusLog() preserves from/to/actor/note for both rows
-//   11. revertFromKanban() flips status, nulls kanban_id, appends log row
-//   12. Per-instance isolation (two IdeaStores on independent :memory: handles)
-//   13. Shim path: free-fn shim delegates to the module-singleton after
-//       initDatabase(':memory:') is called
-//   14. DbClient.open(':memory:') end-to-end integration (create→list→
-//       update→delete with concrete id round-trip)
-//   15. Cross-form regression: free-fn shim and class method produce the
-//       same row snapshot for the same write sequence on the same DB handle
+// revert describe blocks. This file adds 15 it() blocks (T1-T15) that
+// specifically exercise the IdeaStore class; each block states its own intent
+// in its it() title and in the comment directly above it.
 //
 // Sandbox: each test creates its own `new Database(':memory:')` via the
 // createSchema() helper, then constructs `new IdeaStore(() => db, noopLog)`
@@ -43,20 +25,19 @@ beforeAll(async () => {
   IdeaStore = mod.IdeaStore
 })
 
-function noopLog(): LoggerLike {
-  return {
-    info: () => undefined,
-    warn: () => undefined,
-    error: () => undefined,
-    debug: () => undefined,
-  } as unknown as LoggerLike
-}
+// Same shape as src/__tests__/process-lock-classes.test.ts:18-20 -- a plain
+// object literal already satisfies LoggerLike structurally, so no cast.
+const noop = (): undefined => undefined
+const noopLog: LoggerLike = { info: noop, warn: noop, error: noop, debug: noop }
 
-// Mirror of the production schema (src/db.ts:3070-3115) so the class methods
+// Mirror of the production schema (src/db.ts:3121-3163) so the class methods
 // see the same CHECK constraints + impact/effort columns + indexes they would
 // on the live store. impact/effort are added via ALTER in production (post-
-// release columns); we replicate the same idempotent ALTER shape here so the
-// test schema matches the production migration end-state.
+// release columns); we replicate the same ALTER shape here so the test schema
+// matches the production migration end-state. No try/catch around the ALTERs:
+// every caller passes a freshly created `new Database(':memory:')`, so the
+// columns can never pre-exist and a throw here is a real schema error that
+// must not be swallowed.
 function createSchema(db: Database): void {
   runScript(db, `
     CREATE TABLE IF NOT EXISTS idea_box (
@@ -73,8 +54,8 @@ function createSchema(db: Database): void {
   `)
   runScript(db, `CREATE INDEX IF NOT EXISTS idx_idea_box_status ON idea_box(status)`)
   runScript(db, `CREATE INDEX IF NOT EXISTS idx_idea_box_category ON idea_box(category)`)
-  try { runScript(db, 'ALTER TABLE idea_box ADD COLUMN impact INTEGER') } catch { /* already exists */ }
-  try { runScript(db, 'ALTER TABLE idea_box ADD COLUMN effort INTEGER') } catch { /* already exists */ }
+  runScript(db, 'ALTER TABLE idea_box ADD COLUMN impact INTEGER')
+  runScript(db, 'ALTER TABLE idea_box ADD COLUMN effort INTEGER')
   runScript(db, `
     CREATE TABLE IF NOT EXISTS idea_comments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -102,7 +83,7 @@ function createSchema(db: Database): void {
 function makeStore(): { store: IdeaStoreType; db: Database } {
   const db = new Database(':memory:')
   createSchema(db)
-  const store = new IdeaStore(() => db, noopLog())
+  const store = new IdeaStore(() => db, noopLog)
   return { store, db }
 }
 
@@ -257,27 +238,25 @@ describe('IdeaStore class form', () => {
   })
 
   // ---- T8 ------------------------------------------------------------------
-  // addComment() bumps the parent idea's updated_at. Snapshot the parent's
-  // updated_at before the call; after the call the parent's updated_at
-  // must be strictly greater. A regression that forgot the UPDATE on the
-  // parent would leave the timestamp unchanged and fail this assertion.
+  // addComment() bumps the parent idea's updated_at. The parent row is seeded
+  // with a fixed updated_at of 100 via direct SQL (the same technique T1/T2/
+  // T7/T9/T10/T11 use) instead of advancing the wall clock, so the assertion
+  // is deterministic and the test costs no wall-clock time. addComment stamps
+  // Math.floor(Date.now() / 1000) (src/db.ts addComment), which on any real
+  // clock is ~1.7e9 -- far above the seed. A regression that forgot the
+  // UPDATE on the parent would leave updated_at at exactly 100 and fail both
+  // assertions below.
   it('T8: addComment() bumps the parent idea updated_at', () => {
-    store.create(ideaFixture({ id: 'i-1', title: 'a' }))
-    const beforeUpdatedAt = store.list()[0].updated_at
+    const seededUpdatedAt = 100
+    db.prepare(`INSERT INTO idea_box (id, title, category, status, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`).run('i-1', 'a', 'A', 'new', 'me', seededUpdatedAt, seededUpdatedAt)
+    expect(store.list()[0].updated_at).toBe(seededUpdatedAt)
 
-    // Advance the clock so the parent update produces a strictly greater
-    // timestamp. Real DBs use seconds resolution; one second is enough.
-    const oneSecond = 1
-    // Wait by spinning on Date.now in case of fast machines; we already
-    // round to seconds so a setTimeout is the most reliable approach.
-    // Use a synchronous sleep fallback for very fast clocks.
-    const waitStart = Date.now()
-    while (Date.now() - waitStart < (oneSecond + 0.05) * 1000) { /* spin */ }
-
+    const before = Math.floor(Date.now() / 1000)
     store.addComment('i-1', 'me', 'hello')
     const afterUpdatedAt = store.list()[0].updated_at
 
-    expect(afterUpdatedAt).toBeGreaterThan(beforeUpdatedAt)
+    expect(afterUpdatedAt).toBeGreaterThan(seededUpdatedAt)
+    expect(afterUpdatedAt).toBeGreaterThanOrEqual(before)
   })
 
   // ---- T9 ------------------------------------------------------------------
@@ -350,20 +329,24 @@ describe('IdeaStore class form', () => {
   it('T12: per-instance isolation (two IdeaStores on independent :memory: handles)', () => {
     const ctxA = makeStore()
     const ctxB = makeStore()
-    const storeA = ctxA.store
-    const storeB = ctxB.store
+    try {
+      const storeA = ctxA.store
+      const storeB = ctxB.store
 
-    expect(storeA.list().length).toBe(0)
-    expect(storeB.list().length).toBe(0)
+      expect(storeA.list().length).toBe(0)
+      expect(storeB.list().length).toBe(0)
 
-    storeB.create(ideaFixture({ id: 'i-B', title: 'B' }))
+      storeB.create(ideaFixture({ id: 'i-B', title: 'B' }))
 
-    expect(storeA.list().length).toBe(0)
-    expect(storeB.list().length).toBe(1)
-    expect(storeB.list()[0].id).toBe('i-B')
-
-    ctxA.db.close()
-    ctxB.db.close()
+      expect(storeA.list().length).toBe(0)
+      expect(storeB.list().length).toBe(1)
+      expect(storeB.list()[0].id).toBe('i-B')
+    } finally {
+      // Close on the failure path too; a throwing assertion above must not
+      // leak the two extra :memory: handles this test opened.
+      ctxA.db.close()
+      ctxB.db.close()
+    }
   })
 
   // ---- T13 -----------------------------------------------------------------
@@ -395,8 +378,10 @@ describe('IdeaStore class form', () => {
     expect(dbModule.listIdeas().length).toBe(1)
     expect(dbModule.listIdeas()[0].id).toBe('shim-1')
 
-    // Cleanup: close the in-memory handle so other test files that import
-    // the module see a clean slate.
+    // Cleanup: close the in-memory handle. vitest already isolates the module
+    // registry per test FILE (isolate defaults to true), so this is not about
+    // other files -- it keeps the module-level `db` from being left open for
+    // the remaining it() blocks in this file.
     dbModule.getDb().close()
   })
 
@@ -410,10 +395,10 @@ describe('IdeaStore class form', () => {
     const cfgModule = await import('../config.js')
     const client = dbModule.DbClient.open(
       { STORE_DIR: cfgModule.STORE_DIR, DB_FILENAME: cfgModule.DB_FILENAME, PROJECT_ROOT: cfgModule.PROJECT_ROOT },
-      noopLog(),
+      noopLog,
       ':memory:',
     )
-    const store = new IdeaStore(() => client.getHandle(), noopLog())
+    const store = new IdeaStore(() => client.getHandle(), noopLog)
 
     // create
     store.create({
@@ -460,7 +445,7 @@ describe('IdeaStore class form', () => {
     dbModule.initDatabase(':memory:')
 
     // Class-side store (closure over getDb so it sees the same handle)
-    const classStore = new IdeaStore(() => dbModule.getDb(), noopLog())
+    const classStore = new IdeaStore(() => dbModule.getDb(), noopLog)
 
     // 1) create via shim -> both views see it
     dbModule.createIdea({
