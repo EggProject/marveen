@@ -1647,46 +1647,6 @@ export interface IdeaBoxRow {
   updated_at: number
 }
 
-export function listIdeas(opts?: { status?: string; category?: string }): IdeaBoxRow[] {
-  let q = 'SELECT * FROM idea_box WHERE 1=1'
-  const params: string[] = []
-  if (opts?.status) { q += ' AND status = ?'; params.push(opts.status) }
-  if (opts?.category) { q += ' AND category = ?'; params.push(opts.category) }
-  q += ' ORDER BY created_at DESC'
-  return db.prepare(q).all(...params) as IdeaBoxRow[]
-}
-
-export function createIdea(idea: Omit<IdeaBoxRow, 'created_at' | 'updated_at'>): void {
-  const now = Math.floor(Date.now() / 1000)
-  db.prepare(
-    `INSERT INTO idea_box (id, title, description, category, status, source, kanban_id, impact, effort, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(idea.id, idea.title, idea.description ?? null, idea.category, idea.status, idea.source, idea.kanban_id ?? null, idea.impact ?? null, idea.effort ?? null, now, now)
-}
-
-export function updateIdea(id: string, patch: Partial<Pick<IdeaBoxRow, 'title' | 'description' | 'category' | 'status' | 'kanban_id' | 'impact' | 'effort'>>): boolean {
-  const now = Math.floor(Date.now() / 1000)
-  const sets: string[] = ['updated_at = ?']
-  const params: SQLQueryBindings[] = [now]
-  if (patch.title !== undefined) { sets.push('title = ?'); params.push(patch.title) }
-  if (patch.description !== undefined) { sets.push('description = ?'); params.push(patch.description) }
-  if (patch.category !== undefined) { sets.push('category = ?'); params.push(patch.category) }
-  if (patch.status !== undefined) { sets.push('status = ?'); params.push(patch.status) }
-  if (patch.kanban_id !== undefined) { sets.push('kanban_id = ?'); params.push(patch.kanban_id) }
-  if (patch.impact !== undefined) { sets.push('impact = ?'); params.push(patch.impact) }
-  if (patch.effort !== undefined) { sets.push('effort = ?'); params.push(patch.effort) }
-  params.push(id)
-  return db.prepare<unknown, SQLQueryBindings[]>(`UPDATE idea_box SET ${sets.join(', ')} WHERE id = ?`).run(...params).changes > 0
-}
-
-export function deleteIdea(id: string): boolean {
-  return db.prepare('DELETE FROM idea_box WHERE id = ?').run(id).changes > 0
-}
-
-export function listIdeaCategories(): string[] {
-  return (db.prepare('SELECT DISTINCT category FROM idea_box ORDER BY category').all() as { category: string }[]).map(r => r.category)
-}
-
 // --- Idea Comments ---
 
 export interface IdeaComment {
@@ -1695,19 +1655,6 @@ export interface IdeaComment {
   author: string
   content: string
   created_at: number
-}
-
-export function getIdeaComments(ideaId: string): IdeaComment[] {
-  return db.prepare('SELECT * FROM idea_comments WHERE idea_id = ? ORDER BY created_at ASC').all(ideaId) as IdeaComment[]
-}
-
-export function addIdeaComment(ideaId: string, author: string, content: string): IdeaComment {
-  const now = Math.floor(Date.now() / 1000)
-  const info = db.prepare(
-    'INSERT INTO idea_comments (idea_id, author, content, created_at) VALUES (?, ?, ?, ?)'
-  ).run(ideaId, author, content, now)
-  db.prepare('UPDATE idea_box SET updated_at = ? WHERE id = ?').run(now, ideaId)
-  return { id: Number(info.lastInsertRowid), idea_id: ideaId, author, content, created_at: now }
 }
 
 // --- Idea Status Log ---
@@ -1722,6 +1669,120 @@ export interface IdeaStatusLogRow {
   created_at: number
 }
 
+// Per-entity store for idea_box + idea_comments + idea_status_log. Constructed
+// with a bun:sqlite handle accessor and a logger; held by App via the module-
+// singleton and reached by free-function callers through the thin shim below.
+// The accessor resolves the current handle on every call so the module-level
+// `let db` can be replaced by initDatabase() without rebinding the singleton.
+export class IdeaStore {
+  private readonly getDb: () => Database
+  private readonly log: LoggerLike
+
+  constructor(getDb: () => Database, log: LoggerLike) {
+    this.getDb = getDb
+    this.log = log
+  }
+
+  list(opts?: { status?: string; category?: string }): IdeaBoxRow[] {
+    let q = 'SELECT * FROM idea_box WHERE 1=1'
+    const params: string[] = []
+    if (opts?.status) { q += ' AND status = ?'; params.push(opts.status) }
+    if (opts?.category) { q += ' AND category = ?'; params.push(opts.category) }
+    q += ' ORDER BY created_at DESC'
+    return this.getDb().prepare(q).all(...params) as IdeaBoxRow[]
+  }
+
+  create(idea: Omit<IdeaBoxRow, 'created_at' | 'updated_at'>): void {
+    const now = Math.floor(Date.now() / 1000)
+    this.getDb().prepare(
+      `INSERT INTO idea_box (id, title, description, category, status, source, kanban_id, impact, effort, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(idea.id, idea.title, idea.description ?? null, idea.category, idea.status, idea.source, idea.kanban_id ?? null, idea.impact ?? null, idea.effort ?? null, now, now)
+  }
+
+  update(id: string, patch: Partial<Pick<IdeaBoxRow, 'title' | 'description' | 'category' | 'status' | 'kanban_id' | 'impact' | 'effort'>>): boolean {
+    const now = Math.floor(Date.now() / 1000)
+    const sets: string[] = ['updated_at = ?']
+    const params: SQLQueryBindings[] = [now]
+    if (patch.title !== undefined) { sets.push('title = ?'); params.push(patch.title) }
+    if (patch.description !== undefined) { sets.push('description = ?'); params.push(patch.description) }
+    if (patch.category !== undefined) { sets.push('category = ?'); params.push(patch.category) }
+    if (patch.status !== undefined) { sets.push('status = ?'); params.push(patch.status) }
+    if (patch.kanban_id !== undefined) { sets.push('kanban_id = ?'); params.push(patch.kanban_id) }
+    if (patch.impact !== undefined) { sets.push('impact = ?'); params.push(patch.impact) }
+    if (patch.effort !== undefined) { sets.push('effort = ?'); params.push(patch.effort) }
+    params.push(id)
+    return this.getDb().prepare<unknown, SQLQueryBindings[]>(`UPDATE idea_box SET ${sets.join(', ')} WHERE id = ?`).run(...params).changes > 0
+  }
+
+  delete(id: string): boolean {
+    return this.getDb().prepare('DELETE FROM idea_box WHERE id = ?').run(id).changes > 0
+  }
+
+  categories(): string[] {
+    return (this.getDb().prepare('SELECT DISTINCT category FROM idea_box ORDER BY category').all() as { category: string }[]).map(r => r.category)
+  }
+
+  comments(ideaId: string): IdeaComment[] {
+    return this.getDb().prepare('SELECT * FROM idea_comments WHERE idea_id = ? ORDER BY created_at ASC').all(ideaId) as IdeaComment[]
+  }
+
+  addComment(ideaId: string, author: string, content: string): IdeaComment {
+    const now = Math.floor(Date.now() / 1000)
+    const info = this.getDb().prepare(
+      'INSERT INTO idea_comments (idea_id, author, content, created_at) VALUES (?, ?, ?, ?)'
+    ).run(ideaId, author, content, now)
+    this.getDb().prepare('UPDATE idea_box SET updated_at = ? WHERE id = ?').run(now, ideaId)
+    return { id: Number(info.lastInsertRowid), idea_id: ideaId, author, content, created_at: now }
+  }
+
+  statusLog(ideaId: string): IdeaStatusLogRow[] {
+    return this.getDb().prepare('SELECT * FROM idea_status_log WHERE idea_id = ? ORDER BY created_at ASC').all(ideaId) as IdeaStatusLogRow[]
+  }
+
+  logStatusChange(
+    ideaId: string,
+    fromStatus: string | null,
+    toStatus: string,
+    actor: string,
+    note?: string,
+  ): void {
+    const now = Math.floor(Date.now() / 1000)
+    this.getDb().prepare(
+      'INSERT INTO idea_status_log (idea_id, from_status, to_status, actor, note, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run(ideaId, fromStatus ?? null, toStatus, actor, note ?? null, now)
+  }
+
+  revertFromKanban(kanbanId: string): string | null {
+    const idea = this.getDb().prepare<{ id: string; status: string }, SQLQueryBindings[]>("SELECT id, status FROM idea_box WHERE kanban_id = ? AND status = 'kanban'").get(kanbanId ?? undefined) ?? undefined
+    if (!idea) return null
+    const now = Math.floor(Date.now() / 1000)
+    this.getDb().prepare("UPDATE idea_box SET status = 'reviewed', kanban_id = NULL, updated_at = ? WHERE id = ?").run(now, idea.id)
+    this.logStatusChange(idea.id, 'kanban', 'reviewed', 'system', `Kanban card removed: ${kanbanId}`)
+    return idea.id
+  }
+}
+
+// Module-singleton + thin re-export shim. Free-function callers stay
+// byte-equivalent; new consumers should construct IdeaStore directly with DI.
+const ideaStore = new IdeaStore(getDb, logger)
+
+export function listIdeas(opts?: { status?: string; category?: string }): IdeaBoxRow[] {
+  return ideaStore.list(opts)
+}
+export function createIdea(idea: Omit<IdeaBoxRow, 'created_at' | 'updated_at'>): void {
+  ideaStore.create(idea)
+}
+export function updateIdea(id: string, patch: Partial<Pick<IdeaBoxRow, 'title' | 'description' | 'category' | 'status' | 'kanban_id' | 'impact' | 'effort'>>): boolean {
+  return ideaStore.update(id, patch)
+}
+export function deleteIdea(id: string): boolean { return ideaStore.delete(id) }
+export function listIdeaCategories(): string[] { return ideaStore.categories() }
+export function getIdeaComments(ideaId: string): IdeaComment[] { return ideaStore.comments(ideaId) }
+export function addIdeaComment(ideaId: string, author: string, content: string): IdeaComment {
+  return ideaStore.addComment(ideaId, author, content)
+}
+export function getIdeaStatusLog(ideaId: string): IdeaStatusLogRow[] { return ideaStore.statusLog(ideaId) }
 export function logIdeaStatusChange(
   ideaId: string,
   fromStatus: string | null,
@@ -1729,25 +1790,12 @@ export function logIdeaStatusChange(
   actor: string,
   note?: string,
 ): void {
-  const now = Math.floor(Date.now() / 1000)
-  db.prepare(
-    'INSERT INTO idea_status_log (idea_id, from_status, to_status, actor, note, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-  ).run(ideaId, fromStatus ?? null, toStatus, actor, note ?? null, now)
+  ideaStore.logStatusChange(ideaId, fromStatus, toStatus, actor, note)
 }
-
-export function getIdeaStatusLog(ideaId: string): IdeaStatusLogRow[] {
-  return db.prepare('SELECT * FROM idea_status_log WHERE idea_id = ? ORDER BY created_at ASC').all(ideaId) as IdeaStatusLogRow[]
-}
-
 // Revert a promoted idea back to 'reviewed' when its kanban card is deleted or archived.
 // Returns the idea id if a matching idea was found and reverted, null otherwise.
 export function revertIdeaFromKanban(kanbanId: string): string | null {
-  const idea = db.prepare<{ id: string; status: string }, SQLQueryBindings[]>("SELECT id, status FROM idea_box WHERE kanban_id = ? AND status = 'kanban'").get(kanbanId ?? undefined) ?? undefined
-  if (!idea) return null
-  const now = Math.floor(Date.now() / 1000)
-  db.prepare("UPDATE idea_box SET status = 'reviewed', kanban_id = NULL, updated_at = ? WHERE id = ?").run(now, idea.id)
-  logIdeaStatusChange(idea.id, 'kanban', 'reviewed', 'system', `Kanban card removed: ${kanbanId}`)
-  return idea.id
+  return ideaStore.revertFromKanban(kanbanId)
 }
 
 // --- Tool Call Log ---
