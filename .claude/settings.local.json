@@ -1,0 +1,28 @@
+{
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
+  "includeCoAuthoredBy": false,
+  "permissions": {
+    "allow": [
+      "mcp__minimax-mcp-server__web_search",
+      "Bash(bun install *)",
+      "mcp__plugin_honcho_honcho__chat",
+      "mcp__plugin_honcho_honcho__create_conclusion",
+      "Bash(rm -rf $HOME/claw-*)",
+      "Bash(git worktree remove $HOME/claw-* --force)",
+      "Bash(git worktree prune)",
+      "Bash(git merge --ff-only *)"
+    ]
+  },
+  "enabledMcpjsonServers": [
+    "sequential-thinking",
+    "minimax-mcp-server"
+  ],
+  "enabledPlugins": {
+    "honcho@honcho": true
+  },
+  "plansDirectory": ".claude/plans",
+  "autoMemoryEnabled": false
+}

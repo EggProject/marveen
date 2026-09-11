@@ -104,7 +104,10 @@ test("session-start prints nothing on empty stdin when the shared memory index i
   withSharedMemoryIndex(undefined, () => {
     const result = runSessionStartRaw("");
     assert.equal(result.status, 0);
-    assert.equal(result.stdout, "");
+    // Phase 2 leftover section may inject branch names from the cwd.
+    // No memory section (index absent) and no transcript line.
+    assert.doesNotMatch(result.stdout, /\[muhely shared memory\]/);
+    assert.doesNotMatch(result.stdout, /Current session transcript:/);
   });
 });
 
@@ -112,7 +115,11 @@ test("session-start prints nothing when the shared memory index is absent and no
   withSharedMemoryIndex(undefined, () => {
     const result = runSessionStart({});
     assert.equal(result.status, 0);
-    assert.equal(result.stdout, "");
+    // Phase 2 added a leftover section that may inject branch names
+    // from the cwd. Pre-Phase-2 hook asserted strict empty stdout; we
+    // relax that here -- no memory section and no transcript line.
+    assert.doesNotMatch(result.stdout, /\[muhely shared memory\]/);
+    assert.doesNotMatch(result.stdout, /Current session transcript:/);
   });
 });
 
@@ -146,7 +153,15 @@ test("shared memory index is capped at 25600 bytes when it fits within 200 lines
     const prefix =
       '[muhely shared memory]\nRead one topic with `pnpm claude:memory read <topic>`, search with `pnpm claude:memory search "<query>"`. Do not open these files directly.\n';
     assert.ok(result.stdout.startsWith(prefix));
-    const capped = result.stdout.slice(prefix.length, -1);
+    // Isolate the memory section content. Phase 2 added a leftover
+    // section that may follow the memory section in stdout -- slice
+    // only up to the next [muhely marker so the assertion tests the
+    // memory cap in isolation.
+    const afterPrefix = result.stdout.slice(prefix.length);
+    const nextSectionIdx = afterPrefix.search(/\n\[muhely /);
+    const capped = nextSectionIdx >= 0
+      ? afterPrefix.slice(0, nextSectionIdx).slice(0, -1)
+      : afterPrefix.slice(0, -1);
     assert.equal(Buffer.byteLength(capped, "utf8"), 25_600);
     assert.ok(capped.length < longLine.length);
   });
@@ -160,7 +175,13 @@ test("shared memory index cap never splits a UTF-8 character even when the byte 
     const prefix =
       '[muhely shared memory]\nRead one topic with `pnpm claude:memory read <topic>`, search with `pnpm claude:memory search "<query>"`. Do not open these files directly.\n';
     assert.ok(result.stdout.startsWith(prefix));
-    const capped = result.stdout.slice(prefix.length, -1);
+    // Isolate the memory section content (Phase 2 leftover section may
+    // follow). The byteLength assertion tests the cap in isolation.
+    const afterPrefix = result.stdout.slice(prefix.length);
+    const nextSectionIdx = afterPrefix.search(/\n\[muhely /);
+    const capped = nextSectionIdx >= 0
+      ? afterPrefix.slice(0, nextSectionIdx).slice(0, -1)
+      : afterPrefix.slice(0, -1);
     assert.ok(!capped.includes("�"));
     assert.ok(Buffer.byteLength(capped, "utf8") <= 25_600);
   });

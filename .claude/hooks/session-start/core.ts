@@ -16,6 +16,12 @@ export const RETRO_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
 /** Maximum number of pending sessions offered at once. */
 export const RETRO_LIMIT = 3;
 
+/** Worktree paths + branch names that a previous session created but never cleaned up. */
+export interface SessionLeftoverState {
+  readonly worktreePaths: readonly string[];
+  readonly branchNames: readonly string[];
+}
+
 /** Formats one pending-session line for the SessionStart message. */
 function formatPendingSessionLine(session: UnprocessedSession): string {
   const lastActive = new Date(session.modifiedAt).toISOString();
@@ -38,16 +44,41 @@ ${memoryIndexContent}`;
 }
 
 /**
- * Builds the full SessionStart stdout payload from only the parts that have
- * content, in order: a line naming the current session's transcript path
- * when known, a shared memory section when the memory index has content,
- * and a pending retrospectives section when there are unprocessed finished
- * sessions. Returns an empty string when every part is empty.
+ * Builds the leftover-state section listing session-created worktrees
+ * and merged-but-undeleted branches that a prior session left behind.
+ * The Stop hook will block the next session from ending until these are
+ * cleaned up, so surfacing them here gives the next session an early
+ * chance to act (rather than carrying the burden into the Stop hook).
+ */
+function buildLeftoverSection(leftover: SessionLeftoverState): string {
+  const lines: string[] = [];
+  for (const p of leftover.worktreePaths) {
+    lines.push(`  - worktree: ${p}`);
+  }
+  for (const b of leftover.branchNames) {
+    lines.push(`  - branch: ${b}`);
+  }
+  return `[muhely leftover worktrees / branches]
+A previous Claude Code session created these resources and did not clean them up. They block the Stop hook from allowing the next session to end. Clean them up first:
+- worktrees: \`git worktree remove <path> --force\`, then \`git worktree prune\`
+- branches: \`git branch -d <branch>\` (safe when merged into refactor/classbase)
+See \`.claude/rules/worktree-cleanup.md\` for the full cleanup protocol.
+${lines.join("\n")}`;
+}
+
+/**
+ * Builds the full SessionStart stdout payload from four parts, in order:
+ * 1. Current session transcript line (when known)
+ * 2. Shared memory section (when memory index has content)
+ * 3. Leftover-state section (when a prior session left resources)
+ * 4. Pending retrospectives section (when unprocessed sessions exist)
+ * Returns an empty string when every part is empty.
  */
 export function buildSessionStartMessage(
   memoryIndexContent: string | undefined,
   pending: readonly UnprocessedSession[],
   currentTranscriptPath: string | undefined,
+  leftover?: SessionLeftoverState,
 ): string {
   const parts: string[] = [];
   if (currentTranscriptPath !== undefined) {
@@ -55,6 +86,12 @@ export function buildSessionStartMessage(
   }
   if (memoryIndexContent !== undefined && memoryIndexContent.length > 0) {
     parts.push(buildMemorySection(memoryIndexContent));
+  }
+  if (
+    leftover !== undefined &&
+    (leftover.worktreePaths.length > 0 || leftover.branchNames.length > 0)
+  ) {
+    parts.push(buildLeftoverSection(leftover));
   }
   if (pending.length > 0) {
     parts.push(buildPendingSection(pending));
