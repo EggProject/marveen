@@ -68,7 +68,13 @@ let inflightRefresh: Promise<PeerStatus[]> | null = null
  *  escape as a typed rejection so the interval timer's .catch handler
  *  can log it instead of silently swallowing it. */
 export class FederationPollInternalError extends AppError {
-  constructor(public readonly peerId: string, public readonly cause: unknown) {
+  constructor(public readonly peerId: string, cause: unknown) {
+    // Drop the `public readonly cause` parameter property: it would emit a
+    // class-field defineProperty that overrides the ES2022 ErrorOptions
+    // descriptor to enumerable:true (useDefineForClassFields semantics),
+    // causing cause to appear in Object.keys/JSON.stringify and breaking the
+    // pino + Error.prototype.cause invariant. The ErrorOptions path here
+    // already populates `e.cause` correctly without the redundant field.
     super(`federation poller: internal error for peer ${peerId}`, { cause })
   }
 }

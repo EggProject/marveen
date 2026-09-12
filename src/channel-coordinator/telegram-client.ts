@@ -12,14 +12,14 @@
 // poller, so there is no 409 Conflict; a 409 here means the native came back
 // and the coordinator yields.
 
+import { AppError } from '../errors.js'
+
 const API_BASE = 'https://api.telegram.org'
 
 // allowed_updates whitelist sent on every poll. callback_query is included so
 // the coordinator at least records inline-button presses, even though the
 // permission-relay path (notifications/claude/channel/permission) is a known
 // gap in outbound-only mode -- see the design risk register.
-
-import { AppError } from '../errors.js'
 
 export const ALLOWED_UPDATES = ['message', 'edited_message', 'channel_post', 'callback_query'] as const
 

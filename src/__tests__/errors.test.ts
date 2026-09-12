@@ -123,8 +123,12 @@ describe('AppError', () => {
     expect(e.retryAfterSec).toBe(30)
   })
 
-  // (13) TelegramApiError: retryAfterSec is optional
-  it('TelegramApiError transient has no retryAfterSec', () => {
+  // (13) TelegramApiError: retryAfterSec is optional. The class-field
+  // defineProperty of `public readonly retryAfterSec?: number` creates an own
+  // property with value undefined (the parameter property still runs even when
+  // the positional arg is omitted), so the assertion checks the VALUE rather
+  // than the property's presence.
+  it('TelegramApiError transient has retryAfterSec === undefined when omitted', () => {
     const e = new TelegramApiError('transient', 'network error: connect ECONNREFUSED')
     expect(e).toBeInstanceOf(TelegramApiError)
     expect(e.kind).toBe('transient')
@@ -161,8 +165,13 @@ describe('AppError', () => {
     expect(e.message).toBe('Titkosítatlan secret az .mcp.json-ban')
   })
 
-  // (17) FederationPollInternalError: peerId + cause parameter properties
-  it('FederationPollInternalError carries peerId + cause, is instanceof AppError', () => {
+  // (17) FederationPollInternalError: peerId field + cause via ErrorOptions.
+  // The constructor does NOT use a `public readonly cause` parameter property
+  // (it would emit a class-field defineProperty that overrides ErrorOptions to
+  // enumerable:true under useDefineForClassFields semantics), so cause stays
+  // non-enumerable per the pino/JSON.stringify invariant that test (8) pins
+  // for `_ConcreteAppError`. Both classes now share the same invariant.
+  it('FederationPollInternalError carries peerId + cause (non-enumerable), is instanceof AppError', () => {
     const root = new Error('upstream')
     const e = new FederationPollInternalError('teodor', root)
     expect(e).toBeInstanceOf(FederationPollInternalError)
@@ -171,10 +180,8 @@ describe('AppError', () => {
     expect(e.name).toBe('FederationPollInternalError')
     expect(e.peerId).toBe('teodor')
     expect(e.cause).toBe(root)
-    // NOTE: `Object.keys(e)` WILL include 'cause' because the parameter property
-    // assignment overrides the ES2022 non-enumerable descriptor to enumerable:true
-    // (Verifier B R16 empirical proof). We do NOT assert non-enumerability here —
-    // see plan §1.8 note for the pino/ES2022 mechanism analysis.
+    expect(Object.keys(e)).not.toContain('cause')
+    expect(Object.getOwnPropertyDescriptor(e, 'cause')?.enumerable).toBe(false)
   })
 
   // (18) Negative discrimination: subclasses don't collide

@@ -15,10 +15,13 @@
 // `this.name = new.target.name` is required so each concrete subclass reports
 // its own name instead of inheriting `Error`.
 //
-// All production error classes now extend AppError: DeferToPeerError,
-// RemoteEnrollError, TelegramApiError, KeychainUnavailableError, PasswordPolicyError,
-// UserFacingError, FederationPollInternalError. Pre-existing tests' local mock
-// classes still extend Error (their own classes, never asserted instanceof AppError).
+// All production error classes extend AppError: MemoryStoreError (db.ts),
+// RequestBodyTooLargeError (web/http-helpers.ts), PeerResponseTooLargeError
+// (web/federation/http.ts) were the original three; DeferToPeerError,
+// RemoteEnrollError, TelegramApiError, KeychainUnavailableError,
+// PasswordPolicyError, UserFacingError, FederationPollInternalError
+// were migrated in the H.4 cycle. Pre-existing tests' local mock classes
+// still extend Error (their own classes, never asserted instanceof AppError).
 
 export abstract class AppError extends Error {
   constructor(message: string, options?: ErrorOptions) {
