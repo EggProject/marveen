@@ -1,4 +1,4 @@
-// Tests for the class form invariants of src/db.ts:1606 ChannelPairingStore cluster.
+// Tests for the class form invariants of the // --- Pending Channel Requests --- cluster.
 //
 // The free-function form (upsertChannelRequest / listPendingChannelRequests /
 // updateChannelRequestStatus / updateChannelRequestName) is covered by the
@@ -24,7 +24,7 @@ beforeAll(async () => {
   ChannelPairingStore = mod.ChannelPairingStore
 })
 
-// Mirror of the production schema (src/db.ts:3065-3184 migration block).
+// Mirror of the production schema (pending_channel_requests migration block).
 // The CHECK constraint + unique partial index together produce the dedup
 // semantics that upsertRequest relies on. A no-op upsertRequest that skips
 // the SELECT check would silently pass every duplicate insert via the

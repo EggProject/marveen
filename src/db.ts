@@ -1673,9 +1673,9 @@ export class ChannelPairingStore {
   }
 
   listPending(agent: string): PendingChannelRequest[] {
-    return this.getDb().prepare(
+    return this.getDb().prepare<PendingChannelRequest, [string]>(
       "SELECT * FROM pending_channel_requests WHERE agent = ? AND status = 'pending' ORDER BY requested_at DESC"
-    ).all(agent) as PendingChannelRequest[]
+    ).all(agent)
   }
 
   updateStatus(id: number, status: 'approved' | 'denied'): boolean {
