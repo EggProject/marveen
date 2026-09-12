@@ -1649,22 +1649,26 @@ export class ChannelPairingStore {
   }
 }
 
-// Thin pass-throughs: the migration window for callers stays open. Production
-// callers (channel-request-watcher.ts, routes/agents.ts) keep importing the
-// free function names; the module-singleton `new ChannelPairingStore()` is
-// constructed on each call. Byte-equivalent to the previous inline behavior
-// -- no SQL, no timing, no closure capture changes.
+// Module-singleton + thin re-export shim. Same pattern as ApprovalStore /
+// IdeaStore: a single instance shared across all free-fn calls, so callers
+// that import the free function names stay byte-equivalent and new consumers
+// can construct ChannelPairingStore directly with DI. The constructor's
+// default `deps?.getDb ?? getDb` resolves the live module-level handle on
+// every method invocation, so a future initDatabase() rebind is picked up
+// automatically without rewiring the singleton.
+const channelPairingStore = new ChannelPairingStore()
+
 export function upsertChannelRequest(agent: string, channelId: string, userId?: string): boolean {
-  return new ChannelPairingStore().upsertRequest(agent, channelId, userId)
+  return channelPairingStore.upsertRequest(agent, channelId, userId)
 }
 export function listPendingChannelRequests(agent: string): PendingChannelRequest[] {
-  return new ChannelPairingStore().listPending(agent)
+  return channelPairingStore.listPending(agent)
 }
 export function updateChannelRequestStatus(id: number, status: 'approved' | 'denied'): boolean {
-  return new ChannelPairingStore().updateStatus(id, status)
+  return channelPairingStore.updateStatus(id, status)
 }
 export function updateChannelRequestName(id: number, channelName: string): void {
-  return new ChannelPairingStore().updateName(id, channelName)
+  channelPairingStore.updateName(id, channelName)
 }
 
 // --- Idea Box ---

@@ -103,9 +103,7 @@ describe('ChannelPairingStore', () => {
     const rowsB = store.listPending('agent-b')
     expect(rowsA).toHaveLength(1)
     expect(rowsB).toHaveLength(1)
-    const idA = rowsA[0]?.id as number
-    const idB = rowsB[0]?.id as number
-    expect(idA).not.toBe(idB)
+    expect(rowsA[0]?.id).not.toBe(rowsB[0]?.id)
   })
 
   // The seven-day denied-recency override: a row in 'denied' status whose
@@ -218,42 +216,35 @@ describe('ChannelPairingStore', () => {
 
   // ---- free-function wrapper compatibility ---------------------------------
 
-  // The four module-level wrappers must exist as named exports of db.js
-  // (so production callers and vi.mock('../db.js') sites keep working)
-  // and have the same arity as the class methods they delegate to. A
-  // no-op refactor that removed any of the four exports would fail the
-  // typeof check; one that added extra required parameters would fail
-  // the arity check.
-  it('the four module-level wrappers exist as named exports with the expected arity', async () => {
-    const mod = await import('../db.js')
-    const { upsertChannelRequest, listPendingChannelRequests, updateChannelRequestStatus, updateChannelRequestName } = mod
+  // T12-equivalent (mirrors approval-store-classes.test.ts T12). The four
+  // module-level wrappers must wire through to the live module-singleton
+  // after initDatabase(':memory:'). Without this assertion, a no-op stub
+  // `function upsertChannelRequest() { return true }` would pass the
+  // previous typeof/arity checks but fail here, because listPending would
+  // return [] (no row was inserted). Production callers in
+  // channel-request-watcher.ts and routes/agents.ts rely on the shim
+  // writing to the same handle the rest of the module sees.
+  it('the four free-fn shims write through the module-singleton after initDatabase', async () => {
+    const dbModule = await import('../db.js')
+    dbModule.initDatabase(':memory:')
 
-    expect(typeof upsertChannelRequest).toBe('function')
-    expect(typeof listPendingChannelRequests).toBe('function')
-    expect(typeof updateChannelRequestStatus).toBe('function')
-    expect(typeof updateChannelRequestName).toBe('function')
+    expect(dbModule.upsertChannelRequest('shim-agent', 'C1', 'U1')).toBe(true)
+    const rows = dbModule.listPendingChannelRequests('shim-agent')
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.user_id).toBe('U1')
+    const id = rows[0]?.id
+    expect(typeof id).toBe('number')
 
-    // Arity must match the original signatures: upsert takes (agent, channelId, userId?),
-    // list takes (agent), updateStatus takes (id, status), updateName takes (id, channelName).
-    expect(upsertChannelRequest.length).toBe(3)
-    expect(listPendingChannelRequests.length).toBe(1)
-    expect(updateChannelRequestStatus.length).toBe(2)
-    expect(updateChannelRequestName.length).toBe(2)
-  })
+    expect(dbModule.updateChannelRequestStatus(id, 'approved')).toBe(true)
+    dbModule.updateChannelRequestName(id, 'general')
 
-  // The class itself must expose the four methods under their canonical
-  // names so consumers who construct ChannelPairingStore directly get the
-  // full surface. A no-op refactor that moved the bodies into anonymous
-  // expressions or omitted a method would fail the corresponding check.
-  it('the ChannelPairingStore class exposes upsertRequest, listPending, updateStatus, updateName', () => {
-    const instance = new ChannelPairingStore({ getDb: () => db })
-    expect(typeof instance.upsertRequest).toBe('function')
-    expect(typeof instance.listPending).toBe('function')
-    expect(typeof instance.updateStatus).toBe('function')
-    expect(typeof instance.updateName).toBe('function')
-    expect(instance.upsertRequest.length).toBe(3)
-    expect(instance.listPending.length).toBe(1)
-    expect(instance.updateStatus.length).toBe(2)
-    expect(instance.updateName.length).toBe(2)
+    // Cross-form regression (T14-equivalent): the class-side view on the
+    // SAME handle must see the post-shim state. The row was approved so
+    // listPending returns []; the name update is on a non-pending column
+    // so a direct SELECT on the class-side handle would see 'general'.
+    const classStore = new ChannelPairingStore({ getDb: () => dbModule.getDb() })
+    expect(classStore.listPending('shim-agent')).toHaveLength(0)
+
+    dbModule.getDb().close()
   })
 })
