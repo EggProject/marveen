@@ -17,6 +17,7 @@
 // process table.
 
 import type { LoggerLike } from './logger.js'
+import { AppError } from './errors.js'
 
 /** Outcome of signal(). 'sent' = delivered to a live process. 'gone' = the
  * process is already dead (ESRCH). Any other error must throw so callers
@@ -270,11 +271,10 @@ export interface AcquirePidfileLockOptions {
 
 /** Thrown by PidfileLockAcquirer.acquire when a legitimate peer already holds
  * the pidfile and the caller asked for `onLiveLegitimate: 'defer'`. */
-export class DeferToPeerError extends Error {
+export class DeferToPeerError extends AppError {
   readonly peerPid: number
   constructor(peerPid: number) {
     super(`Pidfile held by legitimate peer PID ${peerPid}`)
-    this.name = 'DeferToPeerError'
     this.peerPid = peerPid
   }
 }

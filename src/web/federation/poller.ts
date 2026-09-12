@@ -22,6 +22,8 @@ import { isValidIdSegment } from './address.js'
 import { readBoundedBody, PeerResponseTooLargeError } from './http.js'
 import { FEDERATION_REQUEST_TIMEOUT_MS } from './bridge.js'
 
+import { AppError } from '../../errors.js'
+
 // 512KB: the structural worst case (100 agents with 600-char summaries --
 // which truncate() counts in UTF-16 units, so up to ~1.8KB of UTF-8 each --
 // plus 300 capped skills) must fit; an over-limit body is rejected WHOLE,
@@ -65,10 +67,9 @@ let inflightRefresh: Promise<PeerStatus[]> | null = null
  *  if a new code path regresses one of those guards. We surface the
  *  escape as a typed rejection so the interval timer's .catch handler
  *  can log it instead of silently swallowing it. */
-export class FederationPollInternalError extends Error {
+export class FederationPollInternalError extends AppError {
   constructor(public readonly peerId: string, public readonly cause: unknown) {
-    super(`federation poller: internal error for peer ${peerId}`)
-    this.name = 'FederationPollInternalError'
+    super(`federation poller: internal error for peer ${peerId}`, { cause })
   }
 }
 

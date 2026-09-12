@@ -15,10 +15,10 @@
 // `this.name = new.target.name` is required so each concrete subclass reports
 // its own name instead of inheriting `Error`.
 //
-// Pre-existing subclasses (DeferToPeerError, RemoteEnrollError, TelegramApi-
-// Error, KeychainUnavailableError, PasswordPolicyError, UserFacingError,
-// FederationPollInternalError) continue to extend Error directly; the AppError
-// base class is not retroactively applied to them.
+// All production error classes now extend AppError: DeferToPeerError,
+// RemoteEnrollError, TelegramApiError, KeychainUnavailableError, PasswordPolicyError,
+// UserFacingError, FederationPollInternalError. Pre-existing tests' local mock
+// classes still extend Error (their own classes, never asserted instanceof AppError).
 
 export abstract class AppError extends Error {
   constructor(message: string, options?: ErrorOptions) {

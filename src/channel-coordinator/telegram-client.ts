@@ -18,6 +18,9 @@ const API_BASE = 'https://api.telegram.org'
 // the coordinator at least records inline-button presses, even though the
 // permission-relay path (notifications/claude/channel/permission) is a known
 // gap in outbound-only mode -- see the design risk register.
+
+import { AppError } from '../errors.js'
+
 export const ALLOWED_UPDATES = ['message', 'edited_message', 'channel_post', 'callback_query'] as const
 
 export type UpdateKind = 'message' | 'edited_message' | 'channel_post' | 'callback_query'
@@ -42,14 +45,13 @@ export interface NormalizedEvent {
 //   transient -> 5xx / network / abort: exponential backoff with jitter
 export type TelegramErrorKind = 'fatal' | 'rate_limit' | 'conflict' | 'transient'
 
-export class TelegramApiError extends Error {
+export class TelegramApiError extends AppError {
   constructor(
     public readonly kind: TelegramErrorKind,
     message: string,
     public readonly retryAfterSec?: number,
   ) {
     super(message)
-    this.name = 'TelegramApiError'
   }
 }
 

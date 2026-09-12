@@ -2,6 +2,13 @@ import { describe, it, expect } from 'vitest'
 import { AppError } from '../errors.js'
 import { RequestBodyTooLargeError } from '../web/http-helpers.js'
 import { PeerResponseTooLargeError } from '../web/federation/http.js'
+import { DeferToPeerError } from '../process-lock.js'
+import { RemoteEnrollError } from '../remote-enroll-core.js'
+import { TelegramApiError } from '../channel-coordinator/telegram-client.js'
+import { KeychainUnavailableError } from '../web/keychain.js'
+import { PasswordPolicyError } from '../web/password-hash.js'
+import { UserFacingError } from '../web/fleet-transfer.js'
+import { FederationPollInternalError } from '../web/federation/poller.js'
 
 // Local concrete subclass used to exercise AppError's cause propagation path
 // without extending the production subclass constructor signatures.
@@ -76,5 +83,115 @@ describe('AppError', () => {
     expect(Object.keys(e)).not.toContain('cause')
     const descriptor = Object.getOwnPropertyDescriptor(e, 'cause')
     expect(descriptor?.enumerable).toBe(false)
+  })
+
+  // (9) DeferToPeerError
+  it('DeferToPeerError extends AppError and sets name via new.target.name', () => {
+    const e = new DeferToPeerError(4242)
+    expect(e).toBeInstanceOf(DeferToPeerError)
+    expect(e).toBeInstanceOf(AppError)
+    expect(e).toBeInstanceOf(Error)
+    expect(e.name).toBe('DeferToPeerError')
+    expect(e.message).toBe('Pidfile held by legitimate peer PID 4242')
+    expect(e.peerPid).toBe(4242)
+  })
+
+  // (10) DeferToPeerError.peerPid survives the throw (parallel to .limit tests above)
+  it('DeferToPeerError.peerPid is preserved as 777 through the throw', () => {
+    const e = new DeferToPeerError(777)
+    expect(e.peerPid).toBe(777)
+  })
+
+  // (11) RemoteEnrollError
+  it('RemoteEnrollError extends AppError, name + message are set', () => {
+    const e = new RemoteEnrollError('key type must be exactly ssh-ed25519')
+    expect(e).toBeInstanceOf(RemoteEnrollError)
+    expect(e).toBeInstanceOf(AppError)
+    expect(e).toBeInstanceOf(Error)
+    expect(e.name).toBe('RemoteEnrollError')
+    expect(e.message).toBe('key type must be exactly ssh-ed25519')
+  })
+
+  // (12) TelegramApiError: kind discriminator preserved
+  it('TelegramApiError rate_limit carries kind + retryAfterSec', () => {
+    const e = new TelegramApiError('rate_limit', '429 too many requests: retry', 30)
+    expect(e).toBeInstanceOf(TelegramApiError)
+    expect(e).toBeInstanceOf(AppError)
+    expect(e).toBeInstanceOf(Error)
+    expect(e.name).toBe('TelegramApiError')
+    expect(e.kind).toBe('rate_limit')
+    expect(e.retryAfterSec).toBe(30)
+  })
+
+  // (13) TelegramApiError: retryAfterSec is optional
+  it('TelegramApiError transient has no retryAfterSec', () => {
+    const e = new TelegramApiError('transient', 'network error: connect ECONNREFUSED')
+    expect(e).toBeInstanceOf(TelegramApiError)
+    expect(e.kind).toBe('transient')
+    expect(e.retryAfterSec).toBeUndefined()
+  })
+
+  // (14) KeychainUnavailableError
+  it('KeychainUnavailableError extends AppError with default message', () => {
+    const e = new KeychainUnavailableError('keychain add-generic-password failed (status 36): please unlock')
+    expect(e).toBeInstanceOf(KeychainUnavailableError)
+    expect(e).toBeInstanceOf(AppError)
+    expect(e).toBeInstanceOf(Error)
+    expect(e.name).toBe('KeychainUnavailableError')
+    expect(e.message).toBe('keychain add-generic-password failed (status 36): please unlock')
+  })
+
+  // (15) PasswordPolicyError
+  it('PasswordPolicyError extends AppError, message preserved', () => {
+    const e = new PasswordPolicyError('Password must be at least 10 characters')
+    expect(e).toBeInstanceOf(PasswordPolicyError)
+    expect(e).toBeInstanceOf(AppError)
+    expect(e).toBeInstanceOf(Error)
+    expect(e.name).toBe('PasswordPolicyError')
+    expect(e.message).toBe('Password must be at least 10 characters')
+  })
+
+  // (16) UserFacingError
+  it('UserFacingError extends AppError, name + message preserved', () => {
+    const e = new UserFacingError('Titkosítatlan secret az .mcp.json-ban')
+    expect(e).toBeInstanceOf(UserFacingError)
+    expect(e).toBeInstanceOf(AppError)
+    expect(e).toBeInstanceOf(Error)
+    expect(e.name).toBe('UserFacingError')
+    expect(e.message).toBe('Titkosítatlan secret az .mcp.json-ban')
+  })
+
+  // (17) FederationPollInternalError: peerId + cause parameter properties
+  it('FederationPollInternalError carries peerId + cause, is instanceof AppError', () => {
+    const root = new Error('upstream')
+    const e = new FederationPollInternalError('teodor', root)
+    expect(e).toBeInstanceOf(FederationPollInternalError)
+    expect(e).toBeInstanceOf(AppError)
+    expect(e).toBeInstanceOf(Error)
+    expect(e.name).toBe('FederationPollInternalError')
+    expect(e.peerId).toBe('teodor')
+    expect(e.cause).toBe(root)
+    // NOTE: `Object.keys(e)` WILL include 'cause' because the parameter property
+    // assignment overrides the ES2022 non-enumerable descriptor to enumerable:true
+    // (Verifier B R16 empirical proof). We do NOT assert non-enumerability here —
+    // see plan §1.8 note for the pino/ES2022 mechanism analysis.
+  })
+
+  // (18) Negative discrimination: subclasses don't collide
+  it('error subclass discriminators stay mutually exclusive', () => {
+    const d = new DeferToPeerError(1)
+    const r = new RemoteEnrollError('x')
+    const t = new TelegramApiError('fatal', '401 unauthorized')
+    const k = new KeychainUnavailableError('x')
+    const p = new PasswordPolicyError('x')
+    const u = new UserFacingError('x')
+    const f = new FederationPollInternalError('p', new Error('x'))
+    for (const e of [d, r, t, k, p, u, f]) {
+      expect(e).toBeInstanceOf(Error)
+      expect(e).toBeInstanceOf(AppError)
+    }
+    expect(d).not.toBeInstanceOf(RemoteEnrollError)
+    expect(t).not.toBeInstanceOf(UserFacingError)
+    expect(u).not.toBeInstanceOf(PasswordPolicyError)
   })
 })

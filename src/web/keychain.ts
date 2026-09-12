@@ -1,6 +1,8 @@
 import { execFileSync } from 'node:child_process'
 import { platform } from 'node:os'
 
+import { AppError } from '../errors.js'
+
 const SECURITY = '/usr/bin/security'
 const SERVICE = 'com.marveen.vault'
 const ACCOUNT = 'master-key'
@@ -16,7 +18,7 @@ const isExecError = (e: unknown): e is { status?: number; code?: string } =>
 // Distinct from "no key yet" (which returns null) -- a locked or ACL-blocked
 // keychain is a real failure the caller must surface, not silently re-key
 // over. The vault module catches this and refuses to mint a replacement.
-export class KeychainUnavailableError extends Error {}
+export class KeychainUnavailableError extends AppError {}
 
 export function isKeychainAvailable(): boolean {
   return platform() === 'darwin'

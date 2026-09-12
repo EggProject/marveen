@@ -25,6 +25,8 @@ import { getBindings } from './vault-bindings.js'
 import { getDb, backfillEmbeddings } from '../db.js'
 import { logger } from '../logger.js'
 
+import { AppError } from '../errors.js'
+
 // ---------------------------------------------------------------------------
 // Schema version -- bump when the JSON shape changes incompatibly.
 // ---------------------------------------------------------------------------
@@ -33,10 +35,9 @@ export const FLEET_SCHEMA_VERSION = 1
 // ---------------------------------------------------------------------------
 // UserFacingError -- user-fixable condition; route maps to 400 (not 500).
 // ---------------------------------------------------------------------------
-export class UserFacingError extends Error {
+export class UserFacingError extends AppError {
   constructor(message: string) {
     super(message)
-    this.name = 'UserFacingError'
   }
 }
 

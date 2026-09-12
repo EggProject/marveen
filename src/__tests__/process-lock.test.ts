@@ -8,6 +8,7 @@ import {
   type PidfileLockContext,
 } from '../process-lock.js'
 import type { LogFn } from '../logger.js'
+import { AppError } from '../errors.js'
 
 // Build a mock context backed by a mutable process table. Tests drive the
 // table directly so we can simulate PIDs dying at specific points, foreign
@@ -636,9 +637,10 @@ describe('PidfileLockAcquirer.acquire', () => {
     state.livePids.add(999)
     state.legitimatePids.add(999)
     const ctx = makePidfileCtx(state)
-    await expect(
-      new PidfileLockAcquirer(ctx).acquire(state.path, 100, { graceMs: 10, onLiveLegitimate: 'defer' }),
-    ).rejects.toBeInstanceOf(DeferToPeerError)
+    const err = await new PidfileLockAcquirer(ctx).acquire(state.path, 100, { graceMs: 10, onLiveLegitimate: 'defer' }).catch(e => e)
+    expect(err).toBeInstanceOf(DeferToPeerError)
+    expect(err).toBeInstanceOf(AppError)
+    expect(err).toBeInstanceOf(Error)
     // Defer MUST NOT SIGTERM the winner
     expect(state.termed).toEqual([])
   })

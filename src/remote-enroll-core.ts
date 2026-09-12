@@ -6,6 +6,8 @@
 // construction, replace-by-id merging, host-key parsing, and connection
 // bundle building. All filesystem work lives in remote-enroll-fs.ts.
 
+import { AppError } from './errors.js'
+
 /** Default loopback dashboard port. The enrolled key's permitopen and the
  * connection bundle both target the ACTUAL dashboard port (WEB_PORT); this is
  * only the fallback when a caller does not supply one. A hardcoded value here
@@ -27,10 +29,9 @@ export const BUNDLE_FORMAT = 'marveen-remote/1'
 
 /** Raised for any validation failure so the CLI can print a clear message
  * and exit non-zero without a stack trace. */
-export class RemoteEnrollError extends Error {
+export class RemoteEnrollError extends AppError {
   constructor(message: string) {
     super(message)
-    this.name = 'RemoteEnrollError'
   }
 }
 

@@ -17,6 +17,8 @@ import { scrypt as scryptCb, randomBytes, timingSafeEqual } from 'node:crypto'
 import { promisify } from 'node:util'
 import { logger } from '../logger.js'
 
+import { AppError } from '../errors.js'
+
 const scrypt = promisify(scryptCb) as (
   password: string | Buffer,
   salt: string | Buffer,
@@ -37,10 +39,9 @@ const MAXMEM = 128 * 1024 * 1024
 export const MIN_PASSWORD_LENGTH = 10
 export const MAX_PASSWORD_LENGTH = 128
 
-export class PasswordPolicyError extends Error {
+export class PasswordPolicyError extends AppError {
   constructor(message: string) {
     super(message)
-    this.name = 'PasswordPolicyError'
   }
 }
 
