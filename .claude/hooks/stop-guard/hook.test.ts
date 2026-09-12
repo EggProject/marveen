@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -177,4 +177,64 @@ test("a corrupt state file still nudges for the missing Todo list", () => {
   );
   assert.equal(result.status, 2);
   assert.match(result.stderr, /Mandatory Todo task list/);
+});
+
+/**
+ * Creates a temp directory holding a fresh git repo with one commit on a
+ * branch named `initialBranchName`, then creates `branchNames` all pointing
+ * at that same commit (so each is "merged into" the anchor after the
+ * checkout step). Returns the temp dir path. The repo is cleaned up after
+ * the test via a tracked entry in `dirsToClean`.
+ */
+function makeRepoWithBranches(
+  initialBranchName: string,
+  branchNames: readonly string[],
+): string {
+  const repoDir = mkdtempSync(join(tmpdir(), "muhely-stop-guard-repo-"));
+  dirsToClean.push(repoDir);
+  const gitEnv = { GIT_AUTHOR_NAME: "test", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "test", GIT_COMMITTER_EMAIL: "t@t" };
+  const run = (args: string[]): string => {
+    const out = execFileSync("git", args, { cwd: repoDir, env: { ...process.env, ...gitEnv } });
+    return out.toString();
+  };
+  run(["init", "-q", "-b", initialBranchName]);
+  writeFileSync(join(repoDir, "README.md"), "x", "utf8");
+  run(["add", "README.md"]);
+  run(["commit", "-q", "-m", "init"]);
+  for (const b of branchNames) {
+    run(["branch", b]);
+  }
+  return repoDir;
+}
+
+const dirsToClean: string[] = [];
+
+after(() => {
+  for (const d of dirsToClean) {
+    rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test("merged permanent branches (develop, feature-develop) are NOT flagged; session-created branch IS", () => {
+  const sessionId = "test-permanent-branch-filter";
+  stateFileFor(sessionId);
+  const repoDir = makeRepoWithBranches("refactor/classbase", [
+    "develop",
+    "feature-develop",
+    "test/baseline",
+    "agent-fix-leaked",
+  ]);
+  const result = runStopGuard(
+    stopHookPayload({
+      session_id: sessionId,
+      transcript_path: join(tmpDir, "does-not-exist.jsonl"),
+      cwd: repoDir,
+    }),
+  );
+  assert.equal(result.status, 2, `expected block, got stdout=${result.stdout} stderr=${result.stderr}`);
+  assert.match(result.stderr, /branch: agent-fix-leaked/);
+  assert.doesNotMatch(result.stderr, /branch: develop\b/);
+  assert.doesNotMatch(result.stderr, /branch: feature-develop/);
+  assert.doesNotMatch(result.stderr, /branch: refactor\/classbase/);
+  assert.doesNotMatch(result.stderr, /branch: test\/baseline/);
 });

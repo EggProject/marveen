@@ -54,6 +54,7 @@ const PERMANENT_BRANCH = "refactor/classbase";
  */
 const PERMANENT_PRODUCTION_BRANCHES = new Set([
   PERMANENT_BRANCH,
+  "develop",
   "feature-develop",
   "test/baseline",
   "main",
