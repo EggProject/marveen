@@ -572,54 +572,95 @@ export interface BackgroundTask {
   output: string | null
 }
 
-export function createBackgroundTaskAtomic(id: string, agentId: string, prompt: string, tmuxSession: string, maxConcurrent: number): BackgroundTask | null {
-  const now = Math.floor(Date.now() / 1000)
-  const result = db.transaction(() => {
-    const running = (db.prepare("SELECT COUNT(*) as c FROM background_tasks WHERE agent_id = ? AND status = 'running'").get(agentId) as { c: number }).c
-    if (running >= maxConcurrent) return null
-    db.prepare('INSERT INTO background_tasks (id, agent_id, prompt, status, tmux_session, started_at) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(id, agentId, prompt, 'running', tmuxSession, now)
-    return { id, agent_id: agentId, prompt, status: 'running' as const, tmux_session: tmuxSession, started_at: now, finished_at: null, output: null }
-  })()
-  return result
-}
+// resolves the current handle on every call so the module-level `let db`
+// can be replaced by initDatabase() without rebinding the singleton.
+export class BackgroundTaskPool {
+  private readonly getDb: () => Database
 
-export function getRunningBackgroundTasks(): BackgroundTask[] {
-  return db.prepare("SELECT * FROM background_tasks WHERE status = 'running'").all() as BackgroundTask[]
-}
-
-export function finishBackgroundTask(id: string, status: 'done' | 'failed' | 'timeout', output: string | null): void {
-  const now = Math.floor(Date.now() / 1000)
-  db.prepare('UPDATE background_tasks SET status = ?, finished_at = ?, output = ? WHERE id = ?')
-    .run(status, now, output, id)
-}
-
-export function getBackgroundTasks(agentId?: string, includeFinished = false): BackgroundTask[] {
-  if (agentId) {
-    const sql = includeFinished
-      ? 'SELECT * FROM background_tasks WHERE agent_id = ? ORDER BY started_at DESC LIMIT 50'
-      : "SELECT * FROM background_tasks WHERE agent_id = ? AND status = 'running' ORDER BY started_at DESC"
-    return db.prepare(sql).all(agentId) as BackgroundTask[]
+  constructor(deps?: { getDb?: () => Database }) {
+    this.getDb = deps?.getDb ?? getDb
   }
-  const sql = includeFinished
-    ? 'SELECT * FROM background_tasks ORDER BY started_at DESC LIMIT 50'
-    : "SELECT * FROM background_tasks WHERE status = 'running' ORDER BY started_at DESC"
-  return db.prepare(sql).all() as BackgroundTask[]
+
+  createAtomic(id: string, agentId: string, prompt: string, tmuxSession: string, maxConcurrent: number): BackgroundTask | null {
+    const now = Math.floor(Date.now() / 1000)
+    const result = this.getDb().transaction(() => {
+      const running = this.getDb().prepare<{ c: number }, [string]>("SELECT COUNT(*) as c FROM background_tasks WHERE agent_id = ? AND status = 'running'").get(agentId)?.c ?? 0
+      if (running >= maxConcurrent) return null
+      this.getDb().prepare('INSERT INTO background_tasks (id, agent_id, prompt, status, tmux_session, started_at) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(id, agentId, prompt, 'running', tmuxSession, now)
+      return { id, agent_id: agentId, prompt, status: 'running' as const, tmux_session: tmuxSession, started_at: now, finished_at: null, output: null }
+    })()
+    return result
+  }
+
+  getRunning(): BackgroundTask[] {
+    return this.getDb().prepare<BackgroundTask, []>("SELECT * FROM background_tasks WHERE status = 'running'").all()
+  }
+
+  finish(id: string, status: 'done' | 'failed' | 'timeout', output: string | null): void {
+    const now = Math.floor(Date.now() / 1000)
+    this.getDb().prepare('UPDATE background_tasks SET status = ?, finished_at = ?, output = ? WHERE id = ?')
+      .run(status, now, output, id)
+  }
+
+  list(agentId?: string, includeFinished = false): BackgroundTask[] {
+    if (agentId) {
+      const sql = includeFinished
+        ? 'SELECT * FROM background_tasks WHERE agent_id = ? ORDER BY started_at DESC LIMIT 50'
+        : "SELECT * FROM background_tasks WHERE agent_id = ? AND status = 'running' ORDER BY started_at DESC"
+      return this.getDb().prepare<BackgroundTask, [string]>(sql).all(agentId)
+    }
+    const sql = includeFinished
+      ? 'SELECT * FROM background_tasks ORDER BY started_at DESC LIMIT 50'
+      : "SELECT * FROM background_tasks WHERE status = 'running' ORDER BY started_at DESC"
+    return this.getDb().prepare<BackgroundTask, []>(sql).all()
+  }
+
+  get(id: string): BackgroundTask | undefined {
+    return this.getDb().prepare<BackgroundTask, SQLQueryBindings[]>('SELECT * FROM background_tasks WHERE id = ?').get(id ?? undefined) ?? undefined
+  }
+
+  countRunning(agentId: string): number {
+    return this.getDb().prepare<{ c: number }, [string]>("SELECT COUNT(*) as c FROM background_tasks WHERE agent_id = ? AND status = 'running'").get(agentId)?.c ?? 0
+  }
+
+  markOrphaned(): number {
+    const now = Math.floor(Date.now() / 1000)
+    const info = this.getDb().prepare("UPDATE background_tasks SET status = 'failed', finished_at = ?, output = '(orphaned on restart)' WHERE status = 'running'")
+      .run(now)
+    return info.changes
+  }
 }
 
+// Module-singleton + thin re-export shim. Same pattern as ChannelPairingStore /
+// ApprovalStore / IdeaStore: a single instance shared across all free-fn calls,
+// so callers that import the free function names stay byte-equivalent and new
+// consumers can construct BackgroundTaskPool directly with DI. The constructor's
+// default `deps?.getDb ?? getDb` resolves the live module-level handle on every
+// method invocation, so a future initDatabase() rebind is picked up automatically
+// without rewiring the singleton.
+const backgroundTaskPool = new BackgroundTaskPool()
+
+export function createBackgroundTaskAtomic(id: string, agentId: string, prompt: string, tmuxSession: string, maxConcurrent: number): BackgroundTask | null {
+  return backgroundTaskPool.createAtomic(id, agentId, prompt, tmuxSession, maxConcurrent)
+}
+export function getRunningBackgroundTasks(): BackgroundTask[] {
+  return backgroundTaskPool.getRunning()
+}
+export function finishBackgroundTask(id: string, status: 'done' | 'failed' | 'timeout', output: string | null): void {
+  backgroundTaskPool.finish(id, status, output)
+}
+export function getBackgroundTasks(agentId?: string, includeFinished = false): BackgroundTask[] {
+  return backgroundTaskPool.list(agentId, includeFinished)
+}
 export function getBackgroundTask(id: string): BackgroundTask | undefined {
-  return db.prepare<BackgroundTask, SQLQueryBindings[]>('SELECT * FROM background_tasks WHERE id = ?').get(id ?? undefined) ?? undefined
+  return backgroundTaskPool.get(id)
 }
-
 export function countRunningBackgroundTasks(agentId: string): number {
-  return (db.prepare("SELECT COUNT(*) as c FROM background_tasks WHERE agent_id = ? AND status = 'running'").get(agentId) as { c: number }).c
+  return backgroundTaskPool.countRunning(agentId)
 }
-
 export function markOrphanedTasksFailed(): number {
-  const now = Math.floor(Date.now() / 1000)
-  const info = db.prepare("UPDATE background_tasks SET status = 'failed', finished_at = ?, output = '(orphaned on restart)' WHERE status = 'running'")
-    .run(now)
-  return info.changes
+  return backgroundTaskPool.markOrphaned()
 }
 
 // --- Ütemezett feladatok ---
