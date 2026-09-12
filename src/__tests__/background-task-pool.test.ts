@@ -31,7 +31,7 @@ beforeAll(async () => {
 // The CHECK constraint mirrors the running/done/failed/timeout enum.
 function makeStore(): { db: Database; pool: BackgroundTaskPoolType } {
   const db = new Database(':memory:')
-  db.exec(`
+  db.prepare(`
     CREATE TABLE background_tasks (
       id TEXT PRIMARY KEY,
       agent_id TEXT NOT NULL,
@@ -42,7 +42,7 @@ function makeStore(): { db: Database; pool: BackgroundTaskPoolType } {
       finished_at INTEGER,
       output TEXT
     )
-  `)
+  `).run()
   const pool = new BackgroundTaskPool({ getDb: () => db })
   return { db, pool }
 }
@@ -61,38 +61,52 @@ describe('BackgroundTaskPool', () => {
     db.close()
   })
 
-  // ---- Default constructor smoke -----------------------------------------
+  // ---- Default constructor singleton wiring -------------------------------
 
-  // The class must be constructible with zero args (the module-singleton
-  // path). A no-op constructor that threw would fail every other test; this
-  // isolates the smoke test so any regression here is loud.
-  it('default-constructor produces a defined instance with no deps', () => {
-    expect(new BackgroundTaskPool()).toBeDefined()
+  // The zero-arg constructor resolves `getDb` to the module-level singleton.
+  // The equivalence test below (and the shim-writes-through test further
+  // down) already exercise the singleton path with assertions on rows; this
+  // test verifies the singleton route specifically — i.e., a no-arg
+  // `new BackgroundTaskPool()` must write to the SAME handle as getDb().
+  // A no-op constructor that left `getDb` undefined would throw
+  // "this.getDb is not a function" on the createAtomic call.
+  it('default constructor resolves getDb to the module singleton', async () => {
+    const dbModule = await import('../db.js')
+    dbModule.initDatabase(':memory:')
+    const pool = new BackgroundTaskPool()
+    const row = pool.createAtomic('singleton-1', 's-agent', 'p', 'tmux', 5)
+    expect(row?.id).toBe('singleton-1')
+    expect(dbModule.getBackgroundTask('singleton-1')?.id).toBe('singleton-1')
+    dbModule.getDb().close()
   })
 
   // ---- createAtomic -------------------------------------------------------
 
   // Fresh insert: returns the row with the exact field shape. A no-op
-  // createAtomic that returned null would fail the toBe('bt-1') check;
-  // one that returned a literal { id: 'X' } would fail toEqual's deep check.
+  // createAtomic that returned null would fail the not.toBeNull() check;
+  // one that returned the wrong field values would fail the per-field
+  // toBe assertions. started_at is checked via typeof to avoid the
+  // expect.any(Number) matcher tripping @typescript-eslint/no-unsafe-assignment.
   it('createAtomic returns the inserted row for a fresh agent', () => {
     const result = pool.createAtomic('bt-1', 'a1', 'do work', 'tmux-1', 5)
-    expect(result).toEqual({
-      id: 'bt-1',
-      agent_id: 'a1',
-      prompt: 'do work',
-      status: 'running',
-      tmux_session: 'tmux-1',
-      started_at: expect.any(Number) as unknown as number,
-      finished_at: null,
-      output: null,
-    })
+    expect(result).not.toBeNull()
+    expect(result?.id).toBe('bt-1')
+    expect(result?.agent_id).toBe('a1')
+    expect(result?.prompt).toBe('do work')
+    expect(result?.status).toBe('running')
+    expect(result?.tmux_session).toBe('tmux-1')
+    expect(typeof result?.started_at).toBe('number')
+    expect(result?.finished_at).toBeNull()
+    expect(result?.output).toBeNull()
   })
 
-  // The cap is zero: a single call must already be over the limit. A no-op
-  // createAtomic that ignored maxConcurrent would return the row and fail
-  // the toBeNull() check.
-  it('createAtomic returns null when maxConcurrent is zero', () => {
+  // Boundary case: maxConcurrent=0 makes the function short-circuit because
+  // 0 running tasks already meets the cap. The positive control (cap=1,
+  // 0 running) is asserted first so a no-op `() => null` stub cannot pass
+  // — the toBeNull() assertion on cap=1 would fail the positive control
+  // and the not.toBeNull() on cap=1 would fail the negative side.
+  it('createAtomic returns null when maxConcurrent is zero, succeeds when cap >= running', () => {
+    expect(pool.createAtomic('bt-positive', 'a0', 'p', 'tmux', 1)).not.toBeNull()
     expect(pool.createAtomic('bt-1', 'a1', 'p', 'tmux', 0)).toBeNull()
   })
 
