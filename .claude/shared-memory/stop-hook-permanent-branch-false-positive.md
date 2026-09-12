@@ -1,8 +1,23 @@
 # Stop hook false-positive — flags `develop` branch as leftover
 
-## Symptom
+## Status — FIXED in commit `23352c9`
 
-The Stop hook (`$CLAUDE_PROJECT_DIR/.claude/hooks/stop-guard/hook.ts`) fires
+The fix landed in the 2026-09-12 A.3a follow-up. The
+`PERMANENT_PRODUCTION_BRANCHES` set in `.claude/hooks/stop-guard/hook.ts`
+now includes `"develop"`. An integration test in `hook.test.ts` creates a
+temp git repo with `develop` + `feature-develop` + `test/baseline` +
+`agent-fix-leaked` all at the same commit, and asserts that the hook
+blocks on `agent-fix-leaked` while the stderr does NOT mention any of
+the four permanent branches. claude:hooks:test 93/93 pass,
+claude:hooks:typecheck 0 errors.
+
+If a similar false-positive appears in the future for some OTHER
+permanent branch not yet listed (`local-install`, `new-features`, etc.),
+the same fix shape applies: add the branch name to the set + add an
+integration-test branch to the regression test's
+`makeRepoWithBranches` call.
+
+## Original symptom (pre-fix)
 with the message:
 
 > "Leftover session-created worktrees or branches detected:
