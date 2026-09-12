@@ -227,4 +227,83 @@ Rationale:
 
 ---
 
+## A.2a LANDED — `ChannelPairingStore` class extraction (commits `98976a9` + `d014dcd`)
+
+Single-class extraction of the four `pending_channel_requests` free
+functions (`upsertChannelRequest`, `listPendingChannelRequests`,
+`updateChannelRequestStatus`, `updateChannelRequestName`) into
+`class ChannelPairingStore`. Mirrors the `ApprovalStore` and
+`IdeaStore` precedent: class lives alongside the four thin free-fn
+shims, which now delegate to a module-level
+`const channelPairingStore = new ChannelPairingStore()` singleton
+(introduced in the `d014dcd` code-review --fix commit per its
+HIGH finding). The `PendingChannelRequest` interface is byte-identical
+to the pre-refactor state.
+
+**Blast radius (scope-1 minimum contract):**
+- `src/db.ts`: class + 4 wrapper functions inserted after the
+  `// --- Pending Channel Requests ---` block. `+82/-21` lines net.
+  Counts after merge: 155 export functions, 5 export classes, 37
+  export interfaces/types — exactly the plan target (free-function
+  count unchanged because wrappers replace originals byte-equiv).
+- `src/__tests__/channel-pairing-store.test.ts`: new file,
+  250 lines, **12 `it()` blocks** after the code-review removal
+  of the 2 vacuous `typeof`-only assertions (the post-fix commit
+  swapped them for a stronger T12+T14-equivalent shim-invocation
+  test that asserts write-through-the-shim observability).
+- `src/web/channel-request-watcher.ts`, `src/web/routes/agents.ts`,
+  and the existing test files (`channel-request-watcher.test.ts`,
+  `channel-request.test.ts`, `db-100.test.ts`,
+  `agents-routes.test.ts`): **untouched**. The four
+  `vi.mock('../db.js', …)` sites and the two production callers
+  keep working byte-equivalently through the shims.
+
+**Verification (post code-review --fix, in a `$HOME/claw-review-test`
+clean worktree per the CLAUDE.md §8 `_TMP_PREFIXES` guard):**
+- `bun tsc --noEmit`: 0 errors (baseline 0).
+- `bun --bun vitest run src/__tests__/channel-pairing-store.test.ts`:
+  12/12 passed.
+- `bun --bun vitest run src/__tests__/channel-request*.test.ts
+  src/__tests__/db-100.test.ts src/__tests__/agents-routes.test.ts`:
+  515/515 passed, no regressions.
+- Pre-existing `scripts/agent-memory/{cli,io,search,store}/*.test.ts`
+  module-load failures (11 in pre-flight) unchanged.
+- ESLint on the test file reduced from 17 to 12 errors (all
+  remaining are pre-existing in unrelated regions).
+
+**Deliberate deviations from the plan:**
+1. **Singleton `const X = new X()`** added in the code-review --fix
+   commit `d014dcd`, not in the implementer commit. Plan text was
+   ambiguous on whether the free-fn shims should construct a fresh
+   class instance per call vs. reuse a module-level singleton.
+   The code-review HIGH finding resolved this in favor of the
+   `ApprovalStore`/`IdeaStore` singleton pattern. Behavioral
+   implication: marginal allocation savings; no observable
+   difference for callers.
+2. **Class body lives between `PendingChannelRequest` interface and
+   the four free-fn shims**, NOT after the free-fn shims as a
+   literal "insert without replacing" reading of the plan text
+   would have suggested. The literal reading would have produced
+   TypeScript duplicate-export errors (same `export function X`
+   declared twice). Same pattern as `ApprovalStore` and
+   `IdeaStore` (class lives immediately above the free-fn shims).
+3. **Two vacuous `typeof X === 'function'` tests removed** in
+   `d014dcd`. Replaced with one T12+T14-equivalent test that
+   invokes the shims against a real `:memory:` `ChannelPairingStore`
+   and asserts that the writes are observable through the live
+   handle (catches the `function () {}` stub gut the deleted tests
+   missed).
+
+**Architectural note (saved to Honcho + `.claude/shared-memory/`):**
+the `code-review --fix` flagged that the class form here scores only
+1/5 on `.claude/rules/class-vs-functional-decision.md` (only
+DI applies; no instance state, polymorphism, or lifecycle). The
+precedent in `IdeaStore` (`3f41c08`) and `ApprovalStore`
+(`863b325`) already establishes this pattern across three stores;
+reverting all three is a separate architectural decision requiring
+an ADR. The cycle kept the class form to match the existing
+pattern; the rule-file reconciliation is deferred.
+
+---
+
 **End of A executive summary. No source files modified.**

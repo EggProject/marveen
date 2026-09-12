@@ -100,6 +100,9 @@ a `KanbanCards` constructor argument (or late-binding via `App`).
 
 **Sub-phases (sequential, each with its own commit):**
 - **A.2a:** `ChannelPairingStore` (4 functions, lowest blast radius).
+  **Status: LANDED** — see commits `98976a9` (implementer) +
+  `d014dcd` (code-review --fix). See "A.2a LANDED" section at end of
+  the 00-summary sister file.
 - **A.2b:** `Scheduler` (8 functions; cross-store hook to
   `BackgroundTaskPool` is wired by `App` post-A.3).
 - **A.2c:** `IdeaStore` (8 functions; cross-store hook to `KanbanCards`
