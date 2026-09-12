@@ -1601,34 +1601,70 @@ export interface PendingChannelRequest {
   status: 'pending' | 'approved' | 'denied'
 }
 
+// resolves the current handle on every call so the module-level `let db`
+// can be replaced by initDatabase() without rebinding the singleton.
+export class ChannelPairingStore {
+  private readonly getDb: () => Database
+
+  constructor(deps?: { getDb?: () => Database }) {
+    // Pattern identical to the landed ApprovalStore class: the default
+    // evaluates to the module-level getDb() so the module-singleton works
+    // without DI. Tests that pass a custom getDb via the constructor
+    // override the closure; tests that vi.mock('../db.js') do NOT touch
+    // this constructor at all -- the mock replaces the module-level free
+    // functions, which the shims below delegate to. The deps object is
+    // optional so the call-site `new ChannelPairingStore()` stays
+    // zero-argument for the module-singleton path.
+    this.getDb = deps?.getDb ?? getDb
+  }
+
+  upsertRequest(agent: string, channelId: string, userId?: string): boolean {
+    const now = Math.floor(Date.now() / 1000)
+    const sevenDaysAgo = now - 7 * 86400
+    const existing = this.getDb().prepare(
+      "SELECT id FROM pending_channel_requests WHERE agent = ? AND channel_id = ? AND (status = 'pending' OR (status = 'denied' AND COALESCE(resolved_at, requested_at) > ?))"
+    ).get(agent, channelId, sevenDaysAgo)
+    if (existing) return false
+    this.getDb().prepare(
+      'INSERT INTO pending_channel_requests (agent, channel_id, user_id, requested_at, status) VALUES (?, ?, ?, ?, ?)'
+    ).run(agent, channelId, userId ?? null, now, 'pending')
+    return true
+  }
+
+  listPending(agent: string): PendingChannelRequest[] {
+    return this.getDb().prepare(
+      "SELECT * FROM pending_channel_requests WHERE agent = ? AND status = 'pending' ORDER BY requested_at DESC"
+    ).all(agent) as PendingChannelRequest[]
+  }
+
+  updateStatus(id: number, status: 'approved' | 'denied'): boolean {
+    const now = Math.floor(Date.now() / 1000)
+    return this.getDb().prepare(
+      'UPDATE pending_channel_requests SET status = ?, resolved_at = ? WHERE id = ? AND status = ?'
+    ).run(status, now, id, 'pending').changes > 0
+  }
+
+  updateName(id: number, channelName: string): void {
+    this.getDb().prepare('UPDATE pending_channel_requests SET channel_name = ? WHERE id = ?').run(channelName, id)
+  }
+}
+
+// Thin pass-throughs: the migration window for callers stays open. Production
+// callers (channel-request-watcher.ts, routes/agents.ts) keep importing the
+// free function names; the module-singleton `new ChannelPairingStore()` is
+// constructed on each call. Byte-equivalent to the previous inline behavior
+// -- no SQL, no timing, no closure capture changes.
 export function upsertChannelRequest(agent: string, channelId: string, userId?: string): boolean {
-  const now = Math.floor(Date.now() / 1000)
-  const sevenDaysAgo = now - 7 * 86400
-  const existing = db.prepare(
-    "SELECT id FROM pending_channel_requests WHERE agent = ? AND channel_id = ? AND (status = 'pending' OR (status = 'denied' AND COALESCE(resolved_at, requested_at) > ?))"
-  ).get(agent, channelId, sevenDaysAgo)
-  if (existing) return false
-  db.prepare(
-    'INSERT INTO pending_channel_requests (agent, channel_id, user_id, requested_at, status) VALUES (?, ?, ?, ?, ?)'
-  ).run(agent, channelId, userId ?? null, now, 'pending')
-  return true
+  return new ChannelPairingStore().upsertRequest(agent, channelId, userId)
 }
-
 export function listPendingChannelRequests(agent: string): PendingChannelRequest[] {
-  return db.prepare(
-    "SELECT * FROM pending_channel_requests WHERE agent = ? AND status = 'pending' ORDER BY requested_at DESC"
-  ).all(agent) as PendingChannelRequest[]
+  return new ChannelPairingStore().listPending(agent)
 }
-
 export function updateChannelRequestStatus(id: number, status: 'approved' | 'denied'): boolean {
-  const now = Math.floor(Date.now() / 1000)
-  return db.prepare(
-    'UPDATE pending_channel_requests SET status = ?, resolved_at = ? WHERE id = ? AND status = ?'
-  ).run(status, now, id, 'pending').changes > 0
+  return new ChannelPairingStore().updateStatus(id, status)
 }
-
 export function updateChannelRequestName(id: number, channelName: string): void {
-  db.prepare('UPDATE pending_channel_requests SET channel_name = ? WHERE id = ?').run(channelName, id)
+  return new ChannelPairingStore().updateName(id, channelName)
 }
 
 // --- Idea Box ---
