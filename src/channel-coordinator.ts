@@ -98,17 +98,10 @@ const STATE_DIR = process.env['COORDINATOR_STATE_DIR'] ?? join(homedir(), '.clau
 const PID_FILE = join(STATE_DIR, 'coordinator.pid')
 
 type State = 'idle' | 'backfilling'
-let state: State = 'idle'
-let downStreak = 0
-let stopping = false
-// Epoch-ms until which a recent 409 has confirmed the native poller is up; while
-// in this window we suppress BACKFILLING regardless of the liveness probe.
-let nativeConfirmedUpUntil = 0
 
 // Pure: are we inside the post-409 "native confirmed up" cooldown?
-export function inNative409Cooldown(confirmedUpUntilMs: number, nowMs: number): boolean {
-  return nowMs < confirmedUpUntilMs
-}
+export const inNative409Cooldown = (confirmedUpUntilMs: number, nowMs: number): boolean =>
+  nowMs < confirmedUpUntilMs
 
 // ---- token --------------------------------------------------------------
 
@@ -310,25 +303,25 @@ async function fatalExit(err: TelegramApiError): Promise<never> {
 
 async function runLoop(token: string): Promise<void> {
   let transientAttempt = 0
-  while (!stopping) {
+  while (!liveness.isStopping()) {
     // No-message-loss replay runs every tick, regardless of state.
     reconcilePending()
 
-    if (state === 'idle') {
+    if (liveness.getState() === 'idle') {
       // Watch the native channel. Debounce DOWN readings so a momentary blip
       // (process-tree race, restart) does not flip us into polling. A recent
       // 409 overrides a DOWN reading: it proved the native poller is up, so we
       // distrust the (flaky) liveness probe until the cooldown expires.
-      const down = probeNativeChannelDown(SESSION, PROVIDER) && !inNative409Cooldown(nativeConfirmedUpUntil, Date.now())
-      downStreak = down ? downStreak + 1 : 0
-      if (downStreak >= DOWN_DEBOUNCE) {
+      const down = probeNativeChannelDown(SESSION, PROVIDER) && !liveness.inNative409Cooldown(Date.now())
+      const streak = down ? liveness.incrementDownStreak() : (liveness.resetDownStreak(), 0)
+      if (streak >= DOWN_DEBOUNCE) {
         try {
           // Seed poll_offset to the current high-water so we only deliver
           // messages that arrive DURING the outage; the detection-window
           // backlog (<= hw) is left for the native to deliver on recovery.
           const hw = await probeHighWater(token)
           if (hw != null) setOffset(SOURCE, hw)
-          state = 'backfilling'
+          liveness.setState('backfilling')
           transientAttempt = 0
           logger.warn({ session: SESSION, seededHighWater: hw }, 'channel-coordinator: native channel DOWN, entering BACKFILLING')
         } catch (err) {
@@ -336,9 +329,9 @@ async function runLoop(token: string): Promise<void> {
           // A 409 on the seed means the native is in fact polling -> stay idle
           // AND start the cooldown so a flaky DOWN probe can't immediately retry.
           if (err instanceof TelegramApiError && err.kind === 'conflict') {
-            nativeConfirmedUpUntil = Date.now() + NATIVE_409_COOLDOWN_MS
+            liveness.setNativeConfirmedUpUntil(Date.now() + NATIVE_409_COOLDOWN_MS)
             logger.info({ cooldownMs: NATIVE_409_COOLDOWN_MS }, 'channel-coordinator: high-water seed 409 -- native is polling, cooldown set, staying idle')
-            downStreak = 0
+            liveness.resetDownStreak()
           } else {
             logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'channel-coordinator: high-water seed failed, retrying next tick')
           }
@@ -353,7 +346,7 @@ async function runLoop(token: string): Promise<void> {
     // indicator. Re-check before every poll.
     if (!probeNativeChannelDown(SESSION, PROVIDER)) {
       logger.info('channel-coordinator: native channel back UP, yielding to native (-> idle)')
-      state = 'idle'; downStreak = 0
+      liveness.setState('idle'); liveness.resetDownStreak()
       continue
     }
 
@@ -362,7 +355,7 @@ async function runLoop(token: string): Promise<void> {
       updates = await getUpdates(token, getOffset(SOURCE) + 1, LONGPOLL_TIMEOUT_SEC, POLL_LIMIT)
       transientAttempt = 0
     } catch (err) {
-      if (stopping) break
+      if (liveness.isStopping()) break
       if (err instanceof TelegramApiError && err.kind === 'fatal') { await fatalExit(err) }
       // 409 during backfill = the native grabbed the slot back. This is the
       // EXPECTED end-of-window signal, not an error: yield immediately, no
@@ -370,9 +363,9 @@ async function runLoop(token: string): Promise<void> {
       // native is up, so suppress re-entry even if the liveness probe keeps
       // reading DOWN (reparented poller / missing bot.pid false-negative).
       if (err instanceof TelegramApiError && err.kind === 'conflict') {
-        nativeConfirmedUpUntil = Date.now() + NATIVE_409_COOLDOWN_MS
+        liveness.setNativeConfirmedUpUntil(Date.now() + NATIVE_409_COOLDOWN_MS)
         logger.info({ cooldownMs: NATIVE_409_COOLDOWN_MS }, 'channel-coordinator: 409 during backfill -- native owns the slot again, cooldown set, yielding (-> idle)')
-        state = 'idle'; downStreak = 0
+        liveness.setState('idle'); liveness.resetDownStreak()
         continue
       }
       if (err instanceof TelegramApiError && err.kind === 'rate_limit') {
@@ -392,7 +385,7 @@ async function runLoop(token: string): Promise<void> {
     // recovery-overlap double-delivery window.
     if (!probeNativeChannelDown(SESSION, PROVIDER)) {
       logger.info({ batch: updates.length }, 'channel-coordinator: native recovered mid-batch, discarding + yielding (native will deliver)')
-      state = 'idle'; downStreak = 0
+      liveness.setState('idle'); liveness.resetDownStreak()
       continue
     }
 
@@ -406,8 +399,7 @@ async function runLoop(token: string): Promise<void> {
 
 function installSignalHandlers(): void {
   const onSignal = (sig: string) => {
-    if (stopping) return
-    stopping = true
+    if (!liveness.setStopping()) return
     logger.info({ sig }, 'channel-coordinator: shutting down')
     setTimeout(() => {
       releaseLock()
@@ -429,6 +421,61 @@ async function main(): Promise<void> {
   releaseLock()
   closeIngestDb()
 }
+
+// ---- liveness tracker ----------------------------------------------------
+
+// Owns the 4 mutable module-state slots that the runLoop + signal handler
+// previously read/wrote as bare lets. Exported (named) solely so the dedicated
+// unit test can instantiate per-instance; the module singleton `liveness`
+// below is the only instance the runtime uses, and the 1-line
+// `inNative409Cooldown` shim preserves the original public API.
+export class LivenessTracker {
+  private state: State = 'idle'
+  private downStreak = 0
+  private stopping = false
+  private nativeConfirmedUpUntil = 0
+
+  getState(): State {
+    return this.state
+  }
+
+  setState(state: State): void {
+    this.state = state
+  }
+
+  incrementDownStreak(): number {
+    this.downStreak += 1
+    return this.downStreak
+  }
+
+  resetDownStreak(): void {
+    this.downStreak = 0
+  }
+
+  setNativeConfirmedUpUntil(epochMs: number): void {
+    this.nativeConfirmedUpUntil = epochMs
+  }
+
+  getNativeConfirmedUpUntil(): number {
+    return this.nativeConfirmedUpUntil
+  }
+
+  inNative409Cooldown(nowMs: number): boolean {
+    return nowMs < this.nativeConfirmedUpUntil
+  }
+
+  setStopping(): boolean {
+    if (this.stopping) return false
+    this.stopping = true
+    return true
+  }
+
+  isStopping(): boolean {
+    return this.stopping
+  }
+}
+
+const liveness = new LivenessTracker()
 
 // Entry-point guard: only run the poller when executed directly (launchd /
 // `node dist/channel-coordinator.js`), not when imported by tests.
