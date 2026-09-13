@@ -2,11 +2,6 @@ import { describe, it, expect } from 'vitest'
 import { LivenessTracker } from '../channel-coordinator.js'
 
 describe('streak transitions', () => {
-  it('starts at 0 -- incrementDownStreak returns 1 on first call from a fresh instance', () => {
-    const t = new LivenessTracker()
-    expect(t.incrementDownStreak()).toBe(1)
-  })
-
   it('incrementDownStreak returns the new value each call (1, 2, 3, ...)', () => {
     const t = new LivenessTracker()
     expect(t.incrementDownStreak()).toBe(1)
@@ -25,11 +20,6 @@ describe('streak transitions', () => {
 })
 
 describe('state machine', () => {
-  it('starts at idle', () => {
-    const t = new LivenessTracker()
-    expect(t.getState()).toBe('idle')
-  })
-
   it('setState transitions and is observable -- idle -> backfilling -> idle', () => {
     const t = new LivenessTracker()
     expect(t.getState()).toBe('idle')
@@ -44,7 +34,6 @@ describe('state machine', () => {
     // IDLE detection -- first consecutive DOWN probe
     const firstStreak = t.incrementDownStreak()
     expect(firstStreak).toBe(1)
-    expect(firstStreak >= 2).toBe(false) // below DOWN_DEBOUNCE
     // Second consecutive DOWN probe crosses the debounce threshold
     const secondStreak = t.incrementDownStreak()
     expect(secondStreak).toBe(2)
@@ -52,15 +41,24 @@ describe('state machine', () => {
     t.setState('backfilling')
     expect(t.getState()).toBe('backfilling')
     // Native recovered -- yield back to IDLE and clear the streak
-    t.setState('idle')
-    t.resetDownStreak()
+    t.yieldToIdle()
+    expect(t.getState()).toBe('idle')
+    expect(t.incrementDownStreak()).toBe(1)
+  })
+
+  it('yieldToIdle transitions to idle AND clears the streak in one call', () => {
+    const t = new LivenessTracker()
+    t.setState('backfilling')
+    t.incrementDownStreak()
+    t.incrementDownStreak()
+    t.yieldToIdle()
     expect(t.getState()).toBe('idle')
     expect(t.incrementDownStreak()).toBe(1)
   })
 })
 
 describe('409 cooldown', () => {
-  it('inactive at construction -- expiry is 0, so nowMs is never strictly less than 0', () => {
+  it('inactive at construction -- confirmedUpUntil defaults to 0, so Date.now() < 0 is false', () => {
     const t = new LivenessTracker()
     expect(t.getNativeConfirmedUpUntil()).toBe(0)
     expect(t.inNative409Cooldown(Date.now())).toBe(false)
@@ -72,7 +70,8 @@ describe('409 cooldown', () => {
     const future = Date.now() + 60_000
     t.setNativeConfirmedUpUntil(future)
     expect(t.getNativeConfirmedUpUntil()).toBe(future)
-    // Strict `<` matches the free-function shim semantics and the class method
+    // Strict `<` boundary: the cooldown is active strictly before the
+    // confirmedUpUntil deadline, expired at and after it.
     expect(t.inNative409Cooldown(future - 1)).toBe(true)
     expect(t.inNative409Cooldown(future)).toBe(false)
     expect(t.inNative409Cooldown(future + 1)).toBe(false)
