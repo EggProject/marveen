@@ -1,6 +1,6 @@
-# G (channel-coordinator) — Module and state analysis
+# G (channel-coordinator) - Module and state analysis
 
-Planning only — no source file modified. Cross-checked against
+Planning only - no source file modified. Cross-checked against
 `/Users/eggp/marveen-develop/test-baseline/src/` on 2026-08-30. Every
 file:line ref below was Read against source in this session.
 
@@ -8,7 +8,7 @@ file:line ref below was Read against source in this session.
 
 G is a self-contained **standalone BACKFILL poller** that runs as a
 separate launchd unit and only does work while the native Telegram
-channel plugin is DOWN — the rest of the time it sits idle. The main
+channel plugin is DOWN - the rest of the time it sits idle. The main
 file `channel-coordinator.ts` (442 lines) is a classic hybrid: 4 module
 mutable lets + 1 const PID_FILE + entry-point guard + signal handlers +
 runLoop state machine; the `telegram-client.ts` module is pure functions
@@ -34,10 +34,10 @@ here.
 
 | File | LOC | Shape | Module-level lets | Module-level state (non-let) | Side effects | Re-init hazard | vi.mock count | Production consumer count |
 |---|---:|---|---|---|---|---|---:|---:|
-| `src/channel-coordinator.ts` | 442 | Hybrid: entry-point + module state + free functions | 4 (`state` L101, `downStreak` L102, `stopping` L103, `nativeConfirmedUpUntil` L106) | 1 const `PID_FILE` (L98); transient `transientAttempt` is local to `runLoop` (L312) | PID_FILE write/unlink (L156, L161); `.env` read (L122); `execFile('/bin/bash', notify.sh)` (L172); `setTimeout` for shutdown drain (L412); `process.on('SIGTERM'\|'SIGINT')` (L418-419); `process.exit` (L151, L306, L415, L439); `process.kill(prev, 0)` lock probe (L148) | **High.** `main()` is guarded by `import.meta.url === pathToFileURL(process.argv[1]).href` at L435 (no re-entry in tests), but inside the process there are no idempotency guards on `initIngestDb`/`installSignalHandlers` re-call. Per B-8 / review-completeness.md CE-8 the `acquireSingleInstanceLock` is the only natural re-entry brake (PID_FILE conflict exits at L151). | 0 (the entry file is **never** `vi.mock`'d; tests call into the module directly) | 0 (the file is run as a process, not imported; the L435 entry-point guard is the contract) |
-| `src/channel-coordinator/telegram-client.ts` | 227 | Pure utilities + 1 class (`TelegramApiError` L45) | 0 | `API_BASE` const (L15); `ALLOWED_UPDATES` const (L21) — neither mutated | `fetch('https://api.telegram.org/bot.../getUpdates')` (L153, L206); `setTimeout` for `AbortController` abort (L150, L203) | **None.** Pure functions; `TelegramApiError` is a value class. AbortController is created per-call so no timer leak across re-init. | 0 (`telegram-client.ts` is exercised via `channel-coordinator-telegram-client.test.ts` which calls functions, not `vi.mock`s the module) | 1 (`src/channel-coordinator.ts:36` only) |
-| `src/channel-coordinator/ingest.ts` | 231 | Hybrid: module singleton + free-function wrappers | 1 (`let db: Database \| null = null` at L25) | none | `new Database(dbPath, { strict: true })` (L29); `pragma(handle, ...)` (L32-33); `runScript(handle, ...)` CREATE TABLE (L35-87); per-call `prepare(...).run(...).get(...).all(...)` SQL | **Low.** `initIngestDb` (L27-91) is idempotent: `if (db) return db` at L28 guards double-init. `closeIngestDb` (L225-230) sets `db = null` after `db.close()`, so a re-init after close works. Per `01 §10` ingest.ts WAL + busy_timeout = 5000ms protects against concurrent dashboard writes (the file-level comment L7-9 calls this out). | 1 (`messages-routes.test.ts:101` mocks `../channel-coordinator/ingest.js` to substitute the const) | 4 (1 internal: `channel-coordinator.ts:38-48`; 3 external const-only: `web/agent-message-wrap.ts:21`, `web/federation/local-catalog.ts:8`, `web/routes/messages.ts:11` — all 3 import `COORDINATOR_AGENT_ID` only) |
-| `src/channel-coordinator/liveness.ts` | 288 | Pure utilities + lazy resolver (`tmuxBin` L20) + provider-poller-match consumer | 0 (the only "state" is the `tmuxBin = makeLazyBinResolver('tmux')` lazy cache) | `tmuxBin` lazy resolver (L20); `KEEPALIVE_FILE` / `KEEPALIVE_STALE_MS` / `STARTUP_GRACE_MS` / `RESPAWN_STAMP_FILE` consts (L25-30); `PS_PROBE_TIMEOUT_MS` / `PS_PROBE_RETRY_TIMEOUT_MS` / `PS_PROBE_MAX_BUFFER` consts (L141-143); `SLUG_RX` map (delegated to provider-poller-match.ts) | `execFileSync('tmux', ...)` (L36); `execFileSync('/bin/ps', ...)` (L39, L181); `execFileSync('/usr/bin/pgrep', ...)` (L42); `readFileSync(bot.pid)` (L198); `readFileSync(RESPAWN_STAMP_FILE)` (L231); `statSync(KEEPALIVE_FILE)` (L243); `process.kill(pid, 0)` isPidAlive probe (L208) | **Low for tests.** `snapshotProcsWithRetry` retries the ps probe once before declaring `'unknown'` (L149-154), per the inline comment at L132-140. **Medium for production.** The lazy `tmuxBin` cache survives process restart only via tmux itself, not Node — so a tmux PATH gap on a freshly-spawned coordinator triggers the `Error('Required binary not found on PATH: tmux')` from `platform.ts:63`. This is unchanged by a class refactor. | 4 (`channel-monitor.test.ts:259`, `channel-monitor-baseline.test.ts:222`, `channel-monitor-coverage.test.ts:243`, `schedule-mcp-precheck-full.test.ts:80`) | 3 (1 internal: `channel-coordinator.ts:37`; 2 external: `web/channel-monitor.ts:50`, `web/schedule-mcp-precheck.ts:22`) |
+| `src/channel-coordinator.ts` | 442 | Hybrid: entry-point + class state + free functions | 0 - **G.3 LANDED** (was 4: `state` / `downStreak` / `stopping` / `nativeConfirmedUpUntil` at the streak-state declaration block; now 4 private fields on a module-singleton `LivenessTracker` instance - see `03-class-boundaries.md §G3`) | 1 const `PID_FILE` (L98); transient `transientAttempt` is local to `runLoop` (L312); `const liveness = new LivenessTracker()` module singleton (post-G.3) | PID_FILE write/unlink (L156, L161); `.env` read (L122); `execFile('/bin/bash', notify.sh)` (L172); `setTimeout` for shutdown drain (L412); `process.on('SIGTERM'\|'SIGINT')` (L418-419); `process.exit` (L151, L306, L415, L439); `process.kill(prev, 0)` lock probe (L148) | **High.** `main()` is guarded by `import.meta.url === pathToFileURL(process.argv[1]).href` at L435 (no re-entry in tests), but inside the process there are no idempotency guards on `initIngestDb`/`installSignalHandlers` re-call. Per B-8 / review-completeness.md CE-8 the `acquireSingleInstanceLock` is the only natural re-entry brake (PID_FILE conflict exits at L151). | 0 (the entry file is **never** `vi.mock`'d; tests call into the module directly) | 0 (the file is run as a process, not imported; the L435 entry-point guard is the contract) |
+| `src/channel-coordinator/telegram-client.ts` | 227 | Pure utilities + 1 class (`TelegramApiError` L45) | 0 | `API_BASE` const (L15); `ALLOWED_UPDATES` const (L21) - neither mutated | `fetch('https://api.telegram.org/bot.../getUpdates')` (L153, L206); `setTimeout` for `AbortController` abort (L150, L203) | **None.** Pure functions; `TelegramApiError` is a value class. AbortController is created per-call so no timer leak across re-init. | 0 (`telegram-client.ts` is exercised via `channel-coordinator-telegram-client.test.ts` which calls functions, not `vi.mock`s the module) | 1 (`src/channel-coordinator.ts:36` only) |
+| `src/channel-coordinator/ingest.ts` | 231 | Hybrid: module singleton + free-function wrappers | 1 (`let db: Database \| null = null` at L25) | none | `new Database(dbPath, { strict: true })` (L29); `pragma(handle, ...)` (L32-33); `runScript(handle, ...)` CREATE TABLE (L35-87); per-call `prepare(...).run(...).get(...).all(...)` SQL | **Low.** `initIngestDb` (L27-91) is idempotent: `if (db) return db` at L28 guards double-init. `closeIngestDb` (L225-230) sets `db = null` after `db.close()`, so a re-init after close works. Per `01 §10` ingest.ts WAL + busy_timeout = 5000ms protects against concurrent dashboard writes (the file-level comment L7-9 calls this out). | 1 (`messages-routes.test.ts:101` mocks `../channel-coordinator/ingest.js` to substitute the const) | 4 (1 internal: `channel-coordinator.ts:38-48`; 3 external const-only: `web/agent-message-wrap.ts:21`, `web/federation/local-catalog.ts:8`, `web/routes/messages.ts:11` - all 3 import `COORDINATOR_AGENT_ID` only) |
+| `src/channel-coordinator/liveness.ts` | 288 | Pure utilities + lazy resolver (`tmuxBin` L20) + provider-poller-match consumer | 0 (the only "state" is the `tmuxBin = makeLazyBinResolver('tmux')` lazy cache) | `tmuxBin` lazy resolver (L20); `KEEPALIVE_FILE` / `KEEPALIVE_STALE_MS` / `STARTUP_GRACE_MS` / `RESPAWN_STAMP_FILE` consts (L25-30); `PS_PROBE_TIMEOUT_MS` / `PS_PROBE_RETRY_TIMEOUT_MS` / `PS_PROBE_MAX_BUFFER` consts (L141-143); `SLUG_RX` map (delegated to provider-poller-match.ts) | `execFileSync('tmux', ...)` (L36); `execFileSync('/bin/ps', ...)` (L39, L181); `execFileSync('/usr/bin/pgrep', ...)` (L42); `readFileSync(bot.pid)` (L198); `readFileSync(RESPAWN_STAMP_FILE)` (L231); `statSync(KEEPALIVE_FILE)` (L243); `process.kill(pid, 0)` isPidAlive probe (L208) | **Low for tests.** `snapshotProcsWithRetry` retries the ps probe once before declaring `'unknown'` (L149-154), per the inline comment at L132-140. **Medium for production.** The lazy `tmuxBin` cache survives process restart only via tmux itself, not Node - so a tmux PATH gap on a freshly-spawned coordinator triggers the `Error('Required binary not found on PATH: tmux')` from `platform.ts:63`. This is unchanged by a class refactor. | 4 (`channel-monitor.test.ts:259`, `channel-monitor-baseline.test.ts:222`, `channel-monitor-coverage.test.ts:243`, `schedule-mcp-precheck-full.test.ts:80`) | 3 (1 internal: `channel-coordinator.ts:37`; 2 external: `web/channel-monitor.ts:50`, `web/schedule-mcp-precheck.ts:22`) |
 | `src/channel-coordinator/provider-poller-match.ts` (sub-scope of `liveness.ts`) | 92 | Pure utilities + const `SLUG_RX` | 0 | `RUNTIME_TOKEN_RX` (L21); `SLUG_RX: Record<ChannelProviderType, RegExp>` (L49-55); `SLACK_SOCKET_MODE_RX` (L70) | none | **None.** Frozen regex constants + one pure function. | 0 (covered via `provider-poller-match.test.ts` direct exercise; no module mock needed because it has no I/O) | 1 (`src/channel-coordinator/liveness.ts:18`) |
 
 **Test mock totals (G scope, verified 2026-08-30):**
@@ -53,39 +53,44 @@ here.
 
 ## channel-coordinator.ts deep-dive (the entry point)
 
-### The 4 module-level mutable lets
+### The 4 module-level mutable lets [G.3 LANDED]
 
-`channel-coordinator.ts:101-106` declares:
+**G.3 LANDED** (this commit). The 4 module-level lets described below
+have moved to 4 private fields on a module-singleton `LivenessTracker`
+instance in `channel-coordinator.ts`. See `03-class-boundaries.md §G3`
+for the class surface and the LANDED footer.
+
+The pre-G.3 state surface (preserved here for historical reference):
 
 ```ts
-let state: State = 'idle'          // L101 — 'idle' | 'backfilling'
-let downStreak = 0                  // L102 — consecutive DOWN probes (debounce)
-let stopping = false                // L103 — SIGTERM/SIGINT latch
-let nativeConfirmedUpUntil = 0      // L106 — epoch-ms; 409-cooldown expiry
+let state: State = 'idle'          // was: 'idle' | 'backfilling' (now: liveness private field)
+let downStreak = 0                  // was: consecutive DOWN probes (debounce) (now: liveness private field)
+let stopping = false                // was: SIGTERM/SIGINT latch (now: liveness private field)
+let nativeConfirmedUpUntil = 0      // was: epoch-ms; 409-cooldown expiry (now: liveness private field)
 ```
 
-These are the **entire** state surface of the G subsystem. The state
+These were the **entire** state surface of the G subsystem. The state
 machine `state × downStreak × stopping × nativeConfirmedUpUntil` plus the
-local `transientAttempt` inside `runLoop` (L312) is the only state the
-poller holds between ticks. They are the canonical "4 mutable bindings"
-flagged in `review-correctness.md` m9 and the `01 §1` plan claim —
-verified verbatim at `channel-coordinator.ts:101-106`.
+local `transientAttempt` inside `runLoop` (L312) was the only state the
+poller held between ticks. They are the canonical "4 mutable bindings"
+flagged in `review-correctness.md` m9 and the `01 §1` plan claim -
+verified verbatim at the streak-state declaration block in
+`channel-coordinator.ts`.
 
-**Critical caveat for the class refactor:** these 4 lets MUST move
-together into the same class instance, because `runLoop` (L311-403)
-reads AND writes all 4 from within its single `while (!stopping)` body
-(L313 → L322 → L323 → L324 → L331 → L339 → L356 → L373 → L375).
-Splitting them across 4 fields of a class is fine; splitting them across
-4 classes (e.g. one for the state machine, one for the cooldown timer)
-introduces ordering hazards between the 4 reads at L322, L335, L338,
-L339, L354, L372-378, L393 — and per `CLAUDE.md §1` the simplest design
-that solves the problem is the right one.
+**Critical caveat (now RESOLVED via G.3):** these 4 lets MUST move
+together into the same class instance, because `runLoop` reads AND
+writes all 4 from within its single `while (!stopping)` body.
+Splitting them across 4 classes (e.g. one for the state machine, one
+for the cooldown timer) would introduce ordering hazards between the 4
+reads at L322, L335, L338, L339, L354, L372-378, L393 - and per
+`CLAUDE.md §1` the simplest design that solves the problem is the
+right one. G.3 collapsed them into 4 private fields of `LivenessTracker`.
 
 ### `PID_FILE` const + 4 usage sites
 
 `PID_FILE` is declared at `channel-coordinator.ts:98` as
 `join(STATE_DIR, 'coordinator.pid')`. It is a `const` (NOT a mutable
-binding — `review-correctness.md` m9 verified this), and is used at:
+binding - `review-correctness.md` m9 verified this), and is used at:
 
 | Line | Usage | Reads/writes |
 |---|---|---|
@@ -94,7 +99,7 @@ binding — `review-correctness.md` m9 verified this), and is used at:
 | L156 | `writeFileSync(PID_FILE, String(process.pid), { mode: 0o600 })` in `acquireSingleInstanceLock` | write |
 | L161 | `readFileSync(PID_FILE, 'utf-8')` + `unlinkSync(PID_FILE)` in `releaseLock` | read+delete |
 
-Per `review-correctness.md` m9 the "2 pid-file" wording is wrong — it
+Per `review-correctness.md` m9 the "2 pid-file" wording is wrong - it
 counts references, not bindings. The correct characterization is "1 const
 PID_FILE referenced at 4 sites, 3 reads + 1 write + 1 unlink + 1
 existsSync". The const is **content-immutable** (filesystem-path only)
@@ -134,14 +139,14 @@ checks.
 The state machine is **`idle ⇄ backfilling`** with two exits (fatal +
 shutdown):
 
-1. **Every tick** (both states): `reconcilePending()` — re-hand-off
+1. **Every tick** (both states): `reconcilePending()` - re-hand-off
    abandoned/stranded events (L315, defined L270-298). This is the
    **no-message-loss invariant**: a frozen main agent delays a message,
    never LOSES it (per the file-level comment L262-269).
 
 2. **`idle` branch (L317-349):**
    - Probe native liveness via `probeNativeChannelDown(SESSION, PROVIDER)`
-     (L322) — short-circuited by the 409 cooldown.
+     (L322) - short-circuited by the 409 cooldown.
    - Increment `downStreak` (L323) or reset to 0 on UP (else-branch).
    - If `downStreak >= DOWN_DEBOUNCE` (L324, constant=2): enter
      `backfilling`. **First** call `probeHighWater(token)` to seed the
@@ -160,7 +165,7 @@ shutdown):
    - Handle fatal: `fatalExit` → notify.sh + exit 1 (L366, defined L302-307).
    - **Yield-before-handoff**: after a successful poll but before
      `processBatch`, re-probe liveness; if native is back, DISCARD the
-     batch (L393-397) — the native will deliver from its own offset.
+     batch (L393-397) - the native will deliver from its own offset.
    - Persist offset ONLY after `processBatch` returns (L401).
 
 The shape is **two coupled state machines**: the lifecycle state (`state`,
@@ -181,7 +186,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 This is the **only** mechanism that prevents `main()` from running when
 the file is imported (e.g., by tests). It is the G counterpart to
 `web.ts`'s "if the file is the entry point, start the server" pattern.
-A class refactor **must preserve this guard verbatim** — it is what lets
+A class refactor **must preserve this guard verbatim** - it is what lets
 `vi.mock('../channel-coordinator/...')` substitutes avoid kicking off a
 second coordinator process. Per `CLAUDE.md §3` the guard is load-bearing
 and must not be "improved" during the refactor.
@@ -207,18 +212,18 @@ export class TelegramApiError extends Error {
 
 This is the **only class in G scope today** (per the framework
 `review-completeness.md` CE-1, which missed this class in its "9 existing
-classes" inventory — it is one of the 10 classes total). It carries:
+classes" inventory - it is one of the 10 classes total). It carries:
 
-- `kind: 'fatal' | 'rate_limit' | 'conflict' | 'transient'` — the
+- `kind: 'fatal' | 'rate_limit' | 'conflict' | 'transient'` - the
   discriminator that drives the 5 branch sites at
   `channel-coordinator.ts:335, 338, 366, 372, 378` (`err.kind === 'fatal'`,
   `'conflict'`, `'rate_limit'`).
-- `retryAfterSec?: number` — the Bot-API `parameters.retry_after` for 429
+- `retryAfterSec?: number` - the Bot-API `parameters.retry_after` for 429
   responses (read at `channel-coordinator.ts:379`).
 - Standard `name = 'TelegramApiError'` literal set in the constructor
   body (L52). Under H.4's `AppError` base this becomes
-  `new.target.name`, which is the same string — zero behavioural change.
-- No `cause` chain (per `h-cross-cutting/03-class-boundaries.md:219` —
+  `new.target.name`, which is the same string - zero behavioural change.
+- No `cause` chain (per `h-cross-cutting/03-class-boundaries.md:219` -
   one of the 8 of 9 classes that doesn't pass `cause` to `super`).
 
 **Refactor implications:**
@@ -258,7 +263,7 @@ classes" inventory — it is one of the 10 classes total). It carries:
   - 409 → `'conflict'` (L180)
   - 429 → `'rate_limit'` (L181), carries `retryAfterSec`
   - 5xx → `'transient'` (L182)
-  - 400/403/other 4xx → `'fatal'` (L184) — "configuration bugs, not
+  - 400/403/other 4xx → `'fatal'` (L184) - "configuration bugs, not
     transient" per the inline comment.
 - Body parse (L168-177) is defensive: a proxy 5xx may not be JSON, so the
   catch falls back to `errorCode = res.status, description = 'HTTP ###'`.
@@ -272,7 +277,7 @@ L193-200 calls out two non-obvious invariants: (a) the call is
 non-destructive (no offset advance), and (b) `allowed_updates` is
 deliberately **omitted** because Telegram REMEMBERS the last
 `allowed_updates` passed, so sending ours would alter what the native
-plugin's poll receives — a subtle bug class. Both invariants must
+plugin's poll receives - a subtle bug class. Both invariants must
 survive the class refactor.
 
 ### Error structure (kind-discriminated)
@@ -301,7 +306,7 @@ let db: Database | null = null
 This is the only mutable binding in `ingest.ts`. `initIngestDb` (L27-91)
 opens the handle, runs CREATE TABLE IF NOT EXISTS for `incoming_events`
 (L36-54), the unique index (L58), the status index (L59),
-`poll_offset` (L62-66), and defensively `agent_messages` (L76-86) — the
+`poll_offset` (L62-66), and defensively `agent_messages` (L76-86) - the
 file-level comment L69-74 explains this is a boot-race guard so the
 coordinator can hand off messages even if its launchd unit wins the
 race to `store/claudeclaw.db` before the dashboard's `initDatabase`
@@ -336,7 +341,7 @@ boot, then injected. Per A.1's pattern (`a-db/00-summary.md`),
 `incoming_events` + `poll_offset` tables; per the framework plan these
 are 2 tables that don't exist in the dashboard schema, so they are G-owned
 and A does NOT need to absorb them. **The coordinator owns its own DB
-layer** — see `ingest.ts:1-9` ("The coordinator is a SEPARATE process
+layer** - see `ingest.ts:1-9` ("The coordinator is a SEPARATE process
 from the dashboard, so it cannot share the dashboard's sqlite singleton
 (`src/db.ts`). It opens its OWN handle to the same
 `store/claudeclaw.db` file."). This is a load-bearing constraint: G
@@ -345,7 +350,7 @@ singleton.
 
 ### Message reception: there is no queue or buffer
 
-`ingest.ts` is **not** the message-reception layer — it is the
+`ingest.ts` is **not** the message-reception layer - it is the
 **persistence layer** for messages received by `telegram-client.ts` and
 processed by `channel-coordinator.ts:processBatch`. The reception path
 is:
@@ -371,7 +376,7 @@ is:
 `incoming_events` rows with `status = 'pending'` or
 `agent_message_id IS NULL` ARE the queue. The reconciliation loop in
 `channel-coordinator.ts:reconcilePending` (L270-298) is the
-"queue-flush on crash recovery" mechanism — it picks up rows that
+"queue-flush on crash recovery" mechanism - it picks up rows that
 `getEventsNeedingHandoff` returns (ingest.ts:190-204) and re-hands them
 off.
 
@@ -427,7 +432,7 @@ seams.
 
 ### Timer / heartbeat pattern
 
-`liveness.ts` itself does **not** run any timers — the tick loop is
+`liveness.ts` itself does **not** run any timers - the tick loop is
 `channel-coordinator.ts:runLoop` (L311-403) which calls
 `probeNativeChannelDown` every `TICK_MS` (5s, L60 of channel-coordinator.ts).
 The "heartbeat" referenced in the file-level comment L22-26 is the
@@ -463,10 +468,10 @@ via class instances (because no class exists today):
 
 | State | Owner | Read by |
 |---|---|---|
-| `state` (idle/backfilling) | `channel-coordinator.ts:101` | `runLoop` only (single-process) |
-| `downStreak` | `channel-coordinator.ts:102` | `runLoop` only |
-| `stopping` | `channel-coordinator.ts:103` | `runLoop`, `installSignalHandlers.onSignal` |
-| `nativeConfirmedUpUntil` | `channel-coordinator.ts:106` | `runLoop` (read at L322), `runLoop` (write at L339, L373) |
+| `state` (idle/backfilling) | `LivenessTracker` private field (post-G.3 LANDED) - was `channel-coordinator.ts` module-level let | `runLoop` only (single-process) - reads via `liveness.getState()` / writes via `liveness.setState(...)` |
+| `downStreak` | `LivenessTracker` private field (post-G.3 LANDED) - was `channel-coordinator.ts` module-level let | `runLoop` only - reads via `liveness.incrementDownStreak()` (return value) / writes via `liveness.resetDownStreak()` |
+| `stopping` | `LivenessTracker` private field (post-G.3 LANDED) - was `channel-coordinator.ts` module-level let | `runLoop` (via `liveness.isStopping()`), `installSignalHandlers.onSignal` (via `liveness.setStopping()`) |
+| `nativeConfirmedUpUntil` | `LivenessTracker` private field (post-G.3 LANDED) - was `channel-coordinator.ts` module-level let | `runLoop` (read via `liveness.inNative409Cooldown(nowMs)` and `liveness.getNativeConfirmedUpUntil()`); writes via `liveness.setNativeConfirmedUpUntil(...)` |
 | `db` (ingest singleton) | `ingest.ts:25` | `initIngestDb`, `closeIngestDb`, `requireDb` (L93), every per-call query helper |
 | `tmuxBin` lazy cache | `liveness.ts:20` | `getClaudePidForSession` (L36) |
 | `PID_FILE` filesystem content | external (other coordinator process) | `acquireSingleInstanceLock` (L144-156), `releaseLock` (L161) |
@@ -480,8 +485,11 @@ via class instances (because no class exists today):
 cache is in-process. The only **cross-process** state is the SQLite WAL
 file (`store/claudeclaw.db`) and the PID file at `STATE_DIR/coordinator.pid`.
 
-**Class refactor implication:** all 4 module-lets move to a single
-`ChannelCoordinator` class; `db` moves to `IngestStore` (or stays a
+**Class refactor implication:** G.3 (LANDED, this commit) moved all 4
+module-lets to a single `LivenessTracker` class (NOT directly to
+`ChannelCoordinator`, per `03-class-boundaries.md §G3`); G.4
+(pending) will have `ChannelCoordinator` hold a `LivenessTracker`
+instance as a constructor dep. `db` moves to `IngestStore` (or stays a
 module singleton until A.7 deletes it); `tmuxBin` becomes a private
 field on a `LivenessProbe` class or stays as the `LazyBin` instance per
 H.3. The cross-process state is untouched by the refactor.
@@ -507,7 +515,7 @@ PROVIDER)` at `channel-coordinator.ts:322, 354, 393` (3 callsites). The
 **`channel-coordinator.ts` does NOT import `ChannelProvider`, `getProvider`,
 or any provider method.** It only consumes the `ChannelProviderType` enum
 as a discriminator for `probeNativeChannelDown`. This is the lightest
-possible coupling to D — the coordinator never SENDS a message (outbound
+possible coupling to D - the coordinator never SENDS a message (outbound
 stays with the native plugin, per `telegram-client.ts:8-13`); it only
 needs to know which provider's plugin to monitor for liveness.
 
@@ -526,7 +534,7 @@ imports remain valid after D.5.
 
 `telegram-client.ts` does not import `channel-provider.js` at all.
 
-`provider-poller-match.ts:16` imports `type ChannelProviderType` only —
+`provider-poller-match.ts:16` imports `type ChannelProviderType` only -
 survives unchanged.
 
 ---
@@ -537,10 +545,10 @@ survives unchanged.
 references "ChannelPairingStore (A subsystem)" but a grep for
 `ChannelPairingStore` returns no results in `src/`. What exists instead:
 
-- `ingest.ts:23` `COORDINATOR_AGENT_ID = 'telegram-coordinator'` — the
+- `ingest.ts:23` `COORDINATOR_AGENT_ID = 'telegram-coordinator'` - the
   sender identity on the handoff row.
-- `config.ts:MAIN_AGENT_ID` — the recipient of the handoff row.
-- `buildHandoffContent` (channel-coordinator.ts:189-215) — the `<channel
+- `config.ts:MAIN_AGENT_ID` - the recipient of the handoff row.
+- `buildHandoffContent` (channel-coordinator.ts:189-215) - the `<channel
   ...>` block that the message-router's `wrapUntrusted` recognizes as a
   channel-inbound message.
 
@@ -568,17 +576,17 @@ Verified on 2026-08-30 against `src/__tests__/`.
 test files (`channel-coordinator-*.test.ts`) call into the module
 directly:
 
-- `channel-coordinator.test.ts` — entry-point guard + `inNative409Cooldown` + `transientBackoffMs` + `neutralizeChannelTags` + `buildHandoffContent` (exported free functions)
-- `channel-coordinator-full.test.ts` — bootstrap integration
-- `channel-coordinator-bootstrap-extra.test.ts` — `readToken` + `acquireSingleInstanceLock`
-- `channel-coordinator-ingest.test.ts` — processBatch + reconcile via `ingest.ts`
-- `channel-coordinator-liveness.test.ts` — provider-poller-match + liveness
-- `channel-coordinator-lock.test.ts` — `acquireSingleInstanceLock` edge cases
-- `channel-coordinator-lock-live-pid.test.ts` — live-pid reclaim
-- `channel-coordinator-process-batch.test.ts` — `processBatch` direct
-- `channel-coordinator-reconcile.test.ts` — `reconcilePending` direct
-- `channel-coordinator-runloop-extra.test.ts` — `runLoop` 409-cooldown + 401-fatal
-- `channel-coordinator-telegram-client.test.ts` — `mapUpdate` + `getUpdates` + `probeHighWater` + `TelegramApiError`
+- `channel-coordinator.test.ts` - entry-point guard + `inNative409Cooldown` + `transientBackoffMs` + `neutralizeChannelTags` + `buildHandoffContent` (exported free functions)
+- `channel-coordinator-full.test.ts` - bootstrap integration
+- `channel-coordinator-bootstrap-extra.test.ts` - `readToken` + `acquireSingleInstanceLock`
+- `channel-coordinator-ingest.test.ts` - processBatch + reconcile via `ingest.ts`
+- `channel-coordinator-liveness.test.ts` - provider-poller-match + liveness
+- `channel-coordinator-lock.test.ts` - `acquireSingleInstanceLock` edge cases
+- `channel-coordinator-lock-live-pid.test.ts` - live-pid reclaim
+- `channel-coordinator-process-batch.test.ts` - `processBatch` direct
+- `channel-coordinator-reconcile.test.ts` - `reconcilePending` direct
+- `channel-coordinator-runloop-extra.test.ts` - `runLoop` 409-cooldown + 401-fatal
+- `channel-coordinator-telegram-client.test.ts` - `mapUpdate` + `getUpdates` + `probeHighWater` + `TelegramApiError`
 
 These tests do NOT mock the entry file because the file does nothing at
 import time (the L435 entry-point guard prevents `main()` from running
@@ -592,7 +600,7 @@ signal handlers, every test that today calls
 **Zero `vi.mock` sites.** Covered by `channel-coordinator-telegram-client.test.ts`
 which exercises `mapUpdate`, `getUpdates`, `probeHighWater`, and
 `TelegramApiError` directly. The class form (`TelegramClient`) would be
-exercised the same way — no mock infrastructure needed.
+exercised the same way - no mock infrastructure needed.
 
 ### `ingest.ts`
 
@@ -609,8 +617,8 @@ the const, not the DB functions).
 | File | Line | Reason |
 |---|---:|---|
 | `channel-monitor.test.ts` | 259 | The monitor's own tests substitute the liveness helpers to avoid `ps`/`tmux` exec calls in CI |
-| `channel-monitor-baseline.test.ts` | 222 | Same — baseline coverage suite |
-| `channel-monitor-coverage.test.ts` | 243 | Same — coverage suite |
+| `channel-monitor-baseline.test.ts` | 222 | Same - baseline coverage suite |
+| `channel-monitor-coverage.test.ts` | 243 | Same - coverage suite |
 | `schedule-mcp-precheck-full.test.ts` | 80 | The precheck uses `getClaudePidForSession`; test substitutes it |
 
 The mock shape is consistent across all 4: a `vi.mock(..., () => ({ getClaudePidForSession: vi.fn(), hasChannelPluginAlive: vi.fn(), probeChannelPluginLiveness: vi.fn() }))`.
@@ -635,7 +643,7 @@ files themselves):
 
 ### `channel-coordinator.ts`
 
-**Zero production importers** — the file is run as a process, not
+**Zero production importers** - the file is run as a process, not
 imported. The `import.meta.url === pathToFileURL(process.argv[1]).href`
 guard at L435 is the contract that prevents recursive invocation.
 
@@ -643,16 +651,16 @@ guard at L435 is the contract that prevents recursive invocation.
 
 **1 production importer:**
 
-- `src/channel-coordinator.ts:36` — `import { getUpdates, probeHighWater, mapUpdate, TelegramApiError } from './channel-coordinator/telegram-client.js'`
+- `src/channel-coordinator.ts:36` - `import { getUpdates, probeHighWater, mapUpdate, TelegramApiError } from './channel-coordinator/telegram-client.js'`
 
 ### `ingest.ts`
 
 **4 production importers (1 internal + 3 external const-only):**
 
-- `src/channel-coordinator.ts:38-48` — internal: `initIngestDb, insertIncomingEvent, createHandoffMessage, markEventDelivered, getEventsNeedingHandoff, getOffset, setOffset, closeIngestDb, type InsertResult`
-- `src/web/agent-message-wrap.ts:21` — external: `COORDINATOR_AGENT_ID` only
-- `src/web/federation/local-catalog.ts:8` — external: `COORDINATOR_AGENT_ID` only
-- `src/web/routes/messages.ts:11` — external: `COORDINATOR_AGENT_ID` only
+- `src/channel-coordinator.ts:38-48` - internal: `initIngestDb, insertIncomingEvent, createHandoffMessage, markEventDelivered, getEventsNeedingHandoff, getOffset, setOffset, closeIngestDb, type InsertResult`
+- `src/web/agent-message-wrap.ts:21` - external: `COORDINATOR_AGENT_ID` only
+- `src/web/federation/local-catalog.ts:8` - external: `COORDINATOR_AGENT_ID` only
+- `src/web/routes/messages.ts:11` - external: `COORDINATOR_AGENT_ID` only
 
 The 3 external consumers import only the `COORDINATOR_AGENT_ID` const
 to filter their queries by `from_agent`. A refactor that moves
@@ -663,10 +671,10 @@ const (or the 3 consumers must migrate to `app.ingestStore.coordinatorAgentId`).
 
 **3 production importers (1 internal + 2 external):**
 
-- `src/channel-coordinator.ts:37` — internal: `probeNativeChannelDown`
-- `src/web/channel-monitor.ts:50` — external:
+- `src/channel-coordinator.ts:37` - internal: `probeNativeChannelDown`
+- `src/web/channel-monitor.ts:50` - external:
   `getClaudePidForSession, hasChannelPluginAlive, probeChannelPluginLiveness`
-- `src/web/schedule-mcp-precheck.ts:22` — external: `getClaudePidForSession`
+- `src/web/schedule-mcp-precheck.ts:22` - external: `getClaudePidForSession`
 
 The 2 external consumers in `web/` are part of the channel-monitor and
 schedule-mcp-precheck subsystems; they share the liveness helpers with
@@ -677,7 +685,7 @@ dashboard's channel-monitor and the standalone channel-coordinator").
 
 **1 production importer (within G):**
 
-- `src/channel-coordinator/liveness.ts:18` — `matchesProviderPollerCmd`
+- `src/channel-coordinator/liveness.ts:18` - `matchesProviderPollerCmd`
 
 Plus the test file `provider-poller-match.test.ts`.
 
@@ -685,51 +693,51 @@ Plus the test file `provider-poller-match.test.ts`.
 
 ## Cross-references (verified file:line)
 
-- `src/channel-coordinator.ts:98` — `const PID_FILE = join(STATE_DIR, 'coordinator.pid')`
-- `src/channel-coordinator.ts:101-106` — 4 module-level lets
-- `src/channel-coordinator.ts:117-136` — `readToken`
-- `src/channel-coordinator.ts:142-157` — `acquireSingleInstanceLock` (PID_FILE write at L156)
-- `src/channel-coordinator.ts:159-163` — `releaseLock` (PID_FILE unlink at L161)
-- `src/channel-coordinator.ts:170-175` — `sendAlert` (notify.sh exec)
-- `src/channel-coordinator.ts:182-184` — `neutralizeChannelTags` (exported)
-- `src/channel-coordinator.ts:189-215` — `buildHandoffContent` (exported)
-- `src/channel-coordinator.ts:221-224` — `transientBackoffMs` (exported)
-- `src/channel-coordinator.ts:233-258` — `processBatch`
-- `src/channel-coordinator.ts:270-298` — `reconcilePending`
-- `src/channel-coordinator.ts:302-307` — `fatalExit`
-- `src/channel-coordinator.ts:311-403` — `runLoop` (state machine)
-- `src/channel-coordinator.ts:407-420` — `installSignalHandlers`
-- `src/channel-coordinator.ts:422-431` — `main`
-- `src/channel-coordinator.ts:435` — entry-point guard
-- `src/channel-coordinator/telegram-client.ts:45-54` — `class TelegramApiError`
-- `src/channel-coordinator/telegram-client.ts:98-137` — `mapUpdate`
-- `src/channel-coordinator/telegram-client.ts:143-190` — `getUpdates`
-- `src/channel-coordinator/telegram-client.ts:201-226` — `probeHighWater`
-- `src/channel-coordinator/ingest.ts:23` — `COORDINATOR_AGENT_ID = 'telegram-coordinator'`
-- `src/channel-coordinator/ingest.ts:25` — `let db: Database | null = null`
-- `src/channel-coordinator/ingest.ts:27-91` — `initIngestDb`
-- `src/channel-coordinator/ingest.ts:93-96` — `requireDb`
-- `src/channel-coordinator/ingest.ts:126-150` — `insertIncomingEvent`
-- `src/channel-coordinator/ingest.ts:160-166` — `createHandoffMessage`
-- `src/channel-coordinator/ingest.ts:168-173` — `markEventDelivered`
-- `src/channel-coordinator/ingest.ts:175-177` — `markEventFailed`
-- `src/channel-coordinator/ingest.ts:190-204` — `getEventsNeedingHandoff`
-- `src/channel-coordinator/ingest.ts:206-211` — `getOffset`
-- `src/channel-coordinator/ingest.ts:216-223` — `setOffset`
-- `src/channel-coordinator/ingest.ts:225-230` — `closeIngestDb`
-- `src/channel-coordinator/liveness.ts:20` — `const tmuxBin = makeLazyBinResolver('tmux')`
-- `src/channel-coordinator/liveness.ts:25-30` — keepalive / respawn file paths
-- `src/channel-coordinator/liveness.ts:34-49` — `getClaudePidForSession`
-- `src/channel-coordinator/liveness.ts:72-130` — `decideHasPluginAlive` (pure)
-- `src/channel-coordinator/liveness.ts:141-155` — `snapshotProcsWithRetry`
-- `src/channel-coordinator/liveness.ts:164-217` — `probeChannelPluginLiveness`
-- `src/channel-coordinator/liveness.ts:223-225` — `hasChannelPluginAlive`
-- `src/channel-coordinator/liveness.ts:266-272` — `decideNativeChannelDown` (pure)
-- `src/channel-coordinator/liveness.ts:276-287` — `probeNativeChannelDown`
-- `src/channel-coordinator/provider-poller-match.ts:21` — `RUNTIME_TOKEN_RX`
-- `src/channel-coordinator/provider-poller-match.ts:49-55` — `SLUG_RX`
-- `src/channel-coordinator/provider-poller-match.ts:70` — `SLACK_SOCKET_MODE_RX`
-- `src/channel-coordinator/provider-poller-match.ts:82-91` — `matchesProviderPollerCmd`
+- `src/channel-coordinator.ts:98` - `const PID_FILE = join(STATE_DIR, 'coordinator.pid')`
+- `src/channel-coordinator.ts:101-106` - 4 module-level lets
+- `src/channel-coordinator.ts:117-136` - `readToken`
+- `src/channel-coordinator.ts:142-157` - `acquireSingleInstanceLock` (PID_FILE write at L156)
+- `src/channel-coordinator.ts:159-163` - `releaseLock` (PID_FILE unlink at L161)
+- `src/channel-coordinator.ts:170-175` - `sendAlert` (notify.sh exec)
+- `src/channel-coordinator.ts:182-184` - `neutralizeChannelTags` (exported)
+- `src/channel-coordinator.ts:189-215` - `buildHandoffContent` (exported)
+- `src/channel-coordinator.ts:221-224` - `transientBackoffMs` (exported)
+- `src/channel-coordinator.ts:233-258` - `processBatch`
+- `src/channel-coordinator.ts:270-298` - `reconcilePending`
+- `src/channel-coordinator.ts:302-307` - `fatalExit`
+- `src/channel-coordinator.ts:311-403` - `runLoop` (state machine)
+- `src/channel-coordinator.ts:407-420` - `installSignalHandlers`
+- `src/channel-coordinator.ts:422-431` - `main`
+- `src/channel-coordinator.ts:435` - entry-point guard
+- `src/channel-coordinator/telegram-client.ts:45-54` - `class TelegramApiError`
+- `src/channel-coordinator/telegram-client.ts:98-137` - `mapUpdate`
+- `src/channel-coordinator/telegram-client.ts:143-190` - `getUpdates`
+- `src/channel-coordinator/telegram-client.ts:201-226` - `probeHighWater`
+- `src/channel-coordinator/ingest.ts:23` - `COORDINATOR_AGENT_ID = 'telegram-coordinator'`
+- `src/channel-coordinator/ingest.ts:25` - `let db: Database | null = null`
+- `src/channel-coordinator/ingest.ts:27-91` - `initIngestDb`
+- `src/channel-coordinator/ingest.ts:93-96` - `requireDb`
+- `src/channel-coordinator/ingest.ts:126-150` - `insertIncomingEvent`
+- `src/channel-coordinator/ingest.ts:160-166` - `createHandoffMessage`
+- `src/channel-coordinator/ingest.ts:168-173` - `markEventDelivered`
+- `src/channel-coordinator/ingest.ts:175-177` - `markEventFailed`
+- `src/channel-coordinator/ingest.ts:190-204` - `getEventsNeedingHandoff`
+- `src/channel-coordinator/ingest.ts:206-211` - `getOffset`
+- `src/channel-coordinator/ingest.ts:216-223` - `setOffset`
+- `src/channel-coordinator/ingest.ts:225-230` - `closeIngestDb`
+- `src/channel-coordinator/liveness.ts:20` - `const tmuxBin = makeLazyBinResolver('tmux')`
+- `src/channel-coordinator/liveness.ts:25-30` - keepalive / respawn file paths
+- `src/channel-coordinator/liveness.ts:34-49` - `getClaudePidForSession`
+- `src/channel-coordinator/liveness.ts:72-130` - `decideHasPluginAlive` (pure)
+- `src/channel-coordinator/liveness.ts:141-155` - `snapshotProcsWithRetry`
+- `src/channel-coordinator/liveness.ts:164-217` - `probeChannelPluginLiveness`
+- `src/channel-coordinator/liveness.ts:223-225` - `hasChannelPluginAlive`
+- `src/channel-coordinator/liveness.ts:266-272` - `decideNativeChannelDown` (pure)
+- `src/channel-coordinator/liveness.ts:276-287` - `probeNativeChannelDown`
+- `src/channel-coordinator/provider-poller-match.ts:21` - `RUNTIME_TOKEN_RX`
+- `src/channel-coordinator/provider-poller-match.ts:49-55` - `SLUG_RX`
+- `src/channel-coordinator/provider-poller-match.ts:70` - `SLACK_SOCKET_MODE_RX`
+- `src/channel-coordinator/provider-poller-match.ts:82-91` - `matchesProviderPollerCmd`
 
 ---
 

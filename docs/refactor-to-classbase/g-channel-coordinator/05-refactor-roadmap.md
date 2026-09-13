@@ -1,13 +1,13 @@
-# G (channel-coordinator) — Refactor roadmap
+# G (channel-coordinator) - Refactor roadmap
 
 Ordered phases for the G subsystem only. Each phase is independently
-mergeable, with rollback granularity per phase. **Planning only — no
+mergeable, with rollback granularity per phase. **Planning only - no
 source files modified.** All file:line claims verified against `src/`
 on 2026-08-30.
 
 ---
 
-## Phase G.1 — `TelegramClient` class extraction
+## Phase G.1 - `TelegramClient` class extraction
 
 **Goal:** Introduce `class TelegramClient` alongside the existing free
 functions in `src/channel-coordinator/telegram-client.ts`. The class
@@ -18,7 +18,7 @@ verbatim.
 
 **Files touched:**
 
-- `src/channel-coordinator/telegram-client.ts` (227 LOC) — add
+- `src/channel-coordinator/telegram-client.ts` (227 LOC) - add
   `class TelegramClient` block at the bottom; the 3 free functions
   stay as `export function` and become 1-line wrappers
   (`export const getUpdates = (...args) => new TelegramClient(env, db, log).getUpdates(...args)`)
@@ -56,11 +56,11 @@ continues to exercise the free functions; no test rewrite needed.
 leaf-class extractions in 3 different files. They can land in any
 order or in parallel branches. Per `01 §Per-file inventory` and
 `03-class-boundaries.md`, the 3 classes have **zero inter-dependency
-at this stage** — they only meet in G.4's `ChannelCoordinator`
+at this stage** - they only meet in G.4's `ChannelCoordinator`
 constructor.
 
 **Dependencies:** None blocking. G.1 does NOT depend on H.1
-(`LoggerLike`) — the constructor takes `log: LoggerLike` per the
+(`LoggerLike`) - the constructor takes `log: LoggerLike` per the
 brief, but the class form can defer the logger field to G.7 (per the
 phased plan). If G.1 lands before H.1, the constructor takes `log:
 Logger` (the concrete pino type from `src/logger.ts:3`); the
@@ -70,7 +70,7 @@ re-typing to `LoggerLike` happens in G.7.
 
 ---
 
-## Phase G.2 — `IngestWorker` class extraction
+## Phase G.2 - `IngestWorker` class extraction
 
 **Goal:** Introduce `class IngestWorker` alongside the existing free
 functions in `src/channel-coordinator/ingest.ts`. The class absorbs
@@ -81,7 +81,7 @@ the 8 free functions enumerated in `03-class-boundaries.md §G2`. The
 
 **Files touched:**
 
-- `src/channel-coordinator/ingest.ts` (231 LOC) — add `class
+- `src/channel-coordinator/ingest.ts` (231 LOC) - add `class
   IngestWorker` block. The `let db` singleton becomes a private
   field. The free functions stay as thin pass-through wrappers. The
   `COORDINATOR_AGENT_ID` const at L23 stays as a free export that
@@ -94,7 +94,7 @@ the 8 free functions enumerated in `03-class-boundaries.md §G2`. The
 **Class surface:** per `03-class-boundaries.md §G2`.
 
 **Risk level:** Low-Medium. The `coordintorAgentId` re-export is the
-load-bearing detail — the 3 external consumers
+load-bearing detail - the 3 external consumers
 (`web/agent-message-wrap.ts:21`, `web/federation/local-catalog.ts:8`,
 `web/routes/messages.ts:11`) import only the const. If the static
 field is renamed or the const is removed before G.8, the consumers
@@ -120,43 +120,50 @@ break.
 
 **Dependencies:**
 
-- A.1 (`DbClient` keystone) — NOT blocking. Per `01 §10`, the
+- A.1 (`DbClient` keystone) - NOT blocking. Per `01 §10`, the
   coordinator opens its own handle via `new Database(dbPath, { strict: true })`
   and does NOT share the dashboard's `DbClient`. The class form
   preserves this.
-- H.1 (`LoggerLike`) — NOT blocking. `IngestWorker` has zero
+- H.1 (`LoggerLike`) - NOT blocking. `IngestWorker` has zero
   logger call sites today and does not gain a `log` field.
 
 **Migration source:** `src/channel-coordinator/ingest.ts:25-230`.
 
 ---
 
-## Phase G.3 — `LivenessTracker` class extraction
+## Phase G.3 - `LivenessTracker` class extraction [LANDED]
+
+**Status:** LANDED (this commit). The 4 mutable lets at the streak-state
+declaration in `src/channel-coordinator.ts` now live as 4 private fields
+on a module-singleton `LivenessTracker` instance; the 15 read/write
+sites in `runLoop` + `installSignalHandlers` route through the class
+methods; the free `inNative409Cooldown` helper survives as a 1-line
+shim; the 4 exports remain byte-identical.
 
 **Goal:** Introduce `class LivenessTracker` for the 4 mutable lets at
-`src/channel-coordinator.ts:101-106`. The class lives in the entry
-file (NOT in `liveness.ts` — the 9 free probe functions in
-`liveness.ts` stay untouched per `01 §10` and the 4 `vi.mock` sites
-documented in `01 §11.4`).
+the streak-state declaration block in `src/channel-coordinator.ts`. The
+class lives in the entry file (NOT in `liveness.ts` - the 9 free probe
+functions in `liveness.ts` stay untouched per `01 §10` and the 4
+`vi.mock` sites documented in `01 §11.4`).
 
 **Files touched:**
 
-- `src/channel-coordinator.ts` (442 LOC) — add `class LivenessTracker`
-  block at the bottom. The 4 mutable lets become private fields of
-  the class. The `inNative409Cooldown` helper at L109-111 becomes a
-  method on the class.
+- `src/channel-coordinator.ts` - add `class LivenessTracker` block at
+  the bottom. The 4 mutable lets become private fields of the class.
+  The `inNative409Cooldown` helper in the helper-function block becomes
+  a method on the class.
 - The free `inNative409Cooldown` function stays as a 1-line
   pass-through wrapper (per `03-class-boundaries.md §G3` "Free
   functions that REMAIN") so `channel-coordinator.test.ts` keeps
   working.
-- `src/channel-coordinator/liveness.ts` — NOT touched.
+- `src/channel-coordinator/liveness.ts` - NOT touched.
 
 **Class surface:** per `03-class-boundaries.md §G3`.
 
 **Risk level:** Medium. The 4 mutable lets are interleaved across 8
 read/write sites in `runLoop` (L311-403); the class extraction is
 a careful rename of every read/write. Per `01 §1.2`, "the simplest
-design that solves the problem is the right one" — collapsing to
+design that solves the problem is the right one" - collapsing to
 4 private fields is the safe move.
 
 **Test coverage requirement:**
@@ -182,22 +189,23 @@ design that solves the problem is the right one" — collapsing to
   commit, (c) revert must touch both commits. Per
   `CLAUDE.md §3`, split the rewrite across 2 commits only if
   reverting the rewired `runLoop` while keeping the class is
-  feasible — and it is, because the class's methods are pure
+  feasible - and it is, because the class's methods are pure
   pass-throughs to the free-function behavior.
 
 **Parallelizable:** Yes (with G.1 and G.2). Different file.
 
 **Dependencies:**
 
-- H.1 (`LoggerLike`) — NOT blocking. `LivenessTracker` is passive
+- H.1 (`LoggerLike`) - NOT blocking. `LivenessTracker` is passive
   state; no logger field needed.
 
-**Migration source:** `src/channel-coordinator.ts:100-111` (the
-`type State` + 4 lets + helper).
+**Migration source:** `src/channel-coordinator.ts` (the `type State`
+declaration + the 4 lets + the `inNative409Cooldown` helper - LANDED
+as private fields on the class).
 
 ---
 
-## Phase G.4 — `ChannelCoordinator` class extraction
+## Phase G.4 - `ChannelCoordinator` class extraction
 
 **Goal:** Introduce `class ChannelCoordinator` as the orchestrator.
 The class absorbs `main()` (L422-431), `runLoop()` (L311-403),
@@ -211,7 +219,7 @@ H.1 `LoggerLike`.
 
 **Files touched:**
 
-- `src/channel-coordinator.ts` (442 LOC) — add `class
+- `src/channel-coordinator.ts` (442 LOC) - add `class
   ChannelCoordinator` block. The 11 free functions become either
   class methods or thin pass-through wrappers. The 4 module-level
   lets are removed (their state lives on `LivenessTracker`, which
@@ -247,7 +255,7 @@ over a module-scope singleton instance.
 
 - Single-commit revert. The class is additive; the free functions
   stay as thin pass-throughs. The 4 lets are removed, so revert
-  requires re-adding them — feasible but non-trivial. Recommend
+  requires re-adding them - feasible but non-trivial. Recommend
   landing G.3 (LivenessTracker) in a separate commit BEFORE G.4,
   so G.4's revert is straightforward.
 
@@ -257,16 +265,16 @@ G.4 must land last among the leaf classes.
 
 **Dependencies:**
 
-- G.1, G.2, G.3 — blocking. The constructor signature references
+- G.1, G.2, G.3 - blocking. The constructor signature references
   the 3 other G classes.
-- D.1 (`ChannelEnv`) — used inside `ChannelCoordinator`'s startup
+- D.1 (`ChannelEnv`) - used inside `ChannelCoordinator`'s startup
   path to read `CHANNEL_PROVIDER`. NOT blocking (the const is
   read directly today at L57; the class form keeps the same
   read pattern via `opts.provider`).
-- D.3 (`ChannelProviderRegistry`) — used in `getProvider()`. NOT
+- D.3 (`ChannelProviderRegistry`) - used in `getProvider()`. NOT
   blocking (the method is test-only; production never calls it
   per `01 §10`).
-- H.1 (`LoggerLike`) — recommended but not strictly blocking.
+- H.1 (`LoggerLike`) - recommended but not strictly blocking.
   Per `h-cross-cutting/00-summary.md §Migration order`, G.4 can
   land with `log: Logger` (concrete pino) and re-type in G.7.
 
@@ -275,7 +283,7 @@ entry file minus the 4 lets and the `telegram-client.ts` import).
 
 ---
 
-## Phase G.5 — `installSignalHandlers` decision
+## Phase G.5 - `installSignalHandlers` decision
 
 **Goal:** Decide whether `installSignalHandlers` (L407-420) becomes a
 method on `ChannelCoordinator` or stays as a free function with the
@@ -284,7 +292,7 @@ class captured via a module-scope singleton. Per
 
 **Files touched:**
 
-- `src/channel-coordinator.ts` — either:
+- `src/channel-coordinator.ts` - either:
   - (a) `ChannelCoordinator.installSignalHandlers()` method, called
     from `start()`, with a `process.listenerCount` guard inside the
     method body. **Risk:** test re-entry can still bypass the guard
@@ -298,7 +306,7 @@ class captured via a module-scope singleton. Per
 the `ChannelCoordinator` public surface (option a) OR no change
 (option b).
 
-**Risk level:** Low. The recommendation is option (b) — no class
+**Risk level:** Low. The recommendation is option (b) - no class
 shape change. The free function stays and captures the singleton.
 
 **Test coverage requirement:**
@@ -315,7 +323,7 @@ shape change. The free function stays and captures the singleton.
 
 **Rollback strategy:**
 
-- Single-commit revert. If option (b), no class-shape change — the
+- Single-commit revert. If option (b), no class-shape change - the
   revert is trivial.
 
 **Parallelizable:** Yes with G.6 (consumer migration). The signature
@@ -323,24 +331,24 @@ is settled before G.6's `main()` rewrite.
 
 **Dependencies:**
 
-- G.4 (`ChannelCoordinator` class exists) — blocking for option (a),
+- G.4 (`ChannelCoordinator` class exists) - blocking for option (a),
   NOT blocking for option (b).
 
 **Migration source:** `src/channel-coordinator.ts:407-420`.
 
 ---
 
-## Phase G.6 — Consumer migration
+## Phase G.6 - Consumer migration
 
 **Goal:** Migrate the entry file's `main()` (L422-431) to construct
 a `ChannelCoordinator` instance and call `.start()`. The L435
 entry-point guard stays verbatim. The 11 dedicated
-`channel-coordinator-*.test.ts` files do NOT need to change — they
+`channel-coordinator-*.test.ts` files do NOT need to change - they
 exercise free functions which now route through the class.
 
 **Files touched:**
 
-- `src/channel-coordinator.ts` — `main()` becomes:
+- `src/channel-coordinator.ts` - `main()` becomes:
   ```ts
   async function main(): Promise<void> {
     const coordinator = new ChannelCoordinator({
@@ -365,7 +373,7 @@ exercise free functions which now route through the class.
   `web/federation/local-catalog.ts:8`, `web/routes/messages.ts:11`)
   are unaffected because `ingest.ts` keeps the const export.
 
-**Risk level:** Low. The change is mechanical — replace the body of
+**Risk level:** Low. The change is mechanical - replace the body of
 `main()` with the constructor pattern. The free functions keep
 working until G.8.
 
@@ -386,13 +394,13 @@ working until G.8.
 
 **Dependencies:**
 
-- G.1, G.2, G.3, G.4, G.5 — all blocking.
+- G.1, G.2, G.3, G.4, G.5 - all blocking.
 
 **Migration source:** `src/channel-coordinator.ts:422-431`.
 
 ---
 
-## Phase G.7 — `LoggerLike` adoption across G classes
+## Phase G.7 - `LoggerLike` adoption across G classes
 
 **Goal:** Replace the `logger` (concrete pino singleton) imports in
 G classes with `LoggerLike` (H.1 interface). Per
@@ -401,16 +409,16 @@ H.1 introduces the interface.
 
 **Files touched:**
 
-- `src/channel-coordinator.ts` — `import { logger }` becomes
+- `src/channel-coordinator.ts` - `import { logger }` becomes
   `import { logger }` (still concrete; the `log` field on
   `ChannelCoordinator` is typed as `LoggerLike` but the value is
   the singleton). The change is **type-only**: `log: LoggerLike`
   in the constructor signature.
-- `src/channel-coordinator/telegram-client.ts` — type-only change
+- `src/channel-coordinator/telegram-client.ts` - type-only change
   on the `TelegramClient.log` field.
-- `src/channel-coordinator/ingest.ts` — NO change (IngestWorker
+- `src/channel-coordinator/ingest.ts` - NO change (IngestWorker
   has no logger field).
-- `src/channel-coordinator/liveness.ts` — NO change.
+- `src/channel-coordinator/liveness.ts` - NO change.
 
 **Class surface change:** All constructor `log` fields are retyped
 from `Logger` (pino) to `LoggerLike` (H.1). No new methods, no
@@ -418,7 +426,7 @@ removed methods.
 
 **Risk level:** Low. The change is purely the constructor
 parameter type; no call site changes (the test factories either
-pass the concrete `logger` or a mock — both satisfy `LoggerLike`).
+pass the concrete `logger` or a mock - both satisfy `LoggerLike`).
 
 **Test coverage requirement:**
 
@@ -434,14 +442,14 @@ type-only; G.8 is the irreversible removal.
 
 **Dependencies:**
 
-- H.1 (`LoggerLike` interface) — blocking.
+- H.1 (`LoggerLike` interface) - blocking.
 
 **Migration source:** `src/channel-coordinator.ts:34`
 (`import { logger } from './logger.js'`).
 
 ---
 
-## Phase G.8 — Free function removal
+## Phase G.8 - Free function removal
 
 **Goal:** Remove the free-function pass-through wrappers that G.1,
 G.2, G.3, G.4 introduced. The 11 dedicated
@@ -450,25 +458,25 @@ the class instances directly.
 
 **Files touched:**
 
-- `src/channel-coordinator/telegram-client.ts` — remove the 3 free
+- `src/channel-coordinator/telegram-client.ts` - remove the 3 free
   function bodies (keep the type exports `UpdateKind`,
   `NormalizedEvent`, `TelegramErrorKind`).
-- `src/channel-coordinator/ingest.ts` — remove the 8 free function
+- `src/channel-coordinator/ingest.ts` - remove the 8 free function
   bodies and the `let db` singleton (keep the 2 type exports
   `InsertResult`, `IncomingEventRow`; the `COORDINATOR_AGENT_ID`
   const stays as `export const COORDINATOR_AGENT_ID =
   IngestWorker.COORDINATOR_AGENT_ID` because the 3 external web/
   consumers still import it).
-- `src/channel-coordinator.ts` — remove the free `inNative409Cooldown`
+- `src/channel-coordinator.ts` - remove the free `inNative409Cooldown`
   function (it's now a method on `LivenessTracker` + a method on
   `ChannelCoordinator`).
-- `src/__tests__/channel-coordinator-*.test.ts` (11 files) — rewrite
+- `src/__tests__/channel-coordinator-*.test.ts` (11 files) - rewrite
   to construct class instances and call methods. Per
   `review-completeness.md` CE-5, use `createTestTelegramClient`,
   `createTestIngestWorker`, `createTestLivenessTracker`,
   `createTestChannelCoordinator` factories.
 - `messages-routes.test.ts:101` (`vi.mock('../channel-coordinator/ingest.js')`
-  factory substituting `COORDINATOR_AGENT_ID`) — keep working
+  factory substituting `COORDINATOR_AGENT_ID`) - keep working
   because `COORDINATOR_AGENT_ID` survives as a value export.
 
 **Class surface change:** None.
@@ -502,7 +510,7 @@ in lockstep.
 
 **Dependencies:**
 
-- G.1, G.2, G.3, G.4, G.5, G.6, G.7 — all blocking.
+- G.1, G.2, G.3, G.4, G.5, G.6, G.7 - all blocking.
 - The 11 test files must be migrated to the class API in
   separate commits before G.8 lands.
 
@@ -515,13 +523,16 @@ in lockstep.
 ```
 G.1 ── parallel ──┐
 G.2 ── parallel ──┼──> G.4 ──> G.5 ──> G.6 ──> G.7 ──> G.8
-G.3 ── parallel ──┘
+G.3 ── parallel ──┘   [LANDED]
                                    ↑
                           test-factory work (G.8 prep)
 ```
 
-- **G.1, G.2, G.3:** 3 parallel leaf-class extractions. Land in any
-  order; no inter-dependencies.
+- **G.3:** LANDED (this commit). See `03-class-boundaries.md §G3` for
+  the class surface and `06-risks-and-mitigations.md §GR2` for the
+  resolved race-vs-shutdown-latch concern.
+- **G.1, G.2:** 2 parallel leaf-class extractions remaining. Land in
+  any order; no inter-dependencies.
 - **G.4:** orchestrator, depends on G.1-G.3.
 - **G.5:** signal-handler decision, depends on G.4.
 - **G.6:** `main()` consumer migration, depends on G.4, G.5.

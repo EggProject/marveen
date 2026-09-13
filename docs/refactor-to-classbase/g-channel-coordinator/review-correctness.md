@@ -1,4 +1,4 @@
-# Correctness Review — G (channel-coordinator) Refactor Plan
+# Correctness Review - G (channel-coordinator) Refactor Plan
 
 Review date: 2026-08-30. Scope: every file in
 `docs/refactor-to-classbase/g-channel-coordinator/` cross-checked
@@ -63,13 +63,13 @@ sites in `telegram-client.ts`; the 9 free probe functions in
   - L156: `writeFileSync(PID_FILE, String(process.pid), { mode: 0o600 })` → **1 writeFileSync**
   - L161: `if (existsSync(PID_FILE) && readFileSync(PID_FILE, 'utf-8').trim() === String(process.pid)) unlinkSync(PID_FILE)` → **1 readFileSync + 1 unlinkSync**
   - Total: **5 calls across 4 sites**, with **2 readFileSync calls** (not 3).
-- **Verdict:** REFUTED. **Severity:** major — the plan inflates the
+- **Verdict:** REFUTED. **Severity:** major - the plan inflates the
   read count from 2 to 3, and the per-call breakdown ("3 reads + 1 write
   + 1 unlink + 1 existsSync" = 6) is arithmetically inconsistent with
   the "4 sites" claim. An executor verifying the migration's lock-dance
   behavior will count calls and find 5 not 6, and the discrepancy
   indicates the author did not actually Read L161 (which contains both
-  `readFileSync` and `unlinkSync` on the same line — easy to miss).
+  `readFileSync` and `unlinkSync` on the same line - easy to miss).
 - **Concrete fix:** "1 const PID_FILE referenced at 4 sites: 1
   existsSync (L144) + 2 readFileSync (L145, L161) + 1 writeFileSync
   (L156) + 1 unlinkSync (L161) = 5 calls in 4 sites." Note that L161
@@ -98,11 +98,11 @@ sites in `telegram-client.ts`; the 9 free probe functions in
   - `src/channel-coordinator/ingest.ts` = **230** lines
   - `src/channel-coordinator/liveness.ts` = **287** lines
   - `src/channel-coordinator/provider-poller-match.ts` = **91** lines
-- **Verdict:** REFUTED. **Severity:** minor — each file is consistently
+- **Verdict:** REFUTED. **Severity:** minor - each file is consistently
   off by exactly 1 (the closing `}` at EOF). Per `review-correctness.md`
   m9 in the framework review, this is the same systematic pattern seen
   in other subsystem reviews (off-by-one from counting the open-brace
-  line as the closing line). For G this is purely cosmetic — the line
+  line as the closing line). For G this is purely cosmetic - the line
   ranges (e.g., L407-420 for `installSignalHandlers`) are correct
   because the function body ends with `}` at L420 regardless of the
   last-line closure.
@@ -114,7 +114,7 @@ sites in `telegram-client.ts`; the 9 free probe functions in
 
 - **Location:** `00-summary.md §Thesis` (line 14): "The task brief's
   referenced `02-type-interface-analysis.md` does **not** exist in this
-  directory as of 2026-08-30 — the type/interface claims used below
+  directory as of 2026-08-30 - the type/interface claims used below
   are taken from the state analysis and cross-checked against the
   source files cited inline."
 - **Plan claim:** the file does not exist (plan flags this as an
@@ -124,7 +124,7 @@ sites in `telegram-client.ts`; the 9 free probe functions in
   `03-class-boundaries.md`, `04-generic-interfaces.md`,
   `05-refactor-roadmap.md`, `06-risks-and-mitigations.md`. No `02`.
 - **Verdict:** CONFIRMED-as-flagged (the absence is real). **Severity:**
-  minor — the plan correctly self-flags this. The downside is that the
+  minor - the plan correctly self-flags this. The downside is that the
   type/interface claims used throughout `03` and `04` are sourced from
   `01 §Per-file inventory` + inline source reads, which the reviewer
   has independently verified. If a `02` is produced later, cross-check
@@ -154,20 +154,20 @@ sites in `telegram-client.ts`; the 9 free probe functions in
   cooldown is still active). The proposed class method takes **1
   parameter** (`nowMs`) and would read the stored
   `this.nativeConfirmedUpUntil`. The "thin wrapper" line in the plan
-  says `(a, b) => a > b` — that's actually the INVERSE of the source
+  says `(a, b) => a > b` - that's actually the INVERSE of the source
   (which is `a < b` where `a = nowMs`, `b = confirmedUpUntilMs`). The
   plan's pseudo-code is wrong by an inequality direction.
-- **Verdict:** REFUTED. **Severity:** minor — the G3 method signature
+- **Verdict:** REFUTED. **Severity:** minor - the G3 method signature
   change (1-param class method wrapping a 2-param free function) is
   semantically reasonable but the "wrapper" sketch inverts the
   inequality. Also, the `channel-coordinator.test.ts` test at lines
   62-86 exercises the 2-param form (`inNative409Cooldown(1_000_000,
-  999_999)` etc.) — preserved by the free-function wrapper if the
+  999_999)` etc.) - preserved by the free-function wrapper if the
   wrapper is correct.
 - **Concrete fix:** Change the wrapper sketch to `export const
   inNative409Cooldown = (confirmedUpUntilMs, nowMs) =>
   liveness.nativeConfirmedUpUntil !== undefined ? nowMs <
-  liveness.nativeConfirmedUpUntil : nowMs < confirmedUpUntilMs` —
+  liveness.nativeConfirmedUpUntil : nowMs < confirmedUpUntilMs` -
   actually simpler: keep the 2-param free function as a pure helper
   (it's stateless math) and let the class method on `LivenessTracker`
   be a 1-param convenience wrapper that delegates to the same pure
@@ -194,10 +194,10 @@ sites in `telegram-client.ts`; the 9 free probe functions in
   ```
   This is the actual mock. It uses the flat-export form (no `default`
   wrapper), which works because vi.mock with the factory function
-  returns the object directly as the module's exports — so the test
+  returns the object directly as the module's exports - so the test
   sees `import { COORDINATOR_AGENT_ID } from
   '../channel-coordinator/ingest.js'` resolve correctly.
-- **Verdict:** CONFIRMED. **Severity:** minor — the plan correctly
+- **Verdict:** CONFIRMED. **Severity:** minor - the plan correctly
   identifies the risk and recommends the right shape (flat export).
   No fix needed beyond noting that the mock shape "changes" is a
   hypothetical that won't fire if the plan keeps the const as a free
@@ -235,13 +235,13 @@ sites in `telegram-client.ts`; the 9 free probe functions in
   G.4 as before (currently 4: L151, L306, L415, L439 per `01
   §Per-file inventory`)."
 - **Evidence:** `grep -n "process.exit" src/channel-coordinator.ts`:
-  - L151: `process.exit(1)` — PID lock conflict
-  - L306: `process.exit(1)` — `fatalExit`
-  - L415: `process.exit(0)` — shutdown drain
-  - L439: `process.exit(1)` — crash handler
+  - L151: `process.exit(1)` - PID lock conflict
+  - L306: `process.exit(1)` - `fatalExit`
+  - L415: `process.exit(0)` - shutdown drain
+  - L439: `process.exit(1)` - crash handler
   The count of `process.exit(` calls is **4** (matches plan), but only
   **1** is `process.exit(0)` (L415). The other 3 are `process.exit(1)`.
-- **Verdict:** PARTIALLY REFUTED. **Severity:** minor — the count is
+- **Verdict:** PARTIALLY REFUTED. **Severity:** minor - the count is
   correct, but the implication in GR8's text is "the 4 process.exit
   sites are equivalent" when 3 of them are fatal/abort paths and 1 is
   the graceful drain. The static-check grep would return 4 either way
@@ -249,7 +249,7 @@ sites in `telegram-client.ts`; the 9 free probe functions in
   rollback needs to know that L415 is the only one that's
   "non-fatal-by-design".
 - **Concrete fix:** update the detection-signal text to "currently 4
-  `process.exit(` calls (L151, L306, L415, L439 — of which only L415
+  `process.exit(` calls (L151, L306, L415, L439 - of which only L415
   is `exit(0)`; the other 3 are `exit(1)` for fatal/crash paths)."
 
 ### m7. `03-class-boundaries.md §G4` "Free functions that REMAIN" includes `sleep(ms)` at L226 but the plan does not claim L226 elsewhere
@@ -260,7 +260,7 @@ sites in `telegram-client.ts`; the 9 free probe functions in
   module helper".
 - **Evidence:** `src/channel-coordinator.ts:226`:
   `const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))`.
-  CONFIRMED — the const is at L226 and is only used by `fatalExit`
+  CONFIRMED - the const is at L226 and is only used by `fatalExit`
   (L305: `await sleep(1500)`) and `runLoop` (L347: `await sleep(TICK_MS)`,
   L379: `await sleep((err.retryAfterSec ?? 5) * 1000)`, L383:
   `await sleep(transientBackoffMs(...))`).
@@ -279,7 +279,7 @@ sites in `telegram-client.ts`; the 9 free probe functions in
   const hw = await probeHighWater(token)
   if (hw != null) setOffset(SOURCE, hw)
   ```
-  CONFIRMED — L329 calls `probeHighWater`, L330 conditionally sets the
+  CONFIRMED - L329 calls `probeHighWater`, L330 conditionally sets the
   offset. The seed-then-set ordering is critical for the
   no-double-delivery invariant.
 - **Verdict:** CONFIRMED. **Severity:** minor (audit-trail). No fix
@@ -339,9 +339,15 @@ The following G-plan claims were verified TRUE against the codebase:
   SLUG_RX L49-55, SLACK_SOCKET_MODE_RX L70, matchesProviderPollerCmd
   L82-91).
 
-**The 4 mutable lets + the 1 const PID_FILE:**
-- `state: State = 'idle'` at L101; `downStreak = 0` at L102; `stopping = false` at L103;
-  `nativeConfirmedUpUntil = 0` at L106 (with explanatory comment at L104-105).
+**The 4 mutable lets + the 1 const PID_FILE [G.3 LANDED]:**
+- Pre-G.3 form: `state: State = 'idle'` at L101; `downStreak = 0` at L102;
+  `stopping = false` at L103; `nativeConfirmedUpUntil = 0` at L106
+  (with explanatory comment at L104-105). G.3 LANDED (this commit)
+  - these 4 lets are now 4 private fields on the `LivenessTracker`
+  class. The line refs above are PRE-G.3; the post-G.3 surface is
+  in `03-class-boundaries.md §G3` (the LANDED footer documents the
+  collapse). The pre-G.3 line refs are preserved here for the audit
+  trail; the `m1` LOC caveat (off by 1 at EOF) applies.
 - `const PID_FILE = join(STATE_DIR, 'coordinator.pid')` at L98; `const STATE_DIR` at L97.
 
 **`TelegramApiError`:**
@@ -349,9 +355,9 @@ The following G-plan claims were verified TRUE against the codebase:
   TelegramErrorKind` (L43 = 'fatal' | 'rate_limit' | 'conflict' |
   'transient') is the discriminator; `retryAfterSec?: number` is the
   optional payload. `this.name = 'TelegramApiError'` at L52 (not via
-  `new.target.name` — the plan's note about H.4's AppError base
+  `new.target.name` - the plan's note about H.4's AppError base
   changing to `new.target.name` is forward-looking, not current).
-- No `cause` chain — the `super(message)` call at L51 has no second
+- No `cause` chain - the `super(message)` call at L51 has no second
   argument.
 - Exactly 5 `instanceof TelegramApiError` sites in
   `channel-coordinator.ts`: L335 (`err.kind === 'fatal'`), L338
@@ -406,19 +412,19 @@ The following G-plan claims were verified TRUE against the codebase:
 - `src/__tests__/channel-monitor-coverage.test.ts:243`: same shape as above
 
 **External `COORDINATOR_AGENT_ID` consumers (3 files, all const-only):**
-- `src/web/agent-message-wrap.ts:21` — `import { COORDINATOR_AGENT_ID } from '../channel-coordinator/ingest.js'`
-- `src/web/federation/local-catalog.ts:8` — same import shape
-- `src/web/routes/messages.ts:11` — same import shape
+- `src/web/agent-message-wrap.ts:21` - `import { COORDINATOR_AGENT_ID } from '../channel-coordinator/ingest.js'`
+- `src/web/federation/local-catalog.ts:8` - same import shape
+- `src/web/routes/messages.ts:11` - same import shape
 
 **External `liveness.js` consumers (2 files, all in web/):**
-- `src/web/channel-monitor.ts:50` — `import { getClaudePidForSession, hasChannelPluginAlive, probeChannelPluginLiveness } from '../channel-coordinator/liveness.js'`
-- `src/web/schedule-mcp-precheck.ts:22` — `import { getClaudePidForSession } from '../channel-coordinator/liveness.js'`
+- `src/web/channel-monitor.ts:50` - `import { getClaudePidForSession, hasChannelPluginAlive, probeChannelPluginLiveness } from '../channel-coordinator/liveness.js'`
+- `src/web/schedule-mcp-precheck.ts:22` - `import { getClaudePidForSession } from '../channel-coordinator/liveness.js'`
 
 **`telegram-client.ts` external consumers (1 file):**
-- `src/channel-coordinator.ts:36` — `import { getUpdates, probeHighWater, mapUpdate, TelegramApiError } from './channel-coordinator/telegram-client.js'`
+- `src/channel-coordinator.ts:36` - `import { getUpdates, probeHighWater, mapUpdate, TelegramApiError } from './channel-coordinator/telegram-client.js'`
 
 **`provider-poller-match.ts` consumers (1 file):**
-- `src/channel-coordinator/liveness.ts:18` — `import { matchesProviderPollerCmd } from './provider-poller-match.js'`
+- `src/channel-coordinator/liveness.ts:18` - `import { matchesProviderPollerCmd } from './provider-poller-match.js'`
 
 **The 11 dedicated `channel-coordinator-*.test.ts` files (verified by ls):**
 - `channel-coordinator.test.ts`, `channel-coordinator-full.test.ts`,
@@ -438,7 +444,7 @@ The following G-plan claims were verified TRUE against the codebase:
   `telegram-client.ts` itself (the type definitions L56, L58-60, L64-65,
   L69, L75, L81, L88, L98, L148, L187, L222). The plan's G1
   "Free functions that REMAIN" table correctly hypothesizes these can
-  become `private` inside the class — they ARE class-private-eligible
+  become `private` inside the class - they ARE class-private-eligible
   today (no external importers).
 
 **0 logger call sites in `telegram-client.ts`:**
@@ -468,7 +474,7 @@ The following G-plan claims were verified TRUE against the codebase:
 - The plan's "G does not import `ChannelProvider`, `getProvider`, or
   any provider method" claim is CONFIRMED. The G4 constructor's
   `registry: ChannelProviderRegistry` parameter is forward-looking
-  (D.3 rename) — production G today uses `CHANNEL_PROVIDER` const
+  (D.3 rename) - production G today uses `CHANNEL_PROVIDER` const
   only.
 
 ---
@@ -479,7 +485,7 @@ The following G-plan claims were verified TRUE against the codebase:
 |---|---|
 | **C3** (4 fictional runner paths) | NOT IN G SCOPE. The 4 fictional paths (`federation-poller.ts`, `capability-summary-runner.ts`, `costs-sync-task.ts`, `approval-timeout-sweeper.ts`) are not referenced anywhere in the G plan. CONFIRMED clean. |
 | **CE-7** (heartbeat-agent-scaffold prompt-builder confusion) | NOT IN G SCOPE. The G plan does not reference `web/heartbeat-agent-scaffold.ts` at all. The plan's liveness-section comments (`01-module-state-analysis.md §liveness.ts deep-dive`) correctly distinguish the scheduled keepalive (`store/.channel-keepalive`) from a runner. |
-| **CE-9** (`RemoteStatusCache<T>` reuse opportunity) | NOT IN G SCOPE. `web/remote-status-cache.ts` is not imported by any G file. The G plan's `04-generic-interfaces.md §6` correctly rejects `LivenessTracker<TState>` on OE-6 grounds without invoking `RemoteStatusCache`. |
+| **CE-9** (`RemoteStatusCache<T>` reuse opportunity) | NOT IN G SCOPE. `web/remote-status-cache.ts` is not imported by any G file. The G plan's `04-generic-interfaces.md §5/§6` correctly rejects `LivenessTracker<TState>` on OE-6 grounds without invoking `RemoteStatusCache`. **G.3 LANDED** (this commit) - `LivenessTracker` is non-generic, matching this rejection. |
 | **OE-4** (`AuthContext` sealed hierarchy) | NOT IN G SCOPE. The G plan does not reference `AuthContext` or any web auth concept. The 4 framework-level refactors (D1, D2, D3, D4) are correctly not enumerated in the G plan. |
 | **M11** (shutdown order fabrication) | NOT APPLICABLE TO G. The G plan correctly notes (in `06 GR8`) that the coordinator is a SEPARATE PROCESS and not in the dashboard's `index.ts:378-410` shutdown list. The G plan's own shutdown description (3-second drain in `installSignalHandlers.onSignal`) is sourced from the actual `channel-coordinator.ts:407-420` source. |
 
@@ -510,7 +516,7 @@ calls, not 3).
 cosmetic issue, m1), the absent `02-type-interface-analysis.md`
 correctly flagged as an [ASSUMPTION] in the plan (m2), the
 `inNative409Cooldown` class-method vs free-function signature
-inconsistency in `03 §G3` (m3 — the plan's pseudo-code inverts the
+inconsistency in `03 §G3` (m3 - the plan's pseudo-code inverts the
 inequality), the ingest.js mock-shape recommendation correctly
 documented (m4), the provider-poller-match.ts sub-scope inventory row
 (m5), the `process.exit(` count of 4 but only 1 is `exit(0)` (m6),

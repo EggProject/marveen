@@ -1,4 +1,4 @@
-# Plan Review — G (channel-coordinator) over-engineering & completeness
+# Plan Review - G (channel-coordinator) over-engineering & completeness
 
 Review scope: all six G plan documents
 (`docs/refactor-to-classbase/g-channel-coordinator/00-summary.md` through
@@ -42,7 +42,7 @@ free-function recommendation. The keystone thesis (4 new classes
 importers of the entry file) is sound.
 
 But the plan has four over-engineering seams and seven completeness
-gaps — most notably a **factual error** in the LoggerLike inventory
+gaps - most notably a **factual error** in the LoggerLike inventory
 (`liveness.ts` has 4 logger call sites, the plan claims zero), a
 **mis-counted test surface** (12 test files use G exports, plan
 claims 11), and three speculative method additions to `TelegramClient`
@@ -55,7 +55,7 @@ commit before G.1 lands.
 
 ## Over-engineering findings
 
-### GOE-1 (major) — `TelegramClient` `validateToken` / `formatMessage` / `splitMessage` are speculative additions
+### GOE-1 (major) - `TelegramClient` `validateToken` / `formatMessage` / `splitMessage` are speculative additions
 
 **Proposal** (`03-class-boundaries.md §G1 "Public surface"`, line 67-69):
 
@@ -68,17 +68,17 @@ validateToken(token: string): Promise<{ ok: boolean; botName?: string; error?: s
 **Counter-argument.** Verified (`grep -nE "validateToken|formatMessage|splitMessage" src/channel-coordinator/telegram-client.ts`)
 that **none of these three methods exist in `telegram-client.ts` today**.
 The plan itself acknowledges this in the "Method-by-method" table:
-*"Currently NOT in `telegram-client.ts` — the brief adds it as a
+*"Currently NOT in `telegram-client.ts` - the brief adds it as a
 public method to make the class surface complete (paralleling
 `ChannelProvider.formatMessage` at `channel-provider.ts:19`)."* and
-*"[ASSUMPTION: per the brief, but no current production caller —
+*"[ASSUMPTION: per the brief, but no current production caller -
 verify before adding to the G.1 commit.]"*.
 
 The framework `review-completeness.md` OE-6 explicitly names
 "speculative additions with zero consumers" as the rejection
 pattern. The `e-process-lock/review-completeness.md` EOE-2 (the
 "acquire(port, overrides?)" second parameter) was rejected for the
-same reason — a parameter that has no second consumer is pure
+same reason - a parameter that has no second consumer is pure
 ceremony. The `f-agent-subsystem/review-completeness.md` OE-F3
 (AutoRestartSchedule's `decideShouldRestart` / `decideInterval` /
 `getConfig` new methods) was rejected for the same reason.
@@ -86,7 +86,7 @@ ceremony. The `f-agent-subsystem/review-completeness.md` OE-F3
 `formatMessage` and `splitMessage` already exist on `ChannelProvider`
 (`channel-provider.ts:18-22` per `d-channel-provider/03-class-boundaries.md:139-142`)
 because 5 provider implementations need them. `TelegramClient` is
-**not** a provider — it is the inbound HTTP wrapper for `getUpdates`
+**not** a provider - it is the inbound HTTP wrapper for `getUpdates`
 only (the coordinator NEVER sends, per `telegram-client.ts:1-13`).
 Adding the three methods to `TelegramClient` mirrors the
 `ChannelProvider` shape, but the shape is wrong: G's class is
@@ -105,7 +105,16 @@ exact speculative-shape-parity pattern OE-6 rejects.
 
 ---
 
-### GOE-2 (major) — `LivenessTracker` class is a 4-field POJO masquerading as a class
+### GOE-2 (major) - `LivenessTracker` class is a 4-field POJO masquerading as a class [G.3 LANDED - NOT applied]
+
+**Status:** NOT applied. G.3 LANDED (this commit) chose the class
+form (per `03-class-boundaries.md §G3` and the implementation plan's
+class surface with 9 methods). The POJO collapse was rejected at
+implementation time on the grounds that the class form (a) aligns
+with the framework precedent (B.1 `Config`, D.1 `ChannelEnv`, E.1
+`PortLockAcquirer`, F.1 `HeartbeatScheduler`), and (b) keeps the
+`setStopping()` idempotency contract explicit in the type signature
+rather than implicit in a plain object.
 
 **Proposal** (`03-class-boundaries.md §G3 "Public surface"`):
 
@@ -131,26 +140,25 @@ class LivenessTracker {
 **Counter-argument.** The class surface has **9 methods, all
 single-line getter/setter wrappers around 4 primitive fields**. The
 plan correctly identifies that these 4 fields must "move together
-into the same class instance" because `runLoop` (L311-403) reads
-and writes all 4 within its `while (!stopping)` body — but the
-"single instance" requirement is satisfied equally by either (a) a
-class with 9 wrapper methods, or (b) a `const liveness = { state:
-'idle', downStreak: 0, stopping: false, nativeConfirmedUpUntil: 0 }`
-POJO with the `inNative409Cooldown` helper as a method. The class
-form is **ceremony** for a state holder with no methods that do
-work.
+into the same class instance" because `runLoop` reads and writes
+all 4 within its `while (!stopping)` body - but the "single
+instance" requirement is satisfied equally by either (a) a class
+with 9 wrapper methods, or (b) a `const liveness = { state: 'idle',
+downStreak: 0, stopping: false, nativeConfirmedUpUntil: 0 }` POJO
+with the `inNative409Cooldown` helper as a method. The class form is
+**ceremony** for a state holder with no methods that do work.
 
 Compare to `ChannelProvider`'s 5 methods which each perform real
 behaviour (HTTP calls, sendMessage formatting). `LivenessTracker`'s
-9 methods are pure pass-throughs to field reads/writes — they
-add no behaviour the bare field access doesn't already provide. The
+9 methods are pure pass-throughs to field reads/writes - they add
+no behaviour the bare field access doesn't already provide. The
 framework's `review-completeness.md` OE-7 explicitly warns against
 "abstractions for single-use code" and "no flexibility that wasn't
 requested".
 
 The plan defends the class form by saying "this is the canonical
 4 mutable bindings extraction" (per `01 §1.2` "the simplest design
-that solves the problem is the right one") — but the simplest
+that solves the problem is the right one") - but the simplest
 design is **not** the class form, it's the POJO form. The class
 form is chosen because the framework plan recommends classes; the
 POJO form is just as valid for a state-holder. The plan should
@@ -158,7 +166,7 @@ acknowledge this trade-off rather than asserting the class is the
 minimum.
 
 Note: this is **not** a strict OE-6 violation (the class is not a
-single-consumer generic; it's a 4-field namespace) — but it's the
+single-consumer generic; it's a 4-field namespace) - but it's the
 same conceptual over-engineering: a class surface with 9 wrapper
 methods around 4 fields adds API for no behaviour change.
 
@@ -176,13 +184,20 @@ shrink follows.
 If the class form is rejected, the migration is G.3 disappears
 entirely: the 4 lets become 4 fields of `ChannelCoordinator` (per
 G.4). The plan says "the class extraction is a careful rename of
-every read/write" — but the rename is identical for the POJO form
+every read/write" - but the rename is identical for the POJO form
 (4 private fields of `ChannelCoordinator`, all reads/writes via
 `this.coordinator.state` etc.).
 
 ---
 
-### GOE-3 (major) — G.1-G.8 phase count over-splits the migration
+### GOE-3 (major) - G.1-G.8 phase count over-splits the migration [G.3 LANDED separately]
+
+**Status:** G.3 LANDED separately (this commit), not folded into G.4.
+The recommendation to fold G.3 into G.4 was NOT applied; the
+separation allowed G.3 to ship independently as the smallest, lowest
+risk of the 4 classes (per the class-vs-functional-decision rule's
+2-of-5 JUSTIFIED verdict). G.5 still pending (its fold into G.6 is
+also deferred; see the G.5 entry in `05-refactor-roadmap.md`).
 
 **Proposal** (`05-refactor-roadmap.md §Migration order`):
 
@@ -212,17 +227,17 @@ The framework `review-completeness.md` OE-11 ("Phase 1 + Phase 2
 could be one") flagged the same over-splitting for H/LoggerLike
 phase 1+2. For G, the same argument applies in two places:
 
-(a) **G.3 + G.4** modify the same file. The 4 mutable lets at
-L101-106 must move together, but they can move directly to private
-fields of `ChannelCoordinator` (G.4) — the intermediate `LivenessTracker`
-class (G.3) is a separate destination that adds a class wrap
-without changing the dependency graph.
+(a) **G.3 + G.4** modify the same file. The 4 mutable lets at the
+streak-state declaration block must move together, but they can
+move directly to private fields of `ChannelCoordinator` (G.4) - the
+intermediate `LivenessTracker` class (G.3) is a separate destination
+that adds a class wrap without changing the dependency graph.
 
 (b) **G.5 + G.6** are sequential by definition ("installSignalHandlers
 decision" must precede "consumer migration" because the consumer
 migration wires `main()` to call either `coordinator.installSignalHandlers()`
 or the free `installSignalHandlers(coordinator)`). The split is
-artificial — the decision is part of the consumer migration. The
+artificial - the decision is part of the consumer migration. The
 plan defends G.5's independence ("G.5 is a separate phase... because
 the signal-handler ownership decision is a design choice with
 measurable tradeoffs") but the tradeoffs are documented inline in
@@ -231,7 +246,7 @@ G.6's "Files touched" snippet (the plan already shows the call
 
 The framework precedent is the E review's EOE-4 ("Phase E.1 + E.5
 split is justified because of `vi.mock('../process-lock.js')`
-factory at `index.test.ts:173` — the split is load-bearing"). For
+factory at `index.test.ts:173` - the split is load-bearing"). For
 G, no such load-bearing reason exists; G.3, G.5, G.6 could each
 fold into adjacent phases with zero migration-window impact.
 
@@ -245,7 +260,7 @@ real claim.
 
 ---
 
-### GOE-4 (major) — `ChannelCoordinator` constructor takes 11 named opts; bundle-as-record is justified by precedent but no per-test override seam is named
+### GOE-4 (major) - `ChannelCoordinator` constructor takes 11 named opts; bundle-as-record is justified by precedent but no per-test override seam is named
 
 **Proposal** (`03-class-boundaries.md §G4 "Constructor"`):
 
@@ -265,7 +280,7 @@ constructed once at app boot.
 
 But `ChannelCoordinator` is constructed **once per process**
 (per `01 §[ASSUMPTION]` "constructed once per process in main()").
-It has no per-test override path — the plan's GR6 mitigation 1
+It has no per-test override path - the plan's GR6 mitigation 1
 ("TypeScript compile error on a missing field") is correct, but
 GR6 mitigation 2 ("A unit test that constructs the class with `{}`
 (empty opts) fails with a clear missing-required-field error") is
@@ -279,7 +294,7 @@ Compare to E's `PortLockAcquirer` (per EOE-2): "all 10 existing
 the constructor-supplied `opts` ... Production callers all omit it.
 The test case can construct a fresh `PortLockAcquirer` with
 `{ postKillDrainMs: 0 }` for that one test." For G, there is **one**
-test that will construct the class — the `createTestChannelCoordinator`
+test that will construct the class - the `createTestChannelCoordinator`
 factory (per the G.8 test factory plan). The factory takes overrides;
 the constructor's record-shape is justified only if the factory's
 `Partial<>` argument is structurally typed (so a typo in `WEB_POORT`
@@ -297,7 +312,7 @@ is load-bearing only if the factory enforces the shape.
 
 ---
 
-### GOE-5 (minor) — `getProvider()` accessor's `list()` not enumerated for `ChannelCoordinator.getProvider()`
+### GOE-5 (minor) - `getProvider()` accessor's `list()` not enumerated for `ChannelCoordinator.getProvider()`
 
 **Proposal** (`03-class-boundaries.md §G4 "getProvider()"`):
 
@@ -306,18 +321,18 @@ is load-bearing only if the factory enforces the shape.
 > provider is being polled)."
 
 **Counter-argument.** Per `01 §10`, the coordinator "is a SEPARATE
-PROCESS from the dashboard" — the dashboard's `App` does NOT
+PROCESS from the dashboard" - the dashboard's `App` does NOT
 instantiate `ChannelCoordinator`. The coordinator's only production
 caller is `main()`. The `getProvider()` accessor has **zero
 identified callers** (the plan's "e.g. test mocks that want to
 verify which provider" is speculative). The framework OE-D2 lesson
-("`ChannelProviderRegistry.list()` is speculative — zero identified
+("`ChannelProviderRegistry.list()` is speculative - zero identified
 callers") applies identically: a `getProvider()` method that
 forwards to `this.registry.get(this.provider)` is one line of
 ceremony.
 
 Per `01 §11`, the `PROVIDER` constant at L57 is read by
-`probeNativeChannelDown(SESSION, PROVIDER)` at L322, L354, L393 —
+`probeNativeChannelDown(SESSION, PROVIDER)` at L322, L354, L393 -
 all 3 sites inside the same file. The coordinator never uses a
 `ChannelProvider` instance for sending (D owns outbound). So
 `getProvider()` exists only for a hypothetical test.
@@ -330,7 +345,7 @@ commit.
 
 ---
 
-### GOE-6 (minor) — `inNative409Cooldown` free-function re-export as wrapper is ceremony
+### GOE-6 (minor) - `inNative409Cooldown` free-function re-export as wrapper is ceremony
 
 **Proposal** (`03-class-boundaries.md §G3 "Free functions that REMAIN"`):
 
@@ -361,10 +376,10 @@ with the class method is the over-engineering.
 
 ---
 
-### GOE-7 (minor) — G.7 "LoggerLike adoption" is policy-only, mirrors AOE-5 / BOE-3
+### GOE-7 (minor) - G.7 "LoggerLike adoption" is policy-only, mirrors AOE-5 / BOE-3
 
 **Proposal** (`05-refactor-roadmap.md §G.7`): the entire phase is
-"type-only" change — replace `log: Logger` (concrete pino) with
+"type-only" change - replace `log: Logger` (concrete pino) with
 `log: LoggerLike` (H.1 interface) in `ChannelCoordinator` and
 `TelegramClient` constructors.
 
@@ -390,7 +405,7 @@ follow-up"). Drop the phase card.
 
 ---
 
-### GOE-8 (minor) — `_legacyTelegramClient` naming convention is speculative (parallel to OE-D4)
+### GOE-8 (minor) - `_legacyTelegramClient` naming convention is speculative (parallel to OE-D4)
 
 **Proposal** (`05-refactor-roadmap.md §G.1`): free functions
 "become 1-line wrappers (`export const getUpdates = (...args) =>
@@ -405,12 +420,12 @@ same internal helpers (`mapUpdateImpl`, `getUpdatesImpl`,
 bodies: the free function has its own body, and the class method
 has its own body pointing at the same `Impl` helper. Two parallel
 implementations of the same logic (with shared `Impl` private
-helpers) is a maintenance hazard — a future bug fix that touches
+helpers) is a maintenance hazard - a future bug fix that touches
 the `Impl` helper is fine, but if the free function is ever
 modified to short-circuit or wrap differently, the class method
 silently diverges. The 1-line wrapper shape (`export const
 getUpdates = (...args) => new TelegramClient(...).getUpdates(...args)`)
-is structurally safer but allocates a class instance per call —
+is structurally safer but allocates a class instance per call -
 which the framework OE-6 lesson would reject for a hot-path
 function (`getUpdates` is called every 30s, per LONGPOLL_TIMEOUT_SEC).
 
@@ -433,12 +448,12 @@ in G.8).
 
 ## Completeness findings
 
-### GCE-1 (critical) — `02-type-interface-analysis.md` is missing from the g-channel-coordinator directory
+### GCE-1 (critical) - `02-type-interface-analysis.md` is missing from the g-channel-coordinator directory
 
 **Missing area.** Per `00-summary.md §[ASSUMPTION] markers`:
 
 > "[ASSUMPTION: `02-type-interface-analysis.md` referenced in the task
-> brief is **absent** in this directory as of 2026-08-30 — the only
+> brief is **absent** in this directory as of 2026-08-30 - the only
 > file present is `01-module-state-analysis.md` plus this plan. The
 > type/interface claims used in `03-class-boundaries.md` and
 > `04-generic-interfaces.md` are taken from `01 §Per-file inventory`
@@ -447,8 +462,8 @@ in G.8).
 The plan acknowledges the absence. The same finding was raised in
 `b-config/review-completeness.md` BCE-1 (critical). For B, the
 `00-summary.md` synthesised claims from `02` instead of `01`. For G,
-the synthesis is from `01` instead of `02` — the **opposite
-direction** — but the consequence is the same: the type/interface
+the synthesis is from `01` instead of `02` - the **opposite
+direction** - but the consequence is the same: the type/interface
 analysis is inline in `03`/`04` rather than a dedicated document.
 
 Verified by `ls docs/refactor-to-classbase/g-channel-coordinator/`:
@@ -474,7 +489,7 @@ every downstream phase cites types without provenance.
 
 ---
 
-### GCE-2 (major) — `liveness.ts` has 4 logger call sites, not 0; G.7's LoggerLike scope is incomplete
+### GCE-2 (major) - `liveness.ts` has 4 logger call sites, not 0; G.7's LoggerLike scope is incomplete
 
 **Missing area.** The plan claims:
 
@@ -501,7 +516,7 @@ src/channel-coordinator/liveness.ts:214:    logger.warn({ err, claudePid, agentN
 That's **4 logger call sites** in `liveness.ts`, not 0. The plan's
 claim that "IngestWorker has no logger" is correct (`grep -nE
 "logger\." src/channel-coordinator/ingest.ts` → 0), but the
-"LivenessTracker has no logger" claim is wrong — the class holds
+"LivenessTracker has no logger" claim is wrong - the class holds
 the streak state, but the liveness **probe** functions (which call
 the logger) are still free functions per `03 §G3`'s design
 decision.
@@ -517,7 +532,7 @@ $ grep -nE "logger\.(info|warn|error|debug)\(" src/channel-coordinator.ts | wc -
 The plan's 17-line list omits L427 (the boot log: `logger.info({
 stateDir, session, provider }, 'channel-coordinator: started in
 BACKFILL mode')`) and L437 (the catch-all crash log: `logger.error({
-err }, 'channel-coordinator: crashed')`). Wait — L427 IS in the
+err }, 'channel-coordinator: crashed')`). Wait - L427 IS in the
 list ("L427") and L437 IS in the list ("L437"). Counting the list
 verbatim: 150, 173, 244, 252, 254, 275, 293, 295, 303, 333, 340,
 343, 355, 374, 411, 427, 437 = 17 line refs. But the actual count
@@ -531,7 +546,7 @@ native recovered mid-batch, discarding + yielding')`).
 
 **Why it matters.** G.7's LoggerLike adoption is supposed to cover
 every logger call site in G scope. The plan misses 2 call sites
-in the entry file and 4 call sites in `liveness.ts` — 6 call sites
+in the entry file and 4 call sites in `liveness.ts` - 6 call sites
 that will keep using the concrete pino logger after H.1 lands.
 Either:
 
@@ -563,7 +578,7 @@ long as they take the concrete pino logger.
 
 ---
 
-### GCE-3 (major) — 12 test files use G exports, plan claims 11 dedicated tests
+### GCE-3 (major) - 12 test files use G exports, plan claims 11 dedicated tests
 
 **Missing area.** The plan claims:
 
@@ -599,15 +614,15 @@ src/__tests__/provider-poller-match.test.ts              <-- counted (matches pl
 ```
 
 **3 additional test files use G exports**:
-- `channel-inbound-framing.test.ts:11` — `import { buildHandoffContent } from '../channel-coordinator.js'`
-- `liveness-masking.test.ts:9` — `import { decideHasPluginAlive } from '../channel-coordinator/liveness.js'`
-- `liveness-probe-retry.test.ts:14` — imports from `'../channel-coordinator/liveness.js'`
+- `channel-inbound-framing.test.ts:11` - `import { buildHandoffContent } from '../channel-coordinator.js'`
+- `liveness-masking.test.ts:9` - `import { decideHasPluginAlive } from '../channel-coordinator/liveness.js'`
+- `liveness-probe-retry.test.ts:14` - imports from `'../channel-coordinator/liveness.js'`
 
 Plus `provider-poller-match.test.ts` (which the plan mentions but
 doesn't count in the 10/11 total).
 
 The plan's G.8 phase rewrites "11 dedicated `channel-coordinator-*.test.ts`
-files" — but the actual number of files that need rewriting is
+files" - but the actual number of files that need rewriting is
 **12** (11 dedicated + `channel-inbound-framing.test.ts`). The
 3 liveness-using tests don't need rewriting because G keeps the
 free `liveness.ts` exports.
@@ -616,7 +631,7 @@ free `liveness.ts` exports.
 (`grep -rln "from ['\"]\\./channel-coordinator" src/__tests__/`)
 should return **0** after G.8 lands. The missed file
 `channel-inbound-framing.test.ts:11` imports `buildHandoffContent`
-— a free function in G that the plan keeps through G.8 (per
+- a free function in G that the plan keeps through G.8 (per
 `03 §G4 "Free functions that REMAIN"`). After G.8, this test must
 migrate to `coordinator.buildHandoffContent(...)` (instance method).
 The plan does not list this test as a G.8 deliverable.
@@ -629,7 +644,7 @@ test stays as-is per the G plan's "Out of scope" section.
 
 ---
 
-### GCE-4 (major) — Per-test factory design not specified (CE-5 / HCE-7 / BCE-7 / CE-D3 / CE-F7 lesson applies)
+### GCE-4 (major) - Per-test factory design not specified (CE-5 / HCE-7 / BCE-7 / CE-D3 / CE-F7 lesson applies)
 
 **Missing area.** G.8's "Test coverage requirement" mentions
 `createTestTelegramClient`, `createTestIngestWorker`,
@@ -647,7 +662,7 @@ check, the factory must specify:
    differences (CE-17)
 
 The plan does not specify any of these. The `createTestChannelCoordinator`
-factory has 11 named opts per GOE-4 above — without a
+factory has 11 named opts per GOE-4 above - without a
 `Partial<typeof ChannelCoordinator.opts>` type, the factory is
 fixed-shape (per BOE-6's strict-generics-cheating pattern).
 
@@ -656,7 +671,7 @@ files × 1-5 stub-providers per mock = 17-85 stub-object sites to
 migrate. Without a factory, each test author writes their own
 ad-hoc shape; the first 5-10 conversions define the convention by
 accident". For G, the factory count is **4** (vs D's 1) and the
-test-rewrite count is **12** (vs D's 17) — smaller but the same
+test-rewrite count is **12** (vs D's 17) - smaller but the same
 pattern.
 
 **Severity: major.** Add a "Test factory specification" subsection
@@ -667,7 +682,7 @@ inherits the `Partial<typeof opts>` strict typing per BOE-6.
 
 ---
 
-### GCE-5 (major) — `web/federation/poller.ts:287` and `web/federation/capability-runner.ts:89` boundary not documented
+### GCE-5 (major) - `web/federation/poller.ts:287` and `web/federation/capability-runner.ts:89` boundary not documented
 
 **Missing area.** The task brief asks for verification that
 `web/federation/poller.ts:287` and `web/federation/capability-runner.ts:89`
@@ -703,7 +718,7 @@ implicit; making it explicit prevents future drift.
 
 ---
 
-### GCE-6 (major) — `ChannelPairingStore` (A scope) coupling not characterized for G
+### GCE-6 (major) - `ChannelPairingStore` (A scope) coupling not characterized for G
 
 **Missing area.** The plan's `[ASSUMPTION]` markers (per
 `00 §[ASSUMPTION]`) include:
@@ -717,7 +732,7 @@ implicit; making it explicit prevents future drift.
 > `from_agent = 'telegram-coordinator'`, and the message-router does
 > the pairing lookup.]"
 
-Verified (per A's `a-db/review-completeness.md` ACE-13 — `TelegramApiError`
+Verified (per A's `a-db/review-completeness.md` ACE-13 - `TelegramApiError`
 out-of-scope parallel): no `ChannelPairingStore` class exists in
 the codebase today (`grep -rn "ChannelPairingStore" src/` returns 0).
 The A plan's `a-db/03-class-boundaries.md §A13` proposes it as a
@@ -731,7 +746,7 @@ plan does NOT pin the boundary in `00 §Dependency` (the table is
 silent on `ChannelPairingStore`). If A introduces the class in a
 future commit, the question "does the coordinator need to know
 about ChannelPairingStore?" is implicitly answered "no" by the
-absence of any mention — but the absence is silent.
+absence of any mention - but the absence is silent.
 
 Per the A review's ACE-13 (TelegramApiError out-of-scope entry),
 G should explicitly document this in `00 §Files this plan does
@@ -739,20 +754,20 @@ NOT touch`.
 
 **Severity: major.** Add a one-line "Out of scope:
 `ChannelPairingStore` (proposed in A's plan) is not a G dependency
-— the coordinator writes `agent_messages` rows with `from_agent =
+- the coordinator writes `agent_messages` rows with `from_agent =
 'telegram-coordinator'` and the message-router does the pairing
 lookup" entry to `00 §Files this plan does NOT touch`. This
 closes the A → G boundary question.
 
 ---
 
-### GCE-7 (major) — `withTestRunMarking` decorator (D.4) relationship to G's `TelegramClient` not pinned
+### GCE-7 (major) - `withTestRunMarking` decorator (D.4) relationship to G's `TelegramClient` not pinned
 
 **Missing area.** The D review's CE-D5 flagged that `validateToken`
 HTTP probes in 3 of the 5 provider classes use `fetch` and may
 diverge between bun and Node. G's `TelegramClient.getUpdates` and
 `probeHighWater` ALSO use `fetch` (per `telegram-client.ts:153, L206`)
-— but the plan does not verify bun-specific `fetch()` semantics
+- but the plan does not verify bun-specific `fetch()` semantics
 for G's class form.
 
 The plan's GR7 mitigation 1 says:
@@ -765,7 +780,7 @@ The plan's GR7 mitigation 1 says:
 The "stateless" property is correct for the class form, but the
 `fetch` semantics under `bun --bun vitest` are not enumerated.
 The D review's CE-D5 explicitly added a `DR7: bun fetch semantics`
-risk row — G inherits the same concern but does not flag it.
+risk row - G inherits the same concern but does not flag it.
 
 Additionally, the `withTestRunMarking` decorator at
 `channel-provider.ts:490` (verified) wraps the 5 providers'
@@ -777,7 +792,7 @@ usage") but does not address what happens if a future coordinator
 **does** want to send a message (e.g., a "send alert" path).
 The decorator is a `ChannelProvider` wrapper; the coordinator has
 no `ChannelProvider` instance today (`PROVIDER` is a string, not
-an instance — per `01 §ChannelProvider integration`).
+an instance - per `01 §ChannelProvider integration`).
 
 **Why it matters.** If the coordinator ever gains an outbound
 send path (e.g., a future "send message back to Telegram on fatal"
@@ -796,20 +811,20 @@ the existing regression test at
 the divergence in the class header comments so a future reworker
 doesn't "fix" the fetch shape into a Node-specific one.
 
-Plus add a one-line "G is inbound-only — `withTestRunMarking` decorator
+Plus add a one-line "G is inbound-only - `withTestRunMarking` decorator
 (D.4) does not apply to `TelegramClient`" invariant to
 `00 §Files this plan does NOT touch` or to GR3.
 
 ---
 
-### GCE-8 (major) — `index.ts:378-410` shutdown sequence not characterized for G
+### GCE-8 (major) - `index.ts:378-410` shutdown sequence not characterized for G
 
 **Missing area.** Per the task brief: "the relationship between
 channel-coordinator and the shutdown order (per framework M11):
-`index.ts:378-410` shutdown sequence — does G plan correctly
+`index.ts:378-410` shutdown sequence - does G plan correctly
 characterize ChannelCoordinator.stop()?"
 
-Verified (`grep -n "channel" src/index.ts` — 0 matches). The
+Verified (`grep -n "channel" src/index.ts` - 0 matches). The
 plan correctly states:
 
 > "Today `index.ts` does NOT touch `channel-coordinator.ts` (zero
@@ -841,7 +856,7 @@ framework M11 boundary question.
 
 ---
 
-### GCE-9 (minor) — File LOC counts off by 1 across all 5 files
+### GCE-9 (minor) - File LOC counts off by 1 across all 5 files
 
 **Missing area.** The plan claims:
 
@@ -862,7 +877,7 @@ downstream phase.
 
 ---
 
-### GCE-10 (minor) — `Raw*` type consumers in test files not verified
+### GCE-10 (minor) - `Raw*` type consumers in test files not verified
 
 **Missing area.** The plan's `03 §G1 "Free functions that REMAIN"`
 table has:
@@ -870,7 +885,7 @@ table has:
 > "`RawUpdate`, `RawMessage`, `RawUser` | `telegram-client.ts:23-86`
 > | Type-only exports; survive. The `Raw*` types become `private`
 > inside the class if and only if no external consumer imports them.
-> [ASSUMPTION: zero external consumers — verified by `grep -rn
+> [ASSUMPTION: zero external consumers - verified by `grep -rn
 > "RawUpdate\|RawMessage" src/ --include='*.ts' \| grep -v __tests__`
 > would be needed before G.1 lands.]"
 
@@ -892,14 +907,14 @@ plan before G.1 lands.
 
 ---
 
-### GCE-11 (minor) — `TelegramApiError` is the 10th class, not the 9th
+### GCE-11 (minor) - `TelegramApiError` is the 10th class, not the 9th
 
 **Missing area.** The plan's `01 §telegram-client.ts deep-dive`
 states:
 
 > "This is the **only class in G scope today** (per the framework
 > `review-completeness.md` CE-1, which missed this class in its
-> '9 existing classes' inventory — it is one of the 10 classes
+> '9 existing classes' inventory - it is one of the 10 classes
 > total)."
 
 The plan correctly identifies that the framework's CE-1 ("claim
@@ -932,7 +947,7 @@ is correct. No fix needed; flagged for the baseline audit.
 
 ---
 
-### GCE-12 (minor) — bun-specific `AbortController` + `setTimeout` semantics for `TelegramClient` not verified
+### GCE-12 (minor) - bun-specific `AbortController` + `setTimeout` semantics for `TelegramClient` not verified
 
 **Missing area.** G.1's `TelegramClient.getUpdates` uses
 `AbortController` + `setTimeout` per-call
@@ -1060,20 +1075,22 @@ gaps**:
 **Drop before executing:**
 
 - `TelegramClient.validateToken` / `formatMessage` / `splitMessage`
-  (GOE-1) — pure ceremony, no callers.
-- `LivenessTracker` class collapse to POJO (GOE-2) — OR keep the
-  class but cut the 9 methods to 4 (get/set + isStopping/setStopping).
-- G.3 fold into G.4 (GOE-3) — the 4 mutable lets move directly to
-  private fields of `ChannelCoordinator`.
-- G.5 fold into G.6 (GOE-3) — the signal-handler decision is part
-  of the consumer migration snippet.
-- G.7 fold into G.4 (GOE-7) — type-only change is one line, not a
-  phase.
-- `ChannelCoordinator.getProvider()` accessor (GOE-5) — zero callers.
+  (GOE-1) - pure ceremony, no callers.
+- ~~`LivenessTracker` class collapse to POJO (GOE-2)~~ - **NOT
+  APPLIED** (G.3 LANDED, this commit) - the class form was kept;
+  see the GOE-2 status note above.
+- ~~G.3 fold into G.4 (GOE-3)~~ - **NOT APPLIED** (G.3 LANDED
+  separately, this commit); G.5 → G.6 fold still pending.
+- G.5 fold into G.6 (GOE-3) - the signal-handler decision is part
+  of the consumer migration snippet (still pending).
+- G.7 fold into G.4 (GOE-7) - type-only change is one line, not a
+  phase (still pending).
+- `ChannelCoordinator.getProvider()` accessor (GOE-5) - zero callers
+  (still pending, G.4).
 
 **Fix before executing:**
 
-- `02-type-interface-analysis.md` missing input (GCE-1 critical) —
+- `02-type-interface-analysis.md` missing input (GCE-1 critical) -
   either produce retrospectively or explicitly merge into 03+04.
 - `liveness.ts` logger count (GCE-2): fix from 0 → 4; the free
   functions must either take `log: LoggerLike` or keep the concrete
@@ -1098,9 +1115,9 @@ gaps**:
 
 - bun-specific `AbortController` + `setTimeout` interleaving for
   `TelegramClient` (GCE-12).
-- `Raw*` types have zero external consumers (GCE-10 — already
+- `Raw*` types have zero external consumers (GCE-10 - already
   verified).
-- The 10-class count including `TelegramApiError` (GCE-11 — already
+- The 10-class count including `TelegramApiError` (GCE-11 - already
   verified).
 
 **Minor cleanups:**
@@ -1115,7 +1132,7 @@ gaps**:
 Every file:line reference in this review was read against the
 working tree on 2026-08-30 (branch `test/baseline`, HEAD `f58fe4c`):
 
-- `src/channel-coordinator.ts` — read in full (441 LOC verified
+- `src/channel-coordinator.ts` - read in full (441 LOC verified
   via `wc -l`).
   - 19 `logger.<level>(` calls (verified via `grep -nE
     "logger\.(info|warn|error|debug)\(" | wc -l`); 2 missed by
@@ -1128,7 +1145,7 @@ working tree on 2026-08-30 (branch `test/baseline`, HEAD `f58fe4c`):
     transientBackoffMs L221, processBatch L233, reconcilePending L270,
     fatalExit L302, runLoop L311, installSignalHandlers L407, main L422).
   - 4 free exports (inNative409Cooldown L109, neutralizeChannelTags L182,
-    buildHandoffContent L189, transientBackoffMs L221) — all used by
+    buildHandoffContent L189, transientBackoffMs L221) - all used by
     tests (verified).
   - 8 module-level constants at L50/51/52/56/57/60/64/67/68/92/97/98
     (verified).
@@ -1139,36 +1156,36 @@ working tree on 2026-08-30 (branch `test/baseline`, HEAD `f58fe4c`):
     CHANNEL_PROVIDER, BOT_NAME), `./channel-coordinator/telegram-client.js`,
     `./channel-coordinator/liveness.js`, `./channel-coordinator/ingest.js`
     (8 symbols).
-- `src/channel-coordinator/telegram-client.ts` — read in full (226 LOC).
-  - 1 class declaration at L45 (`TelegramApiError`) — verified.
+- `src/channel-coordinator/telegram-client.ts` - read in full (226 LOC).
+  - 1 class declaration at L45 (`TelegramApiError`) - verified.
   - 3 free function declarations at L98/143/201 (mapUpdate,
-    getUpdates, probeHighWater) — verified.
+    getUpdates, probeHighWater) - verified.
   - Zero logger call sites (verified).
   - Zero `validateToken` / `formatMessage` / `splitMessage` methods
     (verified; GOE-1 finding).
-- `src/channel-coordinator/ingest.ts` — read in full (230 LOC).
+- `src/channel-coordinator/ingest.ts` - read in full (230 LOC).
   - 9 free function declarations at L27/126/160/168/175/190/206/216/225
     (verified).
   - Zero logger call sites (verified; matches plan claim).
-- `src/channel-coordinator/liveness.ts` — read in full (287 LOC).
+- `src/channel-coordinator/liveness.ts` - read in full (287 LOC).
   - 9 free function declarations at L34/72/145/164/223/229/241/266/276
     (verified).
   - **4 logger call sites at L152/188/210/214** (verified; GCE-2
-    finding — plan claims 0).
-- `src/channel-coordinator/provider-poller-match.ts` — read in full
+    finding - plan claims 0).
+- `src/channel-coordinator/provider-poller-match.ts` - read in full
   (91 LOC).
   - 1 free function declaration at L82 (matchesProviderPollerCmd).
   - 0 logger call sites (verified).
 - 5 `vi.mock('../channel-coordinator/...')` sites across 4 files:
   - `vi.mock('../channel-coordinator/ingest.js')`: 1 site
-    (`messages-routes.test.ts:101`, verified — substitutes
+    (`messages-routes.test.ts:101`, verified - substitutes
     COORDINATOR_AGENT_ID).
   - `vi.mock('../channel-coordinator/liveness.js')`: 4 sites
     (`channel-monitor.test.ts:259`,
     `channel-monitor-baseline.test.ts:222`,
     `channel-monitor-coverage.test.ts:243`,
-    `schedule-mcp-precheck-full.test.ts:80` — verified).
-- 12 test files use G exports (verified — GCE-3 finding):
+    `schedule-mcp-precheck-full.test.ts:80` - verified).
+- 12 test files use G exports (verified - GCE-3 finding):
   - 11 dedicated `channel-coordinator-*.test.ts` files (matches plan).
   - `channel-inbound-framing.test.ts:11` (uses `buildHandoffContent`,
     MISSED by plan).
@@ -1181,10 +1198,10 @@ working tree on 2026-08-30 (branch `test/baseline`, HEAD `f58fe4c`):
   - `src/web/routes/messages.ts:11` (COORDINATOR_AGENT_ID).
   - Plus the internal `channel-coordinator.ts:36/37/38-48` (5 imports).
 - Zero production importers of `src/channel-coordinator.ts` entry
-  file (verified via `grep -n channel-coordinator src/index.ts` —
+  file (verified via `grep -n channel-coordinator src/index.ts` -
   0 matches; matches plan).
 - 5 `instanceof TelegramApiError` sites at
-  `channel-coordinator.ts:335/338/366/372/378` (verified — matches
+  `channel-coordinator.ts:335/338/366/372/378` (verified - matches
   plan exactly).
 - 1 `vi.doMock` site in the 11 dedicated tests: verified `vi.mock`
   usage in `channel-coordinator-ingest.test.ts:35` and

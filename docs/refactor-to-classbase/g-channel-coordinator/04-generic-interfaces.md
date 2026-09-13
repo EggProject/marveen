@@ -1,4 +1,4 @@
-# G (channel-coordinator) — Generic interfaces
+# G (channel-coordinator) - Generic interfaces
 
 This document evaluates the three generic-interface proposals that the
 task brief asks about for the G subsystem: `ChannelCoordinator<TConfig>`,
@@ -12,7 +12,7 @@ specific reasoning, the speculative sketches considered, and the
 single-load-bearing `LoggerLike` dependency (which is non-generic per
 `h-cross-cutting/04-generic-interfaces.md §L`) are documented below.
 Cross-checked against `src/channel-coordinator.ts` (442 LOC) and the
-3 submodules on 2026-08-30. Planning only — no source files modified.
+3 submodules on 2026-08-30. Planning only - no source files modified.
 
 ---
 
@@ -23,27 +23,27 @@ The framework's `04-generic-interfaces.md` at
 folder, not this one) introduced a batch of generic sketches across
 all subsystems. The G-relevant subset is:
 
-- **G1** (framework): `BasePaneWatcher<TState, TThresholds>` — NOT in G
+- **G1** (framework): `BasePaneWatcher<TState, TThresholds>` - NOT in G
   scope (G has no `pane-state.ts` consumer; rejected for G in
   `review-completeness.md` OE-7).
-- **G2** (framework): `TtlCache<K, V>` — NOT in G scope (G has no
+- **G2** (framework): `TtlCache<K, V>` - NOT in G scope (G has no
   TTL cache; rejected for the framework in
   `review-completeness.md` OE-6 + CE-9).
-- **G3** (framework): `RetryQueue<TRow>` — NOT in G scope.
-- **G4** (framework): `AuthContext` sealed hierarchy — NOT in G scope
+- **G3** (framework): `RetryQueue<TRow>` - NOT in G scope.
+- **G4** (framework): `AuthContext` sealed hierarchy - NOT in G scope
   (G does not own web auth; rejected in `review-completeness.md` OE-4).
-- **G5** (framework): `LoggerLike` interface — **INDIRECTLY in G
+- **G5** (framework): `LoggerLike` interface - **INDIRECTLY in G
   scope** (the G.4 `ChannelCoordinator` constructor takes `log:
   LoggerLike`, per `h-cross-cutting/03-class-boundaries.md §C1`).
-- **G6** (framework): `BaseRunner<TFacts, TDecision>` — NOT in G
+- **G6** (framework): `BaseRunner<TFacts, TDecision>` - NOT in G
   scope (`ChannelCoordinator` is not a "facts → decision" runner; it
   is an orchestrator with a state machine, rejected for the framework
   in `review-completeness.md` OE-5).
-- **G7** (framework): `LazyBin<TName, TResolved>` — NOT in G scope
+- **G7** (framework): `LazyBin<TName, TResolved>` - NOT in G scope
   (per `h-cross-cutting/03-class-boundaries.md §C2`, the `tmuxBin`
   resolver at `liveness.ts:20` stays as a `makeLazyBinResolver` call
   until H.3 migrates it).
-- **G8** (framework): `App.getStore<K>` typed accessor — NOT in G
+- **G8** (framework): `App.getStore<K>` typed accessor - NOT in G
   scope (G has no `App` keystone dependency).
 
 The three task-brief-specific proposals (`ChannelCoordinator<TConfig>`,
@@ -54,7 +54,7 @@ that G.4 / G.7 depends on is **not** generic per
 
 ---
 
-## §1. `ChannelCoordinator<TConfig>` — REJECTED (OE-6)
+## §1. `ChannelCoordinator<TConfig>` - REJECTED (OE-6)
 
 ### Speculative sketch
 
@@ -95,7 +95,7 @@ interface CoordinatorConfig {
 ### Why rejected
 
 1. **Single consumer.** Per `01 §11`, the G.4 `ChannelCoordinator` has
-   exactly **one production caller** — the `main()` function at
+   exactly **one production caller** - the `main()` function at
    `channel-coordinator.ts:422-431`, which itself runs only via the
    L435 entry-point guard. The dashboard's `App` (D.3) does NOT import
    or instantiate `ChannelCoordinator` because the coordinator is a
@@ -131,7 +131,7 @@ interface CoordinatorConfig {
 
 ---
 
-## §2. `TelegramClient<TProvider>` — REJECTED (OE-6)
+## §2. `TelegramClient<TProvider>` - REJECTED (OE-6)
 
 ### Speculative sketch
 
@@ -156,7 +156,7 @@ class TelegramClient<TProvider extends ChannelProviderType = 'telegram'> {
    provider pattern lives in **D** (`d-channel-provider/03-class-boundaries.md
    §D2`: `TelegramProvider`, `SlackProvider`, `DiscordProvider`,
    `GooglechatProvider`, `TeamsProvider`), not in G. G's
-   `TelegramClient` is a thin HTTP wrapper for getUpdates only — it
+   `TelegramClient` is a thin HTTP wrapper for getUpdates only - it
    does NOT mirror `ChannelProvider.sendMessage`.
 2. **No Slack/Discord alternative for the coordinator.** Per
    `telegram-client.ts:1-13` ("This client never sends ... the
@@ -167,7 +167,7 @@ class TelegramClient<TProvider extends ChannelProviderType = 'telegram'> {
    schema, but no second producer exists today.
 3. **`ChannelProviderType` is the wrong type to parameterize on.** The
    Telegram-only HTTP wrapper does not vary by `ChannelProviderType`
-   in any way that requires static dispatch — the `formatMessage` /
+   in any way that requires static dispatch - the `formatMessage` /
    `splitMessage` helpers forward to `format.ts:3, 50` regardless of
    `TProvider`. A `TelegramClient<'slack'>` would be a meaningless
    type because none of the methods are provider-specific.
@@ -181,7 +181,7 @@ class TelegramClient<TProvider extends ChannelProviderType = 'telegram'> {
 
 ---
 
-## §3. `IngestWorker<TMessage>` — REJECTED (OE-6)
+## §3. `IngestWorker<TMessage>` - REJECTED (OE-6)
 
 ### Speculative sketch
 
@@ -206,13 +206,13 @@ class IngestWorker<TMessage extends NormalizedEvent = NormalizedEvent> {
    etc.) exists.
 2. **`TMessage = NormalizedEvent` is the only inhabitant.** The
    parameterization would force every test to write
-   `IngestWorker<NormalizedEvent>()` — which collapses to
+   `IngestWorker<NormalizedEvent>()` - which collapses to
    `IngestWorker()`. The generic provides zero inference benefit.
 3. **`IncomingEventRow` is the SQL-row type, not a polymorphic payload.**
    The `getEventsNeedingHandoff(source)` query at `ingest.ts:190-204`
    returns `IncomingEventRow[]`; the `INSERT OR IGNORE` at
    `ingest.ts:126-150` takes the `NormalizedEvent` shape. There is no
-   intermediate polymorphism — the ingest layer is fully Telegram-shaped.
+   intermediate polymorphism - the ingest layer is fully Telegram-shaped.
 4. **OE-6 verbatim.** Per `review-completeness.md` OE-6: *"Reject
    generics that have a single consumer."* `IngestWorker<TMessage>`
    has one consumer (`ChannelCoordinator`'s `processBatch` /
@@ -257,14 +257,14 @@ non-generic overload form preserves all three call shapes.
 |---|---|---|
 | `TelegramClient` | `log: LoggerLike` | `telegram-client.ts` has zero logger call sites today (verified by `grep -nE "logger\.<level>\(" src/channel-coordinator/telegram-client.ts` → 0 matches); the field is reserved for future per-call debug logging. |
 | `IngestWorker` | (no logger) | `ingest.ts` has zero logger call sites; per `01 §Per-file inventory`, `ingest.ts` has 0 logger call sites. |
-| `LivenessTracker` | (no logger) | The class is passive state; no logger needed. |
+| `LivenessTracker` | (no logger) [G.3 LANDED] | The class is passive state; no logger needed. LANDED with the surface documented in `03-class-boundaries.md §G3`. |
 | `ChannelCoordinator` | `log: LoggerLike` | 17 logger call sites at `channel-coordinator.ts:150, 173, 244, 252, 254, 275, 293, 295, 303, 333, 340, 343, 355, 374, 411, 427, 437`. |
 
 ### Cross-cutting dependency
 
 `LoggerLike` is **not** introduced by G. It is exported by H (per
 `h-cross-cutting/00-summary.md §Migration order`: H.1 first, then
-G.7 — "LoggerLike adoption across G classes"). G.4 takes
+G.7 - "LoggerLike adoption across G classes"). G.4 takes
 `LoggerLike` as a constructor parameter type only after H.1 lands;
 before H.1, G.4 would take `logger` (the concrete pino singleton at
 `logger.ts:3`).
@@ -274,11 +274,16 @@ before H.1, G.4 would take `logger` (the concrete pino singleton at
 
 ---
 
-## §5. Why no `LivenessTracker<TState>` either
+## §5. Why no `LivenessTracker<TState>` either [G.3 LANDED]
 
-The state machine is `'idle' | 'backfilling'` (per
-`channel-coordinator.ts:100`: `type State = 'idle' | 'backfilling'`).
-A `LivenessTracker<TState extends State>` parameterization would have:
+**G.3 LANDED** (this commit) - the `LivenessTracker` class landed
+without a `<TState>` parameter, matching this rejection. The class
+surface in `03-class-boundaries.md §G3` is non-generic.
+
+The state machine is `'idle' | 'backfilling'` (declared at the
+streak-state block in `channel-coordinator.ts`: `type State = 'idle' |
+'backfilling'`). A `LivenessTracker<TState extends State>` parameterization
+would have:
 
 - One inhabitant: `TState = 'idle' | 'backfilling'` (the literal union).
 - One consumer: `ChannelCoordinator`'s `runLoop` (G.4).
@@ -286,7 +291,7 @@ A `LivenessTracker<TState extends State>` parameterization would have:
 
 This is rejected on OE-6 grounds (single consumer) and on
 `CLAUDE.md §2` ("Simplicity First") grounds (the literal-union type
-IS the most specific type — there is no wider type to parameterize
+IS the most specific type - there is no wider type to parameterize
 on without dropping to `string`, which loses the exhaustiveness check).
 
 ---
@@ -298,7 +303,7 @@ on without dropping to `string`, which loses the exhaustiveness check).
 | `ChannelCoordinator<TConfig>` | **REJECTED** | OE-6 (single consumer); no test factory needs it; type-bag explosion |
 | `TelegramClient<TProvider>` | **REJECTED** | OE-6 (single producer); no Slack/Discord alternative planned; `TProvider = 'telegram'` is the only inhabitant |
 | `IngestWorker<TMessage>` | **REJECTED** | OE-6 (single source); `TMessage = NormalizedEvent` is the only inhabitant |
-| `LivenessTracker<TState>` | **REJECTED** (added by this doc, not in the brief) | OE-6 + CLAUDE.md §2 (literal-union is already the most specific type) |
+| `LivenessTracker<TState>` | **REJECTED** (added by this doc, not in the brief) - and LANDED-as-rejected (G.3, this commit) | OE-6 + CLAUDE.md §2 (literal-union is already the most specific type) |
 | `LoggerLike` (H.1, NOT a G generic) | **USED, not introduced** | Per `h-cross-cutting/04-generic-interfaces.md §L`: non-generic overload form. G.7 consumes it; H.1 introduces it. |
 
 **Net effect: zero new generic interfaces introduced by G.** The G
@@ -312,13 +317,13 @@ single production consumer.
 
 ## Cross-references
 
-- `review-completeness.md` OE-6 — *"Reject generics that have a single consumer."*
-- `review-completeness.md` OE-1/OE-2 — sealed-class discimination proposals rejected
-- `review-completeness.md` OE-7 — `BasePaneWatcher<TState, TThresholds>` rejected on `unknown`-defeats-type-safety grounds
-- `h-cross-cutting/00-summary.md §Top 3 risks` — `LoggerLike` call signature risk
-- `h-cross-cutting/04-generic-interfaces.md §L` — `LoggerLike` is not generic (pino overload form)
-- `d-channel-provider/03-class-boundaries.md:139-142` — `ChannelEnv<TEnv>` rejected for B.1
-- `b-config/03-class-boundaries.md:233-238` — `Config<TEnv>` rejected on hand-maintained-key drift
+- `review-completeness.md` OE-6 - *"Reject generics that have a single consumer."*
+- `review-completeness.md` OE-1/OE-2 - sealed-class discimination proposals rejected
+- `review-completeness.md` OE-7 - `BasePaneWatcher<TState, TThresholds>` rejected on `unknown`-defeats-type-safety grounds
+- `h-cross-cutting/00-summary.md §Top 3 risks` - `LoggerLike` call signature risk
+- `h-cross-cutting/04-generic-interfaces.md §L` - `LoggerLike` is not generic (pino overload form)
+- `d-channel-provider/03-class-boundaries.md:139-142` - `ChannelEnv<TEnv>` rejected for B.1
+- `b-config/03-class-boundaries.md:233-238` - `Config<TEnv>` rejected on hand-maintained-key drift
 
 ---
 

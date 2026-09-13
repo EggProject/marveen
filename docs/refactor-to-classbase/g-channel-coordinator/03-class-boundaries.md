@@ -1,4 +1,4 @@
-# G (channel-coordinator) — Class boundaries
+# G (channel-coordinator) - Class boundaries
 
 Concrete class candidates for the G subsystem. **Signatures only; no
 implementation.** Every claim below cites a file:line verified against
@@ -11,8 +11,8 @@ the 4 G source files (`src/channel-coordinator.ts` 442 LOC,
 `e-process-lock/`, `f-agent-subsystem/`, `review-correctness.md`,
 `review-completeness.md`).
 
-**Reading note.** G produces **four** new classes — `TelegramClient`,
-`IngestWorker`, `LivenessTracker`, `ChannelCoordinator` — plus the
+**Reading note.** G produces **four** new classes - `TelegramClient`,
+`IngestWorker`, `LivenessTracker`, `ChannelCoordinator` - plus the
 existing `TelegramApiError` class that survives unchanged. The four
 new classes follow the `B.1 Config` / `D.1 ChannelEnv` /
 `E.1 PortLockAcquirer` / `F.1 HeartbeatScheduler` precedent of
@@ -25,9 +25,9 @@ until G.8".
 
 | Class | New? | Migration source | Phase |
 |---|---|---|---|
-| `TelegramClient` | new | the 4 free functions in `telegram-client.ts` (`mapUpdate` L98, `getUpdates` L143, `probeHighWater` L201, plus `validateToken`/`formatMessage`/`splitMessage` shape helpers — note: the latter 3 are not currently in `telegram-client.ts`; they live in `src/format.ts:3`/`50` and are forwarded by `TelegramProvider` per `d-channel-provider/03-class-boundaries.md:218-220`); the 2 frozen consts `API_BASE` L15 and `ALLOWED_UPDATES` L21 become private static fields | G.1 |
+| `TelegramClient` | new | the 4 free functions in `telegram-client.ts` (`mapUpdate` L98, `getUpdates` L143, `probeHighWater` L201, plus `validateToken`/`formatMessage`/`splitMessage` shape helpers - note: the latter 3 are not currently in `telegram-client.ts`; they live in `src/format.ts:3`/`50` and are forwarded by `TelegramProvider` per `d-channel-provider/03-class-boundaries.md:218-220`); the 2 frozen consts `API_BASE` L15 and `ALLOWED_UPDATES` L21 become private static fields | G.1 |
 | `IngestWorker` | new | the 1 module singleton `let db: Database \| null = null` at `ingest.ts:25` + the 8 free functions (`initIngestDb` L27, `insertIncomingEvent` L126, `createHandoffMessage` L160, `markEventDelivered` L168, `markEventFailed` L175, `getEventsNeedingHandoff` L190, `getOffset` L206, `setOffset` L216, `closeIngestDb` L225`); the const `COORDINATOR_AGENT_ID` at `ingest.ts:23` survives as a static field | G.2 |
-| `LivenessTracker` | new | the 4 mutable bindings at `channel-coordinator.ts:101-106` (`state`, `downStreak`, `stopping`, `nativeConfirmedUpUntil`) — the *streak* state — NOT the 9 free functions in `liveness.ts` (those stay free per the precedent in `01 §10`) | G.3 |
+| `LivenessTracker` | new | the 4 mutable bindings at `channel-coordinator.ts:101-106` (`state`, `downStreak`, `stopping`, `nativeConfirmedUpUntil`) - the *streak* state - NOT the 9 free functions in `liveness.ts` (those stay free per the precedent in `01 §10`) | G.3 |
 | `ChannelCoordinator` | new (orchestrator) | the entry-point file `channel-coordinator.ts:1-442`; the constructor takes the 3 other G classes as injected dependencies | G.4 |
 | `TelegramApiError` | **NOT BUILT** (already a class at `telegram-client.ts:45`) | preserved verbatim per `h-cross-cutting/03-class-boundaries.md:305-311` and `review-completeness.md` OE-1/OE-2 | n/a |
 
@@ -77,21 +77,21 @@ class TelegramClient {
 | `getUpdates(token, offset, timeout, limit)` | `getUpdates(token, offset, timeout, limit)` | `telegram-client.ts:143-190` | Long-poll via `fetch` + `AbortController`; reads `ALLOWED_UPDATES` from private static field. The `AbortController` is per-call (created in L149, cleared in `finally` at L163); no timer leak across re-init. |
 | `probeHighWater(token)` | `probeHighWater(token)` | `telegram-client.ts:201-226` | Seed probe; deliberately omits `allowed_updates` per the L193-200 invariant. Returns the highest pending `update_id` or `null`. |
 | `mapUpdate(u)` | `mapUpdate(u)` | `telegram-client.ts:98-137` | Pure normalization; returns `null` for unhandled update kinds. |
-| `formatMessage(text)` | `formatForTelegram(text)` | `format.ts:3` (forwarded) | Currently NOT in `telegram-client.ts` — the brief adds it as a public method to make the class surface complete (paralleling `ChannelProvider.formatMessage` at `channel-provider.ts:19`). |
+| `formatMessage(text)` | `formatForTelegram(text)` | `format.ts:3` (forwarded) | Currently NOT in `telegram-client.ts` - the brief adds it as a public method to make the class surface complete (paralleling `ChannelProvider.formatMessage` at `channel-provider.ts:19`). |
 | `splitMessage(text)` | `splitMessage(text)` | `format.ts:50` (forwarded) | Same as above. |
-| `validateToken(token)` | (none) | n/a | New method per D.2 surface (`channel-provider.ts:18`). Calls `getMe` (a Telegram Bot API endpoint not yet used in G). [ASSUMPTION: per the brief, but no current production caller — verify before adding to the G.1 commit.] |
+| `validateToken(token)` | (none) | n/a | New method per D.2 surface (`channel-provider.ts:18`). Calls `getMe` (a Telegram Bot API endpoint not yet used in G). [ASSUMPTION: per the brief, but no current production caller - verify before adding to the G.1 commit.] |
 
 ### Constructor
 
 - `(env, db, log)`. The `env` is the D.1 `ChannelEnv` instance
   (provides `getToken(provider)` and `stateDirFor(provider, agentDir?)`).
-  The `db` is the A.1 `DbClient` instance — used by no method today but
+  The `db` is the A.1 `DbClient` instance - used by no method today but
   reserved for future telemetry (per-call latency log into the
   `incoming_events` table). The `log` is H.1 `LoggerLike` for the
   per-call debug logging (e.g. `logger.debug({ update_id }, 'telegram: getUpdates returned N updates')`).
 - **No I/O in the constructor.** All HTTP happens in `getUpdates` and
   `probeHighWater`; the `AbortController` is created per-call.
-- **No TelegramApiError dependency** — the class throws
+- **No TelegramApiError dependency** - the class throws
   `TelegramApiError` (from `telegram-client.ts:45`) but does not own
   it; `TelegramApiError` is the existing class at the top of the same
   file.
@@ -99,36 +99,36 @@ class TelegramClient {
 ### Generic params
 
 **None.** Per `04-generic-interfaces.md §1` (this folder), no
-`TelegramClient<TMessage>` parameter is justified — the 4 `kind` values
+`TelegramClient<TMessage>` parameter is justified - the 4 `kind` values
 of `UpdateKind` are exhaustively handled by `mapUpdate` and the
 incoming pipeline consumes `NormalizedEvent` regardless of source.
 Rejected per `review-completeness.md` OE-6 (single consumer).
 
 ### Dependencies
 
-- `ChannelEnv` (D.1) — for `env.getToken('telegram')`.
-- `DbClient` (A.1) — for future telemetry writes (optional in the
+- `ChannelEnv` (D.1) - for `env.getToken('telegram')`.
+- `DbClient` (A.1) - for future telemetry writes (optional in the
   constructor signature; can be `undefined` until used).
-- `LoggerLike` (H.1) — for the per-call debug log.
-- `format.ts` — `formatForTelegram`, `splitMessage`.
-- `fetch` (global, Node 18+) — the only network primitive.
-- **No `node:https`** — the bot uses `fetch` exclusively
+- `LoggerLike` (H.1) - for the per-call debug log.
+- `format.ts` - `formatForTelegram`, `splitMessage`.
+- `fetch` (global, Node 18+) - the only network primitive.
+- **No `node:https`** - the bot uses `fetch` exclusively
   (`telegram-client.ts:153, 206`).
 
 ### Lifecycle
 
-- **One instance per process** — constructed once by `ChannelCoordinator`'s
+- **One instance per process** - constructed once by `ChannelCoordinator`'s
   constructor (G.4) and held as a private field.
-- **Stateless** — every method takes `token` as a parameter; no
+- **Stateless** - every method takes `token` as a parameter; no
   per-instance token or chatId state. This is the same invariant
   `TelegramProvider` follows per `d-channel-provider/00-summary.md`
   ("all five providers are stateless: token and chatId are per-call
   parameters, never instance state").
-- **No `close()` method** — the `AbortController` is per-call and
+- **No `close()` method** - the `AbortController` is per-call and
   `setTimeout` is cleared in `finally` (L163, L215). No long-lived
   handles to release.
 
-### `TelegramApiError` is the existing class — not a new build
+### `TelegramApiError` is the existing class - not a new build
 
 Per `h-cross-cutting/03-class-boundaries.md:305-311` and
 `review-completeness.md` OE-1/OE-2, `TelegramApiError` is preserved
@@ -145,7 +145,7 @@ discriminator drives control flow) keep working unchanged.
 | `mapUpdate(u)` | `telegram-client.ts:98` | Same. |
 | `TelegramApiError` class | `telegram-client.ts:45-54` | **Survives unchanged.** Not wrapped, not migrated. The class form IS the form. |
 | `TelegramErrorKind` type alias | `telegram-client.ts:43` | Survives as a top-level type export. |
-| `UpdateKind`, `NormalizedEvent`, `RawUpdate`, `RawMessage`, `RawUser` | `telegram-client.ts:23-86` | Type-only exports; survive. The `Raw*` types become `private` inside the class if and only if no external consumer imports them. [ASSUMPTION: zero external consumers — verified by `grep -rn "RawUpdate\|RawMessage" src/ --include='*.ts' \| grep -v __tests__` would be needed before G.1 lands.] |
+| `UpdateKind`, `NormalizedEvent`, `RawUpdate`, `RawMessage`, `RawUser` | `telegram-client.ts:23-86` | Type-only exports; survive. The `Raw*` types become `private` inside the class if and only if no external consumer imports them. [ASSUMPTION: zero external consumers - verified by `grep -rn "RawUpdate\|RawMessage" src/ --include='*.ts' \| grep -v __tests__` would be needed before G.1 lands.] |
 | `ALLOWED_UPDATES` const | `telegram-client.ts:21` | Becomes a `private static readonly` field on the class. The free export survives for tests. |
 
 ---
@@ -158,7 +158,7 @@ discriminator drives control flow) keep working unchanged.
   alongside the free functions).
 - **Migration source:** the 1 module singleton `let db: Database | null
   = null` at `ingest.ts:25` + the 8 free functions enumerated above.
-  The `Database` handle is opened in `initIngestDb` (L27-91) — the
+  The `Database` handle is opened in `initIngestDb` (L27-91) - the
   class form takes either an injected handle or opens its own.
 
 ### Public surface (signatures only)
@@ -203,20 +203,20 @@ class IngestWorker {
 
 - `(opts?)`. The optional `opts.dbPath` defaults to
   `join(STORE_DIR, DB_FILENAME)` per the existing L27 default.
-- **The class opens its own `Database` handle** — it does NOT take a
+- **The class opens its own `Database` handle** - it does NOT take a
   `DbClient` from A.1. Per `01 §10`: the coordinator is a SEPARATE
   process from the dashboard, so it cannot share the dashboard's
   sqlite singleton. This is a load-bearing constraint: even after A.7
   removes the `let db: Database` singleton in `src/db.ts:10`, the
   coordinator continues to open its own handle via
   `new Database(dbPath, { strict: true })`.
-- **No logger** — the existing free functions in `ingest.ts` have zero
+- **No logger** - the existing free functions in `ingest.ts` have zero
   logger call sites (verified by inspection of the 231 lines).
 
 ### Generic params
 
 **None.** Per `04-generic-interfaces.md §2` (this folder), no
-`IngestWorker<TSource>` parameter is justified — the `source` column is
+`IngestWorker<TSource>` parameter is justified - the `source` column is
 a plain `TEXT` defaulted to `'telegram'` (per `ingest.ts:38`), and the
 schema supports multiple `source` values but no second implementation
 exists today. Rejected per `review-completeness.md` OE-6.
@@ -226,11 +226,11 @@ exists today. Rejected per `review-completeness.md` OE-6.
 - `Database, pragma, runScript` from `src/db/sqlite.ts`.
 - `join` from `node:path`.
 - `STORE_DIR, DB_FILENAME, MAIN_AGENT_ID` from `src/config.ts` (the 3
-  consts are read inside the class via direct field access — no
+  consts are read inside the class via direct field access - no
   `Config` injection needed because `Config` already exposes these as
   re-export shims per `b-config/00-summary.md §Free functions that
   REMAIN`).
-- **No `LoggerLike`** — zero logger call sites in `ingest.ts`.
+- **No `LoggerLike`** - zero logger call sites in `ingest.ts`.
 
 ### Lifecycle
 
@@ -283,11 +283,11 @@ verbatim.
 - **Source file:** `src/channel-coordinator.ts` (the streak state lives
   in the entry file, NOT in `liveness.ts`).
 - **Migration source:** the 4 mutable lets at
-  `channel-coordinator.ts:101-106` — `state: State = 'idle'`,
+  `channel-coordinator.ts:101-106` - `state: State = 'idle'`,
   `downStreak = 0`, `stopping = false`, `nativeConfirmedUpUntil = 0`.
   Plus the `inNative409Cooldown(confirmedUpUntilMs, nowMs)` helper at
   L109-111 (becomes a method).
-- **NOT migrated from `liveness.ts`** — the 9 free functions in
+- **NOT migrated from `liveness.ts`** - the 9 free functions in
   `liveness.ts` (`getClaudePidForSession`, `decideHasPluginAlive`,
   `snapshotProcsWithRetry`, `probeChannelPluginLiveness`,
   `hasChannelPluginAlive`, `readRespawnStampMs`,
@@ -345,14 +345,14 @@ class LivenessTracker {
 
 - **No constructor parameters.** The 4 fields are initialized to
   defaults in the class declarations. This matches the source behavior
-  — the 4 lets start at their zero values and only `runLoop` / the
+  - the 4 lets start at their zero values and only `runLoop` / the
   signal handler mutate them.
 - **No I/O in the constructor.**
 
 ### Generic params
 
 **None.** Per `04-generic-interfaces.md §3` (this folder), no
-`LivenessTracker<TState>` parameter is justified — the state machine
+`LivenessTracker<TState>` parameter is justified - the state machine
 is `idle | backfilling` (a 2-element literal union) and exists in only
 one place in the codebase. Rejected per `review-completeness.md` OE-6.
 
@@ -365,7 +365,7 @@ one place in the codebase. Rejected per `review-completeness.md` OE-6.
 
 - **One instance per process**, held as a private field on
   `ChannelCoordinator` (G.4).
-- **No `close()` method** — the class is passive; `stopping = true` is
+- **No `close()` method** - the class is passive; `stopping = true` is
   the only termination signal, set by the SIGTERM handler.
 
 ### Critical caveat for G.4
@@ -384,9 +384,32 @@ problem is the right one."
 
 | Symbol | Location | Why it stays |
 |---|---|---|
-| `inNative409Cooldown(confirmedUpUntilMs, nowMs)` | `channel-coordinator.ts:109-111` | **Preserved as a free export.** The `channel-coordinator.test.ts` test file exercises it directly per `01 §11.3`. The class form is additive; the free function becomes a thin wrapper `export const inNative409Cooldown = (a, b) => a > b`. |
-| All 9 free functions in `liveness.ts` (`getClaudePidForSession`, `decideHasPluginAlive`, `snapshotProcsWithRetry`, `probeChannelPluginLiveness`, `hasChannelPluginAlive`, `readRespawnStampMs`, `readKeepaliveAgeMs`, `decideNativeChannelDown`, `probeNativeChannelDown`) | `liveness.ts:34-287` | Untouched. The 4 `vi.mock('../channel-coordinator/liveness.js', …)` sites in `channel-monitor.test.ts:259`, `channel-monitor-baseline.test.ts:222`, `channel-monitor-coverage.test.ts:243`, `schedule-mcp-precheck-full.test.ts:80` keep working unchanged. |
-| The `tmuxBin` lazy resolver | `liveness.ts:20` | Stays module-level per the `LazyBin` precedent (`h-cross-cutting/03-class-boundaries.md §C2`); an H.3 `new LazyBin('tmux')` migration can run in parallel. |
+| `inNative409Cooldown(confirmedUpUntilMs, nowMs)` | `channel-coordinator.ts` (free-function block) | **Preserved as a free export.** The `channel-coordinator.test.ts` test file exercises it directly per `01 §11.3`. The class form is additive; the free function becomes a thin wrapper `(confirmedUpUntilMs, nowMs) => nowMs < confirmedUpUntilMs` (matches the source inequality). |
+| All 9 free functions in `liveness.ts` (`getClaudePidForSession`, `decideHasPluginAlive`, `snapshotProcsWithRetry`, `probeChannelPluginLiveness`, `hasChannelPluginAlive`, `readRespawnStampMs`, `readKeepaliveAgeMs`, `decideNativeChannelDown`, `probeNativeChannelDown`) | `liveness.ts` (free-function block) | Untouched. The 4 `vi.mock('../channel-coordinator/liveness.js', …)` sites in `channel-monitor.test.ts:259`, `channel-monitor-baseline.test.ts:222`, `channel-monitor-coverage.test.ts:243`, `schedule-mcp-precheck-full.test.ts:80` keep working unchanged. |
+| The `tmuxBin` lazy resolver | `liveness.ts` (lazy resolver block) | Stays module-level per the `LazyBin` precedent (`h-cross-cutting/03-class-boundaries.md §C2`); an H.3 `new LazyBin('tmux')` migration can run in parallel. |
+
+### G.3 STATUS: LANDED
+
+Status: **LANDED** (this commit). Implementation summary:
+
+- 4 mutable lets at the streak-state declaration block in
+  `src/channel-coordinator.ts` are now 4 private fields on a
+  module-singleton `LivenessTracker` instance (`const liveness = new
+  LivenessTracker()`).
+- 15 read/write sites in `runLoop` + `installSignalHandlers` route
+  through the class methods (per the table in the plan's "Exact
+  rename sites" section). The `L323+L324` site was collapsed to a
+  single `if (streak >= DOWN_DEBOUNCE)` block using the
+  `incrementDownStreak()` return value.
+- The free `inNative409Cooldown(confirmedUpUntilMs, nowMs)` export
+  survives as a 1-line shim that delegates to the same pure
+  expression; the 6-case test surface at
+  `channel-coordinator.test.ts` is preserved byte-identical.
+- The 4 free exports at the module top (`inNative409Cooldown`,
+  `neutralizeChannelTags`, `buildHandoffContent`, `transientBackoffMs`)
+  remain byte-identical for all external consumers.
+- The entry-point guard at the entry file's footer survives verbatim
+  (load-bearing per `01 §10`).
 
 ---
 
@@ -414,7 +437,7 @@ class ChannelCoordinator {
     telegram: TelegramClient
     ingest: IngestWorker
     liveness: LivenessTracker
-    registry: ChannelProviderRegistry   // D.3 — for getProvider(type).sendMessage etc.
+    registry: ChannelProviderRegistry   // D.3 - for getProvider(type).sendMessage etc.
     log: LoggerLike
   })
 
@@ -468,35 +491,35 @@ class ChannelCoordinator {
 ### Generic params
 
 **None.** Per `04-generic-interfaces.md §1` (this folder), no
-`ChannelCoordinator<TConfig>` parameter is justified — the 4-tuple
+`ChannelCoordinator<TConfig>` parameter is justified - the 4-tuple
 state machine is single-instance per process, and the dependency
 graph is fixed. Rejected per `review-completeness.md` OE-6.
 
 However, the brief asks for "ChannelCoordinator parameterized over
-TConfig sketch OR OE-6 rejection" — see `04-generic-interfaces.md §1`
+TConfig sketch OR OE-6 rejection" - see `04-generic-interfaces.md §1`
 for the rejection argument.
 
 ### Dependencies
 
-- `TelegramClient` (G.1) — the HTTP wrapper.
-- `IngestWorker` (G.2) — the persistence layer.
-- `LivenessTracker` (G.3) — the streak state.
-- `ChannelProviderRegistry` (D.3) — the provider lookup. The
+- `TelegramClient` (G.1) - the HTTP wrapper.
+- `IngestWorker` (G.2) - the persistence layer.
+- `LivenessTracker` (G.3) - the streak state.
+- `ChannelProviderRegistry` (D.3) - the provider lookup. The
   coordinator only calls `registry.get(provider)` once (in
   `getProvider()`); the actual `sendMessage` path is owned by D, not G.
   Per `01 §10` and `d-channel-provider/03-class-boundaries.md §D3`,
   `ChannelProviderRegistry` exposes `get(type): ChannelProvider`.
-- `LoggerLike` (H.1) — the 17 logger call sites in
+- `LoggerLike` (H.1) - the 17 logger call sites in
   `channel-coordinator.ts` (L150, L173, L244, L252, L254, L275, L293,
   L295, L303, L333, L340, L343, L355, L374, L411, L427, L437) all
   route through `this.log`.
-- `node:fs` — `readFileSync`, `writeFileSync`, `existsSync`,
+- `node:fs` - `readFileSync`, `writeFileSync`, `existsSync`,
   `unlinkSync`, `mkdirSync` for the PID-lock dance in `start()`.
-- `node:path` — `join` for the `pidFile` derivation (already provided
+- `node:path` - `join` for the `pidFile` derivation (already provided
   in `opts.pidFile`).
-- `node:os` — `homedir` for the `stateDir` default (already in
+- `node:os` - `homedir` for the `stateDir` default (already in
   `opts.stateDir`).
-- `node:child_process` — `execFile('/bin/bash', [notifyScript, msg])`
+- `node:child_process` - `execFile('/bin/bash', [notifyScript, msg])`
   for `sendAlert` (preserved as a private method).
 
 ### Lifecycle
@@ -506,7 +529,7 @@ for the rejection argument.
 - `start()` acquires the PID lock and begins the run loop.
 - `stop()` is called from the SIGTERM 3-second drain (L412-415) and
   also exposed for test cleanup.
-- **No `close()` method** — the SIGTERM handler calls `process.exit(0)`
+- **No `close()` method** - the SIGTERM handler calls `process.exit(0)`
   after the 3-second drain, so the process lifecycle is what releases
   resources.
 
@@ -514,13 +537,13 @@ for the rejection argument.
 
 The signal-handler installation can be either:
 
-(a) **A method on `ChannelCoordinator`** — `start()` calls
+(a) **A method on `ChannelCoordinator`** - `start()` calls
 `this.installSignalHandlers()` which calls
 `process.on('SIGTERM', () => onSignal('SIGTERM'))` etc. Risk: if
 `start()` is called twice (test re-entry, HMR), the handlers
 double-register.
 
-(b) **A free function kept at module level** — `installSignalHandlers()`
+(b) **A free function kept at module level** - `installSignalHandlers()`
 stays at `channel-coordinator.ts` and is called once from `main()`
 (L426). The class instance is held in a module-scope singleton so
 `onSignal` can call `singleton.liveness.setStopping()` etc.
@@ -548,7 +571,7 @@ singleton via a closure.
 | `sleep(ms)` | `channel-coordinator.ts:226` | Local const; private module helper. |
 | `main()` | `channel-coordinator.ts:422-431` | Renamed to a thin `startCoordinator(coordinator)` bootstrap OR stays free if `installSignalHandlers` is free. The L435 entry-point guard stays verbatim. |
 | The L435 entry-point guard | `channel-coordinator.ts:435` | **Survives verbatim.** Load-bearing for test isolation per `01 §10`. |
-| The module-level constants `SOURCE` (L50), `LONGPOLL_TIMEOUT_SEC` (L51), `POLL_LIMIT` (L52), `TICK_MS` (L60), `DOWN_DEBOUNCE` (L64), `BACKOFF_BASE_MS` (L67), `BACKOFF_CAP_MS` (L68), `NATIVE_409_COOLDOWN_MS` (L92), `STATE_DIR` (L97), `PID_FILE` (L98) | various | Per the `d-channel-provider/00-summary.md` "const stays module-level for simplicity" precedent — kept free OR moved into the constructor `opts`. The recommended default is **kept free** for `TICK_MS`, `DOWN_DEBOUNCE`, `BACKOFF_BASE_MS`, `BACKOFF_CAP_MS`, `NATIVE_409_COOLDOWN_MS` (test tuning), and **moved into `opts`** for `LONGPOLL_TIMEOUT_SEC`, `POLL_LIMIT` (per-deployment tuning). |
+| The module-level constants `SOURCE` (L50), `LONGPOLL_TIMEOUT_SEC` (L51), `POLL_LIMIT` (L52), `TICK_MS` (L60), `DOWN_DEBOUNCE` (L64), `BACKOFF_BASE_MS` (L67), `BACKOFF_CAP_MS` (L68), `NATIVE_409_COOLDOWN_MS` (L92), `STATE_DIR` (L97), `PID_FILE` (L98) | various | Per the `d-channel-provider/00-summary.md` "const stays module-level for simplicity" precedent - kept free OR moved into the constructor `opts`. The recommended default is **kept free** for `TICK_MS`, `DOWN_DEBOUNCE`, `BACKOFF_BASE_MS`, `BACKOFF_CAP_MS`, `NATIVE_409_COOLDOWN_MS` (test tuning), and **moved into `opts`** for `LONGPOLL_TIMEOUT_SEC`, `POLL_LIMIT` (per-deployment tuning). |
 
 ---
 

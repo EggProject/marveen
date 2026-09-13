@@ -1,13 +1,13 @@
-# G (channel-coordinator) — Risks and mitigations
+# G (channel-coordinator) - Risks and mitigations
 
 Eight G-specific risks. Each row cites a specific file:line and a
 detection signal that lets an executor verify the mitigation. **Planning
-only — no source files modified.** All file:line claims verified
+only - no source files modified.** All file:line claims verified
 against `src/` on 2026-08-30.
 
 ---
 
-## GR1 — `installSignalHandlers` ownership in the class form
+## GR1 - `installSignalHandlers` ownership in the class form
 
 **Where it bites.** `src/channel-coordinator.ts:407-420` defines
 `installSignalHandlers()` which registers `onSignal` for `'SIGTERM'`
@@ -28,7 +28,7 @@ in `01 §8` as the "double-init" hazard). The first import installs
 the SIGTERM handler at module init (because the L435 entry-point
 guard fires only when the file is the entry point, but the handler
 registration happens at `main()` time, which the guard prevents).
-Wait — the entry-point guard prevents this scenario in tests because
+Wait - the entry-point guard prevents this scenario in tests because
 `main()` is never called. **The realistic double-register hazard
 occurs only in production**, when `main()` runs twice (HMR, a
 manually-invoked `node dist/channel-coordinator.js` while the
@@ -68,54 +68,64 @@ E.1 `PortLockAcquirer` precedent at
 
 ---
 
-## GR2 — Race between `stop()` and `runLoop()` over the 4 mutable lets
+## GR2 - Race between `stop()` and `runLoop()` over the 4 mutable lets [MITIGATED]
 
-**Where it bites.** Per `01 §1.2`, the 4 mutable lets at
-`channel-coordinator.ts:101-106` (`state`, `downStreak`, `stopping`,
-`nativeConfirmedUpUntil`) are read AND written from `runLoop` (L311-403)
-8 times within the `while (!stopping)` body. After class extraction
-to `LivenessTracker` (G.3), these become 4 private fields on a single
-class instance. The `installSignalHandlers.onSignal` (L407-420) sets
-`stopping = true` and schedules a 3-second `setTimeout` that calls
-`releaseLock() + closeIngestDb() + process.exit(0)`.
+**Status:** MITIGATED via G.3 LivenessTracker.setStopping() idempotency
+(this commit). The 4 mutable lets now live as 4 private fields on a
+module-singleton `LivenessTracker` instance; the SIGTERM handler in
+`installSignalHandlers` does `if (liveness.setStopping()) { … }` so
+only the FIRST signal triggers the 3-second drain, and subsequent
+signals are no-ops. The free `inNative409Cooldown(confirmedUpUntilMs,
+nowMs)` helper survives as a 1-line shim. The 4 free exports at the
+module top remain byte-identical.
 
-**Concrete failure scenario.** A SIGTERM arrives at L408. The handler
-sets `stopping = true` (L410) and schedules the 3-second drain. Inside
-the 3-second window, `runLoop` is in the middle of `await
+**Where it bites.** Per `01 §1.2`, the 4 mutable lets at the
+streak-state declaration block in `channel-coordinator.ts` (`state`,
+`downStreak`, `stopping`, `nativeConfirmedUpUntil`) are read AND
+written from `runLoop` 8 times within the `while (!stopping)` body.
+After class extraction to `LivenessTracker` (G.3 LANDED), these are 4
+private fields on a single class instance. The
+`installSignalHandlers.onSignal` sets `stopping = true` via
+`liveness.setStopping()` and schedules a 3-second `setTimeout` that
+calls `releaseLock() + closeIngestDb() + process.exit(0)`.
+
+**Concrete failure scenario.** A SIGTERM arrives at the signal
+handler. The handler sets `stopping = true` via
+`liveness.setStopping()` and schedules the 3-second drain. Inside the
+3-second window, `runLoop` is in the middle of `await
 getUpdates(token, getOffset(SOURCE) + 1, LONGPOLL_TIMEOUT_SEC,
-POLL_LIMIT)` at L362 — a 30-second long-poll. The loop's `while
-(!stopping)` check at L313 does NOT fire until the `await` returns.
-The SIGTERM handler fires, but `process.exit(0)` is queued for 3
-seconds later. If `getUpdates` returns within 3 seconds, `runLoop`
-exits the await, sees `stopping = true`, exits the `while`, and the
-SIGTERM timer's `process.exit(0)` fires.
+POLL_LIMIT)` - a 30-second long-poll. The loop's `while
+(!liveness.isStopping())` check does NOT fire until the `await`
+returns. The SIGTERM handler fires, but `process.exit(0)` is queued
+for 3 seconds later. If `getUpdates` returns within 3 seconds,
+`runLoop` exits the await, sees `liveness.isStopping() === true`,
+exits the `while`, and the SIGTERM timer's `process.exit(0)` fires.
 
-**The 3-second window is by design** (per `channel-coordinator.ts:412`:
-"`setTimeout(..., 3000)`" before exit). If `getUpdates` is still in
-flight at the 3-second mark, `process.exit(0)` interrupts the await,
-which leaves the `poll_offset` UPSERT at L401 unwritten. On the next
-launch, Telegram re-delivers the in-flight batch — at-least-once, deduped
-by the `(source, update_id)` unique index at `ingest.ts:58`. This is
-the documented "no-message-loss" invariant per the file-level comment
-at L262-269.
+**The 3-second window is by design** (per the drain timer in the
+shutdown handler: `setTimeout(..., 3000)` before exit). If
+`getUpdates` is still in flight at the 3-second mark, `process.exit(0)`
+interrupts the await, which leaves the `poll_offset` UPSERT
+unwritten. On the next launch, Telegram re-delivers the in-flight
+batch - at-least-once, deduped by the `(source, update_id)` unique
+index at `ingest.ts:58`. This is the documented "no-message-loss"
+invariant per the file-level comment on the runLoop state machine.
 
-After class extraction, the race is **structurally identical** — the
-JS event loop is single-threaded, and `this.liveness.stopping` is a
+After class extraction, the race is **structurally identical** - the
+JS event loop is single-threaded, and `liveness.stopping` is a
 plain boolean read by both `runLoop`'s `while` check and the SIGTERM
 handler. There is no multi-threaded race.
 
-**Mitigation.**
+**Mitigation** (MITIGATED, this commit):
 
-- The class form preserves the exact 3-second drain window via
-  `this.stop()` (which schedules the timer). The drain timer is a
-  private field on the orchestrator, not a module-level `setTimeout`
-  handle, so re-running `start()` would create a fresh timer.
-- The `LivenessTracker.setStopping()` method (G.3) is idempotent:
-  the SIGTERM handler does `if (liveness.setStopping()) { … }` so
-  only the FIRST signal triggers the 3-second drain; subsequent
-  signals are no-ops.
+- The class form preserves the exact 3-second drain window. The drain
+  timer schedules `releaseLock() + closeIngestDb() + process.exit(0)`
+  after 3 seconds, matching the pre-G.3 behavior byte-for-byte.
+- The `LivenessTracker.setStopping()` method (G.3 LANDED) is
+  idempotent: the SIGTERM handler does
+  `if (liveness.setStopping()) { … }` so only the FIRST signal
+  triggers the 3-second drain; subsequent signals are no-ops.
 - Per `01 §1.2`: "the simplest design that solves the problem is the
-  right one" — collapsing the 4 lets to 4 private fields of one class
+  right one" - collapsing the 4 lets to 4 private fields of one class
   is the minimal change that preserves the race-free invariant.
 
 **Detection signal:**
@@ -126,10 +136,13 @@ handler. There is no multi-threaded race.
 - Integration test: `coordinator.start()` followed by `.stop()` does
   NOT raise an unhandled-rejection on the in-flight `runLoop`
   promise. The drain timer cleans up the await.
+- G.3 verification: `bun --bun vitest run
+  src/__tests__/liveness-tracker.test.ts` - the new `setStopping()` /
+  `isStopping()` tests assert the idempotency contract.
 
 ---
 
-## GR3 — `TelegramApiError` migration: `kind` discriminator survives the ChannelProvider class migration
+## GR3 - `TelegramApiError` migration: `kind` discriminator survives the ChannelProvider class migration
 
 **Where it bites.** `TelegramApiError` at
 `channel-coordinator/telegram-client.ts:45-54` is the only error class
@@ -151,7 +164,7 @@ if (err instanceof TelegramApiError && err.kind === 'conflict') { … }
 The `instanceof` checks keep working unchanged as long as
 `TelegramApiError` is the same class. The D.4 `TestRunMarkingDecorator`
 at `d-channel-provider/03-class-boundaries.md §D4` is a
-`ChannelProvider` decorator that wraps `sendMessage` etc. — it does
+`ChannelProvider` decorator that wraps `sendMessage` etc. - it does
 NOT throw `TelegramApiError` (the decorator's `sendMessage` forwards
 to `this.inner.sendMessage` which throws whatever the underlying
 provider throws, e.g. a Slack API error). So D.4 does not affect G's
@@ -167,7 +180,7 @@ But if someone splits `TelegramApiError` into a subclass per `kind`
 `review-completeness.md` OE-1/OE-2), the 5 sites break because:
 
 - `err.kind === 'fatal'` is no longer a discriminator on the parent
-  class — it's a property of the subclass.
+  class - it's a property of the subclass.
 - `instanceof TelegramApiError` returns `true` for ALL subclasses,
   but `instanceof TelegramFatalError` returns `true` only for the
   fatal subclass.
@@ -211,7 +224,7 @@ the most risk for the least gain." The G migration must:
 
 ---
 
-## GR4 — `ChannelCoordinator` lifecycle: singleton vs per-request
+## GR4 - `ChannelCoordinator` lifecycle: singleton vs per-request
 
 **Where it bites.** The G.4 `ChannelCoordinator` class has a single
 production caller: `main()` at `channel-coordinator.ts:422-431`. The
@@ -222,9 +235,9 @@ constructed once per process, holds the 4 mutable fields (via
 and the PID lock.
 
 **Concrete failure scenario.** If an executor mistakenly adds
-`ChannelCoordinator` to the dashboard's `App` (D.3) constructor — e.g.,
+`ChannelCoordinator` to the dashboard's `App` (D.3) constructor - e.g.,
 to "share the liveness tracker with the dashboard's
-`channel-monitor.ts`" — the class would be constructed at dashboard
+`channel-monitor.ts`" - the class would be constructed at dashboard
 boot, which runs in the dashboard process, not the coordinator
 process. The `acquireSingleInstanceLock()` (L142-157) would fail at
 L151 with `process.exit(1)` because the coordinator process holds
@@ -245,7 +258,7 @@ process is independent. The class form preserves this:
 Per `b-config/00-summary.md` "Config" precedent and the
 `e-process-lock/03-class-boundaries.md:42` `PortLockAcquirer(ctx, opts?)`
 precedent: classes are constructed at app boot and passed via DI.
-G follows the same pattern within its own process scope — the
+G follows the same pattern within its own process scope - the
 constructor takes `opts` (per `03-class-boundaries.md §G4`), the
 single construction site is `main()`.
 
@@ -259,7 +272,7 @@ single construction site is `main()`.
 
 ---
 
-## GR5 — `vi.mock('../channel-coordinator/...')` patterns: 5 sites across 4 files
+## GR5 - `vi.mock('../channel-coordinator/...')` patterns: 5 sites across 4 files
 
 **Where it bites.** Per `01 §11.4` (verified 2026-08-30):
 
@@ -293,7 +306,7 @@ per-call provider).
   (per `03-class-boundaries.md §G3` "Free functions that REMAIN"), so
   the mock pattern works unchanged.
 - (c) The 11 dedicated `channel-coordinator-*.test.ts` files do NOT
-  mock the entry file — they exercise free functions directly. Per
+  mock the entry file - they exercise free functions directly. Per
   `01 §11.3`, this is the contract that lets the L435 entry-point
   guard prevent `main()` from running when the file is imported. After
   G.4, the tests must construct class instances via test factories;
@@ -302,7 +315,7 @@ per-call provider).
 
 **Mitigation.**
 
-- G.1 (`TelegramClient` extraction) introduces ZERO new mocks — the
+- G.1 (`TelegramClient` extraction) introduces ZERO new mocks - the
   class is additive, and `channel-coordinator-telegram-client.test.ts`
   exercises the free functions unchanged.
 - G.2 (`IngestWorker` extraction) requires a 1-line update at
@@ -310,7 +323,7 @@ per-call provider).
   `{ COORDINATOR_AGENT_ID: ... }` to `{ default: { COORDINATOR_AGENT_ID } }`.
   The recommended pattern is to keep the const export flat (no
   `default` wrapper), so the existing mock continues to work.
-- G.3 (`LivenessTracker` extraction) introduces ZERO new mocks —
+- G.3 (`LivenessTracker` extraction) introduces ZERO new mocks -
   `liveness.ts` is untouched.
 - G.4 (`ChannelCoordinator` extraction) requires 11 test-file rewrites
   in G.8 (the free-function removal phase), but the rewrites use the
@@ -328,13 +341,13 @@ per-call provider).
 
 ---
 
-## GR6 — Dependency wiring: 5+ constructor params on `ChannelCoordinator`
+## GR6 - Dependency wiring: 5+ constructor params on `ChannelCoordinator`
 
 **Where it bites.** Per `03-class-boundaries.md §G4`, the
 `ChannelCoordinator` constructor takes 9 parameters:
 `session, provider, stateDir, token, pidFile, notifyScript,
 telegram, ingest, liveness, registry, log`. That's 11 parameters
-total — above the 5+ threshold cited in the task brief.
+total - above the 5+ threshold cited in the task brief.
 
 **Concrete failure scenario.** A test that constructs
 `new ChannelCoordinator(...)` with a typo in the 6th argument (e.g.,
@@ -382,7 +395,7 @@ site; the benefit is compile-time shape validation.
 
 ---
 
-## GR7 — `TelegramClient` network state: error retry, backoff, and connection lifecycle
+## GR7 - `TelegramClient` network state: error retry, backoff, and connection lifecycle
 
 **Where it bites.** Today `getUpdates` (L143-190) and `probeHighWater`
 (L201-226) throw `TelegramApiError` on every failure mode (network,
@@ -396,14 +409,14 @@ cooldown, fatal exits the process. The state is held in
 **Concrete failure scenario.** After G.1 + G.4, the retry logic is
 distributed across:
 
-- `TelegramClient.getUpdates(...)` — throws `TelegramApiError`.
-- `TelegramClient.probeHighWater(...)` — throws `TelegramApiError`.
-- `ChannelCoordinator.runLoop()` — catches and dispatches on `err.kind`.
+- `TelegramClient.getUpdates(...)` - throws `TelegramApiError`.
+- `TelegramClient.probeHighWater(...)` - throws `TelegramApiError`.
+- `ChannelCoordinator.runLoop()` - catches and dispatches on `err.kind`.
 
 If `TelegramClient` becomes a "smart" client that handles its own
 retry internally (a tempting abstraction), the dispatch logic in
 `runLoop` becomes ambiguous: when does the client stop retrying and
-signal the caller? The brief recommends the OPPOSITE — keep the
+signal the caller? The brief recommends the OPPOSITE - keep the
 client dumb (throw on first failure), keep the retry dispatch in
 `runLoop`. This is the current behavior.
 
@@ -436,15 +449,15 @@ long-lived timers leak across re-init.
   `process._getActiveHandles()` or equivalent).
 - A unit test that constructs `new TelegramClient(mockEnv, mockDb,
   mockLog)` and calls `getUpdates` with a mock fetch that rejects
-  after 100ms — the method throws `TelegramApiError('transient', …)`
+  after 100ms - the method throws `TelegramApiError('transient', …)`
   within 100ms (no leak).
 
 ---
 
-## GR8 — Shutdown order in `ChannelCoordinator.stop()` vs the framework M11 verified order
+## GR8 - Shutdown order in `ChannelCoordinator.stop()` vs the framework M11 verified order
 
 **Where it bites.** Per `review-correctness.md` M11, the framework's
-documented shutdown order is "fabricated" — the actual order in
+documented shutdown order is "fabricated" - the actual order in
 `src/index.ts:378-410` is:
 
 ```
@@ -459,7 +472,7 @@ webServer.close(... releaseLock())
 ```
 
 The coordinator is NOT in this list because it runs as a SEPARATE
-PROCESS — `index.ts` does not call any channel-coordinator functions.
+PROCESS - `index.ts` does not call any channel-coordinator functions.
 The coordinator's own shutdown sequence is internal to
 `channel-coordinator.ts:407-431`:
 
@@ -494,7 +507,7 @@ boundary. If the executor mistakenly makes `stop()` call
 `poll_offset` UPSERT unwritten. This is the at-least-once recovery
 path per the file-level comment at L262-269, so message delivery
 is preserved, but the **next launch will re-deliver the in-flight
-batch** — a small inefficiency, not a correctness bug.
+batch** - a small inefficiency, not a correctness bug.
 
 **Mitigation.**
 
@@ -502,7 +515,7 @@ batch** — a small inefficiency, not a correctness bug.
   `03-class-boundaries.md §G4` and `05-refactor-roadmap.md §G.4`).
 - The class form exposes `stop()` for test cleanup (test factories
   can `await coordinator.stop()` to wait for the drain).
-- In production, the SIGTERM handler does NOT await `stop()` — it
+- In production, the SIGTERM handler does NOT await `stop()` - it
   schedules the drain timer (per the L412 pattern). The 3-second
   window is a hardcoded constant (per `channel-coordinator.ts:412`)
   that survives the class extraction unchanged.
@@ -525,25 +538,25 @@ batch** — a small inefficiency, not a correctness bug.
 
 ## Cross-references
 
-- `01-module-state-analysis.md §Per-file inventory` — file-level
+- `01-module-state-analysis.md §Per-file inventory` - file-level
   state inventory for G's 4 files
-- `01-module-state-analysis.md §Per-file inventory` — test mock counts
+- `01-module-state-analysis.md §Per-file inventory` - test mock counts
   (5 sites across 4 files)
-- `h-cross-cutting/00-summary.md §Top 3 risks` — `LoggerLike`
+- `h-cross-cutting/00-summary.md §Top 3 risks` - `LoggerLike`
   call-signature risk (relevant to G.7)
-- `h-cross-cutting/03-class-boundaries.md §C3` — `TelegramApiError`
+- `h-cross-cutting/03-class-boundaries.md §C3` - `TelegramApiError`
   deferral decision
-- `b-config/00-summary.md §Top 3 risks` — config-bundle pattern
+- `b-config/00-summary.md §Top 3 risks` - config-bundle pattern
   precedent for GR6
-- `e-process-lock/00-summary.md §Shutdown` — process-lock ordering
+- `e-process-lock/00-summary.md §Shutdown` - process-lock ordering
   precedent for GR8
-- `e-process-lock/03-class-boundaries.md:42` — `PortLockAcquirer(ctx, opts?)`
+- `e-process-lock/03-class-boundaries.md:42` - `PortLockAcquirer(ctx, opts?)`
   DI-bag precedent for GR6
-- `d-channel-provider/00-summary.md` — stateless provider precedent
+- `d-channel-provider/00-summary.md` - stateless provider precedent
   for GR7
-- `d-channel-provider/03-class-boundaries.md §D4` — `TestRunMarkingDecorator`
+- `d-channel-provider/03-class-boundaries.md §D4` - `TestRunMarkingDecorator`
   decision (does NOT throw TelegramApiError; GR3 cross-reference)
-- `a-db/00-summary.md §DECAY SWEEP` — cross-entity aggregator
+- `a-db/00-summary.md §DECAY SWEEP` - cross-entity aggregator
   precedent (informational only; G has no decay sweep)
 - `review-correctness.md` CE-1 (9 existing classes including
   TelegramApiError), CE-2 (web/federation subdir), C1 (ChannelProvider
