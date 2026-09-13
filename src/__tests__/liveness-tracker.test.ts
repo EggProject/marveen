@@ -72,7 +72,7 @@ describe('409 cooldown', () => {
     const future = Date.now() + 60_000
     t.setNativeConfirmedUpUntil(future)
     expect(t.getNativeConfirmedUpUntil()).toBe(future)
-    // Strict < matches the L109-111 free-function semantics and the class shim
+    // Strict `<` matches the free-function shim semantics and the class method
     expect(t.inNative409Cooldown(future - 1)).toBe(true)
     expect(t.inNative409Cooldown(future)).toBe(false)
     expect(t.inNative409Cooldown(future + 1)).toBe(false)
